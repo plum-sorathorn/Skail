@@ -59,6 +59,7 @@ async def run_dynamic_orchestration(
             thread_id=kwargs.get("thread_id", "thread_orchestrator"),
             plan=plan,
             messages=messages,
+            tools=kwargs.get("tools") or [],
             client_type=kwargs.get("client_type"),
             user_agent=kwargs.get("user_agent", ""),
             is_nested=kwargs.get("is_nested", False),

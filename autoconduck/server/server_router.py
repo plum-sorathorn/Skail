@@ -89,6 +89,7 @@ async def route_target(
     PSEUDO_MODELS: set[str],
     litellm_params_for: Any,
     normalize_messages_for_llm: Any,
+    tools: list[Any] | None = None,
 ) -> tuple[str | None, dict[str, Any]]:
     """Determine routing path, model selection, and orchestration execution."""
     started = time.perf_counter()
@@ -216,6 +217,7 @@ async def route_target(
                     user_agent=request.headers.get("user-agent", "") if request is not None and hasattr(request, "headers") else "",
                     is_nested=is_nested,
                     plan=plan,
+                    tools=tools or [],
                 )
                 if result is not None:
                     tool_calls = getattr(result, "tool_calls", None) or (

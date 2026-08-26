@@ -67,8 +67,9 @@ async def handle_messages(
             status_code=400,
         )
     try:
+        tools_list = openai_tools_from_anthropic(body.tools) if body.tools else []
         target, extra = await route_target_fn(
-            body.model, oai_messages, request, client_type="claude", on_progress=on_progress if progress_enabled else None
+            body.model, oai_messages, request, client_type="claude", on_progress=on_progress if progress_enabled else None, tools=tools_list
         )
     except Exception as exc:
         return JSONResponse(

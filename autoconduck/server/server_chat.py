@@ -66,7 +66,7 @@ async def handle_chat_completions(
                     pass
 
             task = asyncio.create_task(
-                route_target_fn(body.model, body.messages, request, on_progress)
+                route_target_fn(body.model, body.messages, request, on_progress, tools=body.tools)
             )
             try:
                 first = await first_event
@@ -284,7 +284,7 @@ async def handle_chat_completions(
 
         return StreamingResponse(progress_stream(), media_type="text/event-stream")
 
-    target, extra = await route_target_fn(body.model, body.messages, request)
+    target, extra = await route_target_fn(body.model, body.messages, request, tools=body.tools)
     answer = extra.get("__answer__")
     if answer is not None:
         record(

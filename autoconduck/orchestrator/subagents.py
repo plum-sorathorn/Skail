@@ -25,7 +25,7 @@ def subagent_target(subtask_prompt, role, plan_breadth, budget_hint, config):
     return lo + (hi - lo) * max(0, min(1, raw))
 
 
-def build_subagent_prompt(task: SubTask, upstream_summaries: str = "", cfg=None) -> str:
+def build_subagent_prompt(task: SubTask, upstream_summaries: str = "", cfg=None, tools: list[dict[str, Any]] | None = None) -> str:
     from .roles import assign_subagent_role, role_card
     assigned_role = assign_subagent_role(task.goal)
     role_header = (
@@ -53,6 +53,16 @@ def build_subagent_prompt(task: SubTask, upstream_summaries: str = "", cfg=None)
     verify = getattr(task.output_contract, "verify", None) or []
     if verify:
         parts.append(f"VERIFY BEFORE RETURNING: {', '.join(verify)}")
+    if tools:
+        tool_names = []
+        for t in tools:
+            fn = t.get("function") if isinstance(t, dict) and "function" in t else t
+            name = fn.get("name") if isinstance(fn, dict) else getattr(fn, "name", None)
+            desc = fn.get("description", "") if isinstance(fn, dict) else getattr(fn, "description", "")
+            if name:
+                tool_names.append(f"• `{name}`: {desc[:80]}" if desc else f"• `{name}`")
+        if tool_names:
+            parts.append(f"INHERITED HARNESS TOOLS & MCP CAPABILITIES:\n" + "\n".join(tool_names[:20]))
     return "\n".join(parts)
 
 
@@ -72,6 +82,7 @@ async def run_subagent(
     *,
     plan_breadth: int = 1,
     budget_hint: float | None = None,
+    tools: list[dict[str, Any]] | None = None,
 ) -> str:
     try:
         import asyncio
@@ -83,7 +94,7 @@ async def run_subagent(
         cfg = cfg or get_config()
         from .roles import assign_subagent_role
         assigned_role = assign_subagent_role(task.goal)
-        prompt = build_subagent_prompt(task, upstream_summaries, cfg)
+        prompt = build_subagent_prompt(task, upstream_summaries, cfg, tools=tools)
         target = subagent_target(
             prompt, getattr(task, "role", "read"), plan_breadth, budget_hint, cfg
         )

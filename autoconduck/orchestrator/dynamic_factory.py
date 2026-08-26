@@ -39,6 +39,7 @@ class DynamicState(BaseModel):
     session_id: str = "default"
     thread_id: str = "default"
     plan: Annotated[ExecutionPlan | None, _latest_val] = None
+    tools: Annotated[list[dict[str, Any]], _latest_val] = Field(default_factory=list)
     client_type: Annotated[str | None, _latest_val] = None
     user_agent: Annotated[str, _latest_val] = ""
     is_nested: Annotated[bool, _latest_val] = False
@@ -124,10 +125,12 @@ def _make_subtask_handler(task: SubTaskSpec, on_progress: Any = None) -> Callabl
             plan = getattr(state, "plan", None) if not isinstance(state, dict) else state.get("plan")
             plan_breadth = len(plan.subtasks) if plan and hasattr(plan, "subtasks") and plan.subtasks else 1
 
+            harness_tools = getattr(state, "tools", []) if not isinstance(state, dict) else state.get("tools", [])
             output = await run_subagent(
                 subtask_obj,
                 upstream_summaries=upstream_text,
                 plan_breadth=plan_breadth,
+                tools=harness_tools,
             )
             is_error = not output or output.startswith("__SUBAGENT_ERROR__")
 
