@@ -84,7 +84,7 @@ class ExecutionPlan(BaseModel):
 class SLMPlanner:
     """Intelligent task decomposition and routing planner."""
 
-    def __init__(self, model_path: str = "", circuit_breaker_ms: float = 100.0) -> None:
+    def __init__(self, model_path: str = "", circuit_breaker_ms: float = 2000.0) -> None:
         self.model_path = model_path
         self.circuit_breaker_ms = circuit_breaker_ms
         self._llm = None
@@ -376,7 +376,12 @@ class SLMPlanner:
 
     async def plan(self, messages: list[dict[str, Any]], config: Any = None) -> ExecutionPlan:
         """Generate an ExecutionPlan with circuit breaker protection."""
-        timeout_sec = self.circuit_breaker_ms / 1000.0
+        timeout_ms = (
+            float(getattr(config.selection, "slm_circuit_breaker_timeout_ms", self.circuit_breaker_ms))
+            if config is not None and hasattr(config, "selection")
+            else self.circuit_breaker_ms
+        )
+        timeout_sec = timeout_ms / 1000.0
 
         import inspect
 
@@ -409,8 +414,8 @@ class SLMPlanner:
             return ExecutionPlan.model_validate(data)
 
         except asyncio.TimeoutError:
-            logger.warning("SLM planner exceeded %sms circuit breaker timeout; degrading to fallback.", self.circuit_breaker_ms)
-            return self._create_fallback_plan(messages, reason=f"Circuit breaker timeout (> {self.circuit_breaker_ms}ms)")
+            logger.warning("SLM planner exceeded %sms circuit breaker timeout; degrading to fallback.", timeout_ms)
+            return self._create_fallback_plan(messages, reason=f"Circuit breaker timeout (> {timeout_ms:g}ms)")
         except Exception as exc:
             logger.warning("SLM planner encountered error: %s; degrading to fallback.", exc)
             return self._create_fallback_plan(messages, reason=f"Inference error: {exc}")

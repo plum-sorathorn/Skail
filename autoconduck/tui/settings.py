@@ -37,7 +37,7 @@ if _TEXTUAL:
             (
                 "selection.slm_circuit_breaker_timeout_ms",
                 "SLM Circuit Breaker (ms)",
-                "Timeout before degrading to balanced fallback (default 100)",
+                "Timeout before degrading to fallback SLA (default 2000)",
                 "int",
             ),
             (

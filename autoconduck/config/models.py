@@ -38,7 +38,7 @@ class SelectionConfig(BaseModel):
 
     # 0.3.0 SLM Architecture & Dynamic DAG Tunables
     slm_model_path: str = "models/qwen2.5-coder-0.5b-instruct-q4.onnx"
-    slm_circuit_breaker_timeout_ms: int = 100
+    slm_circuit_breaker_timeout_ms: int = 2000
     session_guard_compaction_ratio: float = 0.80
     rag_max_tokens: int = 250
     rag_db_path: str = "~/.autoconduck/rag_db"

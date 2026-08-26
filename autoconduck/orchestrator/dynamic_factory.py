@@ -129,8 +129,24 @@ def _make_subtask_handler(task: SubTaskSpec, on_progress: Any = None) -> Callabl
                 upstream_summaries=upstream_text,
                 plan_breadth=plan_breadth,
             )
-            if not output or output.startswith("__SUBAGENT_ERROR__"):
-                output = f"Completed subtask [{task.id}] ({task.role}): {task.goal}"
+            is_error = not output or output.startswith("__SUBAGENT_ERROR__")
+
+            if is_error:
+                error_msg = output if output else f"__SUBAGENT_ERROR__[{task.id}]: Empty response"
+                if on_progress:
+                    try:
+                        on_progress({
+                            "node": task.id,
+                            "state": "failed",
+                            "step_detail": f"Subagent [{task.id}] failed: {error_msg.replace('__SUBAGENT_ERROR__', '')}",
+                        })
+                    except Exception:
+                        pass
+                logger.warning("Subagent [%s] failed: %s", task.id, error_msg)
+                return {
+                    "subtask_errors": {task.id: error_msg},
+                    "active_node": task.id,
+                }
 
             if on_progress:
                 try:
@@ -155,7 +171,6 @@ def _make_subtask_handler(task: SubTaskSpec, on_progress: Any = None) -> Callabl
                     pass
             logger.warning("Subagent [%s] failed: %s", task.id, exc)
             return {
-                "subtask_outputs": {task.id: f"Completed subtask [{task.id}] ({task.role}): {task.goal}"},
                 "subtask_errors": {task.id: f"Failed to execute subtask [{task.id}]: {exc}"},
                 "active_node": task.id,
             }

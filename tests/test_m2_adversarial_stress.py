@@ -364,6 +364,12 @@ class TestSLMPlannerAdversarial:
 class TestDynamicLangGraphFactoryAdversarial:
     """Adversarial stress testing for Dynamic LangGraph Factory & Checkpointer."""
 
+    @pytest.fixture(autouse=True)
+    def mock_subagent_runner(self, monkeypatch):
+        async def fake_run_subagent(task, *args, **kwargs):
+            return f"Result for {task.id}"
+        monkeypatch.setattr("autoconduck.orchestrator.subagents.run_subagent", fake_run_subagent)
+
     @pytest.mark.asyncio
     async def test_complex_diamond_dag_topology(self):
         """Diamond DAG: Start -> A -> (B, C) -> D -> Synthesizer -> End."""

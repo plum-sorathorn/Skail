@@ -45,7 +45,7 @@ if _TEXTUAL:
             yield Vertical(
                 Static("┌─ AutoConduck · Local SLM Engine Setup ─┐"),
                 Static(
-                    "AutoConduck uses an embedded Small Language Model (SLM) for sub-100ms task decomposition and dynamic orchestration.\n"
+                    "AutoConduck uses an embedded Small Language Model (SLM) for fast local task decomposition and dynamic orchestration.\n"
                     "Choose a local model to download and integrate, or skip to use the built-in heuristic fallback:"
                 ),
                 Static(

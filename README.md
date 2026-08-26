@@ -25,7 +25,7 @@ Coding agents (**Claude Code**, **OpenCode**, **Pi**, and **Oh My Pi**) frequent
 **AutoConduck 0.3.5** transforms local model routing into an autonomous, SLM-driven orchestration engine:
 
 - **Turn Guard (0ms / <2ms):** Synchronous, regex-only classifier that detects active tool loops and dispatches them directly to the active model tier without replanning overhead. Stagnation is detected only on 3+ identical consecutive calls or 2+ consecutive errors.
-- **Embedded SLM Task Architect (Qwen 2.5 Coder 0.5B ONNX / GGUF):** Local small language model generates validated Pydantic task plans in <100ms, specifying exact DAG topology, subtask constraints, and SLA requirements.
+- **Embedded SLM Task Architect (Qwen 2.5 Coder / LFM 2.5 ONNX / GGUF):** Local small language model generates validated Pydantic task plans with circuit-breaker protection (default 2000ms), specifying exact DAG topology, subtask constraints, and capability SLA requirements.
 - **"Fit-Gate Then Cheapest" 4D Capability Selection:** Filters models against a 4-dimensional capability vector (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted per task type, then picks the absolute cheapest qualifying model.
 - **Confidence-Tightened Capability Floor:** Low SLM plan confidence dynamically raises the capability floor ($\min(\text{base} + 0.15 \times (1 - \text{conf}), 0.60)$) to ensure difficult prompts land on capable models.
 - **Dynamic DAG LangGraph Factory:** Compiles tailored runtime StateGraphs for complex multi-subtask workflows with parallel fan-out execution and unified markdown handoff synthesis.
@@ -89,7 +89,7 @@ Agent Request (Claude Code / OpenCode / Pi / OMP)
 ### Core Architecture Pillars
 
 1. **Turn Guard (`server/turn_guard.py`):** Pure synchronous regex classifier executing in <2ms. Distinguishes clean user turns (`SLM_PLAN`), active healthy tool loops (`DIRECT_ACTIVE_TIER`), and loop stagnation (`ESCALATE_SLM`). Healthy multi-file workflows stay direct without replanning churn.
-2. **SLM Task Architect (`routing/slm_planner.py`):** Local ONNX/GGUF model generating typed Pydantic `ExecutionPlan` structures with strict 100ms circuit breakers and deterministic fallbacks.
+2. **SLM Task Architect (`routing/slm_planner.py`):** Local ONNX/GGUF model generating typed Pydantic `ExecutionPlan` structures with configurable circuit breakers (default 2000ms) and deterministic fallbacks.
 3. **Capability Vector Model Selection (`routing/model_pool.py`):** Multi-dimensional capability scoring (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted across 10 task types. Models are fit-gated and sorted by absolute cost ascending.
 4. **Dynamic Graph Factory (`orchestrator/dynamic_factory.py`):** Compiles per-turn transient LangGraph execution topologies with parallel worker fan-outs and typed reducers.
 5. **Session Guard (`orchestrator/session_guard.py`):** Enforces byte-identical prompt prefix immutability across turns for upstream provider cache hits, and compacts non-structural message history at 80% context capacity.
@@ -340,7 +340,7 @@ escalation_threshold: 0.80
 selection:
   # SLM Engine Settings
   slm_model_path: "models/qwen2.5-coder-0.5b-instruct-q4.onnx"
-  slm_circuit_breaker_timeout_ms: 100
+  slm_circuit_breaker_timeout_ms: 2000
   
   # Session Guard & RAG
   session_guard_compaction_ratio: 0.80

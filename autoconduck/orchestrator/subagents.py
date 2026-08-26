@@ -20,7 +20,8 @@ def subagent_target(subtask_prompt, role, plan_breadth, budget_hint, config):
         + 0.3 * hint * weight
         + 0.3 / math.sqrt(max(1, plan_breadth))
     )
-    lo, hi = config.selection.phase_bands["subagent"]
+    phase_bands = getattr(getattr(config, "selection", None), "phase_bands", {}) or {}
+    lo, hi = phase_bands.get("subagent", [0.15, 0.55])
     return lo + (hi - lo) * max(0, min(1, raw))
 
 
@@ -95,14 +96,10 @@ async def run_subagent(
             else None
         )
         from autoconduck.config import resolve_orchestrator_model
+        from autoconduck.routing.model_pool import CapabilitySLA
 
-        target_model = pricing.select_closest(
-            pricing.pool_ids(cfg),
-            target,
-            cfg,
-            band=cfg.selection.phase_bands["subagent"],
-            max_scaled_cost=max_cost,
-        ) or resolve_orchestrator_model(cfg)
+        sla = CapabilitySLA(min_context=16000, requires_tools=True, max_cost=max_cost or 1.5)
+        target_model = pricing.select_for_sla(sla, config=cfg) or resolve_orchestrator_model(cfg)
         params: Any = litellm_params_for(target_model, cfg)
         params["_path"] = "orchestrator-subagent"
         params["_pseudo"] = "autoconduck"
