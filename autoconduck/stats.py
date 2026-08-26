@@ -10,6 +10,8 @@ from typing import Any
 from .config import home_dir
 from .routing import pricing
 
+import time
+
 _latest_selection: dict[str, Any] = {}
 _active_routing: dict[str, Any] = {
     "active": False,
@@ -22,14 +24,47 @@ _active_routing: dict[str, Any] = {
     "subtasks_total": 0,
     "subtasks_completed": 0,
     "start_time": 0.0,
+    "updated_at": 0.0,
 }
+
+
+def active_routing_path() -> Path:
+    return home_dir() / "run" / "active_routing.json"
 
 
 def update_active_routing(**kwargs: Any) -> None:
     _active_routing.update(kwargs)
+    _active_routing["updated_at"] = time.time()
+    try:
+        target = active_routing_path()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("w", encoding="utf-8") as f:
+            json.dump(_active_routing, f)
+    except Exception:
+        pass
 
 
 def get_active_routing() -> dict[str, Any]:
+    try:
+        target = active_routing_path()
+        if target.exists():
+            with target.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+                if time.time() - float(data.get("updated_at", 0)) < 6.0:
+                    return data
+                return {
+                    "active": False,
+                    "path": "FAST",
+                    "pseudo_model": "autoconduck",
+                    "selected_model": data.get("selected_model", "none"),
+                    "task_value": 0.0,
+                    "node": "idle",
+                    "step_detail": "Idle",
+                    "subtasks_total": 0,
+                    "subtasks_completed": 0,
+                }
+    except Exception:
+        pass
     return dict(_active_routing)
 
 
@@ -73,6 +108,7 @@ def record(
     plan: Any = None,
     route: str | None = None,
     tier: str | None = None,
+    latency_ms: float | None = None,
 ) -> None:
     try:
         prompt_tokens, completion_tokens = int(prompt_tokens), int(completion_tokens)
@@ -99,6 +135,9 @@ def record(
             row["route"] = route
         if tier is not None:
             row["tier"] = tier
+        if latency_ms is not None:
+            row["latency_ms"] = float(latency_ms)
+            row["turn_latency_ms"] = float(latency_ms)
         if plan is not None:
             if hasattr(plan, "model_dump"):
                 row["plan"] = plan.model_dump()
@@ -260,6 +299,7 @@ def install_recorder(llm: Any) -> None:
         return
 
     async def wrapped(*args: Any, **kwargs: Any) -> Any:
+        t0 = time.perf_counter()
         path = kwargs.pop("_path", "unknown")
         pseudo = kwargs.pop("_pseudo", "unknown")
         complexity = kwargs.pop("_complexity", None)
@@ -270,7 +310,20 @@ def install_recorder(llm: Any) -> None:
         try:
             if not kwargs.get("stream"):
                 result = await original(*args, **kwargs)
+                lat_ms = round((time.perf_counter() - t0) * 1000, 1)
                 p, c = _usage(result)
+                if p == 0 and kwargs.get("messages"):
+                    try:
+                        from autoconduck.server.messages_api import count_tokens
+                        p = count_tokens(json.dumps(kwargs.get("messages")))
+                    except Exception:
+                        pass
+                if c == 0 and hasattr(result, "choices") and result.choices:
+                    try:
+                        from autoconduck.server.messages_api import count_tokens
+                        c = count_tokens(str(result.choices[0].message.content or ""))
+                    except Exception:
+                        pass
                 hidden = getattr(result, "_hidden_params", {}) or {}
                 record(
                     path,
@@ -284,6 +337,7 @@ def install_recorder(llm: Any) -> None:
                     route=route_val,
                     tier=tier_val,
                     plan=plan_val,
+                    latency_ms=lat_ms,
                 )
                 return result
             options = dict(kwargs.get("stream_options") or {})
@@ -292,9 +346,10 @@ def install_recorder(llm: Any) -> None:
             response = await original(*args, **kwargs)
             prompt = completion = 0
             final_usage: tuple[int, int] | None = None
+            generated_tokens = 0
 
             async def relay():
-                nonlocal prompt, completion, final_usage
+                nonlocal prompt, completion, final_usage, generated_tokens
                 try:
                     async for chunk in response:
                         p, c = _usage(chunk)
@@ -302,7 +357,20 @@ def install_recorder(llm: Any) -> None:
                         completion += c
                         if _usage(chunk) != (0, 0):
                             final_usage = _usage(chunk)
+                        if hasattr(chunk, "choices") and chunk.choices:
+                            delta = getattr(chunk.choices[0], "delta", None)
+                            if delta and getattr(delta, "content", None):
+                                generated_tokens += len(str(delta.content).split())
                         yield chunk
+                    lat_ms = round((time.perf_counter() - t0) * 1000, 1)
+                    if not final_usage and prompt == 0:
+                        try:
+                            from autoconduck.server.messages_api import count_tokens
+                            p = count_tokens(json.dumps(kwargs.get("messages", [])))
+                            c = max(completion, int(generated_tokens * 1.3))
+                            final_usage = (p, c)
+                        except Exception:
+                            pass
                     record(
                         path,
                         pseudo,
@@ -313,8 +381,10 @@ def install_recorder(llm: Any) -> None:
                         route=route_val,
                         tier=tier_val,
                         plan=plan_val,
+                        latency_ms=lat_ms,
                     )
                 except Exception as exc:
+                    lat_ms = round((time.perf_counter() - t0) * 1000, 1)
                     exc_str = str(exc)
                     if (
                         "Error building chunks" in exc_str
@@ -331,6 +401,7 @@ def install_recorder(llm: Any) -> None:
                             route=route_val,
                             tier=tier_val,
                             plan=plan_val,
+                            latency_ms=lat_ms,
                         )
                         return
                     pricing.record_error(model)

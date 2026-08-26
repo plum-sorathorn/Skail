@@ -44,17 +44,6 @@ SLM_MODELS_CATALOG: list[dict[str, Any]] = [
         "url": "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-ONNX/resolve/main/onnx/model_q4.onnx",
         "description": "Liquid AI hybrid architecture for agentic workflows & tool planning (ONNX)",
     },
-    {
-        "id": "none",
-        "key": "none",
-        "name": "Skip / Built-in Heuristic Fallback",
-        "filename": "",
-        "size_mb": 0,
-        "format": "none",
-        "recommended": False,
-        "url": "",
-        "description": "Zero-overhead rule-based circuit breaker (no download required)",
-    },
 ]
 
 
@@ -130,11 +119,7 @@ def integrate_slm_model(identifier: str, target_dir: Path | None = None) -> str:
     """Integrate chosen SLM model into the AutoConduck configuration."""
     cfg = get_config()
     info = get_slm_model_info(identifier)
-
-    if not info or info["id"] == "none":
-        # Skip / Heuristic Fallback
-        cfg.selection.slm_model_path = ""
-        save_config(cfg)
+    if not info:
         return ""
 
     models_dir = target_dir or get_default_models_dir()

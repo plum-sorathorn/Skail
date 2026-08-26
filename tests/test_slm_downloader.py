@@ -21,7 +21,6 @@ def test_slm_models_catalog_entries():
     assert "qwen2.5-coder-0.5b-instruct" in ids
     assert "qwen2.5-coder-1.5b-instruct" in ids
     assert "lfm2.5-1.2b-instruct" in ids
-    assert "none" in ids
 
     # Verify default recommended model
     recommended = [m for m in SLM_MODELS_CATALOG if m.get("recommended")]
@@ -71,7 +70,6 @@ def test_render_slm_rows(tmp_path):
     assert "(*) Qwen 2.5 Coder 0.5B Instruct (Recommended)" in rendered
     assert "Qwen 2.5 Coder 1.5B Instruct" in rendered
     assert "LFM 2.5 1.2B Instruct" in rendered
-    assert "Skip / Built-in Heuristic Fallback" in rendered
 
     # With model installed
     model_file = tmp_path / "qwen2.5-coder-0.5b-instruct-q4.onnx"
@@ -92,11 +90,9 @@ def test_integrate_slm_model(tmp_path):
     assert str(tmp_path / "qwen2.5-coder-0.5b-instruct-q4.onnx") == path
     assert cfg.selection.slm_model_path == path
 
-    # Integrate Skip / None
-    none_path = integrate_slm_model("none", target_dir=tmp_path)
-    cfg2 = get_config()
+    # Integrate unknown
+    none_path = integrate_slm_model("unknown", target_dir=tmp_path)
     assert none_path == ""
-    assert cfg2.selection.slm_model_path == ""
 
 
 def test_download_slm_model_mocked(tmp_path):

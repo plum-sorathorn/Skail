@@ -149,6 +149,23 @@ async def route_target(
                 )
             except Exception:
                 pass
+        try:
+            from autoconduck.stats import update_active_routing
+            subtasks_count = len(getattr(plan, "subtasks", [])) if plan and hasattr(plan, "subtasks") and plan.subtasks else 0
+            update_active_routing(
+                active=True,
+                path=path,
+                pseudo_model=body_model,
+                selected_model=model or body_model,
+                task_value=task_complexity,
+                node="slm" if path == "SLOW" else "direct",
+                step_detail=f"Dispatched -> {model or body_model} ({route_name})",
+                start_time=time.time(),
+                subtasks_total=subtasks_count,
+                subtasks_completed=0,
+            )
+        except Exception:
+            pass
         if decisions is not None:
             decisions.append(
                 {

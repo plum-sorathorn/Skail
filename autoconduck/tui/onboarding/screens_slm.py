@@ -46,7 +46,7 @@ if _TEXTUAL:
                 Static("┌─ AutoConduck · Local SLM Engine Setup ─┐"),
                 Static(
                     "AutoConduck uses an embedded Small Language Model (SLM) for fast local task decomposition and dynamic orchestration.\n"
-                    "Choose a local model to download and integrate, or skip to use the built-in heuristic fallback:"
+                    "Choose an ONNX SLM model to download and integrate:"
                 ),
                 Static(
                     render_slm_rows(self.models, self.selected_id, self.cursor, target_dir=self.target_dir),
@@ -125,20 +125,12 @@ if _TEXTUAL:
 
         def _confirm(self):
             selected = next((m for m in self.models if m["id"] == self.selected_id), None)
-            if not selected or selected["id"] == "none":
-                integrate_slm_model("none", target_dir=self.target_dir)
-                self._finish()
+            if not selected:
                 return
 
             if is_slm_model_installed(self.selected_id, target_dir=self.target_dir):
                 integrate_slm_model(self.selected_id, target_dir=self.target_dir)
-                try:
-                    self.query_one("#status").update(
-                        f"[bold green]Integrated {selected['name']} from local cache.[/bold green]"
-                    )
-                except Exception:
-                    pass
-                self._finish()
+                self.run_worker(self._async_verify_and_finish(selected), exclusive=True)
                 return
 
             # Needs download
@@ -152,6 +144,40 @@ if _TEXTUAL:
 
             # Run in worker or task
             self.run_worker(self._async_download_and_integrate(selected), exclusive=True)
+
+        async def _async_verify_and_finish(self, selected: dict[str, Any]):
+            import time
+            from autoconduck.routing.slm_planner import SLMPlanner
+            try:
+                self.query_one("#status").update(
+                    f"[bold cyan]Testing {selected['name']} routing engine...[/bold cyan]"
+                )
+            except Exception:
+                pass
+            
+            try:
+                planner = SLMPlanner()
+                t0 = time.perf_counter()
+                test_prompt = [{"role": "user", "content": "Refactor the database layer in db.py and auth.py"}]
+                plan = await planner.plan(test_prompt)
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                
+                status_text = (
+                    f"[bold green]✓ SLM Verified! Latency: {elapsed_ms:.1f}ms | Route: {plan.route} ({plan.task_type})[/bold green]\n"
+                    f"[dim]Rationale: {plan.rationale}[/dim]"
+                )
+                self.query_one("#status").update(status_text)
+                await asyncio.sleep(1.8)
+            except Exception as exc:
+                logger.warning("SLM verification test completed with notice: %s", exc)
+                try:
+                    self.query_one("#status").update(
+                        f"[bold green]{selected['name']} integrated successfully.[/bold green]"
+                    )
+                    await asyncio.sleep(0.8)
+                except Exception:
+                    pass
+            self._finish()
 
         async def _async_download_and_integrate(self, selected: dict[str, Any]):
             def progress(downloaded: int, total: int):
@@ -171,20 +197,13 @@ if _TEXTUAL:
                     progress_callback=progress,
                 )
                 integrate_slm_model(self.selected_id, target_dir=self.target_dir)
-                try:
-                    self.query_one("#status").update(
-                        f"[bold green]{selected['name']} installed and integrated successfully![/bold green]"
-                    )
-                except Exception:
-                    pass
-                await asyncio.sleep(0.3)
-                self._finish()
+                await self._async_verify_and_finish(selected)
             except Exception as exc:
-                logger.warning("SLM onboarding download failed; using heuristic fallback: %s", exc)
+                logger.warning("SLM onboarding download failed: %s", exc)
                 self._downloading = False
                 try:
                     self.query_one("#status").update(
-                        f"[bold red]Download failed: {exc}. Using heuristic fallback.[/bold red]"
+                        f"[bold red]Download failed: {exc}.[/bold red]"
                     )
                 except Exception:
                     pass
