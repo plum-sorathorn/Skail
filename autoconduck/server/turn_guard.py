@@ -148,6 +148,60 @@ def _is_tool_error_content(content: Any, is_error_flag: bool | None = None) -> b
     return False
 
 
+def _extract_root_target(args_str: str | None, content: Any = None) -> str | None:
+    """Extract primary path/target identifier from tool arguments or error text."""
+    path_val = None
+    if args_str:
+        raw_str = args_str.strip()
+        if (raw_str.startswith("{") and raw_str.endswith("}")) or (raw_str.startswith("[") and raw_str.endswith("]")):
+            try:
+                parsed = json.loads(raw_str)
+                if isinstance(parsed, dict):
+                    for k in ("path", "file_path", "filepath", "file", "target", "filename", "dir", "directory", "uri"):
+                        v = parsed.get(k)
+                        if isinstance(v, str) and v.strip():
+                            path_val = v.strip()
+                            break
+                    if not path_val and "command" in parsed:
+                        cmd = str(parsed.get("command", "")).strip()
+                        words = cmd.split()
+                        for w in words:
+                            if "/" in w or "\\" in w:
+                                path_val = w.strip("\"'")
+                                break
+            except Exception:
+                pass
+        if not path_val:
+            import re
+            match = re.search(r'["\']?(?:path|file|target|dir)["\']?\s*[:=]\s*["\']([^"\']+)["\']', raw_str)
+            if match:
+                path_val = match.group(1)
+            elif "/" in raw_str or "\\" in raw_str:
+                tokens = raw_str.replace(",", " ").replace(":", " ").split()
+                for t in tokens:
+                    cleaned = t.strip("\"'{}[]()")
+                    if "/" in cleaned or "\\" in cleaned:
+                        path_val = cleaned
+                        break
+
+    if not path_val and isinstance(content, str):
+        import re
+        match = re.search(
+            r'(?:no such file or directory|cannot find|failed to open|not found|cannot read)[:\s]+[`\'"]?([a-zA-Z0-9_.-]+(?:[/\\][a-zA-Z0-9_.-]+)*)',
+            content,
+            re.IGNORECASE,
+        )
+        if match:
+            path_val = match.group(1)
+
+    if path_val:
+        normalized = path_val.replace("\\", "/").strip("/")
+        parts = normalized.split("/")
+        if parts and parts[0]:
+            return parts[0].lower()
+    return None
+
+
 class TurnGuard:
     """Synchronous fast-path classifier for agentic tool loops and stagnation."""
 
@@ -207,7 +261,9 @@ class TurnGuard:
 
         # If last_tool_name was not in the tool message, extract from previous assistant call
         all_calls: list[tuple[str, str]] = []  # list of (tool_name, args_str)
+        call_id_to_args: dict[str, tuple[str, str]] = {}
         tool_results: list[bool] = []  # list of is_error booleans
+        failed_targets: list[str] = []
 
         for idx, m in enumerate(messages):
             if not isinstance(m, dict):
@@ -220,21 +276,27 @@ class TurnGuard:
             if isinstance(tool_calls, list):
                 for tc in tool_calls:
                     if isinstance(tc, dict):
+                        cid = tc.get("id")
                         fn = tc.get("function")
                         if isinstance(fn, dict):
                             fn_name = str(fn.get("name", ""))
                             fn_args = str(fn.get("arguments", ""))
                             all_calls.append((fn_name, fn_args))
                             last_tool_name = fn_name
+                            if cid:
+                                call_id_to_args[cid] = (fn_name, fn_args)
 
             # Anthropic assistant tool_use
             if m_role == "assistant" and isinstance(m_content, list):
                 for b in m_content:
                     if isinstance(b, dict) and b.get("type") == "tool_use":
+                        cid = b.get("id")
                         fn_name = str(b.get("name", ""))
                         fn_args = json.dumps(b.get("input", {}), sort_keys=True)
                         all_calls.append((fn_name, fn_args))
                         last_tool_name = fn_name
+                        if cid:
+                            call_id_to_args[cid] = (fn_name, fn_args)
 
             # OpenAI tool response
             if m_role in ("tool", "function"):
@@ -242,13 +304,26 @@ class TurnGuard:
                 tool_results.append(is_err)
                 if not last_tool_name and m.get("name"):
                     last_tool_name = m.get("name")
+                if is_err:
+                    cid = m.get("tool_call_id")
+                    args_str = call_id_to_args.get(cid, ("", ""))[1] if cid else (all_calls[-1][1] if all_calls else "")
+                    tgt = _extract_root_target(args_str, m.get("content"))
+                    if tgt:
+                        failed_targets.append(tgt)
 
             # Anthropic user tool_result
             if m_role == "user" and isinstance(m_content, list):
                 for b in m_content:
                     if isinstance(b, dict) and b.get("type") == "tool_result":
                         is_err = b.get("is_error")
-                        tool_results.append(_is_tool_error_content(b.get("content"), is_error_flag=is_err))
+                        err_flag = _is_tool_error_content(b.get("content"), is_error_flag=is_err)
+                        tool_results.append(err_flag)
+                        if err_flag:
+                            cid = b.get("tool_use_id")
+                            args_str = call_id_to_args.get(cid, ("", ""))[1] if cid else (all_calls[-1][1] if all_calls else "")
+                            tgt = _extract_root_target(args_str, b.get("content"))
+                            if tgt:
+                                failed_targets.append(tgt)
 
         # Calculate error streak (consecutive errors at the end)
         error_streak = 0
@@ -294,6 +369,39 @@ class TurnGuard:
                 error_streak=error_streak,
                 last_tool_name=last_tool_name,
             )
+
+        # 3. Recurring failure targeting the same invalid root entity / directory prefix
+        if last_tool_is_error and failed_targets:
+            target_counts: dict[str, int] = {}
+            for t in failed_targets:
+                target_counts[t] = target_counts.get(t, 0) + 1
+            for target_name, count in target_counts.items():
+                if count >= 3:
+                    return TurnClassificationResult(
+                        is_tool_loop=True,
+                        is_stagnant=True,
+                        stagnation_reason=f"3+ recurring failures targeting invalid root prefix '{target_name}'",
+                        target_action=TurnAction.ESCALATE_SLM,
+                        tool_call_streak=tool_call_streak,
+                        error_streak=error_streak,
+                        last_tool_name=last_tool_name,
+                    )
+
+        # 4. High error density in sliding window when last turn failed (>= 50% error rate in recent calls)
+        if last_tool_is_error and len(tool_results) >= 4:
+            recent_window = tool_results[-6:]
+            if len(recent_window) >= 4:
+                err_count = sum(1 for e in recent_window if e)
+                if (err_count / len(recent_window)) >= 0.5:
+                    return TurnClassificationResult(
+                        is_tool_loop=True,
+                        is_stagnant=True,
+                        stagnation_reason=f"High error density in recent tool window ({err_count}/{len(recent_window)} failed)",
+                        target_action=TurnAction.ESCALATE_SLM,
+                        tool_call_streak=tool_call_streak,
+                        error_streak=error_streak,
+                        last_tool_name=last_tool_name,
+                    )
 
         # Active healthy tool loop
         return TurnClassificationResult(

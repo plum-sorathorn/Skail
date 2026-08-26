@@ -185,3 +185,63 @@ def test_session_guard_already_compact_context_noop(session_guard: SessionGuard)
     assert not result.compacted
     assert result.original_tokens == result.final_tokens
     assert result.messages == messages
+
+
+def test_session_guard_sanitizes_typo_apology_attractors(session_guard: SessionGuard):
+    """Repetitive typo apologies in intermediate turns are stripped while preserving immutable prefix."""
+    system_msg = {"role": "system", "content": "System directive."}
+    user_msg = {"role": "user", "content": "Initial user prompt."}
+    messages = [
+        system_msg,
+        user_msg,
+        {
+            "role": "assistant",
+            "content": "I made a typo - autoconductor instead of autoconduck. Let me fix.\nLet me read the file now.",
+        },
+        {"role": "user", "content": "Continue reading."},
+        {
+            "role": "assistant",
+            "content": "I keep making the same typo: autoconductor vs autoconduck. Let me stop doing that.\nHere is the valid analysis.",
+        },
+    ]
+
+    result = session_guard.guard_context(messages, context_window=128000)
+    assert result.cache_prefix_preserved
+    assert result.messages[0] == system_msg
+    assert result.messages[1] == user_msg
+    # Verify poisoned typo phrase was stripped from turns 2 and 4
+    for m in result.messages[2:]:
+        if m.get("role") == "assistant":
+            c = str(m.get("content", ""))
+            assert "I made a typo" not in c
+            assert "I keep making the same typo" not in c
+            assert "autoconductor" not in c
+            assert "Here is the valid analysis" in c or "Let me read the file now" in c
+
+
+def test_session_guard_sanitizes_anthropic_block_format(session_guard: SessionGuard):
+    """Sanitizes text blocks within Anthropic-style content lists."""
+    system_msg = {"role": "system", "content": "System directive."}
+    user_msg = {"role": "user", "content": "User prompt."}
+    messages = [
+        system_msg,
+        user_msg,
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Typo again. autoconductor vs autoconduck. Let me fix the typo again.\nProceeding with task."},
+            ],
+        },
+    ]
+
+    result = session_guard.guard_context(messages, context_window=128000)
+    assert result.cache_prefix_preserved
+    assert result.messages[0] == system_msg
+    assert result.messages[1] == user_msg
+    assistant_content = result.messages[2]["content"]
+    assert isinstance(assistant_content, list)
+    text_val = assistant_content[0]["text"]
+    assert "Typo again" not in text_val
+    assert "autoconductor" not in text_val
+    assert "Proceeding with task." in text_val
+

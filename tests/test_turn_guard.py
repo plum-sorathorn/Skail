@@ -338,3 +338,66 @@ def test_turn_guard_anthropic_explicit_is_error_false_overrides_content(turn_gua
     assert result.is_stagnant is False
     assert result.error_streak == 0
     assert result.target_action == TurnAction.DIRECT_ACTIVE_TIER
+
+
+def test_turn_guard_sliding_window_error_density_escalates(turn_guard: TurnGuard):
+    """Oscillating error loops (e.g. 50%+ errors in recent window) escalate to SLM."""
+    messages: list[dict[str, Any]] = [{"role": "user", "content": "Investigate bug"}]
+    # Interleaved error, success, error, error, success, error
+    pattern = [True, False, True, True, False, True]
+    for i, is_err in enumerate(pattern):
+        cid = f"c_{i}"
+        messages.extend([
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {"id": cid, "type": "function", "function": {"name": "read_file", "arguments": json.dumps({"path": f"file_{i}.py"})}}
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": cid,
+                "name": "read_file",
+                "content": f"Error: cannot find the path specified" if is_err else "def foo(): pass",
+            },
+        ])
+
+    result = turn_guard.classify_turn(messages)
+    assert result.is_stagnant is True
+    assert result.target_action == TurnAction.ESCALATE_SLM
+    assert "error density" in result.stagnation_reason.lower()
+
+
+def test_turn_guard_recurring_root_target_failure_escalates(turn_guard: TurnGuard):
+    """Repeated failures on the same invalid root directory (e.g. autoconductor/...) escalate to SLM."""
+    messages: list[dict[str, Any]] = [{"role": "user", "content": "Analyze project"}]
+    # Non-consecutive failures on autoconductor/* with successful calls in between
+    steps = [
+        ("autoconductor/digest.py", True),
+        ("autoconduck/session_guard.py", False),
+        ("autoconductor/runner.py", True),
+        ("autoconduck/slm_planner.py", False),
+        ("autoconductor/dynamic_factory.py", True),
+    ]
+    for i, (path, is_err) in enumerate(steps):
+        cid = f"call_{i}"
+        messages.extend([
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {"id": cid, "type": "function", "function": {"name": "read_file", "arguments": json.dumps({"path": path})}}
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": cid,
+                "name": "read_file",
+                "content": f"Error: no such file or directory: {path}" if is_err else "# valid code",
+            },
+        ])
+
+    result = turn_guard.classify_turn(messages)
+    assert result.is_stagnant is True
+    assert result.target_action == TurnAction.ESCALATE_SLM
+    assert "autoconductor" in result.stagnation_reason.lower()
+

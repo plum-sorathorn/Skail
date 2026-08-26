@@ -106,6 +106,72 @@ def _compact_text_content(content: str, max_chars: int = 1200) -> str:
     return f"{head}\n\n[... {omitted} characters compacted ...]\n\n{tail}"
 
 
+def _sanitize_text_attractors(content: str) -> tuple[str, bool]:
+    """Strip self-chastising apology loops and poisoned typo repetitions from thought text."""
+    if not content:
+        return content, False
+
+    lines = content.splitlines(keepends=True)
+    kept_lines = []
+    modified = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            kept_lines.append(line)
+            continue
+
+        # Check if line contains typo acknowledgment patterns
+        if re.search(r"(?i)\b(?:typo|typos|keep typing|stop typing|wrong name)\b", stripped):
+            sentences = re.split(r"(?<=[.!?])\s+", stripped)
+            kept_sentences = [
+                s.strip() for s in sentences
+                if s.strip()
+                and not re.search(r"(?i)\b(?:typo|typos|stop typing|keep typing|wrong name)\b", s)
+                and not re.search(r"(?i)\b(?:vs|instead of)\b", s)
+            ]
+            if len(kept_sentences) < len(sentences):
+                modified = True
+                if kept_sentences:
+                    kept_lines.append(" ".join(kept_sentences) + ("\n" if line.endswith("\n") else ""))
+                continue
+
+        kept_lines.append(line)
+
+    cleaned = "".join(kept_lines).strip()
+    return cleaned, modified
+
+
+def _sanitize_message(msg: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Sanitize a single message dict, returning copy and whether it was modified."""
+    m_copy = copy.deepcopy(msg)
+    modified = False
+    content = m_copy.get("content")
+
+    if isinstance(content, str):
+        cleaned, changed = _sanitize_text_attractors(content)
+        if changed:
+            m_copy["content"] = cleaned
+            modified = True
+    elif isinstance(content, list):
+        new_blocks = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text_val = block.get("text", "")
+                cleaned, changed = _sanitize_text_attractors(text_val)
+                if changed:
+                    b_copy = copy.deepcopy(block)
+                    b_copy["text"] = cleaned
+                    new_blocks.append(b_copy)
+                    modified = True
+                    continue
+            new_blocks.append(block)
+        if modified:
+            m_copy["content"] = new_blocks
+
+    return m_copy, modified
+
+
 class SessionGuard:
     """Session lifecycle manager enforcing prefix immutability and context window ceiling."""
 
@@ -141,13 +207,34 @@ class SessionGuard:
         prefix_len = min(2, len(messages))
         prefix_snapshot = [copy.deepcopy(messages[i]) for i in range(prefix_len)]
 
-        if original_tokens <= ceiling:
+        # Check and sanitize remaining messages for poisoned token attractors
+        sanitized_remaining: list[dict[str, Any]] = []
+        any_sanitized = False
+        for m in messages[prefix_len:]:
+            s_msg, mod = _sanitize_message(m)
+            sanitized_remaining.append(s_msg)
+            if mod:
+                any_sanitized = True
+
+        current_messages = [copy.deepcopy(prefix_snapshot[i]) for i in range(prefix_len)] + sanitized_remaining
+        current_tokens = _count_tokens_messages(current_messages)
+
+        if original_tokens <= ceiling and not any_sanitized:
             # Under 80% ceiling: no compaction needed
             return SessionGuardResult(
                 messages=messages,
                 compacted=False,
                 original_tokens=original_tokens,
                 final_tokens=original_tokens,
+                cache_prefix_preserved=True,
+            )
+
+        if original_tokens <= ceiling and any_sanitized:
+            return SessionGuardResult(
+                messages=current_messages,
+                compacted=True,
+                original_tokens=original_tokens,
+                final_tokens=current_tokens,
                 cache_prefix_preserved=True,
             )
 
@@ -159,7 +246,7 @@ class SessionGuard:
             compacted_messages.append(copy.deepcopy(prefix_snapshot[i]))
 
         # 2. Compact subsequent messages
-        remaining = messages[prefix_len:]
+        remaining = current_messages[prefix_len:]
         per_msg_char_cap = max(600, (ceiling * 4) // max(1, len(remaining)))
 
         for m in remaining:
