@@ -27,7 +27,7 @@ Coding agents (**Claude Code**, **OpenCode**, **Pi**, and **Oh My Pi**) frequent
 - **Turn Guard (0ms / <2ms):** Synchronous, regex-only classifier that detects active tool loops and dispatches them directly to the active model tier without replanning overhead. Stagnation is detected only on 3+ identical consecutive calls or 2+ consecutive errors.
 - **Embedded SLM Task Architect (Qwen 2.5 Coder / LFM 2.5 ONNX / GGUF):** Local small language model generates validated Pydantic task plans with circuit-breaker protection (default 2000ms), specifying exact DAG topology, subtask constraints, and capability SLA requirements.
 - **"Fit-Gate Then Cheapest" 4D Capability Selection:** Filters models against a 4-dimensional capability vector (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted per task type, then picks the absolute cheapest qualifying model.
-- **Confidence-Tightened Capability Floor:** Low SLM plan confidence dynamically raises the capability floor ($\min(\text{base} + 0.15 \times (1 - \text{conf}), 0.60)$) to ensure difficult prompts land on capable models.
+- **Confidence-Tightened Capability Floor:** Low SLM plan confidence dynamically raises the capability floor (`min(base + 0.15 * (1 - conf), 0.60)`) to ensure difficult prompts land on capable models.
 - **Dynamic DAG LangGraph Factory:** Compiles tailored runtime StateGraphs for complex multi-subtask workflows with parallel fan-out execution and unified markdown handoff synthesis.
 - **LanceDB Knowledge & RAG Subsystem:** Embedded vector store with zero-cost 16-dimensional term-hash embeddings retrieves relevant codebase snippets without external API dependencies.
 - **Session Lifecycle & Context Guard:** Preserves immutable prompt-caching prefixes (turns 0 & 1) across 40+ turns and applies structural compaction at the 80% context window ceiling.
@@ -51,7 +51,7 @@ Agent Request (Claude Code / OpenCode / Pi / OMP)
     │                 Turn Guard (0ms / <2ms)                     │
     │  - Synchronous regex turn classifier                        │
     │  - Healthy tool loop bypass -> DIRECT_ACTIVE_TIER           │
-    │  - Stagnation detector (3+ identical calls or 2+ errors)     │
+    │  - Stagnation detector (3+ identical calls or 2+ errors)    │
     └─────────────────────────────┬───────────────────────────────┘
                                   │
                    Is Task a New Turn / Escalation?
@@ -254,7 +254,7 @@ $$\text{floor} = \min(\text{base} + 0.15 \times (1 - \text{confidence}),\; 0.60)
 
 4. **Hard Filters:** Filters candidates by active status, tool support, reasoning support, minimum context window, and capability floor.
 5. **Opt-In Price Cap:** `CapabilitySLA.max_price_usd_per_mtok` (configured via `selection.path_price_cap_usd_per_mtok`, disabled by default `{}`) sets an optional price ceiling in USD per 1M tokens. If the price cap empties the pool, AutoConduck falls back to the cheapest qualifying model with `fallback_reason = "price_cap_emptied_pool"`.
-6. **Cheapest Selection:** Qualifying models are sorted by absolute cost ($P = \text{cost}_{\text{input}} + 0.5 \times \text{cost}_{\text{output}}$) ascending, picking the cheapest model (or most expensive if `autoconduck-expensive`).
+6. **Cheapest Selection:** Qualifying models are sorted by absolute cost (`P = cost_input + 0.5 * cost_output`) ascending, picking the cheapest model (or most expensive if `autoconduck-expensive`).
 
 ### 4. Dynamic LangGraph Pipeline (`orchestrator/`)
 
