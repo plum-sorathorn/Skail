@@ -26,6 +26,52 @@ from autoconduck.routing.model_pool import CapabilitySLA
 logger = logging.getLogger(__name__)
 
 
+# --- Harness-agnostic boilerplate stripping (Layer 2) -----------------------
+# AutoConduck sits in front of many out-of-our-control coding-agent harnesses
+# (opencode, Claude Code, Pi, MCP shims, ...) which inject their own stable
+# bookkeeping into the user-role message stream (date/cwd preambles, sentinel
+# blocks, etc.). We do NOT enumerate harnesses; we strip a small, curated,
+# conservative family of well-known *shapes* of non-semantic boilerplate.
+# Unknown/novel boilerplate is deliberately left untouched here -- defense
+# against it comes from the conservative signal-gating in _raw_infer
+# (Layer 3), never from an ever-growing strip dictionary.
+_SYSTEM_REMINDER_RE = re.compile(r"<system-reminder\b[^>]*>.*?</system-reminder>", re.IGNORECASE | re.DOTALL)
+_SYSTEM_REMINDER_UNCLOSED_RE = re.compile(r"<system-reminder\b[^>]*>.*", re.IGNORECASE | re.DOTALL)
+_SYSTEM_NOTE_SENTINEL_RE = re.compile(r"<={3,}\s*SYSTEM NOTE\s*={3,}>.*?(?=\n\s*\n|\Z)", re.IGNORECASE | re.DOTALL)
+_SYSTEM_NOTE_BRACKET_RE = re.compile(r"\[System Note:[^\]]*\]", re.IGNORECASE | re.DOTALL)
+_TODAY_META_LINE_RE = re.compile(r"^[ \t]*Today(?:'s date)?\s*(?:is|:)\s*.*$", re.IGNORECASE | re.MULTILINE)
+_CWD_META_LINE_RE = re.compile(r"^[ \t]*Current working directory\s*:\s*.*$", re.IGNORECASE | re.MULTILINE)
+
+
+def _strip_harness_noise(text: str) -> tuple[str, bool]:
+    """Strip a curated family of non-semantic harness/session boilerplate.
+
+    Generalizes the old <system-reminder>-only strip to the small set of
+    DOCUMENTED, stable shapes that coding-agent harnesses are known to
+    inject into the user role: <system-reminder>...</system-reminder>
+    (closed and unclosed), <=== SYSTEM NOTE ===> sentinel blocks,
+    [System Note: ...] brackets, and leading "Today is/: ..." /
+    "Current working directory: ..." meta lines. This must never touch the
+    actual question/content -- it only removes whole recognized blocks or
+    whole meta lines anchored at line-start.
+
+    Returns (cleaned_text, noise_removed) so callers can treat evidence
+    derived purely from stripped noise as invalid (see _raw_infer).
+    """
+    if not text:
+        return text, False
+    original = text
+    cleaned = text
+    if "<system-reminder" in cleaned.lower():
+        cleaned = _SYSTEM_REMINDER_RE.sub(" ", cleaned)
+        cleaned = _SYSTEM_REMINDER_UNCLOSED_RE.sub(" ", cleaned)
+    cleaned = _SYSTEM_NOTE_SENTINEL_RE.sub(" ", cleaned)
+    cleaned = _SYSTEM_NOTE_BRACKET_RE.sub(" ", cleaned)
+    cleaned = _TODAY_META_LINE_RE.sub(" ", cleaned)
+    cleaned = _CWD_META_LINE_RE.sub(" ", cleaned)
+    return cleaned, cleaned != original
+
+
 class SubTaskSpec(BaseModel):
     id: str
     goal: str
@@ -44,7 +90,8 @@ class ExecutionPlan(BaseModel):
     route: Literal["fast_direct", "dynamic_dag"] = "fast_direct"
     confidence: float = Field(ge=0.0, le=1.0, default=1.0)
     task_type: Literal[
-        "chat", "explain", "recon", "single_edit", "multi_edit", "debug", "refactor", "full_workflow", "git_ops", "routine"
+        "chat", "explain", "recon", "single_edit", "multi_edit", "debug", "refactor", "full_workflow", "git_ops",
+        "routine", "read_answer", "knowledge_query", "research",
     ] = "chat"
     suggested_sla: CapabilitySLA = Field(default_factory=CapabilitySLA)
     needs_rag: bool = False
@@ -89,22 +136,62 @@ class SLMPlanner:
         self.circuit_breaker_ms = circuit_breaker_ms
         self._llm = None
 
-    def _extract_user_text(self, messages: list[dict[str, Any]]) -> str:
-        texts = []
-        for m in messages:
+    def _extract_last_user_text(self, messages: list[dict[str, Any]]) -> tuple[str, bool]:
+        """Extract the user's CURRENT utterance for classification (Layer 1).
+
+        Design decision: classify on the LAST user/human message only, never
+        the cumulative concatenation of the whole user-role history. Harnesses
+        we do not control (opencode, Claude Code, Pi, MCP shims, ...) commonly
+        re-send a stable boilerplate preamble in messages[0] (or every turn) --
+        concatenating the whole stream lets that preamble's keywords leak into
+        classification regardless of curated stripping. Restricting to the
+        latest message removes that entire poisoning vector for ANY harness,
+        with no per-harness enumeration.
+
+        Why this is safe: TurnGuard (server/turn_guard.py) already intercepts
+        tool-loop turns before the planner is ever invoked (dispatcher.py), so
+        `_raw_infer` only ever runs on fresh, non-tool-loop dispatch decisions.
+        A legitimate multi-turn continuation ("now also add rate limiting to
+        the session handler we discussed") that references earlier context
+        without repeating the code-domain signal in its own text will,
+        worst case, under-trigger the DAG and route fast_direct -- the work
+        still gets done correctly, just without decomposition. Given the
+        stated cost asymmetry (a wrongly-triggered dynamic_dag fanout is far
+        more expensive than a direct dispatch), under-triggering on stale
+        context is the correct conservative failure direction; we deliberately
+        do NOT widen this to a bounded trailing window, since any window > 1
+        message reintroduces the same boilerplate-repetition poisoning vector
+        this layer exists to remove.
+
+        Returns (cleaned_text, noise_removed) so callers can record
+        provenance in the plan rationale and avoid treating stripped-noise
+        artifacts as classification evidence.
+        """
+        last_text = ""
+        for m in reversed(messages):
             if not isinstance(m, dict):
                 continue
-            if m.get("role") in ("user", "human"):
-                c = m.get("content")
-                if isinstance(c, str):
-                    texts.append(c)
-                elif isinstance(c, list):
-                    for part in c:
-                        if isinstance(part, dict) and part.get("type") == "text":
-                            texts.append(part.get("text", ""))
-                        elif isinstance(part, str):
-                            texts.append(part)
-        return " ".join(texts).strip()
+            if m.get("role") not in ("user", "human"):
+                continue
+            c = m.get("content")
+            if isinstance(c, str):
+                last_text = c
+            elif isinstance(c, list):
+                parts = []
+                for part in c:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        parts.append(part.get("text", ""))
+                    elif isinstance(part, str):
+                        parts.append(part)
+                last_text = " ".join(parts)
+            break
+        cleaned, noise_removed = _strip_harness_noise(last_text.strip())
+        return cleaned.strip(), noise_removed
+
+    def _extract_user_text(self, messages: list[dict[str, Any]]) -> str:
+        """Backward-compatible wrapper returning only the cleaned text."""
+        text, _ = self._extract_last_user_text(messages)
+        return text
 
     def _create_fallback_plan(self, messages: list[dict[str, Any]], reason: str = "") -> ExecutionPlan:
         """Create a safe fallback execution plan."""
@@ -175,180 +262,79 @@ class SLMPlanner:
         )
 
     def _raw_infer(self, messages: list[dict[str, Any]], config: Any = None) -> str | dict[str, Any]:
-        """Perform SLM inference or structured generation."""
-        text = self._extract_user_text(messages)
+        """Classify the request and produce an ExecutionPlan dict using the SLM."""
+        text, noise_removed = self._extract_last_user_text(messages)
         if not text:
-            return {
-                "route": "fast_direct",
-                "confidence": 1.0,
-                "task_type": "chat",
-                "suggested_sla": CapabilitySLA(min_context=8000, max_cost=1.0),
-                "needs_rag": False,
-                "rag_queries": [],
-                "subtasks": [],
-                "synthesizer_sla": CapabilitySLA(),
-                "rationale": "Empty or system-only messages",
-                "fallback_used": False,
-            }
+            return self._create_fallback_plan(messages, reason="Empty or system-only messages").model_dump()
 
-        text_lower = text.lower()
+        # 1. Ensure SLM is loaded
+        if self._llm is None:
+            model_path = self.model_path
+            if not model_path and config is not None and hasattr(config, "models"):
+                model_path = getattr(config.models, "slm_path", "")
+            if model_path and is_llama_cpp_available():
+                try:
+                    self._llm = get_llama_model(model_path, n_ctx=8192, n_gpu_layers=-1, verbose=False)
+                except Exception as exc:
+                    logger.warning("Failed to initialize SLM: %s", exc)
 
-        # Check RAG requirements
-        rag_keywords = ["lancedb", "litellm", "vector", "internal proxy", "api contract", "dependency", "dependencies"]
-        needs_rag = any(kw in text_lower for kw in rag_keywords)
-        rag_queries: list[str] = []
-        if needs_rag:
-            rag_queries = [
-                f"Lookup LanceDB vector index and LiteLLM proxy definitions for: {text[:80]}"
-            ]
+        # 2. Check dependencies
+        if self._llm is None or getattr(self._llm, "_is_fallback", False) or not is_outlines_available():
+            raise RuntimeError("SLM or outlines unavailable. Degrading to direct dispatch fallback.")
 
-        # Check for complex tasks: refactoring, multi-file, architecture overhaul, audits, plans
-        is_refactor = any(
-            w in text_lower
-            for w in [
-                "refactor",
-                "rewrite",
-                "migration roadmap",
-                "architect",
-                "architecture",
-                "audit",
-                "cleanup",
-                "clean up",
-                "clean the directory",
-                "restructure",
-                "reorganize",
-                "overhaul",
-            ]
-        )
-        is_multi_file = (
-            (" and " in text_lower and (".py" in text_lower or ".ts" in text_lower or "layer" in text_lower or "codebase" in text_lower or "directory" in text_lower or "files" in text_lower))
-            or "multi-file" in text_lower
-            or "across files" in text_lower
-            or "split up" in text_lower
-        )
-        is_debug = any(w in text_lower for w in ["fix bug", "investigate error", "traceback", "debug", "root cause", "failure", "broken"])
-        is_plan = any(w in text_lower for w in ["create a plan", "implementation plan", "breakdown", "step by step plan"])
+        # 3. Define schema
+        class TaskClassification(BaseModel):
+            complexity_score: int = Field(ge=1, le=10, description="1=trivial typo/chat, 10=massive architectural overhaul")
+            requires_multi_agent_dag: bool = Field(description="True ONLY if the task requires multi-file parallel decomposition")
+            task_type: Literal["chat", "explain", "recon", "single_edit", "multi_edit", "debug", "refactor", "full_workflow", "git_ops", "routine", "read_answer", "knowledge_query", "research"] = Field(description="Task category")
+            rationale: str = Field(description="Brief explanation of the routing decision")
+            needs_rag: bool = Field(description="True if the task requires vector index or RAG lookup")
 
-        # Check for VCS / git tasks or routine developer micro-tasks
-        git_keywords = [
-            "git commit",
-            "create a git commit",
-            "make a git commit",
-            "create a commit",
-            "make a commit",
-            "commit these changes",
-            "commit changes",
-            "commit message",
-            "write a commit message",
-            "git status",
-            "git diff",
-            "git add",
-            "git log",
-            "git push",
-            "git pull",
-            "git checkout",
-            "git branch",
-            "git merge",
-            "git reset",
-            "git stash",
-            "git revert",
-            "stage changes",
-        ]
-        is_git_task = any(kw in text_lower for kw in git_keywords)
-        routine_keywords = [
-            "format code",
-            "run lint",
-            "run tests",
-            "run pytest",
-            "check status",
-            "list files",
-            "check directory",
-            "fix typo",
-            "update readme",
-        ]
-        is_routine = is_git_task or any(kw in text_lower for kw in routine_keywords)
+        # 4. Generate structured output
+        from autoconduck._compat.outlines_fallback import generate_structured_json
+        prompt = f"Analyze the following user instruction and classify its complexity and intent:\n\n{text}"
+        
+        result = generate_structured_json(self._llm, prompt, TaskClassification)
+        if not isinstance(result, TaskClassification):
+            raise RuntimeError("SLM failed to produce valid TaskClassification JSON.")
 
-        if is_git_task or (is_routine and not is_refactor and not is_debug and not is_plan):
-            task_type = "git_ops" if is_git_task else "routine"
-            return {
-                "route": "fast_direct",
-                "confidence": 0.99,
-                "task_type": task_type,
-                "suggested_sla": CapabilitySLA(min_context=16000, requires_tools=True, max_cost=1.0),
-                "needs_rag": False,
-                "rag_queries": [],
-                "subtasks": [],
-                "synthesizer_sla": CapabilitySLA(requires_tools=True, max_cost=1.0),
-                "rationale": f"Direct response for {task_type} operation",
-                "fallback_used": False,
-            }
-
-        if is_refactor or is_plan or (is_multi_file and len(text.split()) > 10):
+        # 5. Map to ExecutionPlan
+        if result.requires_multi_agent_dag:
             subtasks = [
-                SubTaskSpec(
-                    id="recon",
-                    goal=f"Analyze codebase structure and files for: {text[:60]}",
-                    role="recon",
-                    depends_on=[],
-                ),
-                SubTaskSpec(
-                    id="read_targets",
-                    goal="Read target files and inspect relevant symbol definitions",
-                    role="read",
-                    depends_on=["recon"],
-                ),
-                SubTaskSpec(
-                    id="implement_changes",
-                    goal="Apply refactoring modifications across identified modules",
-                    role="edit",
-                    depends_on=["read_targets"],
-                ),
-                SubTaskSpec(
-                    id="verify_changes",
-                    goal="Run test suite and verify changes pass all assertions",
-                    role="verify",
-                    depends_on=["implement_changes"],
-                ),
+                SubTaskSpec(id="recon", goal=f"Analyze relevant structure and files for: {text[:60]}", role="recon"),
+                SubTaskSpec(id="read_targets", goal="Read target files and inspect relevant definitions", role="read", depends_on=["recon"]),
             ]
-            task_type = "refactor" if is_refactor else ("full_workflow" if is_plan else "multi_edit")
+            if result.task_type in ("single_edit", "multi_edit", "refactor"):
+                subtasks.append(SubTaskSpec(id="implement_changes", goal="Apply the requested modifications", role="edit", depends_on=["read_targets"]))
+                subtasks.append(SubTaskSpec(id="verify_changes", goal="Run test suite", role="verify", depends_on=["implement_changes"]))
+            else:
+                subtasks.append(SubTaskSpec(id="synthesize_findings", goal="Reason over gathered context", role="reasoning", depends_on=["read_targets"]))
+
             return {
                 "route": "dynamic_dag",
                 "confidence": 0.95,
-                "task_type": task_type,
+                "task_type": result.task_type,
                 "suggested_sla": CapabilitySLA(min_context=32000, requires_tools=True, min_capability_score=0.4),
-                "needs_rag": needs_rag,
-                "rag_queries": rag_queries,
+                "needs_rag": result.needs_rag,
+                "rag_queries": [f"Lookup definitions for: {text[:80]}"] if result.needs_rag else [],
                 "subtasks": [t.model_dump() for t in subtasks],
                 "synthesizer_sla": CapabilitySLA(requires_reasoning=True, requires_tools=True, min_capability_score=0.45, min_output_tokens=8192),
-                "rationale": "Multi-step architectural workflow requires dynamic orchestration DAG",
+                "rationale": f"SLM (score {result.complexity_score}): {result.rationale} " + ("(harness noise stripped)" if noise_removed else ""),
                 "fallback_used": False,
             }
-
-        # Check explain / simple chat
-        is_explain = any(text_lower.startswith(w) for w in ["explain", "what is", "how does", "why is", "tell me"])
-        task_type = "explain" if is_explain else ("debug" if is_debug else "chat")
-        sla = (
-            CapabilitySLA(min_context=8000, max_cost=1.0)
-            if len(text.split()) < 15 and not needs_rag and not is_debug
-            else (
-                CapabilitySLA(min_context=32000, requires_tools=True, max_cost=2.0)
-                if is_debug
-                else CapabilitySLA(min_context=32000, requires_tools=True, max_cost=1.5)
-            )
-        )
-
-        return {
-            "route": "fast_direct",
-            "confidence": 0.98,
-            "task_type": task_type,
-            "suggested_sla": sla,
-            "needs_rag": needs_rag,
-            "rag_queries": rag_queries,
-            "subtasks": [],
-            "synthesizer_sla": CapabilitySLA(requires_reasoning=is_debug, max_cost=2.0 if is_debug else 1.0),
-            "rationale": f"Direct response for {task_type} query",
-            "fallback_used": False,
-        }
+        else:
+            return {
+                "route": "fast_direct",
+                "confidence": 0.98,
+                "task_type": result.task_type,
+                "suggested_sla": CapabilitySLA(min_context=16000, requires_tools=True, max_cost=1.5),
+                "needs_rag": result.needs_rag,
+                "rag_queries": [f"Lookup definitions for: {text[:80]}"] if result.needs_rag else [],
+                "subtasks": [],
+                "synthesizer_sla": CapabilitySLA(requires_reasoning=False, max_cost=1.0),
+                "rationale": f"SLM (score {result.complexity_score}): {result.rationale} " + ("(harness noise stripped)" if noise_removed else ""),
+                "fallback_used": False,
+            }
 
     def plan_sync(self, messages: list[dict[str, Any]], config: Any = None) -> ExecutionPlan:
         """Generate an ExecutionPlan synchronously with circuit breaker / fallback protection."""

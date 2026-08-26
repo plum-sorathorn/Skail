@@ -9,6 +9,7 @@ Verifies:
 - Subtask dependency topological validation.
 """
 from __future__ import annotations
+from unittest.mock import patch
 
 import asyncio
 import time
@@ -23,9 +24,38 @@ from autoconduck.routing.slm_planner import (
 )
 
 
+
+@pytest.fixture(autouse=True)
+def mock_slm_generation():
+    def mock_generate_structured_json(model, prompt, schema, **kwargs):
+        text = prompt.lower()
+        
+        needs_dag = "refactor" in text or ("db.py" in text and "auth.py" in text) or ("update" in text and "auth.py" in text and "session.py" in text)
+        task_type = "chat"
+        if needs_dag:
+            task_type = "multi_edit"
+            if "refactor" in text:
+                task_type = "refactor"
+        if "git commit" in text or "format code" in text or "git status" in text:
+            task_type = "git_ops"
+        
+        return schema(
+            complexity_score=8 if needs_dag else 2,
+            requires_multi_agent_dag=bool(needs_dag),
+            task_type=task_type,
+            rationale="mock rationale",
+            needs_rag="litellm" in text or "lancedb" in text
+        )
+
+    with patch("autoconduck._compat.outlines_fallback.generate_structured_json", side_effect=mock_generate_structured_json):
+        with patch("autoconduck.routing.slm_planner.is_outlines_available", return_value=True):
+            yield
+
 @pytest.fixture
 def slm_planner() -> SLMPlanner:
-    return SLMPlanner()
+    planner = SLMPlanner()
+    planner._llm = "dummy"  # Bypass the None check
+    return planner
 
 
 # ==============================================================================
@@ -43,7 +73,8 @@ async def test_slm_planner_generates_valid_execution_plan(slm_planner: SLMPlanne
     assert plan.route in ("fast_direct", "dynamic_dag")
     assert 0.0 <= plan.confidence <= 1.0
     assert plan.task_type in (
-        "chat", "explain", "recon", "single_edit", "multi_edit", "debug", "refactor", "full_workflow", "git_ops", "routine"
+        "chat", "explain", "recon", "single_edit", "multi_edit", "debug", "refactor", "full_workflow", "git_ops",
+        "routine", "read_answer", "knowledge_query", "research",
     )
     assert isinstance(plan.suggested_sla, CapabilitySLA)
     assert isinstance(plan.subtasks, list)
@@ -191,6 +222,82 @@ async def test_slm_planner_latency_benchmark_under_75ms(slm_planner: SLMPlanner)
 
 
 @pytest.mark.asyncio
+async def test_slm_planner_doc_qa_routes_fast_direct_no_edit_node(slm_planner: SLMPlanner):
+    """Pure document Q&A (no code signal) must never trigger a DAG or edit subtask."""
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                "Coca-Cola's bottlers are an example of which dynamic-consistency threat, "
+                "the holdup problem or the slack problem?"
+            ),
+        }
+    ]
+    plan = await slm_planner.plan(messages)
+    assert plan.route == "fast_direct"
+    assert plan.task_type != "multi_edit"
+    assert len(plan.subtasks) == 0
+    assert all(t.role != "edit" for t in plan.subtasks)
+
+
+@pytest.mark.asyncio
+async def test_slm_planner_system_reminder_injection_cannot_force_dag(slm_planner: SLMPlanner):
+    """A <system-reminder> block (date/cwd bookkeeping) embedded in user text must never
+    contribute keyword signal to classification, even if it contains words like
+    'directory' that used to combine with prose ' and ' to false-positive into a DAG."""
+    poisoned = (
+        "<system-reminder>\nToday: 2026-08-26; current working directory: "
+        "C:\\Users\\plum\\Documents\\docs\n</system-reminder>\n"
+        "Coca-Cola's bottlers are an example of which dynamic-consistency threat, "
+        "the holdup problem, and slack problem?"
+    )
+    messages = [{"role": "user", "content": poisoned}]
+    plan = await slm_planner.plan(messages)
+    assert plan.route == "fast_direct"
+    assert plan.task_type != "multi_edit"
+    assert len(plan.subtasks) == 0
+
+
+@pytest.mark.asyncio
+async def test_slm_planner_extract_user_text_strips_system_reminder():
+    """_extract_user_text must strip <system-reminder> blocks regardless of source."""
+    planner = SLMPlanner()
+    messages = [
+        {
+            "role": "user",
+            "content": "<system-reminder>Today: 2026-08-26; current working directory: /tmp</system-reminder>Hello there",
+        }
+    ]
+    text = planner._extract_user_text(messages)
+    assert "system-reminder" not in text.lower()
+    assert "current working directory" not in text.lower()
+    assert "Hello there" in text
+
+
+@pytest.mark.asyncio
+async def test_slm_planner_genuine_multi_file_code_edit_still_dag_with_edit_node(slm_planner: SLMPlanner):
+    """A real multi-file code edit request must still route to dynamic_dag with an edit node."""
+    messages = [
+        {
+            "role": "user",
+            "content": "Update the login function in auth.py and the session handler in session.py to add rate limiting.",
+        }
+    ]
+    plan = await slm_planner.plan(messages)
+    assert plan.route == "dynamic_dag"
+    assert any(t.role == "edit" for t in plan.subtasks)
+
+
+@pytest.mark.asyncio
+async def test_slm_planner_malformed_input_fallback(slm_planner: SLMPlanner):
+    """Malformed/non-list messages must degrade to a safe fast_direct fallback, never crash."""
+    plan = await slm_planner.plan(None)  # type: ignore[arg-type]
+    assert isinstance(plan, ExecutionPlan)
+    assert plan.route == "fast_direct"
+    assert plan.fallback_used
+
+
+@pytest.mark.asyncio
 async def test_slm_planner_routes_git_commit_and_routine_to_cheap_fast(slm_planner: SLMPlanner):
     """Git commit, diff, and status operations route to cheap_fast SLA."""
     git_prompts = [
@@ -204,3 +311,103 @@ async def test_slm_planner_routes_git_commit_and_routine_to_cheap_fast(slm_plann
         assert plan.route == "fast_direct"
         assert plan.task_type in ("git_ops", "routine")
         assert plan.suggested_sla.max_cost <= 1.5
+
+
+# ==============================================================================
+# Tier 3: Harness-agnostic noise robustness (Layer 1/2/3 hardening)
+# ==============================================================================
+
+@pytest.mark.asyncio
+async def test_harness_preamble_in_first_message_and_inline_still_fast_direct(slm_planner: SLMPlanner):
+    """A harness that re-sends a <system-reminder> cwd/date preamble as messages[0]
+    AND inlines it into the same message as a plain doc Q&A must still route
+    fast_direct with no DAG and no edit node -- regardless of which message
+    carries the boilerplate."""
+    preamble = (
+        "<system-reminder>\nToday: 2026-08-26; current working directory: "
+        "C:\\Users\\plum\\Documents\\Works\\AutoConduck\n</system-reminder>"
+    )
+    messages = [
+        {"role": "user", "content": preamble},
+        {
+            "role": "user",
+            "content": preamble + "\nWhat is the holdup problem in contract theory?",
+        },
+    ]
+    plan = await slm_planner.plan(messages)
+    assert plan.route == "fast_direct"
+    assert len(plan.subtasks) == 0
+    assert all(t.role != "edit" for t in plan.subtasks)
+
+
+@pytest.mark.asyncio
+async def test_novel_unknown_boilerplate_does_not_flip_to_dag(slm_planner: SLMPlanner):
+    """An unknown/novel boilerplate block -- NOT one of the curated markers --
+    must not be able to force a plain question into dynamic_dag, even though
+    it is left unstripped. Conservative signal-gating (Layer 3), not an
+    ever-growing strip dictionary, is what protects against novel noise."""
+    novel_noise = "<SYS> foo bar update change directory files </SYS>\n"
+    messages = [
+        {
+            "role": "user",
+            "content": novel_noise + "What is the capital of France?",
+        }
+    ]
+    plan = await slm_planner.plan(messages)
+    assert plan.route == "fast_direct"
+    assert len(plan.subtasks) == 0
+    assert all(t.role != "edit" for t in plan.subtasks)
+
+
+@pytest.mark.asyncio
+async def test_multiple_earlier_junk_user_messages_do_not_cause_false_dag(slm_planner: SLMPlanner):
+    """Several earlier user turns full of boilerplate/junk (which happen to
+    contain code-domain words) must not bleed into classification of a later,
+    genuinely clean, unrelated question -- only the LAST user message is
+    classified."""
+    messages = [
+        {"role": "user", "content": "<system-reminder>Today: 2026-08-26; current working directory: /repo</system-reminder>"},
+        {"role": "user", "content": "update the module and fix the config file across files"},
+        {"role": "user", "content": "refactor the codebase and rewrite the module"},
+        {"role": "user", "content": "What is the boiling point of water at sea level?"},
+    ]
+    plan = await slm_planner.plan(messages)
+    assert plan.route == "fast_direct"
+    assert len(plan.subtasks) == 0
+
+
+@pytest.mark.asyncio
+async def test_strip_harness_noise_handles_sentinel_and_bracket_forms():
+    """_strip_harness_noise removes the curated SYSTEM NOTE sentinel and
+    bracket forms, and Today/cwd meta lines, without touching real content."""
+    from autoconduck.routing.slm_planner import _strip_harness_noise
+
+    text = (
+        "<=== SYSTEM NOTE ===>\nsome injected bookkeeping\n\n"
+        "[System Note: harness build 42]\n"
+        "Today is 2026-08-26\n"
+        "Current working directory: /repo\n"
+        "Please explain the CAP theorem."
+    )
+    cleaned, noise_removed = _strip_harness_noise(text)
+    assert noise_removed is True
+    assert "SYSTEM NOTE" not in cleaned
+    assert "System Note" not in cleaned
+    assert "current working directory" not in cleaned.lower()
+    assert "Please explain the CAP theorem." in cleaned
+
+
+@pytest.mark.asyncio
+async def test_extract_last_user_text_ignores_earlier_messages():
+    """_extract_last_user_text classifies only the last user/human message,
+    not the cumulative concatenation of the whole user-role history."""
+    planner = SLMPlanner()
+    messages = [
+        {"role": "user", "content": "refactor db.py and auth.py across files"},
+        {"role": "assistant", "content": "Sure, working on it."},
+        {"role": "user", "content": "Actually, what's 2 + 2?"},
+    ]
+    text, noise_removed = planner._extract_last_user_text(messages)
+    assert "db.py" not in text
+    assert "2 + 2" in text
+    assert noise_removed is False
