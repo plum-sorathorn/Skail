@@ -90,7 +90,11 @@ async def _rag_node_handler(state: DynamicState | dict[str, Any], on_progress: A
 
 
 def _make_subtask_handler(task: SubTaskSpec, on_progress: Any = None) -> Callable[[Any], Any]:
-    """Factory for server-side subtask execution node."""
+    """Factory for bounded planning-time reconnaissance nodes.
+
+    The durable implementation phase is harness-owned; this legacy DAG only
+    gathers optional read-only context for initial plan construction.
+    """
     async def subtask_handler(state: DynamicState | dict[str, Any]) -> dict[str, Any]:
         if on_progress:
             try:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+import json
 
 
 class ExecutionHandoff(str):
@@ -30,6 +31,7 @@ def format_execution_handoff(
     user_agent: str = "",
     client_type: str | None = None,
     is_nested: bool = False,
+    decision: str | None = None,
 ) -> ExecutionHandoff:
     """Format a clean, structured implementation plan with verified context for the client agent.
 
@@ -79,5 +81,33 @@ def format_execution_handoff(
         "### Execution Directives\n"
         "Proceed with implementation of the subtasks sequentially using available tools (`read`, `edit`, `write`, `bash`)."
     )
+
+    # Structured content is additive: old consumers still receive the prose above.
+    try:
+        phases = getattr(plan, "phases", None) or [
+            {"id": getattr(st, "id", ""), "goal": getattr(st, "goal", ""),
+             "dependencies": getattr(st, "depends_on", []), "scope": getattr(st, "scope", []),
+             "status": "pending", "execution_mode": "harness"}
+            for st in subtasks
+        ]
+        phase_data = []
+        for phase in phases:
+            item = phase.model_dump() if hasattr(phase, "model_dump") else dict(phase)
+            phase_data.append({key: item.get(key) for key in (
+                "id", "goal", "dependencies", "parallel_group", "parallel_to",
+                "post_condition", "verify", "status", "evidence", "execution_mode")})
+        contract = {
+            "schema_version": "0.4",
+            "plan_id": getattr(plan, "plan_id", "") or None,
+            "plan_revision": getattr(plan, "revision", 0),
+            "decision": decision or ("end" if getattr(plan, "terminal_decision", None) else "keep"),
+            "execution_authority": "harness",
+            "phases": phase_data,
+            "ledger": (getattr(plan, "ledger", []) or [])[-8:],
+        }
+        sections.insert(1, "### Session Execution Contract\n```json\n" + json.dumps(contract, ensure_ascii=False) + "\n```")
+        sections.insert(2, "Parallel annotations are advisory; the harness may fan out phases when safe and remains responsible for execution.")
+    except Exception:
+        pass
 
     return ExecutionHandoff("\n\n".join(sections), tool_calls=None)

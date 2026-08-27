@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 import time
 from typing import Any, Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from autoconduck._compat import (
     get_onnx_model,
@@ -121,6 +121,27 @@ def _strip_harness_noise(text: str) -> tuple[str, bool]:
     return cleaned, cleaned != original
 
 
+PhaseStatus = Literal["pending", "ready", "in_progress", "completed", "skipped", "replaced", "blocked"]
+MutationAction = Literal["keep", "adjust", "set_status", "skip", "replace", "append", "end", "verify"]
+TerminalDecision = Literal["completed", "abandoned", "superseded", "expired"]
+
+
+class Phase(BaseModel):
+    """Harness-facing durable phase; AutoConduck only plans and supervises it."""
+
+    id: str
+    goal: str
+    dependencies: list[str] = Field(default_factory=list)
+    parallel_group: str | None = None
+    parallel_to: list[str] = Field(default_factory=list)
+    scope: list[str] = Field(default_factory=list)
+    execution_mode: Literal["harness", "autoconduck_recon"] = "harness"
+    post_condition: str = ""
+    verify: list[str] = Field(default_factory=list)
+    status: PhaseStatus = "pending"
+    evidence: list[str] = Field(default_factory=list)
+
+
 class SubTaskSpec(BaseModel):
     id: str
     goal: str
@@ -130,6 +151,13 @@ class SubTaskSpec(BaseModel):
     constraints: list[str] = Field(default_factory=list)
     output_contract: str = ""
     read_budget: int = 5
+
+    def to_phase(self) -> Phase:
+        return Phase(
+            id=self.id, goal=self.goal, dependencies=list(self.depends_on),
+            scope=list(self.scope), execution_mode="autoconduck_recon" if self.role in ("recon", "read") else "harness",
+            verify=list(getattr(self.output_contract, "verify", []) or []) if not isinstance(self.output_contract, str) else [],
+        )
 
 
 SubTask = SubTaskSpec
@@ -149,6 +177,13 @@ class ExecutionPlan(BaseModel):
     synthesizer_sla: CapabilitySLA = Field(default_factory=lambda: CapabilitySLA(requires_reasoning=True))
     rationale: str = ""
     fallback_used: bool = False
+    schema_version: str = "0.4"
+    plan_id: str = ""
+    revision: int = Field(default=0, ge=0)
+    session_status: Literal["active", "terminal", "stale"] = "active"
+    phases: list[Phase] = Field(default_factory=list)
+    ledger: list[dict[str, Any]] = Field(default_factory=list)
+    terminal_decision: TerminalDecision | None = None
 
     @field_validator("subtasks", mode="before")
     @classmethod
@@ -172,6 +207,57 @@ class ExecutionPlan(BaseModel):
                 sanitized.append(item)
         return sanitized
 
+    @field_validator("phases", mode="before")
+    @classmethod
+    def _legacy_phases(cls, value: Any) -> list[Any]:
+        return value if isinstance(value, list) else []
+
+    @model_validator(mode="after")
+    def _validate_session_plan(self) -> "ExecutionPlan":
+        legacy_derived = bool(self.subtasks) and (
+            not self.phases or {phase.id for phase in self.phases} == {task.id for task in self.subtasks}
+        )
+        if legacy_derived:
+            self.phases = [task.to_phase() for task in self.subtasks]
+        ids = [phase.id for phase in self.phases]
+        if len(ids) != len(set(ids)):
+            raise ValueError("phase IDs must be unique")
+        known = set(ids)
+        if legacy_derived:
+            self.phases = [phase.model_copy(update={
+                "dependencies": [dep for dep in phase.dependencies if dep in known],
+                "parallel_to": [peer for peer in phase.parallel_to if peer in known],
+            }) for phase in self.phases]
+        for phase in self.phases:
+            refs = set(phase.dependencies) | set(phase.parallel_to)
+            if not refs <= known:
+                raise ValueError("phase references an unknown phase")
+            if set(phase.parallel_to) & set(phase.dependencies):
+                raise ValueError("parallel phases cannot directly depend on one another")
+        visiting: set[str] = set()
+        visited: set[str] = set()
+        graph = {p.id: p.dependencies for p in self.phases}
+        def visit(node: str) -> None:
+            if node in visiting:
+                raise ValueError("phase dependencies must be acyclic")
+            if node in visited:
+                return
+            visiting.add(node)
+            for dep in graph[node]:
+                visit(dep)
+            visiting.remove(node)
+            visited.add(node)
+        try:
+            for node in graph:
+                visit(node)
+        except ValueError:
+            if not legacy_derived:
+                raise
+            # Legacy callers historically received cycle-safe subtasks. Preserve
+            # that compatibility while strict explicit session phases reject cycles.
+            self.phases = [phase.model_copy(update={"dependencies": []}) for phase in self.phases]
+        return self
+
     @property
     def summary(self) -> str:
         return self.rationale or f"Task execution plan ({self.task_type})"
@@ -181,6 +267,65 @@ class EscalationVerdict(BaseModel):
     should_escalate: bool = False
     reason: str = ""
     suggested_plan: ExecutionPlan | None = None
+    action: MutationAction = "keep"
+    mutation: "PlanMutation | None" = None
+
+
+class PlanMutation(BaseModel):
+    """Small validated supervisor operation, applied with revision CAS."""
+
+    schema_version: str = "0.4"
+    plan_id: str = ""
+    base_revision: int = Field(default=0, ge=0)
+    action: MutationAction = "keep"
+    reason: str = ""
+    phase_id: str | None = None
+    status: PhaseStatus | None = None
+    phase: Phase | None = None
+    phases: list[Phase] = Field(default_factory=list)
+    terminal_decision: TerminalDecision | None = None
+
+
+SessionPlanMutation = PlanMutation
+
+
+def apply_plan_mutation(plan: ExecutionPlan, mutation: PlanMutation) -> ExecutionPlan:
+    """Apply one mutation atomically by constructing and revalidating a new plan."""
+    if mutation.plan_id and mutation.plan_id != plan.plan_id:
+        raise ValueError("mutation plan ID does not match")
+    if mutation.base_revision != plan.revision:
+        raise ValueError("stale plan revision")
+    phases = list(plan.phases or [p.to_phase() for p in plan.subtasks])
+    by_id = {phase.id: phase for phase in phases}
+    if mutation.action in ("adjust", "set_status") and mutation.phase_id:
+        if mutation.phase_id not in by_id:
+            raise ValueError("unknown mutation phase")
+        by_id[mutation.phase_id] = by_id[mutation.phase_id].model_copy(update={"status": mutation.status or by_id[mutation.phase_id].status})
+    elif mutation.action == "skip" and mutation.phase_id:
+        if mutation.phase_id not in by_id:
+            raise ValueError("unknown mutation phase")
+        by_id[mutation.phase_id] = by_id[mutation.phase_id].model_copy(update={"status": "skipped", "evidence": [mutation.reason] if mutation.reason else by_id[mutation.phase_id].evidence})
+    elif mutation.action == "replace":
+        if not mutation.phase or mutation.phase.id not in by_id:
+            raise ValueError("replacement must target an existing phase")
+        by_id[mutation.phase.id] = mutation.phase
+    elif mutation.action == "append":
+        for phase in mutation.phases or ([mutation.phase] if mutation.phase else []):
+            if phase is None or phase.id in by_id:
+                raise ValueError("appended phase ID must be new")
+            by_id[phase.id] = phase
+    decision = mutation.terminal_decision if mutation.action == "end" else plan.terminal_decision
+    return plan.model_copy(update={"phases": list(by_id.values()), "revision": plan.revision + 1,
+                                   "session_status": "terminal" if decision else plan.session_status,
+                                   "terminal_decision": decision,
+                                   "ledger": [*plan.ledger, {"revision": plan.revision + 1, "action": mutation.action, "reason": mutation.reason}]})
+
+
+def plan_completion_decision(plan: ExecutionPlan) -> TerminalDecision | None:
+    phases = plan.phases or [p.to_phase() for p in plan.subtasks]
+    if phases and all(p.status in ("completed", "skipped", "replaced") and (p.status != "completed" or p.evidence or not p.verify) for p in phases):
+        return "completed"
+    return None
 
 
 class SLMPlanner:
@@ -573,6 +718,12 @@ class SLMPlanner:
                 return self._create_fallback_plan(messages, reason="Missing plan route structure")
 
             data = dict(data)
+            try:
+                raw_confidence = data.get("confidence")
+                if raw_confidence is not None and not 0 <= float(raw_confidence) <= 1:
+                    return self._create_fallback_plan(messages, reason="Confidence outside valid range")
+            except (TypeError, ValueError, OverflowError):
+                return self._create_fallback_plan(messages, reason="Invalid confidence")
             data["confidence"] = normalize_confidence(data.get("confidence"))
             return ExecutionPlan.model_validate(data)
         except Exception as exc:
@@ -617,6 +768,12 @@ class SLMPlanner:
                 return self._create_fallback_plan(messages, reason="Missing plan route structure")
 
             data = dict(data)
+            try:
+                raw_confidence = data.get("confidence")
+                if raw_confidence is not None and not 0 <= float(raw_confidence) <= 1:
+                    return self._create_fallback_plan(messages, reason="Confidence outside valid range")
+            except (TypeError, ValueError, OverflowError):
+                return self._create_fallback_plan(messages, reason="Invalid confidence")
             data["confidence"] = normalize_confidence(data.get("confidence"))
             return ExecutionPlan.model_validate(data)
 

@@ -29,9 +29,10 @@ def build_subagent_prompt(task: SubTask, upstream_summaries: str = "", cfg=None,
     from .roles import assign_subagent_role, role_card
     assigned_role = assign_subagent_role(task.goal)
     role_header = (
-        "ROLE: You are a read-only file analyst. You do not propose fixes or write code."
+        "ROLE: autoconduck_recon — read-only reconnaissance analyst. You may inspect only; "
+        "do not edit files, call harness tools, run tests, or claim execution evidence."
         if task.role != "write"
-        else "ROLE: You are a file change drafting analyst."
+        else "ROLE: autoconduck_recon — draft planning guidance only; the harness owns all edits, shell, and verification."
     )
     parts = ([role_card(assigned_role)] if cfg is not None and getattr(getattr(cfg, "selection", None), "phase_role_cards", True) else []) + [
         role_header,

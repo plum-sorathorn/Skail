@@ -47,7 +47,11 @@ async def run_dynamic_orchestration(
             except Exception:
                 pass
 
-        # Rebuild the graph every turn: the plan is re-derived per turn, so no caching/checkpointer.
+        # The graph is only the bounded initialization/recon path. A supplied active
+        # plan is reused; the harness owns implementation phases thereafter.
+        active_plan = kwargs.get("active_plan")
+        if active_plan is not None:
+            plan = active_plan
         runner = build_dynamic_graph(plan, on_progress=on_progress)
         if on_progress is not None and plan.subtasks:
             try:

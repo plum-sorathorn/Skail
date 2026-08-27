@@ -10,6 +10,19 @@ from typing import Any
 import autoconduck.config as config_module
 
 _session_replan_state: dict[str, dict[str, Any]] = {}
+_MAX_SESSION_STATES = 256
+
+
+def _store_plan_state(session_key: str, plan: Any) -> dict[str, Any]:
+    if len(_session_replan_state) >= _MAX_SESSION_STATES and session_key not in _session_replan_state:
+        oldest = next(iter(_session_replan_state))
+        _session_replan_state.pop(oldest, None)
+    state = _session_replan_state.setdefault(session_key, {})
+    state.update({"active_plan": plan, "plan_id": getattr(plan, "plan_id", ""),
+                  "revision": getattr(plan, "revision", 0),
+                  "ledger": (getattr(plan, "ledger", []) or [])[-8:],
+                  "session_status": getattr(plan, "session_status", "active")})
+    return state
 
 
 def _get_session_key(messages: list[Any], request: Any = None) -> str:
@@ -53,6 +66,20 @@ async def _run_async_slm_heartbeat(
             session_stats=session_stats,
             config=cfg,
         )
+        mutation = getattr(verdict, "mutation", None)
+        active = state.get("active_plan") or current_plan
+        if mutation is not None and active is not None:
+            from autoconduck.routing.slm_planner import apply_plan_mutation
+            try:
+                updated = apply_plan_mutation(active, mutation)
+                if state.get("active_plan") is None or state.get("revision") == getattr(active, "revision", 0):
+                    _store_plan_state(session_key, updated)
+                    state["last_mutation"] = mutation.action
+                    state["stale_rejection"] = False
+                else:
+                    state["stale_rejection"] = True
+            except Exception:
+                state["stale_rejection"] = True
         if verdict.should_escalate:
             state["replan_pending"] = True
             state["escalation_plan"] = verdict.suggested_plan
@@ -175,6 +202,7 @@ async def route_target(
 
     session_key = _get_session_key(messages, request)
     state = _session_replan_state.setdefault(session_key, {})
+    active_session_plan = state.get("active_plan")
 
     client_replan_hint = False
     if request is not None and hasattr(request, "headers"):
@@ -207,6 +235,10 @@ async def route_target(
             route_name = getattr(decision, "route", "fast_direct")
             tier = getattr(decision, "tier", "balanced")
             plan = getattr(decision, "plan", None)
+            if active_session_plan is not None and not replan_pending and getattr(active_session_plan, "session_status", "active") == "active":
+                plan = active_session_plan
+            elif plan is not None and getattr(plan, "route", "") == "dynamic_dag":
+                _store_plan_state(session_key, plan)
             model = getattr(decision, "model", None)
         except Exception:
             decision, path, route_name, tier, plan, model = (
@@ -316,6 +348,7 @@ async def route_target(
                     user_agent=request.headers.get("user-agent", "") if request is not None and hasattr(request, "headers") else "",
                     is_nested=is_nested,
                     plan=plan,
+                    active_plan=active_session_plan,
                     tools=tools or [],
                 )
                 if result is not None:
