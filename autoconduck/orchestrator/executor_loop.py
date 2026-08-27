@@ -125,6 +125,7 @@ async def run_executor_tool_loop(
     max_rounds: int = 10,
     time_budget_s: float = 180.0,
     tool_retry_cap: int = 3,
+    is_escalated: bool = False,
 ) -> str:
     """Run tools with fail-open provider compatibility.
 
@@ -274,8 +275,10 @@ async def run_executor_tool_loop(
             messages.append({"role": "tool", "tool_call_id": tc_id, "content": result})
         # A read-only continuation is safe to handle with the cheapest FAST
         # model; any mutation keeps the model selected for the executor.
-        if force_fast_round:
+        if force_fast_round and not is_escalated:
             dispatch_model = tool_model("read", model, cfg)
+            force_fast_round = False
+        elif force_fast_round:
             force_fast_round = False
     return strip_tool_call_tags(
         _response_text(await _dispatch(messages, with_tools=False, dispatch_model=dispatch_model))

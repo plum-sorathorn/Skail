@@ -244,6 +244,9 @@ class ModelPool:
                     info.candidates_excluded_by["tools"] = len(eligible) - len(tool_supported)
                     binding = "tools"
                 eligible = tool_supported
+            else:
+                info.candidates_excluded_by["tools"] = len(eligible)
+                info.fallback_reason = "tools_filter_empty"
 
         # 3. Filter by reasoning
         if sla.requires_reasoning:
@@ -253,6 +256,9 @@ class ModelPool:
                     info.candidates_excluded_by["reasoning"] = len(eligible) - len(reasoning_supported)
                     binding = "reasoning"
                 eligible = reasoning_supported
+            else:
+                info.candidates_excluded_by["reasoning"] = len(eligible)
+                info.fallback_reason = "reasoning_filter_empty"
 
         # 4. Filter by min_context_window
         if sla.min_context > 0:
@@ -269,7 +275,10 @@ class ModelPool:
         if sla.min_capability_score > 0.0:
             weights = task_weights(sla.task_type)
             def fit(entry: ModelEntry) -> float:
-                return capability_fit(entry.capability_vector, weights) if entry.capability_vector is not None else entry.capability_score
+                vector = entry.capability_vector
+                if vector is None and entry.capability_score is not None:
+                    vector = {dim: float(entry.capability_score) for dim in CAPABILITY_DIMS}
+                return capability_fit(vector, weights) if vector is not None else entry.capability_score
             cap_matches = [e for e in eligible if fit(e) >= sla.min_capability_score]
             if cap_matches:
                 if len(cap_matches) < len(eligible):
@@ -337,16 +346,34 @@ class ModelPool:
             self._set_capability_info(info, sorted_models[-1], sla)
             info.binding_constraint = binding
             return sorted_models[-1].id, info
-            
-        info.model = sorted_models[0].id
-        self._set_capability_info(info, sorted_models[0], sla)
+
+        selected = sorted_models[0]
+        band_pct = float(getattr(getattr(self.config, "selection", None), "capability_tiebreak_price_band_pct", 0.0))
+        if band_pct > 0.0:
+            cheapest_cost = self._entry_cost(sorted_models[0])
+            band = [e for e in sorted_models if self._entry_cost(e) <= cheapest_cost * (1.0 + band_pct)]
+            weights = task_weights(sla.task_type)
+
+            def fit(entry: ModelEntry) -> float:
+                vector = entry.capability_vector
+                if vector is None and entry.capability_score is not None:
+                    vector = {dim: float(entry.capability_score) for dim in CAPABILITY_DIMS}
+                return capability_fit(vector, weights) if vector is not None else entry.capability_score
+
+            selected = min(band, key=lambda e: (-fit(e), self._entry_cost(e), e.id))
+
+        info.model = selected.id
+        self._set_capability_info(info, selected, sla)
         info.binding_constraint = binding
-        return sorted_models[0].id, info
+        return selected.id, info
 
     @staticmethod
     def _set_capability_info(info: SelectionInfo, entry: ModelEntry, sla: CapabilitySLA) -> None:
-        if entry.capability_vector is not None:
-            info.capability_fit_applied = capability_fit(entry.capability_vector, task_weights(sla.task_type))
+        vector = entry.capability_vector
+        if vector is None and entry.capability_score is not None:
+            vector = {dim: float(entry.capability_score) for dim in CAPABILITY_DIMS}
+        if vector is not None:
+            info.capability_fit_applied = capability_fit(vector, task_weights(sla.task_type))
             dominant = [dim for dim, weight in task_weights(sla.task_type).items() if weight > 0.25]
             dims = dominant or list(CAPABILITY_DIMS)
-            info.binding_capability_dim = min(dims, key=lambda dim: entry.capability_vector.get(dim, 0.0))
+            info.binding_capability_dim = min(dims, key=lambda dim: vector.get(dim, 0.0))

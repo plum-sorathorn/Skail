@@ -181,7 +181,15 @@ def test_legacy_scalar_entries_still_work():
     config = Config(models={"legacy": ModelEntry(id="legacy", capability_score=0.8)})
     info = ModelPool(config).select_by_sla_detailed(CapabilitySLA(min_capability_score=0.7))
     assert info.model == "legacy"
-    assert info.capability_fit_applied is None
+    assert info.capability_fit_applied >= 0.7
+
+
+def test_capability_band_prefers_fit_within_opt_in_price_band(mock_catalog_config: Config):
+    mock_catalog_config.selection.capability_tiebreak_price_band_pct = 20.0
+    mock_catalog_config.models["local-llama"].enabled = False
+    pool = ModelPool(mock_catalog_config)
+    info = pool.select_by_sla_detailed(CapabilitySLA(task_type="refactor"))
+    assert info.model == "gpt-4o-mini"
 
 
 def test_fit_floor_empty_falls_back_to_highest_fit(mock_catalog_config: Config):

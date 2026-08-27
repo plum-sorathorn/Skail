@@ -7,7 +7,7 @@ AutoConduck is a local zero-overhead model router + task orchestrator for coding
 - Test: `python -m pytest` (pytest `asyncio_mode=auto`; tests under `tests/`, integration under `tests/integration/`)
 - Single file: `python -m pytest tests/test_model_pool.py -q`
 - Smoke: `python scripts/end_to_end_smoke.py`
-- Run: TUI `autoconduck`; headless `autoconduck start --headless [--port] [--host]` (default `127.0.0.1:11434`); daemon `--daemon`; stop `autoconduck stop [--port]`
+- Run: TUI `autoconduck`; headless `autoconduck start --headless [--port] [--host]` (default `127.0.0.1:11434`); daemon `--daemon`; stop `autoconduck stop [--port]`; `conduck` is an alias console command for `autoconduck` (both map to `main.py`).
 - Version bump: `python scripts/bump_version.py --patch` (syncs pyproject.toml, `__init__.py`, npm package.json, README/AGENTS)
 - Graph: after editing code run `graphify update .`
 - NPM wheels: `python npm-packaging/build.py` (`--check` to verify without rebuild)

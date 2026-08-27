@@ -26,6 +26,17 @@ from autoconduck.routing.model_pool import CapabilitySLA
 logger = logging.getLogger(__name__)
 
 
+def normalize_confidence(value: Any) -> float:
+    """Return a safe SLM confidence, defaulting conservatively to 0.5."""
+    try:
+        parsed = float(value)
+        if parsed != parsed:
+            raise ValueError("NaN confidence")
+        return max(0.05, min(0.95, parsed))
+    except (TypeError, ValueError, OverflowError):
+        return 0.5
+
+
 def resolve_slm_path(model_path: str = "", config: Any = None) -> str:
     """Resolve the active SLM model path from arguments, config, or default directory."""
     candidate = model_path
@@ -253,7 +264,10 @@ class SLMPlanner:
         )
 
     def create_escalation_plan(self, messages: list[dict[str, Any]], reason: str = "") -> ExecutionPlan:
-        """Create an intelligent escalation recovery plan that uncaps max_cost and mandates reasoning."""
+        """Create deterministic stagnation recovery; confidence=0.95 is intentional.
+
+        This safety escalation constant is not an SLM-derived confidence estimate.
+        """
         last_tool = "tool"
         for m in reversed(messages):
             if isinstance(m, dict) and m.get("role") in ("tool", "function"):
@@ -365,6 +379,7 @@ class SLMPlanner:
                     task_type: Literal[
                         "refactor", "multi_edit", "single_edit", "debug", "full_workflow", "chat", "explain"
                     ] = "refactor"
+                    confidence: Any = 0.5
 
                 from autoconduck._compat.outlines_fallback import generate_structured_json
 
@@ -374,7 +389,7 @@ class SLMPlanner:
                     f"Read tool calls: {read_count}, Edit tool calls: {edit_count}\n"
                     f"Trigger context: {replan_reason}\n"
                     f"Should this session be escalated to a structured multi-agent DAG plan?\n"
-                    f"Respond with JSON: {{should_escalate_to_dag: bool, reason: str, task_type: str}}"
+                    f"Respond with JSON: {{should_escalate_to_dag: bool, reason: str, task_type: str, confidence: float}}"
                 )
                 result = generate_structured_json(self._llm, prompt, TrajectoryEvaluation)
                 if isinstance(result, TrajectoryEvaluation):
@@ -386,7 +401,7 @@ class SLMPlanner:
                         ]
                         plan = ExecutionPlan(
                             route="dynamic_dag",
-                            confidence=0.95,
+                            confidence=normalize_confidence(result.confidence),
                             task_type=result.task_type if result.task_type in eligible_types else "refactor",
                             suggested_sla=CapabilitySLA(min_context=32000, requires_tools=True, min_capability_score=0.45),
                             synthesizer_sla=CapabilitySLA(requires_reasoning=True, requires_tools=True, min_capability_score=0.45, min_output_tokens=8192),
@@ -482,6 +497,7 @@ class SLMPlanner:
             task_type: Literal["chat", "explain", "recon", "single_edit", "multi_edit", "debug", "refactor", "full_workflow", "git_ops", "routine", "read_answer", "knowledge_query", "research"] = Field(default="chat", description="Task category")
             rationale: str = Field(default="SLM direct routing", description="Brief explanation of the routing decision")
             needs_rag: bool = Field(default=False, description="True if the task requires vector index or RAG lookup")
+            confidence: Any = Field(default=0.5, description="Confidence in the route and task type, from 0 to 1")
 
         # 4. Generate structured output
         from autoconduck._compat.outlines_fallback import generate_structured_json
@@ -491,7 +507,7 @@ class SLMPlanner:
             f"Rules:\n"
             f"- Set requires_multi_agent_dag=true for multi-file changes, architecture restructuring, or complex multi-step implementations.\n"
             f"- Set requires_multi_agent_dag=false for simple questions, repository checks, single-file edits, or conversational turns.\n"
-            f"Output valid JSON with fields: complexity_score (1-10), requires_multi_agent_dag (bool), task_type, rationale, needs_rag (bool)."
+             f"Output valid JSON with fields: complexity_score (1-10), requires_multi_agent_dag (bool), task_type, rationale, needs_rag (bool), confidence (float from 0 to 1 reflecting certainty in the route and task_type decision)."
         )
         
         result = generate_structured_json(self._llm, prompt, TaskClassification)
@@ -513,7 +529,7 @@ class SLMPlanner:
 
             return {
                 "route": "dynamic_dag",
-                "confidence": 0.95,
+                "confidence": normalize_confidence(result.confidence),
                 "task_type": result.task_type,
                 "suggested_sla": CapabilitySLA(min_context=32000, requires_tools=True, min_capability_score=0.4),
                 "needs_rag": result.needs_rag,
@@ -526,7 +542,7 @@ class SLMPlanner:
         else:
             return {
                 "route": "fast_direct",
-                "confidence": 0.98,
+                "confidence": normalize_confidence(result.confidence),
                 "task_type": result.task_type,
                 "suggested_sla": CapabilitySLA(min_context=16000, requires_tools=True, max_cost=1.5),
                 "needs_rag": result.needs_rag,
@@ -556,6 +572,8 @@ class SLMPlanner:
             if not isinstance(data, dict) or "route" not in data:
                 return self._create_fallback_plan(messages, reason="Missing plan route structure")
 
+            data = dict(data)
+            data["confidence"] = normalize_confidence(data.get("confidence"))
             return ExecutionPlan.model_validate(data)
         except Exception as exc:
             logger.warning("SLM sync planner error: %s; degrading to fallback.", exc)
@@ -598,6 +616,8 @@ class SLMPlanner:
             if not isinstance(data, dict) or "route" not in data:
                 return self._create_fallback_plan(messages, reason="Missing plan route structure")
 
+            data = dict(data)
+            data["confidence"] = normalize_confidence(data.get("confidence"))
             return ExecutionPlan.model_validate(data)
 
         except asyncio.TimeoutError:

@@ -21,6 +21,7 @@ from autoconduck.routing.slm_planner import (
     ExecutionPlan,
     SLMPlanner,
     SubTaskSpec,
+    normalize_confidence,
 )
 
 
@@ -503,7 +504,40 @@ def test_resolve_slm_path_resolution(tmp_path, monkeypatch):
 
     with patch("autoconduck.routing.slm_downloader.get_default_models_dir", return_value=models_dir):
         resolved = resolve_slm_path("lfm2.5-1.2b-instruct-q4.onnx")
-        assert resolved == str(lfm_file)
+    assert resolved == str(lfm_file)
+
+
+def test_slm_confidence_normalization_is_conservative():
+    assert normalize_confidence(0.7) == 0.7
+    assert normalize_confidence(-1) == 0.05
+    assert normalize_confidence(4) == 0.95
+    assert normalize_confidence(None) == 0.5
+    assert normalize_confidence("not-a-number") == 0.5
+
+
+def test_fallback_plan_confidence_is_half():
+    assert SLMPlanner()._create_fallback_plan([]).confidence == 0.5
+
+
+def test_trajectory_slm_confidence_is_used(monkeypatch):
+    planner = SLMPlanner()
+    planner._llm = "dummy"
+
+    monkeypatch.setattr(
+        "autoconduck._compat.outlines_fallback.generate_structured_json",
+        lambda _llm, _prompt, schema, **kwargs: schema(
+            should_escalate_to_dag=True,
+            reason="stuck",
+            task_type="refactor",
+            confidence=0.01,
+        ),
+    )
+    verdict = planner.evaluate_session_trajectory(
+        [{"role": "user", "content": "refactor auth"}],
+        session_stats={"read_count": 8, "edit_count": 0},
+    )
+    assert verdict.suggested_plan is not None
+    assert verdict.suggested_plan.confidence == 0.05
 
 
 @pytest.mark.asyncio

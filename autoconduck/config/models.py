@@ -72,6 +72,8 @@ class SelectionConfig(BaseModel):
     )
     confidence_floor_k: float = 0.15
     confidence_floor_max: float = 0.6
+    capability_tiebreak_price_band_pct: float = 0.0
+    """Optional capability tiebreak band; 0.0 disables it (current behavior)."""
     max_pool_size: int = 200
     tiebreaker_enabled: bool = False
     tiebreaker_min_complexity: float = 0.45
