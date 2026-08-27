@@ -43,6 +43,8 @@ def route(
     pseudo_model: str = "autoconduck",
     tiebreaker: Any = None,
     config: Any = None,
+    replan_pending: bool = False,
+    escalation_plan: Any = None,
 ) -> RoutingDecision:
     if config is None:
         from ..config import get_config
@@ -56,7 +58,42 @@ def route(
 
     plan = None
     selection_info = None
-    if guard_res.target_action == TurnAction.DIRECT_ACTIVE_TIER:
+    if guard_res.target_action == TurnAction.ESCALATE_SLM:
+        path = "slow"
+        route_name = "dynamic_dag"
+        confidence_band = "slow"
+        confidence = 0.95
+        complexity = 0.85
+        tier = "capability_sla"
+        reason = f"stagnation_escalation: {guard_res.stagnation_reason}"
+        planner = SLMPlanner()
+        plan = planner.create_escalation_plan(
+            messages, reason=f"stagnation_escalation: {guard_res.stagnation_reason}"
+        )
+        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, "escalate")
+        model = selection_info.model or resolve_orchestrator_model(config)
+
+    elif (guard_res.target_action in (TurnAction.DIRECT_ACTIVE_TIER, TurnAction.SUGGEST_REPLAN)) and replan_pending:
+        path = "slow"
+        route_name = "dynamic_dag"
+        confidence_band = "slow"
+        confidence = 0.95
+        complexity = 0.85
+        tier = "capability_sla"
+        plan = escalation_plan or SLMPlanner().create_escalation_plan(
+            messages, reason="mid_execution_replan"
+        )
+        reason = getattr(plan, "rationale", None) or "mid_execution_replan"
+        selection_info = _select_planned(
+            plan.suggested_sla,
+            plan,
+            config,
+            pseudo_model,
+            "refactor" if getattr(plan, "task_type", None) in ("refactor", "full_workflow", "multi_edit") else "escalate",
+        )
+        model = selection_info.model or resolve_orchestrator_model(config)
+
+    elif guard_res.target_action in (TurnAction.DIRECT_ACTIVE_TIER, TurnAction.SUGGEST_REPLAN):
         path = "fast"
         route_name = "fast_direct"
         confidence_band = "fast"
@@ -72,21 +109,6 @@ def route(
         selection_info = pricing.select_for_sla_detailed(sla, config=config, pseudo_model=pseudo_model)
         model = selection_info.model or resolve_orchestrator_model(config)
         tier = "capability_sla"
-
-    elif guard_res.target_action == TurnAction.ESCALATE_SLM:
-        path = "slow"
-        route_name = "dynamic_dag"
-        confidence_band = "slow"
-        confidence = 0.95
-        complexity = 0.85
-        tier = "capability_sla"
-        reason = f"stagnation_escalation: {guard_res.stagnation_reason}"
-        planner = SLMPlanner()
-        plan = planner.create_escalation_plan(
-            messages, reason=f"stagnation_escalation: {guard_res.stagnation_reason}"
-        )
-        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, "escalate")
-        model = selection_info.model or resolve_orchestrator_model(config)
 
     else:
         # Step 2: Embedded SLM Task Architect (<100ms circuit breaker)

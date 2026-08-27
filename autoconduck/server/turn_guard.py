@@ -21,6 +21,7 @@ class TurnAction(str, Enum):
     DIRECT_ACTIVE_TIER = "direct_active_tier"
     SLM_PLAN = "slm_plan"
     ESCALATE_SLM = "escalate_slm"
+    SUGGEST_REPLAN = "suggest_replan"
 
 
 class TurnClassificationResult(BaseModel):
@@ -31,6 +32,10 @@ class TurnClassificationResult(BaseModel):
     tool_call_streak: int = 0
     error_streak: int = 0
     last_tool_name: str | None = None
+    replan_suggested: bool = False
+    replan_reason: str | None = None
+    read_count: int = 0
+    edit_count: int = 0
 
 
 def _is_tool_error_content(content: Any, is_error_flag: bool | None = None) -> bool:
@@ -403,12 +408,35 @@ class TurnGuard:
                         last_tool_name=last_tool_name,
                     )
 
+        # Count read vs edit tool calls for mid-execution replan heuristics
+        read_count = 0
+        edit_count = 0
+        for fn_name, _ in all_calls:
+            fn_lower = fn_name.lower()
+            if any(r in fn_lower for r in ("read", "grep", "glob", "view", "find", "search", "list", "cat", "fetch")):
+                read_count += 1
+            elif any(e in fn_lower for e in ("edit", "write", "patch", "modify", "replace", "create", "delete", "put")):
+                edit_count += 1
+
+        replan_suggested = False
+        replan_reason = None
+        # Heuristic trigger: read-heavy tool loop without any edits (>= 8 reads, 0 edits)
+        if len(all_calls) >= 8 and read_count >= 8 and edit_count == 0:
+            replan_suggested = True
+            replan_reason = f"Read-heavy tool loop without edits ({read_count} reads, 0 edits across {len(all_calls)} tool calls)"
+
+        target_act = TurnAction.SUGGEST_REPLAN if replan_suggested else TurnAction.DIRECT_ACTIVE_TIER
+
         # Active healthy tool loop
         return TurnClassificationResult(
             is_tool_loop=True,
             is_stagnant=False,
-            target_action=TurnAction.DIRECT_ACTIVE_TIER,
+            target_action=target_act,
             tool_call_streak=tool_call_streak,
             error_streak=error_streak,
             last_tool_name=last_tool_name,
+            replan_suggested=replan_suggested,
+            replan_reason=replan_reason,
+            read_count=read_count,
+            edit_count=edit_count,
         )

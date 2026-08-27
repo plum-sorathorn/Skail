@@ -105,6 +105,13 @@ class SelectionConfig(BaseModel):
     hysteresis_window_size: int = 5
     hysteresis_decay: float = 0.85
     non_english_fallback_complexity: float = 0.45
+    mid_execution_replan_enabled: bool = True
+    replan_min_turns_since_slm: int = 12
+    replan_read_edit_ratio_threshold: int = 8
+    replan_eligible_task_types: list[str] = Field(
+        default_factory=lambda: ["refactor", "full_workflow", "multi_edit", "debug"]
+    )
+    replan_slm_timeout_ms: float = 2000.0
 
     @field_validator("progress_verbosity", mode="before")
     @classmethod

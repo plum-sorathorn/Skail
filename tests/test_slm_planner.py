@@ -411,3 +411,70 @@ async def test_extract_last_user_text_ignores_earlier_messages():
     assert "db.py" not in text
     assert "2 + 2" in text
     assert noise_removed is False
+
+
+@pytest.mark.asyncio
+async def test_slm_planner_evaluate_session_trajectory_triggers_replan():
+    """evaluate_session_trajectory escalates on read-heavy session with 0 edits."""
+    planner = SLMPlanner()
+    messages = [
+        {"role": "user", "content": "Refactor auth and routing systems"},
+        {"role": "assistant", "content": "Reading files"},
+    ]
+    session_stats = {
+        "read_count": 10,
+        "edit_count": 0,
+        "replan_reason": "Read-heavy tool loop without edits",
+    }
+    verdict = planner.evaluate_session_trajectory(messages, session_stats=session_stats)
+    assert verdict.should_escalate is True
+    assert verdict.suggested_plan is not None
+    assert verdict.suggested_plan.route == "dynamic_dag"
+    assert len(verdict.suggested_plan.subtasks) >= 2
+
+
+@pytest.mark.asyncio
+async def test_slm_planner_evaluate_session_trajectory_ignores_active_edits():
+    """evaluate_session_trajectory does not escalate when edits are actively occurring."""
+    planner = SLMPlanner()
+    messages = [
+        {"role": "user", "content": "Refactor auth and routing systems"},
+    ]
+    session_stats = {
+        "read_count": 5,
+        "edit_count": 3,
+        "replan_reason": "",
+    }
+    verdict = planner.evaluate_session_trajectory(messages, session_stats=session_stats)
+    assert verdict.should_escalate is False
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_route_mid_execution_replan_promotes_to_dag():
+    """dispatcher.route routes to dynamic_dag when replan_pending is True during tool loop."""
+    from autoconduck.routing.dispatcher import route
+    import json
+
+    messages = [{"role": "user", "content": "Refactor codebase"}]
+    for i in range(8):
+        cid = f"call_{i}"
+        messages.extend([
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {"id": cid, "type": "function", "function": {"name": "read", "arguments": json.dumps({"path": f"src/m_{i}.py"})}}
+                ],
+            },
+            {"role": "tool", "tool_call_id": cid, "name": "read", "content": "content"},
+        ])
+
+    # With replan_pending=False, routes fast_direct
+    dec_fast = route(messages, replan_pending=False)
+    assert dec_fast.path == "fast"
+    assert dec_fast.route == "fast_direct"
+
+    # With replan_pending=True, routes dynamic_dag
+    dec_dag = route(messages, replan_pending=True)
+    assert dec_dag.path == "slow"
+    assert dec_dag.route == "dynamic_dag"
+    assert dec_dag.plan is not None

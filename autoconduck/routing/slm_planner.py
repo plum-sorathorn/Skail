@@ -128,6 +128,12 @@ class ExecutionPlan(BaseModel):
         return self.rationale or f"Task execution plan ({self.task_type})"
 
 
+class EscalationVerdict(BaseModel):
+    should_escalate: bool = False
+    reason: str = ""
+    suggested_plan: ExecutionPlan | None = None
+
+
 class SLMPlanner:
     """Intelligent task decomposition and routing planner."""
 
@@ -260,6 +266,135 @@ class SLMPlanner:
             rationale=reason or "Stagnation escalation recovery plan",
             fallback_used=False,
         )
+
+    def evaluate_session_trajectory(
+        self,
+        messages: list[dict[str, Any]],
+        current_plan: ExecutionPlan | None = None,
+        session_stats: dict[str, Any] | None = None,
+        config: Any = None,
+    ) -> EscalationVerdict:
+        """Evaluate whether an in-flight tool loop should be promoted to a Dynamic DAG plan."""
+        stats = session_stats or {}
+        read_count = int(stats.get("read_count", 0))
+        edit_count = int(stats.get("edit_count", 0))
+        replan_reason = str(stats.get("replan_reason", "Read-heavy tool loop"))
+        task_type = (current_plan.task_type if current_plan else getattr(config, "task_type", None)) or "refactor"
+
+        # Check config gating
+        eligible_types = ["refactor", "full_workflow", "multi_edit", "debug"]
+        if config is not None and hasattr(config, "selection"):
+            eligible_types = getattr(config.selection, "replan_eligible_task_types", eligible_types)
+            if not getattr(config.selection, "mid_execution_replan_enabled", True):
+                return EscalationVerdict(should_escalate=False, reason="Mid-execution replanning disabled in config")
+
+        text, noise_removed = self._extract_last_user_text(messages)
+
+        # 1. Attempt SLM inference if model is available
+        if self._llm is not None and not getattr(self._llm, "_is_fallback", False) and is_outlines_available():
+            try:
+                class TrajectoryEvaluation(BaseModel):
+                    should_escalate_to_dag: bool = Field(
+                        description="True if agent is stuck reading/exploring without writing and needs DAG task decomposition"
+                    )
+                    reason: str = Field(description="Brief justification for escalation or continuation")
+                    task_type: Literal[
+                        "refactor", "multi_edit", "single_edit", "debug", "full_workflow", "chat", "explain"
+                    ] = "refactor"
+
+                from autoconduck._compat.outlines_fallback import generate_structured_json
+
+                prompt = (
+                    f"Evaluate this agent session trajectory.\n"
+                    f"User goal: {text[:200]}\n"
+                    f"Read tool calls: {read_count}, Edit tool calls: {edit_count}\n"
+                    f"Trigger context: {replan_reason}\n"
+                    f"Should this session be escalated to a structured multi-agent DAG plan?"
+                )
+                result = generate_structured_json(self._llm, prompt, TrajectoryEvaluation)
+                if isinstance(result, TrajectoryEvaluation):
+                    if result.should_escalate_to_dag:
+                        subtasks = [
+                            SubTaskSpec(id="recon", goal=f"Synthesize findings from read operations: {text[:60]}", role="recon"),
+                            SubTaskSpec(id="target_edits", goal="Implement code modifications according to goal", role="edit", depends_on=["recon"]),
+                            SubTaskSpec(id="verify", goal="Verify changes with tests", role="verify", depends_on=["target_edits"]),
+                        ]
+                        plan = ExecutionPlan(
+                            route="dynamic_dag",
+                            confidence=0.95,
+                            task_type=result.task_type if result.task_type in eligible_types else "refactor",
+                            suggested_sla=CapabilitySLA(min_context=32000, requires_tools=True, min_capability_score=0.45),
+                            synthesizer_sla=CapabilitySLA(requires_reasoning=True, requires_tools=True, min_capability_score=0.45, min_output_tokens=8192),
+                            subtasks=subtasks,
+                            rationale=f"Mid-execution SLM replan: {result.reason}",
+                            fallback_used=False,
+                        )
+                        return EscalationVerdict(
+                            should_escalate=True,
+                            reason=f"SLM evaluated trajectory: {result.reason}",
+                            suggested_plan=plan,
+                        )
+                    else:
+                        return EscalationVerdict(
+                            should_escalate=False,
+                            reason=f"SLM decided against escalation: {result.reason}",
+                        )
+            except Exception as exc:
+                logger.debug("SLM trajectory evaluation failed: %s; falling back to heuristic evaluation", exc)
+
+        # 2. Heuristic fallback when SLM is unavailable or failed
+        if read_count >= 8 and edit_count == 0:
+            plan = ExecutionPlan(
+                route="dynamic_dag",
+                confidence=0.90,
+                task_type="refactor",
+                suggested_sla=CapabilitySLA(min_context=32000, requires_tools=True, min_capability_score=0.45),
+                synthesizer_sla=CapabilitySLA(requires_reasoning=True, requires_tools=True, min_capability_score=0.45, min_output_tokens=8192),
+                subtasks=[
+                    SubTaskSpec(id="recon", goal=f"Synthesize context from {read_count} previous read calls", role="recon"),
+                    SubTaskSpec(id="implement", goal="Apply code modifications", role="edit", depends_on=["recon"]),
+                    SubTaskSpec(id="verify", goal="Run test suite to verify", role="verify", depends_on=["implement"]),
+                ],
+                rationale=f"Heuristic mid-execution replan: {replan_reason}",
+                fallback_used=True,
+            )
+            return EscalationVerdict(
+                should_escalate=True,
+                reason=f"Heuristic mid-execution replan: {replan_reason}",
+                suggested_plan=plan,
+            )
+
+        return EscalationVerdict(should_escalate=False, reason="Trajectory within normal parameters")
+
+    async def evaluate_session_trajectory_async(
+        self,
+        messages: list[dict[str, Any]],
+        current_plan: ExecutionPlan | None = None,
+        session_stats: dict[str, Any] | None = None,
+        config: Any = None,
+    ) -> EscalationVerdict:
+        """Asynchronously evaluate session trajectory with circuit breaker timeout."""
+        timeout_ms = 2000.0
+        if config is not None and hasattr(config, "selection"):
+            timeout_ms = float(getattr(config.selection, "replan_slm_timeout_ms", 2000.0))
+        timeout_sec = timeout_ms / 1000.0
+
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.evaluate_session_trajectory, messages, current_plan, session_stats, config
+                ),
+                timeout=timeout_sec,
+            )
+        except Exception as exc:
+            logger.debug("Async trajectory evaluation timed out or failed: %s", exc)
+            stats = session_stats or {}
+            read_count = int(stats.get("read_count", 0))
+            edit_count = int(stats.get("edit_count", 0))
+            if read_count >= 8 and edit_count == 0:
+                plan = self.create_escalation_plan(messages, reason="Mid-execution heuristic replan fallback")
+                return EscalationVerdict(should_escalate=True, reason="Heuristic replan fallback", suggested_plan=plan)
+            return EscalationVerdict(should_escalate=False, reason=f"Evaluation skipped: {exc}")
 
     def _raw_infer(self, messages: list[dict[str, Any]], config: Any = None) -> str | dict[str, Any]:
         """Classify the request and produce an ExecutionPlan dict using the SLM."""

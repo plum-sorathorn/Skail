@@ -2,11 +2,69 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any
 
 import autoconduck.config as config_module
+
+_session_replan_state: dict[str, dict[str, Any]] = {}
+
+
+def _get_session_key(messages: list[Any], request: Any = None) -> str:
+    """Generate a consistent session key from request headers or conversation root."""
+    if request is not None and hasattr(request, "headers"):
+        sess_id = request.headers.get("x-session-id") or request.headers.get("x-thread-id")
+        if sess_id:
+            return str(sess_id)
+    if isinstance(messages, list) and messages:
+        first = messages[0]
+        if isinstance(first, dict):
+            c = str(first.get("content", ""))[:120]
+            return f"sess_{hash(c)}"
+    return "default_session"
+
+
+async def _run_async_slm_heartbeat(
+    session_key: str,
+    messages: list[Any],
+    current_plan: Any,
+    guard_res: Any,
+    cfg: Any,
+) -> None:
+    """Run async background SLM heartbeat evaluation for mid-execution DAG promotion."""
+    state = _session_replan_state.setdefault(session_key, {})
+    if state.get("evaluating"):
+        return
+    state["evaluating"] = True
+    try:
+        from autoconduck.routing.slm_planner import SLMPlanner
+
+        session_stats = {
+            "read_count": getattr(guard_res, "read_count", 0),
+            "edit_count": getattr(guard_res, "edit_count", 0),
+            "replan_reason": getattr(guard_res, "replan_reason", ""),
+        }
+        planner = SLMPlanner()
+        verdict = await planner.evaluate_session_trajectory_async(
+            messages,
+            current_plan=current_plan,
+            session_stats=session_stats,
+            config=cfg,
+        )
+        if verdict.should_escalate:
+            state["replan_pending"] = True
+            state["escalation_plan"] = verdict.suggested_plan
+            logging.getLogger("autoconduck").info(
+                "Mid-execution SLM heartbeat scheduled replan for session %s: %s",
+                session_key,
+                verdict.reason,
+            )
+    except Exception as exc:
+        logging.getLogger("autoconduck").debug("Error in async SLM heartbeat: %s", exc)
+    finally:
+        state["evaluating"] = False
 
 
 def is_active_tool_session(messages: list[Any]) -> bool:
@@ -114,12 +172,37 @@ async def route_target(
                 client_type = "claude"
     is_nested = request_depth >= 1
     decision = None
+
+    session_key = _get_session_key(messages, request)
+    state = _session_replan_state.setdefault(session_key, {})
+
+    client_replan_hint = False
+    if request is not None and hasattr(request, "headers"):
+        hint = str(request.headers.get("x-autoconduck-escalate", "")).lower()
+        if hint in ("true", "1", "replan", "yes"):
+            client_replan_hint = True
+
+    replan_pending = bool(state.get("replan_pending") or client_replan_hint)
+    escalation_plan = state.get("escalation_plan")
+
+    if replan_pending:
+        state["replan_pending"] = False
+        state["escalation_plan"] = None
+        state["last_replan_turn"] = len(messages)
+
     if body_model in PSEUDO_MODELS:
         try:
             from autoconduck.routing.dispatcher import route
 
             history = decisions[-5:] if decisions else []
-            decision = route(messages, history, pseudo_model=body_model, config=cfg)
+            decision = route(
+                messages,
+                history,
+                pseudo_model=body_model,
+                config=cfg,
+                replan_pending=replan_pending,
+                escalation_plan=escalation_plan,
+            )
             path = getattr(decision, "path", "FAST").upper()
             route_name = getattr(decision, "route", "fast_direct")
             tier = getattr(decision, "tier", "balanced")
@@ -191,7 +274,23 @@ async def route_target(
             (time.perf_counter() - started) * 1000,
         )
 
-        in_tool_loop = is_active_tool_session(messages)
+        # Check if background SLM heartbeat should evaluate session trajectory
+        replan_enabled = getattr(getattr(cfg, "selection", None), "mid_execution_replan_enabled", True)
+        if replan_enabled and not replan_pending:
+            try:
+                from autoconduck.server.turn_guard import TurnGuard
+                guard_res = TurnGuard().classify_turn(messages)
+                min_turns = int(getattr(getattr(cfg, "selection", None), "replan_min_turns_since_slm", 12))
+                turns_since = len(messages) - int(state.get("last_replan_turn", 0))
+
+                if (guard_res.replan_suggested or client_replan_hint) and turns_since >= min_turns and not state.get("evaluating"):
+                    asyncio.create_task(
+                        _run_async_slm_heartbeat(session_key, messages, plan, guard_res, cfg)
+                    )
+            except Exception:
+                pass
+
+        in_tool_loop = is_active_tool_session(messages) and not replan_pending
         if in_tool_loop and path == "SLOW":
             logging.getLogger("autoconduck").debug(
                 "Active tool loop detected — delegating completion directly to selected model %s",
