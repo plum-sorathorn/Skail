@@ -48,7 +48,18 @@ class OutlinesFallback:
         def fallback_generator(prompt: str, **kwargs: Any) -> Any:
             raw_text = "{}"
             if self.model is not None:
-                if hasattr(self.model, "create_completion"):
+                if hasattr(self.model, "create_chat_completion"):
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": "You are a specialized JSON classifier. Output ONLY valid JSON matching the requested schema without reasoning, markdown codeblocks, or conversational text.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ]
+                    resp = self.model.create_chat_completion(messages, **kwargs)
+                    if isinstance(resp, dict) and "choices" in resp and len(resp["choices"]) > 0:
+                        raw_text = resp["choices"][0].get("message", {}).get("content", "{}")
+                elif hasattr(self.model, "create_completion"):
                     resp = self.model.create_completion(prompt, **kwargs)
                     if isinstance(resp, dict) and "choices" in resp and len(resp["choices"]) > 0:
                         raw_text = resp["choices"][0].get("text", "{}")
@@ -74,8 +85,19 @@ class OutlinesFallback:
                     try:
                         return schema_cls.model_validate(parsed)
                     except Exception:
-                        return schema_cls.model_construct(**parsed)
-                return schema_cls.model_construct()
+                        try:
+                            return schema_cls(**parsed)
+                        except Exception:
+                            try:
+                                defaults = schema_cls().model_dump()
+                                defaults.update(parsed)
+                                return schema_cls.model_construct(**defaults)
+                            except Exception:
+                                return schema_cls.model_construct(**parsed)
+                try:
+                    return schema_cls()
+                except Exception:
+                    return schema_cls.model_construct()
             return parsed
 
         return fallback_generator

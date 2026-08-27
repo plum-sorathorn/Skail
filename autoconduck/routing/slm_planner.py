@@ -175,7 +175,7 @@ class EscalationVerdict(BaseModel):
 class SLMPlanner:
     """Intelligent task decomposition and routing planner."""
 
-    def __init__(self, model_path: str = "", circuit_breaker_ms: float = 2000.0) -> None:
+    def __init__(self, model_path: str = "", circuit_breaker_ms: float = 5000.0) -> None:
         self.model_path = model_path
         self.circuit_breaker_ms = circuit_breaker_ms
         self._llm = None
@@ -477,15 +477,22 @@ class SLMPlanner:
 
         # 3. Define schema
         class TaskClassification(BaseModel):
-            complexity_score: int = Field(ge=1, le=10, description="1=trivial typo/chat, 10=massive architectural overhaul")
-            requires_multi_agent_dag: bool = Field(description="True ONLY if the task requires multi-file parallel decomposition")
-            task_type: Literal["chat", "explain", "recon", "single_edit", "multi_edit", "debug", "refactor", "full_workflow", "git_ops", "routine", "read_answer", "knowledge_query", "research"] = Field(description="Task category")
-            rationale: str = Field(description="Brief explanation of the routing decision")
-            needs_rag: bool = Field(description="True if the task requires vector index or RAG lookup")
+            complexity_score: int = Field(default=1, ge=1, le=10, description="1=trivial typo/chat, 10=massive architectural overhaul")
+            requires_multi_agent_dag: bool = Field(default=False, description="True ONLY if the task requires multi-file parallel decomposition")
+            task_type: Literal["chat", "explain", "recon", "single_edit", "multi_edit", "debug", "refactor", "full_workflow", "git_ops", "routine", "read_answer", "knowledge_query", "research"] = Field(default="chat", description="Task category")
+            rationale: str = Field(default="SLM direct routing", description="Brief explanation of the routing decision")
+            needs_rag: bool = Field(default=False, description="True if the task requires vector index or RAG lookup")
 
         # 4. Generate structured output
         from autoconduck._compat.outlines_fallback import generate_structured_json
-        prompt = f"Analyze the following user instruction and classify its complexity and intent:\n\n{text}"
+        prompt = (
+            f"Classify the following software engineering instruction for automated routing:\n\n"
+            f"Instruction: {text}\n\n"
+            f"Rules:\n"
+            f"- Set requires_multi_agent_dag=true for multi-file changes, architecture restructuring, or complex multi-step implementations.\n"
+            f"- Set requires_multi_agent_dag=false for simple questions, repository checks, single-file edits, or conversational turns.\n"
+            f"Output valid JSON with fields: complexity_score (1-10), requires_multi_agent_dag (bool), task_type, rationale, needs_rag (bool)."
+        )
         
         result = generate_structured_json(self._llm, prompt, TaskClassification)
         if not isinstance(result, TaskClassification):

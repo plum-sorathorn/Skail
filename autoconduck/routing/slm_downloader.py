@@ -20,6 +20,12 @@ SLM_MODELS_CATALOG: list[dict[str, Any]] = [
         "format": "onnx",
         "recommended": True,
         "url": "https://huggingface.co/onnx-community/Qwen2.5-Coder-0.5B-Instruct/resolve/main/onnx/model_q4.onnx",
+        "extra_files": [
+            {
+                "filename": "qwen2.5-coder-0.5b-instruct-q4.tokenizer.json",
+                "url": "https://huggingface.co/onnx-community/Qwen2.5-Coder-0.5B-Instruct/resolve/main/tokenizer.json",
+            }
+        ],
         "description": "Sub-30ms ONNX accelerated task decomposition & micro-router (Default)",
     },
     {
@@ -31,6 +37,12 @@ SLM_MODELS_CATALOG: list[dict[str, Any]] = [
         "format": "onnx",
         "recommended": False,
         "url": "https://huggingface.co/onnx-community/Qwen2.5-Coder-1.5B-Instruct/resolve/main/onnx/model_q4.onnx",
+        "extra_files": [
+            {
+                "filename": "qwen2.5-coder-1.5b-instruct-q4.tokenizer.json",
+                "url": "https://huggingface.co/onnx-community/Qwen2.5-Coder-1.5B-Instruct/resolve/main/tokenizer.json",
+            }
+        ],
         "description": "High-capacity multi-file DAG planning & ONNX reasoning",
     },
     {
@@ -46,7 +58,11 @@ SLM_MODELS_CATALOG: list[dict[str, Any]] = [
             {
                 "filename": "model_q4.onnx_data",
                 "url": "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-ONNX/resolve/main/onnx/model_q4.onnx_data",
-            }
+            },
+            {
+                "filename": "lfm2.5-1.2b-instruct-q4.tokenizer.json",
+                "url": "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-ONNX/resolve/main/tokenizer.json",
+            },
         ],
         "description": "Liquid AI hybrid architecture for agentic workflows & tool planning (ONNX)",
     },
@@ -70,7 +86,7 @@ def get_slm_model_info(identifier: str) -> dict[str, Any] | None:
 
 
 def is_slm_model_installed(identifier: str, target_dir: Path | None = None) -> bool:
-    """Check if the given SLM model file (and any extra data files) exists locally and is non-empty."""
+    """Check if the given SLM model file (and critical weights files) exists locally and is non-empty."""
     info = get_slm_model_info(identifier)
     if not info or not info.get("filename"):
         return False
@@ -79,9 +95,10 @@ def is_slm_model_installed(identifier: str, target_dir: Path | None = None) -> b
     if not (model_file.is_file() and model_file.stat().st_size > 0):
         return False
     for extra in info.get("extra_files", []):
-        extra_file = models_dir / extra["filename"]
-        if not (extra_file.is_file() and extra_file.stat().st_size > 0):
-            return False
+        if extra["filename"].endswith(".onnx_data"):
+            extra_file = models_dir / extra["filename"]
+            if not (extra_file.is_file() and extra_file.stat().st_size > 0):
+                return False
     return True
 
 
