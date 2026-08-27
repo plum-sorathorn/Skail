@@ -9,21 +9,59 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from pathlib import Path
 import re
 import time
 from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 from autoconduck._compat import (
-    get_llama_model,
     get_onnx_model,
-    is_llama_cpp_available,
     is_onnx_available,
+    is_onnx_genai_available,
     is_outlines_available,
 )
 from autoconduck.routing.model_pool import CapabilitySLA
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_slm_path(model_path: str = "", config: Any = None) -> str:
+    """Resolve the active SLM model path from arguments, config, or default directory."""
+    candidate = model_path
+    if not candidate and config is not None:
+        candidate = (
+            getattr(getattr(config, "selection", None), "slm_model_path", "")
+            or getattr(config, "slm_model_path", "")
+        )
+    if not candidate:
+        try:
+            from autoconduck.config import get_config
+            cfg = get_config()
+            candidate = getattr(getattr(cfg, "selection", None), "slm_model_path", "")
+        except Exception:
+            candidate = ""
+
+    if not candidate:
+        return ""
+
+    p = Path(candidate)
+    if p.is_file() and p.stat().st_size > 0:
+        return str(p)
+
+    # Check ~/.autoconduck/models/<name>
+    from autoconduck.routing.slm_downloader import get_default_models_dir
+    models_dir = get_default_models_dir()
+    by_name = models_dir / p.name
+    if by_name.is_file() and by_name.stat().st_size > 0:
+        return str(by_name)
+
+    # Check ~/.autoconduck/<candidate>
+    ad_home = Path.home() / ".autoconduck" / candidate
+    if ad_home.is_file() and ad_home.stat().st_size > 0:
+        return str(ad_home)
+
+    return candidate
 
 
 # --- Harness-agnostic boilerplate stripping (Layer 2) -----------------------
@@ -267,6 +305,31 @@ class SLMPlanner:
             fallback_used=False,
         )
 
+    def _ensure_llm_loaded(self, config: Any = None) -> None:
+        """Ensure the underlying SLM runtime model is loaded."""
+        if self._llm is not None:
+            return
+        model_path = resolve_slm_path(self.model_path, config)
+        if not model_path:
+            return
+
+        resolved_path = Path(model_path)
+        if not resolved_path.is_file():
+            logger.debug("SLM model file not found at %s; using fallback.", model_path)
+            return
+
+        lower_path = model_path.lower()
+        if lower_path.endswith(".onnx") or is_onnx_genai_available() or is_onnx_available():
+            try:
+                self._llm = get_onnx_model(model_path)
+            except Exception as exc:
+                logger.warning("Failed to initialize ONNX SLM from %s: %s", model_path, exc)
+        else:
+            try:
+                self._llm = get_onnx_model(model_path)
+            except Exception as exc:
+                logger.warning("Failed to initialize SLM from %s: %s", model_path, exc)
+
     def evaluate_session_trajectory(
         self,
         messages: list[dict[str, Any]],
@@ -291,7 +354,8 @@ class SLMPlanner:
         text, noise_removed = self._extract_last_user_text(messages)
 
         # 1. Attempt SLM inference if model is available
-        if self._llm is not None and not getattr(self._llm, "_is_fallback", False) and is_outlines_available():
+        self._ensure_llm_loaded(config)
+        if self._llm is not None and not getattr(self._llm, "_is_fallback", False):
             try:
                 class TrajectoryEvaluation(BaseModel):
                     should_escalate_to_dag: bool = Field(
@@ -309,7 +373,8 @@ class SLMPlanner:
                     f"User goal: {text[:200]}\n"
                     f"Read tool calls: {read_count}, Edit tool calls: {edit_count}\n"
                     f"Trigger context: {replan_reason}\n"
-                    f"Should this session be escalated to a structured multi-agent DAG plan?"
+                    f"Should this session be escalated to a structured multi-agent DAG plan?\n"
+                    f"Respond with JSON: {{should_escalate_to_dag: bool, reason: str, task_type: str}}"
                 )
                 result = generate_structured_json(self._llm, prompt, TrajectoryEvaluation)
                 if isinstance(result, TrajectoryEvaluation):
@@ -403,19 +468,12 @@ class SLMPlanner:
             return self._create_fallback_plan(messages, reason="Empty or system-only messages").model_dump()
 
         # 1. Ensure SLM is loaded
-        if self._llm is None:
-            model_path = self.model_path
-            if not model_path and config is not None and hasattr(config, "models"):
-                model_path = getattr(config.models, "slm_path", "")
-            if model_path and is_llama_cpp_available():
-                try:
-                    self._llm = get_llama_model(model_path, n_ctx=8192, n_gpu_layers=-1, verbose=False)
-                except Exception as exc:
-                    logger.warning("Failed to initialize SLM: %s", exc)
+        self._ensure_llm_loaded(config)
 
-        # 2. Check dependencies
-        if self._llm is None or getattr(self._llm, "_is_fallback", False) or not is_outlines_available():
-            raise RuntimeError("SLM or outlines unavailable. Degrading to direct dispatch fallback.")
+        # 2. Check dependencies / fallback
+        if self._llm is None or getattr(self._llm, "_is_fallback", False):
+            logger.debug("SLM model unavailable or using fallback; routing via fallback plan.")
+            return self._create_fallback_plan(messages, reason="SLM model unavailable or fallback").model_dump()
 
         # 3. Define schema
         class TaskClassification(BaseModel):
@@ -431,7 +489,8 @@ class SLMPlanner:
         
         result = generate_structured_json(self._llm, prompt, TaskClassification)
         if not isinstance(result, TaskClassification):
-            raise RuntimeError("SLM failed to produce valid TaskClassification JSON.")
+            logger.debug("SLM produced non-TaskClassification result; using fallback plan.")
+            return self._create_fallback_plan(messages, reason="SLM structured output validation failed").model_dump()
 
         # 5. Map to ExecutionPlan
         if result.requires_multi_agent_dag:

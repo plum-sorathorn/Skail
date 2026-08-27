@@ -16,7 +16,7 @@ SLM_MODELS_CATALOG: list[dict[str, Any]] = [
         "key": "qwen2.5coder0.5b",
         "name": "Qwen 2.5 Coder 0.5B Instruct (Recommended)",
         "filename": "qwen2.5-coder-0.5b-instruct-q4.onnx",
-        "size_mb": 350,
+        "size_mb": 822,
         "format": "onnx",
         "recommended": True,
         "url": "https://huggingface.co/onnx-community/Qwen2.5-Coder-0.5B-Instruct/resolve/main/onnx/model_q4.onnx",
@@ -27,7 +27,7 @@ SLM_MODELS_CATALOG: list[dict[str, Any]] = [
         "key": "qwen2.5coder1.5b",
         "name": "Qwen 2.5 Coder 1.5B Instruct",
         "filename": "qwen2.5-coder-1.5b-instruct-q4.onnx",
-        "size_mb": 920,
+        "size_mb": 1827,
         "format": "onnx",
         "recommended": False,
         "url": "https://huggingface.co/onnx-community/Qwen2.5-Coder-1.5B-Instruct/resolve/main/onnx/model_q4.onnx",
@@ -38,10 +38,16 @@ SLM_MODELS_CATALOG: list[dict[str, Any]] = [
         "key": "lfm2.51.2binstruct",
         "name": "LFM 2.5 1.2B Instruct",
         "filename": "lfm2.5-1.2b-instruct-q4.onnx",
-        "size_mb": 740,
+        "size_mb": 811,
         "format": "onnx",
         "recommended": False,
         "url": "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-ONNX/resolve/main/onnx/model_q4.onnx",
+        "extra_files": [
+            {
+                "filename": "model_q4.onnx_data",
+                "url": "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-ONNX/resolve/main/onnx/model_q4.onnx_data",
+            }
+        ],
         "description": "Liquid AI hybrid architecture for agentic workflows & tool planning (ONNX)",
     },
 ]
@@ -64,13 +70,19 @@ def get_slm_model_info(identifier: str) -> dict[str, Any] | None:
 
 
 def is_slm_model_installed(identifier: str, target_dir: Path | None = None) -> bool:
-    """Check if the given SLM model file exists locally and is non-empty."""
+    """Check if the given SLM model file (and any extra data files) exists locally and is non-empty."""
     info = get_slm_model_info(identifier)
     if not info or not info.get("filename"):
         return False
     models_dir = target_dir or get_default_models_dir()
     model_file = models_dir / info["filename"]
-    return model_file.is_file() and model_file.stat().st_size > 0
+    if not (model_file.is_file() and model_file.stat().st_size > 0):
+        return False
+    for extra in info.get("extra_files", []):
+        extra_file = models_dir / extra["filename"]
+        if not (extra_file.is_file() and extra_file.stat().st_size > 0):
+            return False
+    return True
 
 
 def download_slm_model(
@@ -79,7 +91,7 @@ def download_slm_model(
     progress_callback: Callable[[int, int], None] | None = None,
     chunk_size: int = 1024 * 1024,
 ) -> Path | None:
-    """Download the specified SLM model to the local storage directory."""
+    """Download the specified SLM model (and any extra data files) to the local storage directory."""
     import httpx
 
     info = get_slm_model_info(identifier)
@@ -107,11 +119,33 @@ def download_slm_model(
 
         if temp_path.exists():
             temp_path.replace(target_path)
+
+        for extra in info.get("extra_files", []):
+            extra_target = models_dir / extra["filename"]
+            extra_temp = models_dir / f"{extra['filename']}.part"
+            with httpx.stream("GET", extra["url"], follow_redirects=True, timeout=180.0) as response:
+                response.raise_for_status()
+                total_extra = int(response.headers.get("content-length", 0))
+                extra_down = 0
+                with open(extra_temp, "wb") as f:
+                    for chunk in response.iter_bytes(chunk_size=chunk_size):
+                        if chunk:
+                            f.write(chunk)
+                            extra_down += len(chunk)
+                            if progress_callback:
+                                progress_callback(extra_down, total_extra)
+            if extra_temp.exists():
+                extra_temp.replace(extra_target)
+
         return target_path
     except Exception as exc:
         logger.error("Failed to download SLM model %s: %s", identifier, exc)
         if temp_path.exists():
             temp_path.unlink(missing_ok=True)
+        for extra in info.get("extra_files", []):
+            extra_temp = models_dir / f"{extra['filename']}.part"
+            if extra_temp.exists():
+                extra_temp.unlink(missing_ok=True)
         raise exc
 
 

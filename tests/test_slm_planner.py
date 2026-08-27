@@ -478,3 +478,64 @@ async def test_dispatcher_route_mid_execution_replan_promotes_to_dag():
     assert dec_dag.path == "slow"
     assert dec_dag.route == "dynamic_dag"
     assert dec_dag.plan is not None
+
+
+def test_resolve_slm_path_resolution(tmp_path, monkeypatch):
+    """resolve_slm_path resolves from direct path, config, and default models dir."""
+    from autoconduck.routing.slm_planner import resolve_slm_path
+    from autoconduck.config import Config
+
+    # 1. Direct existing file
+    direct_file = tmp_path / "model.onnx"
+    direct_file.write_bytes(b"DATA")
+    assert resolve_slm_path(str(direct_file)) == str(direct_file)
+
+    # 2. Path from Config object
+    cfg = Config()
+    cfg.selection.slm_model_path = str(direct_file)
+    assert resolve_slm_path("", config=cfg) == str(direct_file)
+
+    # 3. Path in ~/.autoconduck/models/
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    lfm_file = models_dir / "lfm2.5-1.2b-instruct-q4.onnx"
+    lfm_file.write_bytes(b"LFM_DATA")
+
+    with patch("autoconduck.routing.slm_downloader.get_default_models_dir", return_value=models_dir):
+        resolved = resolve_slm_path("lfm2.5-1.2b-instruct-q4.onnx")
+        assert resolved == str(lfm_file)
+
+
+@pytest.mark.asyncio
+async def test_slm_planner_onnx_lfm_model_loading(tmp_path):
+    """SLMPlanner correctly loads and initializes ONNX / Liquid AI LFM models."""
+    from autoconduck.config import Config
+
+    lfm_file = tmp_path / "lfm2.5-1.2b-instruct-q4.onnx"
+    lfm_file.write_bytes(b"ONNX_MODEL_CONTENT")
+
+    planner = SLMPlanner(model_path=str(lfm_file))
+    cfg = Config()
+    cfg.selection.slm_model_path = str(lfm_file)
+
+    planner._ensure_llm_loaded(cfg)
+    assert planner._llm is not None
+
+
+@pytest.mark.asyncio
+async def test_slm_planner_fallback_when_slm_unavailable_is_quiet():
+    """When SLM is not loaded or fallback shim, plan_sync and plan quietly return fallback plan."""
+    planner = SLMPlanner(model_path="nonexistent_model.onnx")
+    messages = [{"role": "user", "content": "Hello world"}]
+    
+    # plan_sync should not raise and return a valid fallback plan
+    sync_plan = planner.plan_sync(messages)
+    assert isinstance(sync_plan, ExecutionPlan)
+    assert sync_plan.fallback_used is True
+    assert sync_plan.route == "fast_direct"
+
+    # async plan should also return fallback plan
+    async_plan = await planner.plan(messages)
+    assert isinstance(async_plan, ExecutionPlan)
+    assert async_plan.fallback_used is True
+    assert async_plan.route == "fast_direct"

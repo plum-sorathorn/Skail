@@ -7,10 +7,6 @@ from autoconduck._compat import (
     is_onnx_genai_available,
     get_onnx_model,
     ONNXModelFallback,
-    is_llama_cpp_available,
-    get_llama_model,
-    LlamaFallback,
-    LlamaGrammarFallback,
     is_outlines_available,
     OutlinesFallback,
     generate_structured_json,
@@ -41,32 +37,6 @@ def test_onnx_fallback_interface():
     assert chat_resp["choices"][0]["message"]["role"] == "assistant"
 
 
-def test_llama_fallback_interface():
-    """Test Llama fallback and mock completion generation."""
-    model = get_llama_model("mock-qwen.gguf", n_ctx=1024)
-    assert model is not None
-
-    resp = model.create_completion(prompt="Hello world", max_tokens=32)
-    assert "choices" in resp
-    assert len(resp["choices"]) > 0
-    assert "text" in resp["choices"][0]
-    assert resp["usage"]["prompt_tokens"] == 2
-
-    chat_resp = model.create_chat_completion(
-        messages=[{"role": "user", "content": "How are you?"}]
-    )
-    assert "choices" in chat_resp
-    assert chat_resp["choices"][0]["message"]["role"] == "assistant"
-
-    tokens = model.tokenize("test")
-    assert isinstance(tokens, list)
-    text = model.detokenize(tokens)
-    assert text == b"test"
-
-    grammar = LlamaGrammarFallback.from_string("root ::= [a-z]+")
-    assert grammar.grammar_str == "root ::= [a-z]+"
-
-
 class SimpleTestSchema(BaseModel):
     name: str = "default_name"
     count: int = 1
@@ -74,7 +44,7 @@ class SimpleTestSchema(BaseModel):
 
 def test_outlines_fallback_interface():
     """Test Outlines fallback schema validation and generation."""
-    mock_model = LlamaFallback("mock.gguf")
+    mock_model = ONNXModelFallback("mock.onnx")
     gen = OutlinesFallback(mock_model).build_json_generator(SimpleTestSchema)
     result = gen("Generate schema")
     assert isinstance(result, SimpleTestSchema)

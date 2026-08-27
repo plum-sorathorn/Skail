@@ -13,7 +13,7 @@ AutoConduck is a local zero-overhead model router + task orchestrator for coding
 - NPM wheels: `python npm-packaging/build.py` (`--check` to verify without rebuild)
 
 ## Non-negotiable invariants
-- **Fail-soft**: any SLM/LangGraph/tool/checkpointer/config exception degrades to direct dispatch — NEVER surface a 500 to the client. Optional native deps (llama.cpp, Outlines, LanceDB, ONNX, SQLite saver) are wrapped in `autoconduck/_compat/` so missing binaries still boot.
+- **Fail-soft**: any SLM/LangGraph/tool/checkpointer/config exception degrades to direct dispatch — NEVER surface a 500 to the client. Optional native deps (Outlines, LanceDB, ONNX, SQLite saver) are wrapped in `autoconduck/_compat/` so missing binaries still boot.
 - **Turn Guard** (`server/turn_guard.py`) MUST stay synchronous, I/O-free, regex-only, <2ms. Do not add async/LLM/tool calls there.
 - **Selection is O(models), synchronous, in-memory, sub-ms** — this is the routing hot path; do not add I/O or model calls inside it.
 - **Agent config edits are bounded** by `# BEGIN AUTOCONDUCK` / `# END AUTOCONDUCK` markers, with backups in `~/.autoconduck/backups/`. Never write outside those markers.

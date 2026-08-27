@@ -11,10 +11,6 @@ from packaging.requirements import Requirement
 import autoconduck
 from autoconduck import _compat
 from autoconduck._compat import (
-    is_llama_cpp_available,
-    get_llama_model,
-    LlamaFallback,
-    LlamaGrammarFallback,
     is_outlines_available,
     OutlinesFallback,
     generate_structured_json,
@@ -82,77 +78,7 @@ def test_adversarial_dependency_syntax_and_sync():
 
 
 # ==============================================================================
-# 2. LlamaFallback Adversarial & Boundary Tests
-# ==============================================================================
-
-def test_adversarial_llama_fallback_edge_inputs():
-    """Test LlamaFallback under extreme and adversarial inputs."""
-    fallback = LlamaFallback(model_path="test-model.gguf")
-
-    # Empty prompt completion
-    resp_empty = fallback.create_completion(prompt="")
-    assert resp_empty["choices"][0]["text"] == "{}"
-    assert resp_empty["usage"]["prompt_tokens"] == 0
-
-    # Stream completion
-    stream_iter = fallback.create_completion(prompt="Hello", stream=True)
-    chunks = list(stream_iter)
-    assert len(chunks) == 1
-    assert chunks[0]["choices"][0]["text"] == "{}"
-
-    # Callable __call__
-    resp_call = fallback(prompt="Test prompt")
-    assert "choices" in resp_call
-
-    # Chat completion with empty messages
-    chat_empty = fallback.create_chat_completion(messages=[])
-    assert chat_empty["usage"]["prompt_tokens"] == 0
-
-    # Chat completion with missing content and non-string content
-    chat_edge = fallback.create_chat_completion(
-        messages=[
-            {"role": "user"},  # Missing content key
-            {"role": "user", "content": None},
-            {"role": "assistant", "content": 12345},
-            {"role": "user", "content": ["multimodal", "parts"]},
-        ]
-    )
-    assert "choices" in chat_edge
-    assert chat_edge["choices"][0]["message"]["content"] == "{}"
-
-    # Tokenize edge cases
-    assert fallback.tokenize("") == []
-    assert fallback.tokenize(b"") == []
-    assert fallback.tokenize("abc") == [97, 98, 99]
-    assert fallback.tokenize(b"abc") == [97, 98, 99]
-
-    # Detokenize edge cases
-    assert fallback.detokenize([]) == b""
-    assert fallback.detokenize([97, 98, 99]) == b"abc"
-
-    # Eval and reset calls
-    fallback.eval([1, 2, 3])
-    fallback.reset()
-
-
-def test_adversarial_get_llama_model_mock_failure(monkeypatch):
-    """Test get_llama_model when native llama_cpp raises during instantiation."""
-    import autoconduck._compat.llama_fallback as lf
-
-    class FakeBrokenLlama:
-        def __init__(self, *args, **kwargs):
-            raise OSError("Shared library not found: llama.dll")
-
-    monkeypatch.setattr(lf, "HAS_LLAMA_CPP", True)
-    monkeypatch.setattr(lf, "llama_cpp", type("FakeModule", (), {"Llama": FakeBrokenLlama})())
-
-    model = lf.get_llama_model("test.gguf")
-    assert isinstance(model, LlamaFallback)
-    assert model._is_fallback is True
-
-
-# ==============================================================================
-# 3. OutlinesFallback Adversarial & Boundary Tests
+# 2. OutlinesFallback Adversarial & Boundary Tests
 # ==============================================================================
 
 class StrictSchema(BaseModel):

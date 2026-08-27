@@ -4,12 +4,6 @@ from .onnx_fallback import (
     is_onnx_available,
     is_onnx_genai_available,
 )
-from .llama_fallback import (
-    LlamaFallback,
-    LlamaGrammarFallback,
-    get_llama_model,
-    is_llama_cpp_available,
-)
 from .outlines_fallback import (
     OutlinesFallback,
     generate_structured_json,
@@ -34,10 +28,6 @@ __all__ = [
     "get_onnx_model",
     "is_onnx_available",
     "is_onnx_genai_available",
-    "LlamaFallback",
-    "LlamaGrammarFallback",
-    "get_llama_model",
-    "is_llama_cpp_available",
     "OutlinesFallback",
     "generate_structured_json",
     "is_outlines_available",
