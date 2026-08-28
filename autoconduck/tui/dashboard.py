@@ -324,7 +324,7 @@ if _TEXTUAL:
                 ]
                 return "\n".join(
                     _format_box_lines(
-                        "[bold cyan]LangGraph Dynamic DAG Execution[/bold cyan]",
+                        "[bold cyan]Dynamic DAG Execution[/bold cyan]",
                         lines,
                         width=76,
                     )

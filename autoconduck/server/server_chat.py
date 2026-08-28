@@ -34,6 +34,9 @@ async def handle_chat_completions(
     except Exception:
         pass
     body.messages = normalize_messages_for_llm(body.messages)
+    # We normalized it here, so downstream functions don't need to do it again if they know it's normalized.
+    # However, to be completely safe, we just use body.messages directly, and we can replace the later calls with a pass-through if we want, but it's simplest to just use body.messages. Wait, actually we can just pass body.messages to route_target_fn. route_target_fn itself normalizes them.
+
     cfg = config_module.get_config()
     configured_progress = bool(
         getattr(getattr(cfg, "selection", None), "slow_stream_progress", True)
@@ -68,6 +71,10 @@ async def handle_chat_completions(
             task = asyncio.create_task(
                 route_target_fn(body.model, body.messages, request, on_progress, tools=body.tools)
             )
+            
+            done_event = asyncio.Event()
+            task.add_done_callback(lambda _: done_event.set())
+            
             try:
                 first = await first_event
                 first_path = (
@@ -80,17 +87,20 @@ async def handle_chat_completions(
                 if is_slow:
                     created = int(time.time())
                     sent_role = False
-                    while True:
-                        if task.done() and progress_q.empty():
-                            break
+                    while not (done_event.is_set() and progress_q.empty()):
                         try:
+                            # Shield to ensure we can consume from queue even if request is cancelling
                             event = await asyncio.wait_for(
-                                progress_q.get(), timeout=0.1
+                                asyncio.shield(progress_q.get()),
+                                timeout=0.5
                             )
                         except asyncio.TimeoutError:
-                            if task.done() and progress_q.empty():
-                                break
                             continue
+                        except asyncio.CancelledError:
+                            if done_event.is_set() and progress_q.empty():
+                                break
+                            raise
+                        
                         delta_text = None
                         if isinstance(event, str):
                             delta_text = (
@@ -138,8 +148,6 @@ async def handle_chat_completions(
                             + "\n\n"
                         )
                         if node == "idle":
-                            break
-                        if task.done() and progress_q.empty():
                             break
                     target, extra = await task
                 answer = extra.get("__answer__") if extra else None

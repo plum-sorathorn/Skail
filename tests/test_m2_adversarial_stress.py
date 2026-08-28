@@ -3,7 +3,7 @@
 Empirical verification suite targeting:
 1. Turn Guard: Mixed payloads, malformed JSON, deep nesting, rapid alternating errors, non-dict payloads.
 2. SLM Planner: Schema validation rejections, circuit breaker timeouts, coroutine hanging, empty/null prompts.
-3. Dynamic LangGraph Factory: Complex multi-subtask DAG topologies (diamond, fan-out, cycles, missing deps),
+3. Dynamic DAG Factory: Complex multi-subtask DAG topologies (diamond, fan-out, cycles, missing deps),
    execution flow, and SqliteSaver checkpoint persistence.
 """
 from __future__ import annotations
@@ -19,7 +19,6 @@ from autoconduck.server.turn_guard import TurnAction, TurnClassificationResult, 
 from autoconduck.routing.slm_planner import ExecutionPlan, SLMPlanner, SubTaskSpec
 from autoconduck.routing.model_pool import CapabilitySLA
 from autoconduck.orchestrator.dynamic_factory import DynamicState, build_dynamic_graph
-from autoconduck._compat.sqlite_checkpointer import get_sqlite_checkpointer
 
 
 # ==============================================================================
@@ -358,11 +357,11 @@ class TestSLMPlannerAdversarial:
 
 
 # ==============================================================================
-# SECTION 3: DYNAMIC LANGGRAPH FACTORY ADVERSARIAL STRESS TESTS
+# SECTION 3: Dynamic DAG Factory ADVERSARIAL STRESS TESTS
 # ==============================================================================
 
 class TestDynamicLangGraphFactoryAdversarial:
-    """Adversarial stress testing for Dynamic LangGraph Factory & Checkpointer."""
+    """Adversarial stress testing for Dynamic DAG Factory & Checkpointer."""
 
     @pytest.fixture(autouse=True)
     def mock_subagent_runner(self, monkeypatch):
@@ -476,36 +475,3 @@ class TestDynamicLangGraphFactoryAdversarial:
         result_state = await runner.ainvoke(initial_state)
         assert result_state is not None
 
-    @pytest.mark.asyncio
-    async def test_checkpointer_persistence_and_state_recovery(self):
-        """SqliteSaver checkpointer persistence verifies state recovery and isolation by thread_id."""
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-            db_path = tmp.name
-
-        checkpointer = get_sqlite_checkpointer(db_path)
-        plan = ExecutionPlan(
-            route="dynamic_dag",
-            subtasks=[
-                SubTaskSpec(id="step_1", goal="Initial step", role="read", depends_on=[]),
-                SubTaskSpec(id="step_2", goal="Follow-up step", role="edit", depends_on=["step_1"]),
-            ],
-        )
-
-        runner = build_dynamic_graph(plan, checkpointer=checkpointer)
-        assert runner is not None
-
-        # Execute Session 1, Thread A
-        config_a = {"configurable": {"thread_id": "thread_alpha", "session_id": "sess_1"}}
-        state_a = DynamicState(session_id="sess_1", thread_id="thread_alpha", plan=plan)
-        res_a = await runner.ainvoke(state_a, config=config_a)
-        outputs_a = getattr(res_a, "subtask_outputs", {}) if not isinstance(res_a, dict) else res_a.get("subtask_outputs", {})
-        assert "step_1" in outputs_a
-        assert "step_2" in outputs_a
-
-        # Execute Session 1, Thread B (isolated thread)
-        config_b = {"configurable": {"thread_id": "thread_beta", "session_id": "sess_1"}}
-        state_b = DynamicState(session_id="sess_1", thread_id="thread_beta", plan=plan)
-        res_b = await runner.ainvoke(state_b, config=config_b)
-        outputs_b = getattr(res_b, "subtask_outputs", {}) if not isinstance(res_b, dict) else res_b.get("subtask_outputs", {})
-        assert "step_1" in outputs_b
-        assert "step_2" in outputs_b

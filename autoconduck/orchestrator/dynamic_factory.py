@@ -1,4 +1,4 @@
-"""Dynamic LangGraph Factory & SqliteSaver Checkpoint Integration.
+"""Dynamic DAG Factory.
 
 Compiles transient StateGraph DAGs on the fly with parallel subtask fan-out,
 conditional LanceDB RAG node injection, terminal Synthesizer node on frontier_reasoning,
@@ -31,7 +31,7 @@ def _latest_val(left: Any, right: Any) -> Any:
 
 
 class DynamicState(BaseModel):
-    """Dynamic execution state container for LangGraph DAG pipelines."""
+    """Dynamic execution state container for DAG pipelines."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -238,90 +238,105 @@ async def _synthesizer_node_handler(state: DynamicState | dict[str, Any], on_pro
 
 
 class DynamicGraphRunner:
-    """Runnable wrapper for execution graph."""
+    """Runnable wrapper for execution graph using native asyncio."""
 
-    def __init__(self, compiled_graph: Any = None, plan: ExecutionPlan | None = None) -> None:
-        self.compiled_graph = compiled_graph
+    def __init__(self, plan: ExecutionPlan | None = None, on_progress: Any = None) -> None:
+        self.plan = plan
+        self.on_progress = on_progress
+
+    def invoke(self, input_state: Any, config: dict[str, Any] | None = None) -> Any:
+        return asyncio.run(self.ainvoke(input_state, config))
+
+    async def ainvoke(self, input_state: Any, config: dict[str, Any] | None = None) -> Any:
+        state = input_state if isinstance(input_state, DynamicState) else DynamicState(**(input_state if isinstance(input_state, dict) else input_state.model_dump()))
+
+        # 1. RAG Node
+        if self.plan and self.plan.needs_rag:
+            rag_res = await _rag_node_handler(state, self.on_progress)
+            state.verified_context.extend(rag_res.get("verified_context", []))
+
+        # 2. Subtask Nodes
+        if self.plan and self.plan.subtasks:
+            task_coros = {}
+            
+            async def run_task_wrapper(task: SubTaskSpec) -> Any:
+                # Wait for dependencies
+                deps = [d for d in task.depends_on if d in task_coros]
+                if deps:
+                    await asyncio.gather(*(task_coros[d] for d in deps), return_exceptions=True)
+                
+                handler = _make_subtask_handler(task, self.on_progress)
+                res = await handler(state)
+                
+                if isinstance(res, dict):
+                    if "subtask_outputs" in res:
+                        state.subtask_outputs.update(res["subtask_outputs"])
+                    if "subtask_errors" in res:
+                        state.subtask_errors.update(res["subtask_errors"])
+                return res
+
+            # Pre-create all tasks to allow dependency resolution
+            for task in self.plan.subtasks:
+                task_coros[task.id] = asyncio.create_task(run_task_wrapper(task))
+                
+            await asyncio.gather(*task_coros.values(), return_exceptions=True)
+
+        # 3. Synthesizer Terminal Node
+        synth_res = await _synthesizer_node_handler(state, self.on_progress)
+        state.synthesizer_output = synth_res.get("synthesizer_output")
+        state.final_result = synth_res.get("final_result")
+
+        return state
+
+    async def astream(self, input_state: Any, config: dict[str, Any] | None = None) -> Any:
+        # Compatibility for astream if needed, though run() just uses ainvoke
+        yield await self.ainvoke(input_state, config)
+
+
+class DummyRunner:
+    def __init__(self, plan: ExecutionPlan | None = None):
         self.plan = plan
 
     def invoke(self, input_state: Any, config: dict[str, Any] | None = None) -> Any:
-        if self.compiled_graph and hasattr(self.compiled_graph, "invoke"):
-            return self.compiled_graph.invoke(input_state, config=config)
         return input_state
 
     async def ainvoke(self, input_state: Any, config: dict[str, Any] | None = None) -> Any:
-        if self.compiled_graph and hasattr(self.compiled_graph, "ainvoke"):
-            return await self.compiled_graph.ainvoke(input_state, config=config)
         return input_state
 
     async def astream(self, input_state: Any, config: dict[str, Any] | None = None) -> Any:
-        if self.compiled_graph and hasattr(self.compiled_graph, "astream"):
-            async for chunk in self.compiled_graph.astream(input_state, config=config):
-                yield chunk
-        else:
-            yield input_state
+        yield input_state
 
 
 def build_dynamic_graph(plan: ExecutionPlan, checkpointer: Any = None, on_progress: Any = None) -> Any:
-    """Compile a dynamic LangGraph StateGraph DAG for the given ExecutionPlan."""
-    try:
-        from langgraph.graph import StateGraph, START, END
-
-        builder = StateGraph(DynamicState)
-
-        # 1. RAG Node (conditional)
-        root_source = START
-        if plan.needs_rag:
-            async def _rag_wrapper(st: Any) -> Any:
-                return await _rag_node_handler(st, on_progress=on_progress)
-
-            builder.add_node("rag", _rag_wrapper)
-            builder.add_edge(START, "rag")
-            root_source = "rag"
-
-        # 2. Subtask Nodes
-        subtask_ids = set()
-        for task in plan.subtasks:
-            node_name = task.id
-            subtask_ids.add(node_name)
-            builder.add_node(node_name, _make_subtask_handler(task, on_progress=on_progress))
-
-        for task in plan.subtasks:
-            node_name = task.id
-            valid_deps = [d for d in task.depends_on if d in subtask_ids and d != node_name]
-            if valid_deps:
-                for dep in valid_deps:
-                    builder.add_edge(dep, node_name)
-            else:
-                builder.add_edge(root_source, node_name)
-
-        # 3. Synthesizer Terminal Node
-        async def _synthesizer_wrapper(st: Any) -> Any:
-            return await _synthesizer_node_handler(st, on_progress=on_progress)
-
-        builder.add_node("synthesizer", _synthesizer_wrapper)
-
-        all_deps = {d for t in plan.subtasks for d in t.depends_on if d in subtask_ids}
-        leaf_subtasks = [t.id for t in plan.subtasks if t.id not in all_deps]
-
-        if leaf_subtasks:
-            for leaf in leaf_subtasks:
-                builder.add_edge(leaf, "synthesizer")
-        elif plan.subtasks:
-            for t in plan.subtasks:
-                builder.add_edge(t.id, "synthesizer")
-        else:
-            builder.add_edge(root_source, "synthesizer")
-
-        builder.add_edge("synthesizer", END)
-
-        if checkpointer is not None:
-            compiled = builder.compile(checkpointer=checkpointer)
-        else:
-            compiled = builder.compile()
-
-        return DynamicGraphRunner(compiled_graph=compiled, plan=plan)
-
-    except Exception as exc:
-        logger.warning("Dynamic LangGraph compilation fallback: %s", exc)
-        return DynamicGraphRunner(compiled_graph=None, plan=plan)
+    """Return a DynamicGraphRunner for the given ExecutionPlan without external DAG overhead."""
+    
+    # Detect cycles
+    if plan and plan.subtasks:
+        task_ids = {t.id for t in plan.subtasks}
+        adj = {t.id: [d for d in t.depends_on if d in task_ids] for t in plan.subtasks}
+        
+        visited = set()
+        path = set()
+        has_cycle = False
+        
+        def dfs(node: str) -> None:
+            nonlocal has_cycle
+            if node in path:
+                has_cycle = True
+                return
+            if node in visited:
+                return
+            path.add(node)
+            for neighbor in adj.get(node, []):
+                dfs(neighbor)
+            path.remove(node)
+            visited.add(node)
+            
+        for t in plan.subtasks:
+            if t.id not in visited:
+                dfs(t.id)
+                
+        if has_cycle:
+            return DummyRunner(plan=plan)
+            
+    return DynamicGraphRunner(plan=plan, on_progress=on_progress)

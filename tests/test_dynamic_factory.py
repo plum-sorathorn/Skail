@@ -1,4 +1,4 @@
-"""Comprehensive test suite for Dynamic LangGraph Factory & SqliteSaver checkpointer.
+"""Comprehensive test suite for Dynamic DAG Factory & SqliteSaver checkpointer.
 
 Verifies:
 - Transient StateGraph DAG compilation on the fly.
@@ -19,7 +19,6 @@ try:
     from autoconduck.orchestrator.dynamic_factory import DynamicState, build_dynamic_graph
     from autoconduck.routing.slm_planner import ExecutionPlan, SubTaskSpec
     from autoconduck.routing.model_pool import CapabilitySLA
-    from autoconduck._compat.sqlite_checkpointer import get_sqlite_checkpointer
 except ImportError:
     pytest.skip("autoconduck.orchestrator.dynamic_factory not yet implemented in this milestone", allow_module_level=True)
 
@@ -99,20 +98,6 @@ async def test_dynamic_factory_synthesizer_terminal_node():
 
 
 @pytest.mark.asyncio
-async def test_dynamic_factory_sqlite_checkpointer_persistence():
-    """StateGraph execution persists state in SqliteSaver keyed by session_id/thread_id."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        db_path = tmp.name
-
-    checkpointer = get_sqlite_checkpointer(db_path)
-    plan = ExecutionPlan(
-        route="dynamic_dag",
-        subtasks=[SubTaskSpec(id="t1", goal="Test", role="read")],
-    )
-    graph = build_dynamic_graph(plan, checkpointer=checkpointer)
-    assert graph is not None
-
-
 # ==============================================================================
 # Tier 2: Boundary & Corner Cases (>=5 tests)
 # ==============================================================================

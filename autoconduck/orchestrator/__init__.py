@@ -1,4 +1,4 @@
-"""Dynamic SLM Orchestration and LangGraph Factory."""
+"""Dynamic SLM Orchestration and DAG Factory."""
 
 from .dynamic_factory import DynamicState, build_dynamic_graph
 from .session_guard import SessionGuard, SessionGuardResult

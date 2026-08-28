@@ -19,10 +19,6 @@ from autoconduck._compat import (
     LanceDBFallbackConnection,
     LanceDBFallbackTable,
     LanceDBFallbackQuery,
-    is_sqlite_checkpointer_available,
-    get_sqlite_checkpointer,
-    SqliteSaverFallback,
-    CheckpointTupleFallback,
 )
 from autoconduck._compat.lancedb_fallback import _cosine_distance
 
@@ -69,7 +65,7 @@ def test_adversarial_dependency_syntax_and_sync():
     assert pyproject_names == req_names, f"Mismatch: {pyproject_names.symmetric_difference(req_names)}"
 
     # Required 0.3.0 dependencies
-    expected_new = {"onnxruntime", "outlines", "lancedb", "langgraph-checkpoint-sqlite"}
+    expected_new = {"onnxruntime", "outlines", "lancedb"}
     for dep in expected_new:
         assert dep in pyproject_names, f"Missing new dependency: {dep}"
 
@@ -259,65 +255,3 @@ def test_adversarial_lancedb_table_operations():
 
 
 # ==============================================================================
-# 5. SqliteSaverFallback Adversarial & Boundary Tests
-# ==============================================================================
-
-@pytest.mark.asyncio
-async def test_adversarial_sqlite_saver_fallback():
-    """Test SqliteSaverFallback with unhashable metadata, corrupted data, and async operations."""
-    saver = SqliteSaverFallback(":memory:")
-
-    # Setup is idempotent
-    saver.setup()
-    saver.setup()
-
-    # Put checkpoint with non-serializable objects in metadata/checkpoint
-    class CustomObj:
-        def __str__(self):
-            return "CustomObjStr"
-
-    config = {"configurable": {"thread_id": "thread-1", "checkpoint_ns": "ns-1"}}
-    chk = {"id": "chk-1", "data": {"key": CustomObj()}}
-    meta = {"timestamp": CustomObj()}
-
-    saved_cfg = saver.put(config, chk, meta)
-    assert saved_cfg["configurable"]["checkpoint_id"] == "chk-1"
-
-    # Retrieve tuple
-    tup = saver.get_tuple(config)
-    assert tup is not None
-    assert tup.checkpoint["id"] == "chk-1"
-    assert tup.checkpoint["data"]["key"] == "CustomObjStr"
-
-    # Put writes with multiple channels
-    saver.put_writes(config, [("chan1", {"val": 1}), ("chan2", CustomObj())], task_id="task-1")
-
-    # List checkpoints
-    items = list(saver.list(config))
-    assert len(items) == 1
-
-    # List without config
-    all_items = list(saver.list(config=None))
-    assert len(all_items) == 1
-
-    # Corrupt data in database directly to verify safe handling
-    with saver.conn:
-        saver.conn.execute("UPDATE checkpoints SET checkpoint = 'CORRUPTED_JSON' WHERE checkpoint_id = 'chk-1'")
-
-    corrupted_tup = saver.get_tuple(config)
-    assert corrupted_tup is not None
-    assert corrupted_tup.checkpoint == {}
-
-    # Async methods
-    async_config = {"configurable": {"thread_id": "async-thread", "checkpoint_ns": "main"}}
-    await saver.aput(async_config, {"id": "async-chk", "state": 1}, {"meta": 2})
-    await saver.aput_writes(async_config, [("c1", "v1")], task_id="t1")
-
-    async_tup = await saver.aget_tuple(async_config)
-    assert async_tup is not None
-    assert async_tup.checkpoint["id"] == "async-chk"
-
-    async_list = []
-    async for item in saver.alist(async_config):
-        async_list.append(item)
-    assert len(async_list) == 1

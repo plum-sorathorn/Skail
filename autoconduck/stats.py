@@ -95,6 +95,29 @@ def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> flo
         return 0.0
 
 
+import threading
+import queue
+
+_stats_queue = queue.Queue()
+
+def _stats_worker():
+    while True:
+        try:
+            target, row = _stats_queue.get()
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with target.open("a", encoding="utf-8") as stream:
+                    stream.write(json.dumps(row, separators=(",", ":")) + "\n")
+            except Exception:
+                pass
+            finally:
+                _stats_queue.task_done()
+        except Exception:
+            pass
+
+_stats_thread = threading.Thread(target=_stats_worker, daemon=True)
+_stats_thread.start()
+
 def record(
     path: str,
     pseudo_model: str,
@@ -144,10 +167,8 @@ def record(
                 row["plan"] = plan.model_dump()
             elif isinstance(plan, dict):
                 row["plan"] = plan
-        target = stats_path()
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with target.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(row, separators=(",", ":")) + "\n")
+        
+        _stats_queue.put((stats_path(), row))
     except Exception:
         pass
 

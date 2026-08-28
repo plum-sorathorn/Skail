@@ -2,12 +2,11 @@
 
 # AutoConduck 0.4.0
 
-**Local, zero-overhead SLM model router & dynamic LangGraph task orchestrator for coding assistants.**
+**Local, zero-overhead SLM model router & dynamic task orchestrator for coding assistants.**
 
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://python.org)
 [![Fast Path Latency](https://img.shields.io/badge/turn--guard-%3C2ms-brightgreen.svg?style=flat)](https://github.com)
 [![SLM Engine](https://img.shields.io/badge/SLM-Qwen%202.5%20Coder%200.5B%20(ONNX%2FGGUF)-purple.svg?style=flat)](https://github.com)
-[![LangGraph](https://img.shields.io/badge/orchestrator-LangGraph%20Dynamic%20DAG-blue.svg?style=flat)](https://github.com/langchain-ai/langgraph)
 [![LiteLLM](https://img.shields.io/badge/proxy-LiteLLM-orange.svg?style=flat)](https://github.com/BerriAI/litellm)
 [![FastAPI](https://img.shields.io/badge/server-FastAPI-009688.svg?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](LICENSE)
@@ -28,7 +27,7 @@ Coding agents (**Claude Code**, **OpenCode**, **Pi**, and **Oh My Pi**) frequent
 - **Embedded SLM Task Architect (Qwen 2.5 Coder / LFM 2.5 ONNX / GGUF):** Local small language model generates validated Pydantic task plans with circuit-breaker protection (default 2000ms), specifying exact DAG topology, subtask constraints, and capability SLA requirements.
 - **"Fit-Gate Then Cheapest" 4D Capability Selection:** Filters models against a 4-dimensional capability vector (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted per task type, then picks the absolute cheapest qualifying model.
 - **Confidence-Tightened Capability Floor:** Low SLM plan confidence dynamically raises the capability floor (`min(base + 0.15 * (1 - conf), 0.60)`) to ensure difficult prompts land on capable models.
-- **Dynamic DAG LangGraph Factory:** Compiles tailored runtime StateGraphs for complex multi-subtask workflows with parallel fan-out execution and unified markdown handoff synthesis.
+- **Dynamic DAG Factory:** Compiles tailored runtime graphs for complex multi-subtask workflows with parallel fan-out execution and unified markdown handoff synthesis.
 - **LanceDB Knowledge & RAG Subsystem:** Embedded vector store with zero-cost 16-dimensional term-hash embeddings retrieves relevant codebase snippets without external API dependencies.
 - **Session Lifecycle & Context Guard:** Preserves immutable prompt-caching prefixes (turns 0 & 1) across 40+ turns and applies structural compaction at the 80% context window ceiling.
 - **Real-Time Reasoning SSE Streamer:** Streams live cognitive deliberations directly to client coding agents using OpenAI `reasoning_content` and Anthropic `thinking_delta` protocols.
@@ -66,7 +65,7 @@ Agent Request (Claude Code / OpenCode / Pi / OMP)
       └──────────┬───────────┘                       │
                  │                                   ▼
                  │                    ┌─────────────────────────────┐
-                 │                    │     Dynamic LangGraph DAG   │
+                 │                    │     Dynamic DAG   │
                  │                    │  ┌───────────────────────┐  │
                  │                    │  │ RAG Node (LanceDB)    │  │
                  │                    │  └───────────┬───────────┘  │
@@ -257,12 +256,12 @@ $$\text{floor} = \min(\text{base} + 0.15 \times (1 - \text{confidence}),\; 0.60)
 5. **Opt-In Price Cap:** `CapabilitySLA.max_price_usd_per_mtok` (configured via `selection.path_price_cap_usd_per_mtok`, disabled by default `{}`) sets an optional price ceiling in USD per 1M tokens. If the price cap empties the pool, AutoConduck falls back to the cheapest qualifying model with `fallback_reason = "price_cap_emptied_pool"`.
 6. **Cheapest Selection:** Qualifying models are sorted by absolute cost (`P = cost_input + 0.5 * cost_output`) ascending, picking the cheapest model (or most expensive if `autoconduck-expensive`).
 
-### 4. Dynamic LangGraph Pipeline & Session Supervisor (`orchestrator/`)
+### 4. Dynamic DAG Pipeline & Session Supervisor (`orchestrator/`)
 
 When `plan.route == "dynamic_dag"`:
 - **Session Execution Contract:** AutoConduck serves as a session-scoped supervisor, emitting structured execution plans and phase DAGs in Markdown with embedded JSON schemas (`format_execution_handoff`).
 - **Autonomous Execution Authority:** The host coding agent (Claude Code, OpenCode, Pi, OMP) executes the planned phases using its native tool harness.
-- **Bounded Reconnaissance (`autoconduck_recon`):** When read-heavy or multi-file reconnaissance is needed before editing, AutoConduck's internal LangGraph DAG runs bounded read-only subagents and synthesizes context.
+- **Bounded Reconnaissance (`autoconduck_recon`):** When read-heavy or multi-file reconnaissance is needed before editing, AutoConduck's internal DAG runs bounded read-only subagents and synthesizes context.
 - **Asynchronous Heartbeat & Plan Evolution:** An asynchronous background SLM heartbeat tracks tool calls across turns, dynamically mutating the session plan (`apply_plan_mutation`) or signalling evidence-backed completion (`terminal_decision`).
 
 ---

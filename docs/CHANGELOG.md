@@ -32,7 +32,7 @@
 ### Major Features & Architectural Overhaul
 - **Embedded SLM Task Architect**: Replaced static 10-factor regex heuristics with local Qwen 2.5 Coder 0.5B Instruct (Q4_K_M GGUF), generating typed Pydantic \ExecutionPlan\ specifications with sub-100ms inference.
 - **Turn Guard Subsystem (\server/turn_guard.py\)**: Sub-2ms regex classifier providing instantaneous bypass for active tool loops and stagnation detection for automated SLM re-planning.
-- **Dynamic DAG LangGraph Factory (\orchestrator/dynamic_factory.py\)**: Replaced static 6-phase orchestrator with runtime compilation of tailored \StateGraph\ topologies based on plan dependency DAGs and SQLite checkpointer state persistence.
+- **Dynamic DAG Factory (\orchestrator/dynamic_factory.py\)**: Replaced static 6-phase orchestrator with runtime compilation of tailored \StateGraph\ topologies based on plan dependency DAGs and SQLite checkpointer state persistence.
 - **Knowledge Vector Store & RAG Subsystem (\knowledge/vector_store.py\)**: Embedded LanceDB vector database with fast hybrid code search and automated context distillation for complex workflows.
 - **Session Lifecycle & Context Guard (\orchestrator/session_guard.py\)**: Preserves immutable prefix contract (turns 0 & 1) for maximum upstream prompt caching across 40+ turns, enforcing intelligent compaction at the 80% context window ceiling.
 - **Real-Time Reasoning SSE Streamer (\server/sse_streamer.py\)**: Unified SSE streaming translating internal SLM reasoning deltas into client-compatible formats (\	hinking_delta\ for Claude Code, \delta.reasoning_content\ for OpenAI clients).

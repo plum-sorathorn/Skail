@@ -261,6 +261,9 @@ class TurnGuard:
                 error_streak=0,
             )
 
+        # Slice to the last 20 messages to avoid O(N) scanning on long sessions (SIG-1)
+        messages = messages[-20:]
+
         # Inspect the last message
         last_msg = messages[-1]
         if not isinstance(last_msg, dict):

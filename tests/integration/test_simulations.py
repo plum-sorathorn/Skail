@@ -4,7 +4,7 @@ Tests simulated full execution:
 - FAST route for OpenAI agents (OpenCode, Pi)
 - FAST route for Anthropic agents (Claude Code)
 - Tool-turn fast-path suppression
-- SLOW route full 6-phase LangGraph pipeline (Recon -> Planner -> Subagents -> Compactor -> Executor Blueprint)
+- SLOW route full 6-phase DAG pipeline (Recon -> Planner -> Subagents -> Compactor -> Executor Blueprint)
 - Real-time progress SSE stream with unicode glyphs
 - Planner JSON resilience and repair fallbacks
 - Full lifecycle for coding agents (Pi, Claude Code, OpenCode)

@@ -18,7 +18,7 @@ async def run_dynamic_orchestration(
     plan: ExecutionPlan | None = None,
     **kwargs: Any,
 ) -> dict[str, Any] | None:
-    """Execute dynamic LangGraph orchestration pipeline for a user turn."""
+    """Execute dynamic DAG orchestration pipeline for a user turn."""
     try:
         if plan is None:
             planner = SLMPlanner()

@@ -16,12 +16,6 @@ from .lancedb_fallback import (
     connect as lancedb_connect,
     is_lancedb_available,
 )
-from .sqlite_checkpointer import (
-    CheckpointTupleFallback,
-    SqliteSaverFallback,
-    get_sqlite_checkpointer,
-    is_sqlite_checkpointer_available,
-)
 
 __all__ = [
     "ONNXModelFallback",
@@ -36,8 +30,4 @@ __all__ = [
     "LanceDBFallbackTable",
     "lancedb_connect",
     "is_lancedb_available",
-    "CheckpointTupleFallback",
-    "SqliteSaverFallback",
-    "get_sqlite_checkpointer",
-    "is_sqlite_checkpointer_available",
 ]

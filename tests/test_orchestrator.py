@@ -1,4 +1,4 @@
-"""LangGraph orchestrator, dynamic factory, and session guard unit tests."""
+"""DAG orchestrator, dynamic factory, and session guard unit tests."""
 import json
 import pytest
 from unittest.mock import MagicMock, patch

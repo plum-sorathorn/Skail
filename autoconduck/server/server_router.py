@@ -53,9 +53,12 @@ async def _run_async_slm_heartbeat(
 ) -> None:
     """Run async background SLM heartbeat evaluation for mid-execution DAG promotion."""
     state = _session_replan_state.setdefault(session_key, {})
-    if state.get("evaluating"):
+    now = time.time()
+    last_eval = state.get("eval_started_at", 0)
+    if state.get("evaluating") and (now - last_eval < 60):
         return
     state["evaluating"] = True
+    state["eval_started_at"] = now
     try:
         from autoconduck.routing.slm_planner import SLMPlanner
 
@@ -105,7 +108,7 @@ def is_active_tool_session(messages: list[Any]) -> bool:
     In an active tool loop, the client agent (Pi, Claude Code, OpenCode, etc.)
     is managing its own tool execution loop. AutoConduck relays requests
     directly to the selected model rather than hijacking the turn with the
-    multi-agent LangGraph orchestrator.
+    multi-agent DAG orchestrator.
     """
     try:
         from autoconduck.server.turn_guard import TurnGuard
@@ -184,7 +187,6 @@ async def route_target(
     """Determine routing path, model selection, and orchestration execution."""
     started = time.perf_counter()
     cfg = config_module.get_config()
-    messages = normalize_messages_for_llm(messages)
     target, path = body_model, "direct"
     request_depth = 0
     if request is not None and hasattr(request, "headers"):

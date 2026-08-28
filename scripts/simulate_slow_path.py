@@ -261,7 +261,6 @@ a verification pass with tests for every change, is required.
 def main():
     from fastapi.testclient import TestClient
     from autoconduck.routing.evaluator import complexity_of
-    from autoconduck.orchestrator.graph import _LANGGRAPH_AVAILABLE
     import autoconduck.config as cm, autoconduck.server_streaming as server, autoconduck.stats as stats
     LOG.unlink(missing_ok=True)
     Mock.seen.clear(); Mock.branches.clear()
@@ -299,7 +298,6 @@ def main():
             r = c.post("/v1/chat/completions", json=payload)
             if not stream:
                 print("\n--- S2 DIAGNOSTICS ---")
-                print("_LANGGRAPH_AVAILABLE:", _LANGGRAPH_AVAILABLE)
                 print("S2 raw response status:", r.status_code)
                 print("S2 raw response json:", r.json())
                 print("S2 node trace:", trace)

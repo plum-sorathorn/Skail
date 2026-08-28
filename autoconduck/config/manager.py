@@ -24,6 +24,7 @@ _config_lock = threading.RLock()
 _config: Config | None = None
 _config_digest: bytes | None = None
 _config_path: Path | None = None
+_config_mtime: int | None = None
 
 
 def _has_configured_models(cfg: Config | None) -> bool:
@@ -176,9 +177,18 @@ def validate_phase_bands(config: Config) -> list[str]:
 
 def get_config() -> Config:
     """Return cached singleton Config instance, reloading if modified on disk."""
-    global _config, _config_digest, _config_path
+    global _config, _config_digest, _config_path, _config_mtime
     with _config_lock:
         path = config_path().resolve()
+        
+        try:
+            mtime = path.stat().st_mtime_ns
+        except OSError:
+            mtime = None
+
+        if _config is not None and mtime is not None and mtime == _config_mtime and _config_path == path:
+            return _config
+
         digest: bytes | None = None
         for attempt in range(3):
             try:
@@ -211,6 +221,7 @@ def get_config() -> Config:
             _config = new_config
             _config_path = path
             _config_digest = digest
+            _config_mtime = mtime
         return _config
 
 

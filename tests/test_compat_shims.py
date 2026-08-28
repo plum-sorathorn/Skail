@@ -13,9 +13,6 @@ from autoconduck._compat import (
     is_lancedb_available,
     lancedb_connect,
     LanceDBFallbackConnection,
-    is_sqlite_checkpointer_available,
-    get_sqlite_checkpointer,
-    SqliteSaverFallback,
 )
 
 
@@ -84,31 +81,3 @@ def test_lancedb_fallback_interface():
     assert "test_docs" not in db.table_names()
 
 
-@pytest.mark.asyncio
-async def test_sqlite_checkpointer_fallback_interface():
-    """Test SqliteSaver fallback synchronization and async checkpointing."""
-    checkpointer = SqliteSaverFallback.from_conn_string(":memory:")
-    config = {"configurable": {"thread_id": "session-123", "checkpoint_ns": "main"}}
-
-    # Put a checkpoint
-    checkpoint_data = {"id": "chk-001", "state": {"messages": [{"role": "user", "content": "hi"}]}}
-    metadata = {"step": 1, "source": "user"}
-    saved_config = checkpointer.put(config, checkpoint_data, metadata)
-    assert saved_config["configurable"]["thread_id"] == "session-123"
-
-    # Get checkpoint tuple
-    retrieved = checkpointer.get_tuple(config)
-    assert retrieved is not None
-    assert retrieved.checkpoint["id"] == "chk-001"
-    assert retrieved.metadata["step"] == 1
-
-    # List checkpoints
-    items = list(checkpointer.list(config))
-    assert len(items) == 1
-
-    # Async methods
-    async_chk = {"id": "chk-002", "state": {"step": 2}}
-    await checkpointer.aput(config, async_chk, {"step": 2})
-    async_retrieved = await checkpointer.aget_tuple(config)
-    assert async_retrieved is not None
-    assert async_retrieved.checkpoint["id"] == "chk-002"

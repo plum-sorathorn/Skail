@@ -13,8 +13,6 @@ dependencies = [
   "tiktoken>=0.6",
   "textual>=0.70",
   "litellm[proxy]>=1.40",
-  "langgraph",
-  "langgraph-checkpoint-sqlite",
   "onnxruntime>=1.17.0",
   "outlines>=0.1.0",
   "lancedb>=0.10",

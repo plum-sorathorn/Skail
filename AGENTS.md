@@ -13,7 +13,7 @@ AutoConduck is a local zero-overhead model router + task orchestrator for coding
 - NPM wheels: `python npm-packaging/build.py` (`--check` to verify without rebuild)
 
 ## Non-negotiable invariants
-- **Fail-soft**: any SLM/LangGraph/tool/checkpointer/config exception degrades to direct dispatch — NEVER surface a 500 to the client. Optional native deps (Outlines, LanceDB, ONNX, SQLite saver) are wrapped in `autoconduck/_compat/` so missing binaries still boot.
+- **Fail-soft**: any SLM/tool/config exception degrades to direct dispatch — NEVER surface a 500 to the client. Optional native deps (Outlines, LanceDB, ONNX) are wrapped in `autoconduck/_compat/` so missing binaries still boot.
 - **Turn Guard** (`server/turn_guard.py`) MUST stay synchronous, I/O-free, regex-only, <2ms. Do not add async/LLM/tool calls there.
 - **Selection is O(models), synchronous, in-memory, sub-ms** — this is the routing hot path; do not add I/O or model calls inside it.
 - **Agent config edits are bounded** by `# BEGIN AUTOCONDUCK` / `# END AUTOCONDUCK` markers, with backups in `~/.autoconduck/backups/`. Never write outside those markers.
@@ -38,7 +38,7 @@ Do NOT build `model_scores.json` / empirical success-weighted scoring yet. It is
 ## Structure / entrypoints
 - `autoconduck/` runtime package; `main.py` entry; `stats.py` = **write-only** usage accounting for `/stats` (NOT consumed by routing).
 - `routing/`: `dispatcher.py` (route + `_select_planned`), `slm_planner.py` (`ExecutionPlan`), `model_pool.py` (`CapabilitySLA` + selection), `pricing.py`, `slm_downloader.py`.
-- `orchestrator/`: `dynamic_factory.py` (LangGraph DAG), `session_guard.py`, `executor_loop.py` + `tools.py`, `handoff.py`, `subagents.py`.
+- `orchestrator/`: `dynamic_factory.py` (Dynamic DAG), `session_guard.py`, `executor_loop.py` + `tools.py`, `handoff.py`, `subagents.py`.
 - `server/`: `server_routes.py` (routes), `server_streaming.py`, `turn_guard.py`, `messages_api.py` (Anthropic shim), `sse_streamer.py`.
 - `config/`: `models.py` (`Config`/`SelectionConfig` pydantic), `manager.py`, `resolver.py`, `paths.py`.
 - `knowledge/` (LanceDB RAG); `auth/`, `launcher/`, `cli/`, `presets/`, `harnesses/`, `tui/`, `_compat/`.

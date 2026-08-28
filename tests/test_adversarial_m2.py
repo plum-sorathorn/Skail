@@ -552,7 +552,7 @@ async def test_dynamic_factory_rag_node_state_budget_invariance():
 
     # 2. Build full graph and verify execution
     runner = build_dynamic_graph(plan)
-    assert runner.compiled_graph is not None
+    assert runner is not None
 
-    final_state = await runner.ainvoke(state)
+    final_state = await runner.ainvoke(rag_result)
     assert final_state is not None
