@@ -634,3 +634,72 @@ def test_render_plan_summary_for_user():
     assert "Agent 1" in summary
     assert "Agent 2" in summary
     assert "Inspect architecture" in summary
+
+
+def test_topological_batching_and_tool_templates():
+    """Topological batching groups independent tasks into parallel Batch 1 and dependent tasks into Batch 2."""
+    from autoconduck.orchestrator.fan_out import build_harness_fan_out_plan
+    from autoconduck.routing.slm_planner import ExecutionPlan, SubTaskSpec, CapabilitySLA
+
+    plan = ExecutionPlan(
+        route="dynamic_dag",
+        confidence=0.95,
+        task_type="refactor",
+        suggested_sla=CapabilitySLA(min_context=16000),
+        synthesizer_sla=CapabilitySLA(requires_reasoning=True),
+        needs_rag=False,
+        rag_queries=[],
+        subtasks=[
+            SubTaskSpec(id="recon_1", goal="Inspect frontend UI", role="recon", scope=["ui/"]),
+            SubTaskSpec(id="recon_2", goal="Inspect backend API", role="recon", scope=["api/"]),
+            SubTaskSpec(id="edit_1", goal="Implement changes", role="edit", depends_on=["recon_1", "recon_2"], scope=["src/"]),
+        ],
+    )
+
+    # Test Claude Code tool template
+    claude_fan_out = build_harness_fan_out_plan(plan, max_subagents=4, client_type="claude")
+    assert claude_fan_out.can_fan_out is True
+    assert len(claude_fan_out.batches) == 2
+    assert claude_fan_out.batches[0].mode == "parallel"
+    assert len(claude_fan_out.batches[0].agents) == 2
+    assert claude_fan_out.batches[1].mode == "sequential"
+    assert len(claude_fan_out.batches[1].agents) == 1
+    assert "Task(" in claude_fan_out.batches[0].agents[0].tool_call_template
+
+    # Test OMP tool template
+    omp_fan_out = build_harness_fan_out_plan(plan, max_subagents=4, client_type="omp")
+    assert "task(" in omp_fan_out.batches[0].agents[0].tool_call_template
+
+    # Test contract dict
+    contract_dict = claude_fan_out.to_contract_dict()
+    assert contract_dict["supported"] is True
+    assert len(contract_dict["batches"]) == 2
+    assert contract_dict["batches"][0]["mode"] == "parallel"
+
+
+def test_session_execution_contract_includes_fan_out():
+    """format_execution_handoff embeds fan_out data in Session Execution Contract JSON."""
+    import json
+    from autoconduck.orchestrator.handoff import format_execution_handoff
+    from autoconduck.routing.slm_planner import ExecutionPlan, SubTaskSpec
+
+    plan = ExecutionPlan(
+        route="dynamic_dag",
+        confidence=0.9,
+        task_type="refactor",
+        subtasks=[
+            SubTaskSpec(id="t1", goal="Explore", role="recon"),
+            SubTaskSpec(id="t2", goal="Analyze", role="recon"),
+            SubTaskSpec(id="t3", goal="Patch", role="edit", depends_on=["t1", "t2"]),
+        ],
+    )
+    handoff = format_execution_handoff(plan, {}, "", client_type="claude")
+    assert "### Session Execution Contract" in handoff
+    json_marker = "```json\n"
+    json_start = handoff.find(json_marker) + len(json_marker)
+    json_end = handoff.find("\n```", json_start)
+    contract = json.loads(handoff[json_start:json_end])
+    assert contract["schema_version"] == "0.4"
+    assert "fan_out" in contract
+    assert contract["fan_out"]["supported"] is True
+    assert len(contract["fan_out"]["batches"]) == 2
