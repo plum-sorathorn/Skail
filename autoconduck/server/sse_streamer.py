@@ -30,6 +30,7 @@ PROGRESS_LABELS = {
     "synthesizer": "synthesizer",
     "rag": "rag",
     "slm_plan": "slm_plan",
+    "synthesized_plan": "plan",
 }
 
 
@@ -39,7 +40,7 @@ def render_progress_event(event: dict[str, object]) -> str:
     state = str(event.get("state", "running"))
     detail = str(event.get("step_detail") or node)
     label = PROGRESS_LABELS.get(node, node)
-    if node in {"slm_plan", "subagent_pool"}:
+    if node in {"slm_plan", "subagent_pool", "synthesized_plan"}:
         lines = detail.splitlines() or [detail]
         return "\n".join([f"+-- [{label}]", *[f"| {line}" for line in lines], "'--"]) + "\n"
     glyph = STATUS_GLYPHS.get(state, "[..]")

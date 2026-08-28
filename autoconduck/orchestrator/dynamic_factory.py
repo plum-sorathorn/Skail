@@ -222,6 +222,9 @@ async def _synthesizer_node_handler(state: DynamicState | dict[str, Any], on_pro
 
     if on_progress:
         try:
+            from autoconduck.orchestrator.handoff import render_plan_summary_for_user
+            plan_summary = render_plan_summary_for_user(plan, outputs)
+            on_progress({"node": "synthesized_plan", "state": "completed", "step_detail": plan_summary})
             on_progress({"node": "synthesizer", "state": "completed", "step_detail": "Execution plan & handoff ready"})
         except Exception:
             pass

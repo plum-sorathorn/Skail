@@ -24,6 +24,31 @@ class ExecutionHandoff(str):
         return data
 
 
+def render_plan_summary_for_user(plan: Any, subagent_outputs: dict[str, str] | None = None) -> str:
+    """Format a clean, concise execution plan summary with agent assignments for user-visible stream."""
+    if not plan:
+        return "Execution plan ready."
+    subtasks = getattr(plan, "subtasks", []) or []
+    lines = ["SYNTHESIZED EXECUTION PLAN & AGENT ASSIGNMENTS:"]
+    task_type = getattr(plan, "task_type", None)
+    confidence = getattr(plan, "confidence", None)
+    if task_type:
+        conf_str = f"{float(confidence) * 100:.0f}%" if confidence is not None else "n/a"
+        lines.append(f"task: {task_type} | confidence: {conf_str}")
+    if subtasks:
+        for i, st in enumerate(subtasks, 1):
+            role = getattr(st, "role", "worker")
+            goal = getattr(st, "goal", "")
+            scope = getattr(st, "scope", []) or []
+            scope_str = f" [{', '.join(scope[:2])}]" if scope else ""
+            lines.append(f"• Agent {i} ({role}) => {goal}{scope_str}")
+    elif hasattr(plan, "summary") and plan.summary:
+        lines.append(f"• {plan.summary}")
+    else:
+        lines.append("• Execute synthesized directives using available tools.")
+    return "\n".join(lines)
+
+
 def format_execution_handoff(
     plan: Any,
     subagent_outputs: dict[str, str],
@@ -77,10 +102,25 @@ def format_execution_handoff(
     if compacted and not subtasks:
         sections.append(f"### Key Findings & Architecture\n\n{compacted}")
 
-    sections.append(
-        "### Execution Directives\n"
+    directives = ["### Execution Directives & Harness Subagent Fan-Out"]
+    directives.append(
         "Proceed with implementation of the subtasks sequentially using available tools (`read`, `edit`, `write`, `bash`)."
     )
+    if subtasks:
+        directives.append("\nThe harness should assign tasks to subagents or workers as follows:")
+        for i, st in enumerate(subtasks, 1):
+            st_id = getattr(st, "id", f"task_{i}")
+            goal = getattr(st, "goal", "")
+            role = getattr(st, "role", "worker")
+            deps = getattr(st, "depends_on", []) or []
+            deps_str = f" (depends on: {', '.join(deps)})" if deps else " (independent)"
+            directives.append(f"- **Agent {i}** (`{st_id}` / `{role}`){deps_str} => {goal}")
+        directives.append(
+            "\n**Harness Fan-Out Instruction**: If your environment supports concurrent subagents, task spawning, "
+            "or background workers, fan out the independent subtasks to parallel subagents as specified above. "
+            "If operating in a single-agent harness, execute the subtasks sequentially in dependency order."
+        )
+    sections.append("\n".join(directives))
 
     # Structured content is additive: old consumers still receive the prose above.
     try:

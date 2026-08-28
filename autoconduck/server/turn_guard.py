@@ -107,12 +107,26 @@ def _is_tool_error_content(content: Any, is_error_flag: bool | None = None) -> b
         "command failed",
         "failed with exit code",
         "process exited with code",
+        "command exited with code",
         "failed tests",
         "failed (",
         "permission denied",
         "no such file or directory",
         "cannot find the path specified",
         "is not recognized as an internal or external command",
+        "is not recognized as a name of a cmdlet",
+        "the term '",
+        "input must begin with",
+        "must begin with",
+        "anchored edit failed",
+        "patch failed",
+        "could not apply",
+        "failed to apply",
+        "invalid arguments",
+        "invalid argument",
+        "unexpected argument",
+        "unexpected format",
+        "syntax error",
         "modulenotfounderror:",
         "syntaxerror:",
         "filenotfounderror:",
@@ -147,10 +161,36 @@ def _is_tool_error_content(content: Any, is_error_flag: bool | None = None) -> b
             or l.startswith("failed tests")
             or l.startswith("error: ")
             or l.startswith("fatal: ")
+            or any(l.startswith(p) for p in error_prefixes)
         ):
             return True
 
     return False
+
+
+def _extract_tool_text(content: Any) -> str:
+    """Extract string text from various content formats (blocks, dicts, strings)."""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                parts.append(str(item.get("text") or item.get("content") or ""))
+            else:
+                parts.append(str(item))
+        return " ".join(parts).strip()
+    if isinstance(content, dict):
+        return str(content.get("error") or content.get("message") or content.get("text") or "").strip()
+    return ""
+
+
+def _normalize_error_message(content: Any) -> str:
+    """Normalize error content text for exact/near-exact comparison (<0.1ms)."""
+    text = _extract_tool_text(content).lower()
+    words = text.split()[:30]
+    return " ".join(words)
+
 
 
 def _extract_root_target(args_str: str | None, content: Any = None) -> str | None:
@@ -240,16 +280,17 @@ class TurnGuard:
         role = last_msg.get("role")
         content = last_msg.get("content")
 
-        if role in ("tool", "function"):
+        if role in ("tool", "function", "toolResult", "tool_result"):
             is_tool_resp = True
-            last_tool_name = last_msg.get("name")
-            last_tool_is_error = _is_tool_error_content(content)
+            last_tool_name = last_msg.get("name") or last_msg.get("toolName") or last_msg.get("tool_name")
+            is_err_flag = last_msg.get("is_error") if "is_error" in last_msg else last_msg.get("isError")
+            last_tool_is_error = _is_tool_error_content(content, is_error_flag=is_err_flag)
         elif role == "user" and isinstance(content, list):
             # Anthropic tool_result check
             for block in content:
-                if isinstance(block, dict) and block.get("type") == "tool_result":
+                if isinstance(block, dict) and block.get("type") in ("tool_result", "toolResult"):
                     is_tool_resp = True
-                    is_err = block.get("is_error")
+                    is_err = block.get("is_error") if "is_error" in block else block.get("isError")
                     last_tool_is_error = _is_tool_error_content(block.get("content"), is_error_flag=is_err)
                     break
 
@@ -268,6 +309,7 @@ class TurnGuard:
         all_calls: list[tuple[str, str]] = []  # list of (tool_name, args_str)
         call_id_to_args: dict[str, tuple[str, str]] = {}
         tool_results: list[bool] = []  # list of is_error booleans
+        tool_error_messages: list[str] = []  # normalized error texts
         failed_targets: list[str] = []
 
         for idx, m in enumerate(messages):
@@ -303,30 +345,36 @@ class TurnGuard:
                         if cid:
                             call_id_to_args[cid] = (fn_name, fn_args)
 
-            # OpenAI tool response
-            if m_role in ("tool", "function"):
-                is_err = _is_tool_error_content(m.get("content"))
+            # OpenAI / universal tool response
+            if m_role in ("tool", "function", "toolResult", "tool_result"):
+                is_err_flag = m.get("is_error") if "is_error" in m else m.get("isError")
+                is_err = _is_tool_error_content(m.get("content"), is_error_flag=is_err_flag)
                 tool_results.append(is_err)
-                if not last_tool_name and m.get("name"):
-                    last_tool_name = m.get("name")
+                raw_txt = _extract_tool_text(m.get("content"))
+                tool_error_messages.append(_normalize_error_message(raw_txt) if is_err else "")
+                tool_name = m.get("name") or m.get("toolName") or m.get("tool_name")
+                if not last_tool_name and tool_name:
+                    last_tool_name = tool_name
                 if is_err:
-                    cid = m.get("tool_call_id")
+                    cid = m.get("tool_call_id") or m.get("toolCallId") or m.get("id")
                     args_str = call_id_to_args.get(cid, ("", ""))[1] if cid else (all_calls[-1][1] if all_calls else "")
-                    tgt = _extract_root_target(args_str, m.get("content"))
+                    tgt = _extract_root_target(args_str, raw_txt)
                     if tgt:
                         failed_targets.append(tgt)
 
             # Anthropic user tool_result
             if m_role == "user" and isinstance(m_content, list):
                 for b in m_content:
-                    if isinstance(b, dict) and b.get("type") == "tool_result":
-                        is_err = b.get("is_error")
+                    if isinstance(b, dict) and b.get("type") in ("tool_result", "toolResult"):
+                        is_err = b.get("is_error") if "is_error" in b else b.get("isError")
                         err_flag = _is_tool_error_content(b.get("content"), is_error_flag=is_err)
                         tool_results.append(err_flag)
+                        raw_txt = _extract_tool_text(b.get("content"))
+                        tool_error_messages.append(_normalize_error_message(raw_txt) if err_flag else "")
                         if err_flag:
-                            cid = b.get("tool_use_id")
+                            cid = b.get("tool_use_id") or b.get("toolUseId") or b.get("id")
                             args_str = call_id_to_args.get(cid, ("", ""))[1] if cid else (all_calls[-1][1] if all_calls else "")
-                            tgt = _extract_root_target(args_str, b.get("content"))
+                            tgt = _extract_root_target(args_str, raw_txt)
                             if tgt:
                                 failed_targets.append(tgt)
 
@@ -375,7 +423,22 @@ class TurnGuard:
                 last_tool_name=last_tool_name,
             )
 
-        # 3. Recurring failure targeting the same invalid root entity / directory prefix
+        # 3. 2+ identical consecutive error messages (stuck on the same error)
+        if len(tool_error_messages) >= 2:
+            last_err = tool_error_messages[-1]
+            prev_err = tool_error_messages[-2]
+            if last_err and prev_err and last_err == prev_err:
+                return TurnClassificationResult(
+                    is_tool_loop=True,
+                    is_stagnant=True,
+                    stagnation_reason=f"Repeated identical tool error on {last_tool_name or 'tool'}: '{last_err[:60]}'",
+                    target_action=TurnAction.ESCALATE_SLM,
+                    tool_call_streak=tool_call_streak,
+                    error_streak=max(error_streak, 2),
+                    last_tool_name=last_tool_name,
+                )
+
+        # 4. Recurring failure targeting the same invalid root entity / directory prefix
         if last_tool_is_error and failed_targets:
             target_counts: dict[str, int] = {}
             for t in failed_targets:
@@ -392,7 +455,7 @@ class TurnGuard:
                         last_tool_name=last_tool_name,
                     )
 
-        # 4. High error density in sliding window when last turn failed (>= 50% error rate in recent calls)
+        # 5. High error density in sliding window when last turn failed (>= 50% error rate in recent calls)
         if last_tool_is_error and len(tool_results) >= 4:
             recent_window = tool_results[-6:]
             if len(recent_window) >= 4:
@@ -420,10 +483,11 @@ class TurnGuard:
 
         replan_suggested = False
         replan_reason = None
-        # Heuristic trigger: read-heavy tool loop without any edits (>= 8 reads, 0 edits)
-        if len(all_calls) >= 8 and read_count >= 8 and edit_count == 0:
+        # Heuristic trigger: read-heavy tool loop without any edits (>= 5 reads, 0 edits)
+        if len(all_calls) >= 5 and read_count >= 5 and edit_count == 0:
             replan_suggested = True
             replan_reason = f"Read-heavy tool loop without edits ({read_count} reads, 0 edits across {len(all_calls)} tool calls)"
+
 
         target_act = TurnAction.SUGGEST_REPLAN if replan_suggested else TurnAction.DIRECT_ACTIVE_TIER
 

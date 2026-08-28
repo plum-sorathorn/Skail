@@ -28,13 +28,18 @@ def _store_plan_state(session_key: str, plan: Any) -> dict[str, Any]:
 def _get_session_key(messages: list[Any], request: Any = None) -> str:
     """Generate a consistent session key from request headers or conversation root."""
     if request is not None and hasattr(request, "headers"):
-        sess_id = request.headers.get("x-session-id") or request.headers.get("x-thread-id")
-        if sess_id:
-            return str(sess_id)
+        for hdr in ("x-session-id", "x-thread-id", "session_id", "conversation_id"):
+            val = request.headers.get(hdr)
+            if val:
+                return str(val)
     if isinstance(messages, list) and messages:
+        first_user = next((m for m in messages if isinstance(m, dict) and m.get("role") in ("user", "human")), None)
+        if first_user and isinstance(first_user, dict):
+            c = str(first_user.get("content", ""))[:200]
+            return f"sess_{hash(c)}"
         first = messages[0]
         if isinstance(first, dict):
-            c = str(first.get("content", ""))[:120]
+            c = str(first.get("content", ""))[:200]
             return f"sess_{hash(c)}"
     return "default_session"
 
@@ -235,9 +240,10 @@ async def route_target(
             route_name = getattr(decision, "route", "fast_direct")
             tier = getattr(decision, "tier", "balanced")
             plan = getattr(decision, "plan", None)
-            if active_session_plan is not None and not replan_pending and getattr(active_session_plan, "session_status", "active") == "active":
+            in_loop = is_active_tool_session(messages)
+            if active_session_plan is not None and in_loop and not replan_pending and getattr(active_session_plan, "session_status", "active") == "active":
                 plan = active_session_plan
-            elif plan is not None and getattr(plan, "route", "") == "dynamic_dag":
+            elif plan is not None:
                 _store_plan_state(session_key, plan)
             model = getattr(decision, "model", None)
         except Exception:
@@ -279,6 +285,7 @@ async def route_target(
                 start_time=time.time(),
                 subtasks_total=subtasks_count,
                 subtasks_completed=0,
+                plan_id=getattr(plan, "plan_id", ""),
             )
         except Exception:
             pass
@@ -312,7 +319,7 @@ async def route_target(
             try:
                 from autoconduck.server.turn_guard import TurnGuard
                 guard_res = TurnGuard().classify_turn(messages)
-                min_turns = int(getattr(getattr(cfg, "selection", None), "replan_min_turns_since_slm", 12))
+                min_turns = int(getattr(getattr(cfg, "selection", None), "replan_min_turns_since_slm", 4))
                 turns_since = len(messages) - int(state.get("last_replan_turn", 0))
 
                 if (guard_res.replan_suggested or client_replan_hint) and turns_since >= min_turns and not state.get("evaluating"):

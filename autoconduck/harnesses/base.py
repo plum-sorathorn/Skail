@@ -17,6 +17,7 @@ class BaseAdapter(ABC):
     binary_name: str | None = None
     id: str = "base"
     display_name: str = "Base"
+    supports_native_fan_out: bool = False
 
     @abstractmethod
     def detect(self) -> bool:

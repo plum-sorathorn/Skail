@@ -127,13 +127,14 @@ def openai_messages_from_anthropic(body: dict) -> list[dict]:
                 result_content = block.get("content")
                 if isinstance(result_content, list):
                     result_content = _text_from_blocks(result_content)
-                tool_messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": block.get("tool_use_id"),
-                        "content": result_content,
-                    }
-                )
+                tool_msg: dict[str, Any] = {
+                    "role": "tool",
+                    "tool_call_id": block.get("tool_use_id"),
+                    "content": result_content,
+                }
+                if block.get("is_error") is not None:
+                    tool_msg["is_error"] = bool(block.get("is_error"))
+                tool_messages.append(tool_msg)
             elif btype == "image":
                 source = block.get("source") or {}
                 if source.get("type") == "base64" and source.get("data"):

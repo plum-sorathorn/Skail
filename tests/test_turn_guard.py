@@ -475,3 +475,162 @@ def test_turn_guard_does_not_suggest_replan_when_edits_present(turn_guard: TurnG
     assert result.replan_suggested is False
     assert result.edit_count == 1
 
+
+
+# ==============================================================================
+# Tier 4: Regression Tests for OMP Edit Error Escalation & Fan-Out
+# ==============================================================================
+
+def test_turn_guard_escalates_on_omp_anchored_edit_errors(turn_guard: TurnGuard):
+    """5 consecutive edit failures like in OMP session trigger ESCALATE_SLM."""
+    omp_error = 'input must begin with "[PATH#HASH]" on the first non-blank line for anchored edits; got: "*** Update File: autoconduck/stats.py". Example: "[src/foo.ts#1A2B]" then edit ops.'
+    messages = [
+        {"role": "user", "content": "Rework stats page"},
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "edit", "arguments": '{"i": "patch 1", "input": "*** Begin Patch"}'},
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "name": "edit",
+            "content": omp_error,
+        },
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "call_2",
+                    "type": "function",
+                    "function": {"name": "edit", "arguments": '{"i": "[autoconduck/stats.py#31BD]", "input": "*** Begin Patch"}'},
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_2",
+            "name": "edit",
+            "content": omp_error,
+        },
+    ]
+    result = turn_guard.classify_turn(messages)
+    assert result.is_stagnant is True
+    assert result.target_action == TurnAction.ESCALATE_SLM
+    assert result.error_streak >= 2
+
+
+def test_turn_guard_escalates_on_toolresult_role_with_is_error_flag(turn_guard: TurnGuard):
+    """OMP custom toolResult message format with isError: True triggers escalation on consecutive errors."""
+    messages = [
+        {"role": "user", "content": "Fix code"},
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "edit", "arguments": '{"path": "a.py"}'}}
+            ],
+        },
+        {
+            "role": "toolResult",
+            "toolCallId": "c1",
+            "toolName": "edit",
+            "content": [{"type": "text", "text": "syntax error: unexpected token"}],
+            "isError": True,
+        },
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {"id": "c2", "type": "function", "function": {"name": "edit", "arguments": '{"path": "a.py", "retry": 1}'}}
+            ],
+        },
+        {
+            "role": "toolResult",
+            "toolCallId": "c2",
+            "toolName": "edit",
+            "content": [{"type": "text", "text": "syntax error: unexpected token"}],
+            "isError": True,
+        },
+    ]
+    result = turn_guard.classify_turn(messages)
+    assert result.is_stagnant is True
+    assert result.target_action == TurnAction.ESCALATE_SLM
+
+
+def test_turn_guard_escalates_on_identical_consecutive_error_messages(turn_guard: TurnGuard):
+    """Two consecutive tool calls returning the exact same error message trigger ESCALATE_SLM."""
+    messages = [
+        {"role": "user", "content": "Execute task"},
+        {
+            "role": "assistant",
+            "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "bash", "arguments": '{"command": "foo"}'}}],
+        },
+        {"role": "tool", "tool_call_id": "c1", "name": "bash", "content": "the term 'foo' is not recognized as a name of a cmdlet"},
+        {
+            "role": "assistant",
+            "tool_calls": [{"id": "c2", "type": "function", "function": {"name": "bash", "arguments": '{"command": "./foo"}'}}],
+        },
+        {"role": "tool", "tool_call_id": "c2", "name": "bash", "content": "the term 'foo' is not recognized as a name of a cmdlet"},
+    ]
+    result = turn_guard.classify_turn(messages)
+    assert result.is_stagnant is True
+    assert result.target_action == TurnAction.ESCALATE_SLM
+
+
+def test_harness_fan_out_plan_generates_agent_assignments():
+    """Harness fan-out coordinator properly assigns Agent 1, Agent 2... with directives."""
+    from autoconduck.orchestrator.fan_out import build_harness_fan_out_plan
+    from autoconduck.routing.slm_planner import ExecutionPlan, SubTaskSpec, CapabilitySLA
+
+    plan = ExecutionPlan(
+        route="dynamic_dag",
+        confidence=0.9,
+        task_type="multi_edit",
+        suggested_sla=CapabilitySLA(min_context=16000),
+        synthesizer_sla=CapabilitySLA(requires_reasoning=True),
+        needs_rag=False,
+        rag_queries=[],
+        subtasks=[
+            SubTaskSpec(id="recon", goal="Analyze stats UI architecture", role="recon", scope=["autoconduck/stats.py"]),
+            SubTaskSpec(id="read", goal="Read target files", role="read", depends_on=["recon"], scope=["tests/"]),
+            SubTaskSpec(id="edit", goal="Apply patch", role="edit", depends_on=["read"], scope=["autoconduck/stats.py"]),
+        ],
+    )
+
+    fan_out = build_harness_fan_out_plan(plan, max_subagents=4)
+    assert fan_out.can_fan_out is True
+    assert len(fan_out.sequential_fallback) == 3
+    assert fan_out.sequential_fallback[0].agent_label == "Agent 1"
+    assert fan_out.sequential_fallback[1].agent_label == "Agent 2"
+    assert fan_out.sequential_fallback[2].agent_label == "Agent 3"
+    assert any("Agent 1" in d for d in fan_out.fan_out_directives)
+
+
+def test_render_plan_summary_for_user():
+    """User-visible plan renderer formats agent fan-out assignments."""
+    from autoconduck.orchestrator.handoff import render_plan_summary_for_user
+    from autoconduck.routing.slm_planner import ExecutionPlan, SubTaskSpec, CapabilitySLA
+
+    plan = ExecutionPlan(
+        route="dynamic_dag",
+        confidence=0.95,
+        task_type="refactor",
+        suggested_sla=CapabilitySLA(min_context=16000),
+        synthesizer_sla=CapabilitySLA(requires_reasoning=True),
+        needs_rag=False,
+        rag_queries=[],
+        subtasks=[
+            SubTaskSpec(id="task_1", goal="Inspect architecture", role="recon"),
+            SubTaskSpec(id="task_2", goal="Implement code changes", role="edit"),
+        ],
+    )
+
+    summary = render_plan_summary_for_user(plan)
+    assert "SYNTHESIZED EXECUTION PLAN & AGENT ASSIGNMENTS" in summary
+    assert "Agent 1" in summary
+    assert "Agent 2" in summary
+    assert "Inspect architecture" in summary

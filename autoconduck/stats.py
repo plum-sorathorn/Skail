@@ -23,6 +23,7 @@ _active_routing: dict[str, Any] = {
     "step_detail": "Idle",
     "subtasks_total": 0,
     "subtasks_completed": 0,
+    "plan_id": "",
     "start_time": 0.0,
     "updated_at": 0.0,
 }
