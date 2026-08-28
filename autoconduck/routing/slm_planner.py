@@ -37,6 +37,32 @@ def normalize_confidence(value: Any) -> float:
         return 0.5
 
 
+VALID_TASK_TYPES = {
+    "chat", "explain", "recon", "single_edit", "multi_edit", "debug", "refactor",
+    "full_workflow", "git_ops", "routine", "read_answer", "knowledge_query", "research",
+}
+
+
+def sanitize_task_type(val: Any) -> str:
+    """Coerce an arbitrary value into a valid ExecutionPlan task_type Literal.
+
+    This is a last-resort Pydantic pre-validator — NOT a classification heuristic.
+    The authoritative fix for unconstrained SLM output is grammar/JSON-schema constrained
+    decoding at the generation layer (outlines_fallback.py). This function only normalizes
+    near-exact matches (case, whitespace, dash/underscore/space separators) and falls back
+    to "chat" for anything unrecognizable. Keyword heuristics have been intentionally
+    removed: they operated on the SLM's label string after semantic signal was already
+    lost, not on the original user message, making them unreliable and order-dependent.
+    """
+    if not isinstance(val, str) or not val:
+        return "chat"
+    # Normalize: lowercase, strip whitespace, unify separators (spaces/dashes → underscores)
+    s = val.strip().lower().replace("-", "_").replace(" ", "_")
+    if s in VALID_TASK_TYPES:
+        return s
+    return "chat"
+
+
 def resolve_slm_path(model_path: str = "", config: Any = None) -> str:
     """Resolve the active SLM model path from arguments, config, or default directory."""
     candidate = model_path
@@ -184,6 +210,11 @@ class ExecutionPlan(BaseModel):
     phases: list[Phase] = Field(default_factory=list)
     ledger: list[dict[str, Any]] = Field(default_factory=list)
     terminal_decision: TerminalDecision | None = None
+
+    @field_validator("task_type", mode="before")
+    @classmethod
+    def _sanitize_task_type_field(cls, v: Any) -> str:
+        return sanitize_task_type(v)
 
     @field_validator("subtasks", mode="before")
     @classmethod
@@ -501,8 +532,7 @@ class SLMPlanner:
         read_count = int(stats.get("read_count", 0))
         edit_count = int(stats.get("edit_count", 0))
         replan_reason = str(stats.get("replan_reason", "Read-heavy tool loop"))
-        task_type = (current_plan.task_type if current_plan else getattr(config, "task_type", None)) or "refactor"
-
+        
         # Check config gating
         eligible_types = ["refactor", "full_workflow", "multi_edit", "debug"]
         if config is not None and hasattr(config, "selection"):
@@ -526,6 +556,12 @@ class SLMPlanner:
                     ] = "refactor"
                     confidence: Any = 0.5
 
+                    @field_validator("task_type", mode="before")
+                    @classmethod
+                    def _validate_task_type(cls, value: Any) -> str:
+                        sanitized = sanitize_task_type(value)
+                        return sanitized if sanitized in ("refactor", "multi_edit", "single_edit", "debug", "full_workflow", "chat", "explain") else "refactor"
+
                 from autoconduck._compat.outlines_fallback import generate_structured_json
 
                 prompt = (
@@ -534,6 +570,7 @@ class SLMPlanner:
                     f"Read tool calls: {read_count}, Edit tool calls: {edit_count}\n"
                     f"Trigger context: {replan_reason}\n"
                     f"Should this session be escalated to a structured multi-agent DAG plan?\n"
+                    f"task_type must be one of: refactor, multi_edit, single_edit, debug, full_workflow, chat, explain.\n"
                     f"Respond with JSON: {{should_escalate_to_dag: bool, reason: str, task_type: str, confidence: float}}"
                 )
                 result = generate_structured_json(self._llm, prompt, TrajectoryEvaluation)
@@ -644,6 +681,11 @@ class SLMPlanner:
             needs_rag: bool = Field(default=False, description="True if the task requires vector index or RAG lookup")
             confidence: Any = Field(default=0.5, description="Confidence in the route and task type, from 0 to 1")
 
+            @field_validator("task_type", mode="before")
+            @classmethod
+            def _validate_task_type(cls, value: Any) -> str:
+                return sanitize_task_type(value)
+
         # 4. Generate structured output
         from autoconduck._compat.outlines_fallback import generate_structured_json
         prompt = (
@@ -652,9 +694,10 @@ class SLMPlanner:
             f"Rules:\n"
             f"- Set requires_multi_agent_dag=true for multi-file changes, architecture restructuring, or complex multi-step implementations.\n"
             f"- Set requires_multi_agent_dag=false for simple questions, repository checks, single-file edits, or conversational turns.\n"
-             f"Output valid JSON with fields: complexity_score (1-10), requires_multi_agent_dag (bool), task_type, rationale, needs_rag (bool), confidence (float from 0 to 1 reflecting certainty in the route and task_type decision)."
+            f"- task_type MUST be one of: chat, explain, recon, single_edit, multi_edit, debug, refactor, full_workflow, git_ops, routine, read_answer, knowledge_query, research.\n"
+            f"Output valid JSON with fields: complexity_score (1-10), requires_multi_agent_dag (bool), task_type, rationale, needs_rag (bool), confidence (float from 0 to 1 reflecting certainty in the route and task_type decision)."
         )
-        
+
         result = generate_structured_json(self._llm, prompt, TaskClassification)
         if not isinstance(result, TaskClassification):
             logger.debug("SLM produced non-TaskClassification result; using fallback plan.")

@@ -90,8 +90,8 @@ Agent Request (Claude Code / OpenCode / Pi / OMP)
 
 1. **Turn Guard (`server/turn_guard.py`):** Pure synchronous regex classifier executing in <2ms. Distinguishes clean user turns (`SLM_PLAN`), active healthy tool loops (`DIRECT_ACTIVE_TIER`), and loop stagnation (`ESCALATE_SLM`). Healthy multi-file workflows stay direct without replanning churn.
 2. **SLM Task Architect (`routing/slm_planner.py`):** Local ONNX/GGUF model generating typed Pydantic `ExecutionPlan` structures with configurable circuit breakers (default 2000ms) and deterministic fallbacks.
-3. **Capability Vector Model Selection (`routing/model_pool.py`):** Multi-dimensional capability scoring (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted across 10 task types. Models are fit-gated and sorted by absolute cost ascending.
-4. **Dynamic Graph Factory (`orchestrator/dynamic_factory.py`):** Compiles per-turn transient LangGraph execution topologies with parallel worker fan-outs and typed reducers.
+3. **Capability Vector Model Selection (`routing/model_pool.py`):** Multi-dimensional capability scoring (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted across 13 task types. Models are fit-gated and sorted by absolute cost ascending.
+4. **Dynamic Graph Factory & Session Supervisor (`orchestrator/dynamic_factory.py`, `handoff.py`):** Serves as a session-scoped supervisor emitting versioned `ExecutionPlan` contracts with bounded read-only reconnaissance DAGs and advisory parallelism for coding agents.
 5. **Session Guard (`orchestrator/session_guard.py`):** Enforces byte-identical prompt prefix immutability across turns for upstream provider cache hits, and compacts non-structural message history at 80% context capacity.
 6. **Knowledge Vector Store (`knowledge/vector_store.py`):** Embedded LanceDB vector index using deterministic 16-dimensional term-hash embeddings for zero-overhead local code symbol retrieval.
 
@@ -232,10 +232,11 @@ Turn Guard evaluates incoming messages synchronously in <2ms:
 
 The local Small Language Model (defaulting to Qwen 2.5 Coder 0.5B ONNX) generates an `ExecutionPlan`:
 - **`route`**: `"fast_direct"` (single turn / simple tool loop) or `"dynamic_dag"` (multi-step workflow).
-- **`task_type`**: One of 10 types (`chat`, `explain`, `recon`, `single_edit`, `multi_edit`, `debug`, `refactor`, `full_workflow`, `git_ops`, `routine`).
+- **`task_type`**: One of 13 types (`chat`, `explain`, `recon`, `single_edit`, `multi_edit`, `debug`, `refactor`, `full_workflow`, `git_ops`, `routine`, `read_answer`, `knowledge_query`, `research`).
 - **`confidence`**: Plan confidence score between `0.0` and `1.0`.
 - **`suggested_sla`**: `CapabilitySLA` containing context limits, tool requirements, reasoning requirements, and capability thresholds.
 - **`subtasks`**: Structured `SubTaskSpec` items declaring task scope, roles, constraints, and dependencies.
+- **`phases`**: Session execution phases with structured post-conditions, verification steps, and advisory parallelism (`parallel_group`, `parallel_to`).
 
 ### 3. "Fit-Gate Then Cheapest" Model Selection (`routing/model_pool.py`)
 
@@ -256,12 +257,13 @@ $$\text{floor} = \min(\text{base} + 0.15 \times (1 - \text{confidence}),\; 0.60)
 5. **Opt-In Price Cap:** `CapabilitySLA.max_price_usd_per_mtok` (configured via `selection.path_price_cap_usd_per_mtok`, disabled by default `{}`) sets an optional price ceiling in USD per 1M tokens. If the price cap empties the pool, AutoConduck falls back to the cheapest qualifying model with `fallback_reason = "price_cap_emptied_pool"`.
 6. **Cheapest Selection:** Qualifying models are sorted by absolute cost (`P = cost_input + 0.5 * cost_output`) ascending, picking the cheapest model (or most expensive if `autoconduck-expensive`).
 
-### 4. Dynamic LangGraph Pipeline (`orchestrator/`)
+### 4. Dynamic LangGraph Pipeline & Session Supervisor (`orchestrator/`)
 
-When `plan.route == "dynamic_dag"`, `dynamic_factory.py` compiles a runtime `StateGraph`:
-- **RAG Node:** Ingests semantic code snippets from LanceDB when `plan.needs_rag == True`.
-- **Parallel Subtasks:** Independent subtask nodes execute concurrently with typed reducers (`Annotated[dict, _merge_dict]`).
-- **Synthesizer Node:** Combines findings, context, and code diffs into a unified markdown handoff response.
+When `plan.route == "dynamic_dag"`:
+- **Session Execution Contract:** AutoConduck serves as a session-scoped supervisor, emitting structured execution plans and phase DAGs in Markdown with embedded JSON schemas (`format_execution_handoff`).
+- **Autonomous Execution Authority:** The host coding agent (Claude Code, OpenCode, Pi, OMP) executes the planned phases using its native tool harness.
+- **Bounded Reconnaissance (`autoconduck_recon`):** When read-heavy or multi-file reconnaissance is needed before editing, AutoConduck's internal LangGraph DAG runs bounded read-only subagents and synthesizes context.
+- **Asynchronous Heartbeat & Plan Evolution:** An asynchronous background SLM heartbeat tracks tool calls across turns, dynamically mutating the session plan (`apply_plan_mutation`) or signalling evidence-backed completion (`terminal_decision`).
 
 ---
 

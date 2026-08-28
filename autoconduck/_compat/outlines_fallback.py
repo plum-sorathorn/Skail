@@ -56,7 +56,21 @@ class OutlinesFallback:
                         },
                         {"role": "user", "content": prompt},
                     ]
-                    resp = self.model.create_chat_completion(messages, **kwargs)
+                    call_kwargs: dict[str, Any] = dict(kwargs)
+                    # Pass JSON schema grammar when schema_cls is a Pydantic model.
+                    # llama-cpp-python ≥0.2.56 supports response_format={"type": "json_object",
+                    # "schema": <dict>} for grammar-constrained decoding — same guarantee as
+                    # Outlines constrained generation but without the Outlines dependency.
+                    if schema_cls is not None and "response_format" not in call_kwargs:
+                        try:
+                            json_schema = schema_cls.model_json_schema()
+                            call_kwargs["response_format"] = {
+                                "type": "json_object",
+                                "schema": json_schema,
+                            }
+                        except Exception:
+                            pass  # model doesn't support response_format; continue unconstrained
+                    resp = self.model.create_chat_completion(messages, **call_kwargs)
                     if isinstance(resp, dict) and "choices" in resp and len(resp["choices"]) > 0:
                         raw_text = resp["choices"][0].get("message", {}).get("content", "{}")
                 elif hasattr(self.model, "create_completion"):

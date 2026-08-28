@@ -25,32 +25,40 @@ from autoconduck.routing.slm_planner import (
 )
 
 
-
 @pytest.fixture(autouse=True)
 def mock_slm_generation():
     def mock_generate_structured_json(model, prompt, schema, **kwargs):
         text = prompt.lower()
-        
-        needs_dag = "refactor" in text or ("db.py" in text and "auth.py" in text) or ("update" in text and "auth.py" in text and "session.py" in text)
+        if "instruction:" in text:
+            inst_text = text.split("instruction:")[1].split("rules:")[0]
+        else:
+            inst_text = text
+
+        needs_dag = (
+            "refactor" in inst_text
+            or ("db.py" in inst_text and "auth.py" in inst_text)
+            or ("update" in inst_text and "auth.py" in inst_text and "session.py" in inst_text)
+        )
         task_type = "chat"
         if needs_dag:
             task_type = "multi_edit"
-            if "refactor" in text:
+            if "refactor" in inst_text:
                 task_type = "refactor"
-        if "git commit" in text or "format code" in text or "git status" in text:
+        if "git commit" in inst_text or "format code" in inst_text or "git status" in inst_text:
             task_type = "git_ops"
-        
+
         return schema(
             complexity_score=8 if needs_dag else 2,
             requires_multi_agent_dag=bool(needs_dag),
             task_type=task_type,
             rationale="mock rationale",
-            needs_rag="litellm" in text or "lancedb" in text
+            needs_rag="litellm" in inst_text or "lancedb" in inst_text,
         )
 
     with patch("autoconduck._compat.outlines_fallback.generate_structured_json", side_effect=mock_generate_structured_json):
         with patch("autoconduck.routing.slm_planner.is_outlines_available", return_value=True):
             yield
+
 
 @pytest.fixture
 def slm_planner() -> SLMPlanner:
@@ -573,3 +581,102 @@ async def test_slm_planner_fallback_when_slm_unavailable_is_quiet():
     assert isinstance(async_plan, ExecutionPlan)
     assert async_plan.fallback_used is True
     assert async_plan.route == "fast_direct"
+
+
+def test_sanitize_task_type():
+    """sanitize_task_type normalizes case/whitespace/separators for exact matches and defaults to 'chat'.
+
+    It is a last-resort Pydantic pre-validator, NOT a classification heuristic.
+    Freeform SLM strings that don't normalize to an exact valid literal fall back to 'chat';
+    the real fix is grammar-constrained decoding at the generation layer.
+    """
+    from autoconduck.routing.slm_planner import sanitize_task_type, VALID_TASK_TYPES
+
+    # Exact matches pass through
+    for task_type in VALID_TASK_TYPES:
+        assert sanitize_task_type(task_type) == task_type
+
+    # Case normalization
+    assert sanitize_task_type("CHAT") == "chat"
+    assert sanitize_task_type("Multi_Edit") == "multi_edit"
+    assert sanitize_task_type("FULL_WORKFLOW") == "full_workflow"
+
+    # Whitespace stripping
+    for task_type in VALID_TASK_TYPES:
+        assert sanitize_task_type(f"  {task_type}  ") == task_type
+
+    # Separator normalization: spaces and dashes → underscores
+    assert sanitize_task_type("multi edit") == "multi_edit"
+    assert sanitize_task_type("multi-edit") == "multi_edit"
+    assert sanitize_task_type("single edit") == "single_edit"
+    assert sanitize_task_type("single-edit") == "single_edit"
+    assert sanitize_task_type("full workflow") == "full_workflow"
+    assert sanitize_task_type("full-workflow") == "full_workflow"
+    assert sanitize_task_type("git ops") == "git_ops"
+    assert sanitize_task_type("git-ops") == "git_ops"
+    assert sanitize_task_type("read answer") == "read_answer"
+    assert sanitize_task_type("read-answer") == "read_answer"
+    assert sanitize_task_type("knowledge query") == "knowledge_query"
+    assert sanitize_task_type("knowledge-query") == "knowledge_query"
+
+    # Freeform / unconstrained SLM strings → "chat" (no keyword heuristics)
+    assert sanitize_task_type("automated routing review") == "chat"
+    assert sanitize_task_type("architectural refactor") == "chat"
+    assert sanitize_task_type("multi-file modifications") == "chat"
+    assert sanitize_task_type("patching single function") == "chat"
+    assert sanitize_task_type("completely unknown random gibberish 12345") == "chat"
+
+    # Non-string / fallback cases
+    assert sanitize_task_type(None) == "chat"
+    assert sanitize_task_type(123) == "chat"
+    assert sanitize_task_type({}) == "chat"
+    assert sanitize_task_type("") == "chat"
+
+
+def test_execution_plan_task_type_resilience():
+    """ExecutionPlan model_validate coerces invalid task_type strings without throwing validation errors."""
+    # Separator-normalized strings are accepted
+    plan = ExecutionPlan.model_validate({
+        "route": "fast_direct",
+        "confidence": 0.8,
+        "task_type": "multi-edit",
+        "rationale": "SLM direct routing",
+    })
+    assert plan.task_type == "multi_edit"
+
+    # Completely unrecognized task_type defaults to "chat"
+    plan_unknown = ExecutionPlan.model_validate({
+        "route": "fast_direct",
+        "confidence": 0.8,
+        "task_type": "random_unknown_token",
+        "rationale": "SLM direct routing",
+    })
+    assert plan_unknown.task_type == "chat"
+
+    # The error case that triggered the original bug: freeform SLM output → "chat"
+    plan_freeform = ExecutionPlan.model_validate({
+        "route": "fast_direct",
+        "confidence": 0.8,
+        "task_type": "automated routing review",
+        "rationale": "SLM direct routing",
+    })
+    assert plan_freeform.task_type == "chat"
+
+
+def test_all_task_types_in_model_pool_weights():
+    """All 13 task types in ExecutionPlan have entries in TASK_TYPE_WEIGHTS and compute valid capability_fit."""
+    from autoconduck.routing.model_pool import TASK_TYPE_WEIGHTS, capability_fit
+    from autoconduck.routing.slm_planner import VALID_TASK_TYPES
+
+    sample_vector = {
+        "reasoning": 0.8,
+        "tool_reliability": 0.7,
+        "code_quality": 0.9,
+        "latency_class": 0.6,
+    }
+
+    for t_type in VALID_TASK_TYPES:
+        assert t_type in TASK_TYPE_WEIGHTS, f"Missing weight configuration for task_type: {t_type}"
+        weights = TASK_TYPE_WEIGHTS[t_type]
+        fit = capability_fit(sample_vector, weights)
+        assert 0.0 <= fit <= 1.5, f"Capability fit for {t_type} returned invalid value: {fit}"

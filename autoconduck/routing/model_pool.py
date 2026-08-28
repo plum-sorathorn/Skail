@@ -24,6 +24,9 @@ TASK_TYPE_WEIGHTS: dict[str, dict[str, float]] = {
     "single_edit": {"reasoning": 0.3, "tool_reliability": 0.2, "code_quality": 0.4, "latency_class": 0.1},
     "multi_edit": {"reasoning": 0.3, "tool_reliability": 0.2, "code_quality": 0.4, "latency_class": 0.1},
     "recon": {"reasoning": 0.4, "tool_reliability": 0.2, "code_quality": 0.2, "latency_class": 0.2},
+    "read_answer": {"reasoning": 0.4, "tool_reliability": 0.2, "code_quality": 0.2, "latency_class": 0.2},
+    "knowledge_query": {"reasoning": 0.4, "tool_reliability": 0.2, "code_quality": 0.2, "latency_class": 0.2},
+    "research": {"reasoning": 0.5, "tool_reliability": 0.2, "code_quality": 0.2, "latency_class": 0.1},
 }
 DEFAULT_TASK_TYPE = "chat"
 
