@@ -118,6 +118,14 @@ def _stats_worker():
 _stats_thread = threading.Thread(target=_stats_worker, daemon=True)
 _stats_thread.start()
 
+
+def flush_stats() -> None:
+    try:
+        _stats_queue.join()
+    except Exception:
+        pass
+
+
 def record(
     path: str,
     pseudo_model: str,
@@ -209,6 +217,7 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     FRONTIER_IN_PER_M = 5.00
     FRONTIER_OUT_PER_M = 15.00
 
+    latencies: list[float] = []
     for row in records:
         p, c = (
             int(row.get("prompt_tokens", 0) or 0),
@@ -223,6 +232,13 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
         totals["total_tokens"] += p + c
         totals["cost"] += cost
         totals["estimated_frontier_cost"] += frontier_cost
+
+        lat = row.get("latency_ms") or row.get("turn_latency_ms")
+        if lat is not None:
+            try:
+                latencies.append(float(lat))
+            except (ValueError, TypeError):
+                pass
 
         model = str(row.get("model", "unknown"))
         item = models.setdefault(
@@ -257,6 +273,7 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
         if totals["estimated_frontier_cost"] > 0
         else 0.0
     )
+    totals["avg_latency_ms"] = round(sum(latencies) / len(latencies), 1) if latencies else 0.0
 
     result = {
         "totals": totals,

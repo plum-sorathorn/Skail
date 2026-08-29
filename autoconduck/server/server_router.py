@@ -114,8 +114,6 @@ def is_active_tool_session(messages: list[Any]) -> bool:
         from autoconduck.server.turn_guard import TurnGuard
 
         res = TurnGuard().classify_turn(messages)
-        if res.is_stagnant:
-            return False
         return res.is_tool_loop
     except Exception:
         pass

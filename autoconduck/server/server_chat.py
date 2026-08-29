@@ -209,17 +209,6 @@ async def handle_chat_completions(
                     )
                     yield "data: [DONE]\n\n"
                 else:
-                    record(
-                        extra.get("_path", "SLOW"),
-                        extra.get("_pseudo", body.model),
-                        target or "unknown",
-                        0,
-                        0,
-                        complexity=extra.get("_complexity"),
-                        route=extra.get("_route"),
-                        tier=extra.get("_tier"),
-                        plan=extra.get("_plan"),
-                    )
                     async for chunk in relay_for(target, extra, body.messages):
                         yield chunk
             except asyncio.CancelledError:
@@ -261,11 +250,33 @@ async def handle_chat_completions(
                 kwargs["tools"] = sanitize_tools(kwargs["tools"])
             kwargs.update(model=target, drop_params=True)
             kwargs.update(extra or {})
+            t0 = time.perf_counter()
+            prompt_tokens = 0
+            completion_tokens = 0
+            generated_text_tokens = 0
             try:
                 response = await llm.acompletion(**kwargs)
                 async for chunk in response:
                     if await request.is_disconnected():
                         return
+                    usage = getattr(chunk, "usage", None)
+                    if isinstance(chunk, dict):
+                        usage = chunk.get("usage", usage)
+                    if usage:
+                        p = getattr(usage, "prompt_tokens", None) if not isinstance(usage, dict) else usage.get("prompt_tokens")
+                        c = getattr(usage, "completion_tokens", None) if not isinstance(usage, dict) else usage.get("completion_tokens")
+                        if p:
+                            prompt_tokens = max(prompt_tokens, int(p))
+                        if c:
+                            completion_tokens = max(completion_tokens, int(c))
+                    choices = getattr(chunk, "choices", None) if not isinstance(chunk, dict) else chunk.get("choices")
+                    if choices and len(choices) > 0:
+                        choice = choices[0]
+                        delta = getattr(choice, "delta", None) if not isinstance(choice, dict) else choice.get("delta")
+                        if delta:
+                            content = getattr(delta, "content", None) if not isinstance(delta, dict) else delta.get("content")
+                            if content:
+                                generated_text_tokens += len(str(content).split())
                     payload = (
                         chunk.model_dump()
                         if hasattr(chunk, "model_dump")
@@ -288,6 +299,30 @@ async def handle_chat_completions(
                     + "\n\n"
                 )
             finally:
+                lat_ms = round((time.perf_counter() - t0) * 1000, 1)
+                if prompt_tokens == 0:
+                    try:
+                        from autoconduck.server.messages_api import count_tokens
+                        prompt_tokens = count_tokens(json.dumps(kwargs.get("messages", [])))
+                    except Exception:
+                        pass
+                if completion_tokens == 0:
+                    completion_tokens = int(generated_text_tokens * 1.3)
+                try:
+                    record(
+                        extra.get("_path", "FAST"),
+                        extra.get("_pseudo", body.model),
+                        target or "unknown",
+                        prompt_tokens,
+                        completion_tokens,
+                        complexity=extra.get("_complexity"),
+                        route=extra.get("_route"),
+                        tier=extra.get("_tier"),
+                        latency_ms=lat_ms,
+                        plan=extra.get("_plan"),
+                    )
+                except Exception:
+                    pass
                 yield "data: [DONE]\n\n"
 
         return StreamingResponse(progress_stream(), media_type="text/event-stream")
@@ -295,18 +330,6 @@ async def handle_chat_completions(
     target, extra = await route_target_fn(body.model, body.messages, request, tools=body.tools)
     answer = extra.get("__answer__")
     if answer is not None:
-        record(
-            extra.get("_path", "SLOW"),
-            extra.get("_pseudo", body.model),
-            target or "unknown",
-            0,
-            0,
-            complexity=extra.get("_complexity"),
-            route=extra.get("_route"),
-            tier=extra.get("_tier"),
-            plan=extra.get("_plan"),
-        )
-        created = int(time.time())
         content = (
             answer.get("content", "")
             if isinstance(answer, dict)
@@ -318,6 +341,24 @@ async def handle_chat_completions(
             else getattr(answer, "tool_calls", None)
         )
         finish_reason = "tool_calls" if tool_calls else "stop"
+        try:
+            from autoconduck.server.messages_api import count_tokens
+            p_tok = count_tokens(json.dumps(body.messages))
+            c_tok = count_tokens(content)
+        except Exception:
+            p_tok, c_tok = 0, 0
+        record(
+            extra.get("_path", "SLOW"),
+            extra.get("_pseudo", body.model),
+            target or "unknown",
+            p_tok,
+            c_tok,
+            complexity=extra.get("_complexity"),
+            route=extra.get("_route"),
+            tier=extra.get("_tier"),
+            plan=extra.get("_plan"),
+        )
+        created = int(time.time())
         msg: dict[str, Any] = {"role": "assistant", "content": content}
         if tool_calls:
             msg["tool_calls"] = tool_calls
@@ -382,17 +423,6 @@ async def handle_chat_completions(
             "role": "user",
             "content": f"[AutoConduck Task Plan & Context]\n{plan_ctx}\n\nExecute the above plan immediately using your available tools.",
         }]
-        record(
-            extra.get("_path", "SLOW"),
-            extra.get("_pseudo", body.model),
-            target or "unknown",
-            0,
-            0,
-            complexity=extra.get("_complexity"),
-            route=extra.get("_route"),
-            tier=extra.get("_tier"),
-            plan=extra.get("_plan"),
-        )
     if extra.get("_path") == "FAST":
         from autoconduck.digest import maybe_digest_messages
 
@@ -428,11 +458,34 @@ async def handle_chat_completions(
                 kwargs["tools"] = sanitize_tools(kwargs["tools"])
             kwargs.update(model=target, drop_params=True)
             kwargs.update(extra)
+
+            t0 = time.perf_counter()
+            prompt_tokens = 0
+            completion_tokens = 0
+            generated_text_tokens = 0
             try:
                 response = await llm.acompletion(**kwargs)
                 async for chunk in response:
                     if await request.is_disconnected():
                         break
+                    usage = getattr(chunk, "usage", None)
+                    if isinstance(chunk, dict):
+                        usage = chunk.get("usage", usage)
+                    if usage:
+                        p = getattr(usage, "prompt_tokens", None) if not isinstance(usage, dict) else usage.get("prompt_tokens")
+                        c = getattr(usage, "completion_tokens", None) if not isinstance(usage, dict) else usage.get("completion_tokens")
+                        if p:
+                            prompt_tokens = max(prompt_tokens, int(p))
+                        if c:
+                            completion_tokens = max(completion_tokens, int(c))
+                    choices = getattr(chunk, "choices", None) if not isinstance(chunk, dict) else chunk.get("choices")
+                    if choices and len(choices) > 0:
+                        choice = choices[0]
+                        delta = getattr(choice, "delta", None) if not isinstance(choice, dict) else choice.get("delta")
+                        if delta:
+                            content = getattr(delta, "content", None) if not isinstance(delta, dict) else delta.get("content")
+                            if content:
+                                generated_text_tokens += len(str(content).split())
                     payload = (
                         chunk.model_dump()
                         if hasattr(chunk, "model_dump")
@@ -455,6 +508,30 @@ async def handle_chat_completions(
                     + "\n\n"
                 )
             finally:
+                lat_ms = round((time.perf_counter() - t0) * 1000, 1)
+                if prompt_tokens == 0:
+                    try:
+                        from autoconduck.server.messages_api import count_tokens
+                        prompt_tokens = count_tokens(json.dumps(kwargs.get("messages", [])))
+                    except Exception:
+                        pass
+                if completion_tokens == 0:
+                    completion_tokens = int(generated_text_tokens * 1.3)
+                try:
+                    record(
+                        extra.get("_path", "FAST"),
+                        extra.get("_pseudo", body.model),
+                        target or body.model,
+                        prompt_tokens,
+                        completion_tokens,
+                        complexity=extra.get("_complexity"),
+                        route=extra.get("_route"),
+                        tier=extra.get("_tier"),
+                        latency_ms=lat_ms,
+                        plan=extra.get("_plan"),
+                    )
+                except Exception:
+                    pass
                 yield "data: [DONE]\n\n"
 
         return StreamingResponse(relay(), media_type="text/event-stream")

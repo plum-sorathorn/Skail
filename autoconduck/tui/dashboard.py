@@ -261,14 +261,19 @@ if _TEXTUAL:
         def _telemetry_cards(self) -> str:
             t = self.metrics or self.totals
             cost = float(t.get("cost", 0) or 0)
-            savings = float(t.get("savings_percentage", 0) or 0)
+            savings_usd = float(t.get("estimated_savings_usd", 0) or 0)
+            savings_pct = float(t.get("savings_percentage", 0) or 0)
+            calls = int(t.get("calls", 0) or 0)
             prompt = int(t.get("prompt_tokens", 0) or 0)
             completion = int(t.get("completion_tokens", 0) or 0)
-            cache = float(t.get("prompt_cache_hit_ratio", t.get("cache_hit_ratio", 0)) or 0)
-            return "\n".join(_format_box_lines("Live Telemetry", [
-                f"Cost: [bold green]${cost:.4f}[/bold green] session/monthly  Savings: [bold cyan]{savings:.1f}%[/bold cyan]",
-                f"Requests: [bold]{t.get('calls', 0)}[/bold]  Active streams: [bold]{t.get('active_streams', t.get('concurrent_streams', 0))}[/bold]  Token velocity: {prompt:,} prompt / {completion:,} completion tok/s",
-                f"Prefix cache: [bold]{cache:.1f}%[/bold] hit  Latency saved: [bold]{float(t.get('estimated_latency_saved_ms', 0) or 0):.1f} ms[/bold]",
+            total = int(t.get("total_tokens", 0) or 0)
+            avg_lat = float(t.get("avg_latency_ms", 0.0) or 0.0)
+            fast_calls = self.paths.get("FAST", 0) + self.paths.get("fast", 0)
+            slow_calls = self.paths.get("SLOW", 0) + self.paths.get("slow", 0)
+            return "\n".join(_format_box_lines("Live Telemetry & Routing Savings", [
+                f"Session Spend: [bold green]${cost:.4f}[/bold green] USD  |  Est. Savings vs Frontier: [bold cyan]${savings_usd:.4f} ({savings_pct:.1f}%)[/bold cyan]",
+                f"Requests: [bold]{calls}[/bold]  |  Tokens: [bold]{total:,}[/bold] ([dim]{prompt:,}[/dim] in / [dim]{completion:,}[/dim] out)",
+                f"Avg Turn Latency: [bold]{avg_lat:.1f} ms[/bold]  |  Dispatched: [bold green]FAST={fast_calls}[/bold green], [bold yellow]SLOW={slow_calls}[/bold yellow]",
             ], width=76))
 
         def _graph_view(self) -> str:
@@ -331,9 +336,9 @@ if _TEXTUAL:
                 )
             elif is_active and decision_path({"path": path}) == "FAST":
                 lines = [
-                    f"Selected Model: [bold green]{model}[/bold green] | Task Value V: [bold]{val:.2f}[/bold]",
+                    f"Selected Model: [bold green]{model}[/bold green] (Task Complexity: [bold]{val:.2f}[/bold])",
                     "",
-                    "[START] ──► [Turn Guard (0ms)] ──► [FAST DIRECT DISPATCH] ──► [END]",
+                    f"Routing: [Turn Guard (0ms)] ──► [FAST DIRECT DISPATCH] ──► {model}",
                     "",
                     f"Status: [bold green]{detail}[/bold green]",
                 ]
@@ -353,13 +358,14 @@ if _TEXTUAL:
             else:
                 from autoconduck import __version__
                 lines = [
-                    f"Engine: [bold]AutoConduck {__version__} Engine[/bold] | Standby | SLM & RAG Active",
+                    f"Engine: [bold]AutoConduck v{__version__}[/bold] | Standby | Ready for Agent Requests",
                     "",
-                    "[START] ──► [Turn Guard] ──► (Direct Fast Path / Dynamic DAG Engine)",
+                    "Local zero-overhead model router active on 127.0.0.1:11434.",
+                    "Ready for coding agents (Claude Code, OpenCode, Pi, omp).",
                 ]
                 return "\n".join(
                     _format_box_lines(
-                        "[bold dim]SLM Orchestration Engine Standby[/bold dim]",
+                        "[bold dim]Model Router Standby[/bold dim]",
                         lines,
                         width=76,
                     )

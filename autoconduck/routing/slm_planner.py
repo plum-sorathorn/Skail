@@ -703,8 +703,12 @@ class SLMPlanner:
             logger.debug("SLM produced non-TaskClassification result; using fallback plan.")
             return self._create_fallback_plan(messages, reason="SLM structured output validation failed").model_dump()
 
-        # 5. Map to ExecutionPlan
-        if result.requires_multi_agent_dag:
+        # 5. Map to ExecutionPlan with conservative routing guardrails
+        is_complex_type = result.task_type in ("refactor", "full_workflow", "multi_edit")
+        is_short_prompt = len(text.split()) < 12 and not any(kw in text.lower() for kw in ("refactor", "overhaul", "architect", "migrate", "pipeline"))
+        requires_dag = bool(result.requires_multi_agent_dag and is_complex_type and not is_short_prompt and result.complexity_score >= 6)
+
+        if requires_dag:
             subtasks = [
                 SubTaskSpec(id="recon", goal=f"Analyze relevant structure and files for: {text[:60]}", role="recon"),
                 SubTaskSpec(id="read_targets", goal="Read target files and inspect relevant definitions", role="read", depends_on=["recon"]),
@@ -713,7 +717,7 @@ class SLMPlanner:
                 subtasks.append(SubTaskSpec(id="implement_changes", goal="Apply the requested modifications", role="edit", depends_on=["read_targets"]))
                 subtasks.append(SubTaskSpec(id="verify_changes", goal="Run test suite", role="verify", depends_on=["implement_changes"]))
             else:
-                subtasks.append(SubTaskSpec(id="synthesize_findings", goal="Reason over gathered context", role="reasoning", depends_on=["read_targets"]))
+                subtasks.append(SubTaskSpec(id="synthesize_findings", goal="Reason over gathered context and prepare blueprint directives", role="reasoning", depends_on=["read_targets"]))
 
             return {
                 "route": "dynamic_dag",
