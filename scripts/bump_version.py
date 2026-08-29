@@ -96,8 +96,8 @@ def update_docs(new_version: str) -> None:
     # AGENTS.md
     agents_file = ROOT / "AGENTS.md"
     if agents_file.is_file():
-        content = agents_file.read_text(encoding="utf-8")
         updated = re.sub(r'Project:\s*\*\*AutoConduck\*\*\s*\(`[^`]+`\s*in\s*`pyproject\.toml`\)', f'Project: **AutoConduck** (`{new_version}` in `pyproject.toml`)', content)
+        updated = re.sub(r'Current version:\s*\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?', f'Current version: {new_version}', updated)
         agents_file.write_text(updated, encoding="utf-8")
         print(f"  [OK] Updated AGENTS.md -> {new_version}")
 

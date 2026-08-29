@@ -1,5 +1,21 @@
 # AutoConduck Changelog
 
+## [0.4.1] - 2026-08-28
+
+### Native Async DAG & Zero-Overhead Orchestration
+- **LangGraph Removal & Native Async DAG (`orchestrator/dynamic_factory.py`)**: Replaced LangGraph with a lightweight, native `asyncio.gather` execution engine (`DynamicGraphRunner`). Eliminates 50–200ms of graph compilation overhead per turn and removes the `langgraph` and `langgraph-checkpoint-sqlite` dependencies completely.
+- **Orphan Subagent Bug Fix**: Fixed an issue where the orchestrator synthesizer could complete early while background child subtasks were still in flight. All dependency trees are now strictly awaited.
+- **Cycle-Resilient DAG Builder**: Implemented topological DFS cycle detection in `build_dynamic_graph()` to safely detect cyclical task definitions and degrade to fallback runners without deadlocks.
+
+### Hot-Path Latency & Concurrency Optimizations
+- **Fast-Path Config Resolution (`config/manager.py`)**: Added an `st_mtime_ns` timestamp check in `get_config()`, bypassing disk read and SHA256 hashing when `config.yaml` has not changed.
+- **Immediate Progress Streaming (`server/server_chat.py`)**: Replaced the 100ms `asyncio.sleep` polling loop with an instantaneous `asyncio.Event` (`done_event`) for subagent node progress events.
+- **Normalization Deduplication (`server/server_router.py`)**: Removed redundant message normalization passes in the routing pipeline.
+- **Turn Guard Bounded Scope (`server/turn_guard.py`)**: Truncated message history evaluation to the latest 20 messages, guaranteeing sub-2ms classification regardless of session length.
+- **Async Usage Stats I/O (`stats.py`)**: Migrated synchronous file append operations to a dedicated background worker thread and queue.
+- **SLM Heartbeat Stampede Protection (`server/server_router.py`)**: Added a 60-second TTL lock on background SLM trajectory evaluation tasks.
+- **Cleanup of Obsolete Compat Shims**: Removed `autoconduck/_compat/sqlite_checkpointer.py` and decoupled tests from SQLite checkpointer persistence.
+
 ## [0.3.5] - 2026-08-25
 
 ### Model Selection Overhaul

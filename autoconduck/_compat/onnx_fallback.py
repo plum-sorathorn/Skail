@@ -177,15 +177,33 @@ class ONNXRuntimeDirectModel:
             "attention_mask": attention_mask,
         }
 
-        # Initialize past states
+        # Initialize past states dynamically from model input metadata
         for inp in self._session.get_inputs():
-            if inp.name.startswith("past_conv"):
-                feed[inp.name] = np.zeros((1, 2048, 3), dtype=np.float32)
-            elif inp.name.startswith("past_key_values"):
-                feed[inp.name] = np.zeros((1, 8, 0, 64), dtype=np.float32)
+            if inp.name.startswith(("past_key_values", "past_conv")):
+                shape: list[int] = []
+                for dim in inp.shape:
+                    if isinstance(dim, int):
+                        shape.append(dim)
+                    elif dim in ("batch_size", "batch"):
+                        shape.append(1)
+                    elif "past" in str(dim).lower() or "seq" in str(dim).lower():
+                        shape.append(0)
+                    else:
+                        shape.append(1)
+                dtype = np.float32 if "float" in str(inp.type).lower() else np.int64
+                feed[inp.name] = np.zeros(shape, dtype=dtype)
 
         stop_list = [stop] if isinstance(stop, str) else list(stop or [])
-        stop_list.extend(["<|im_end|>", "<|endoftext|>", "</s>"])
+        stop_list.extend(["<|im_end|>", "<|endoftext|>", "</s>", "<|eot_id|>", "<eos>"])
+
+        eos_ids: set[int] = set()
+        for token_name in stop_list:
+            try:
+                tid = self._tokenizer.token_to_id(token_name)
+                if tid is not None:
+                    eos_ids.add(tid)
+            except Exception:
+                pass
 
         output_names = [o.name for o in self._session.get_outputs()]
         generated_tokens: list[int] = []
@@ -200,7 +218,7 @@ class ONNXRuntimeDirectModel:
             token_str = self._tokenizer.decode([next_id])
             generated_tokens.append(next_id)
 
-            if next_id in (0, 1, 2, 7) or any(s in token_str for s in stop_list):
+            if next_id in eos_ids or any(s in token_str for s in stop_list):
                 break
 
             feed["input_ids"] = np.array([[next_id]], dtype=np.int64)
@@ -215,9 +233,11 @@ class ONNXRuntimeDirectModel:
                 elif inp.name.startswith("past_key_values."):
                     parts = inp.name.split(".")
                     layer_idx, kv_type = parts[1], parts[2]
-                    pres = f"present.{layer_idx}.{kv_type}"
-                    if pres in output_dict:
-                        feed[inp.name] = output_dict[pres]
+                    for pres_prefix in ("present.", "present_key_values.", "present_kv."):
+                        pres = f"{pres_prefix}{layer_idx}.{kv_type}"
+                        if pres in output_dict:
+                            feed[inp.name] = output_dict[pres]
+                            break
 
         text = self._tokenizer.decode(generated_tokens)
         for s in stop_list:
@@ -299,18 +319,11 @@ def get_onnx_model(model_path: str, **kwargs: Any) -> Any:
     if not model_path:
         return ONNXModelFallback(model_path=model_path, **kwargs)
 
-    # 1. Try direct ONNX Runtime + tokenizers (native, robust)
+    # Try direct ONNX Runtime + tokenizers (native, robust)
     if is_onnx_available():
         try:
             return ONNXRuntimeDirectModel(model_path=model_path, **kwargs)
         except Exception as exc:
             logger.warning("Direct ONNX runtime failed for %s (%s); trying fallback.", model_path, exc)
-
-    # 2. Try ONNX GenAI if available
-    if is_onnx_genai_available():
-        try:
-            return ONNXGenAIModel(model_path=model_path, **kwargs)
-        except Exception as exc:
-            logger.warning("ONNX GenAI failed for %s (%s); trying fallback.", model_path, exc)
 
     return ONNXModelFallback(model_path=model_path, **kwargs)
