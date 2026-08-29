@@ -65,7 +65,7 @@ if _TEXTUAL:
         async def _probe_health(self):
             try:
                 from .health import probe_connectivity, render_health_matrix
-                from autoconduck.config import get_config, provider_for, resolve_api_key
+                from autoconduck.config import get_config, normalize_api_base, provider_for, resolve_api_key
 
                 cfg = get_config()
                 providers = []
@@ -78,7 +78,7 @@ if _TEXTUAL:
                     providers.append({
                         "name": provider,
                         "api_key": resolve_api_key(entry.get("api_key"), provider=provider),
-                        "base_url": entry.get("api_base") or entry.get("base_url", ""),
+                        "base_url": normalize_api_base(entry.get("api_base") or entry.get("base_url", "")),
                     })
                 matrix = await probe_connectivity(providers, [getattr(cfg, "port", 11434)])
                 self.query_one("#health").update(render_health_matrix(matrix))
