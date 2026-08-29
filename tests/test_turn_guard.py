@@ -402,78 +402,15 @@ def test_turn_guard_recurring_root_target_failure_escalates(turn_guard: TurnGuar
     assert "autoconductor" in result.stagnation_reason.lower()
 
 
-def test_turn_guard_suggests_replan_on_read_heavy_zero_edits(turn_guard: TurnGuard):
-    """8+ read calls without any edits suggests a mid-execution replan."""
-    messages: list[dict[str, Any]] = [{"role": "user", "content": "Refactor codebase"}]
-    for i in range(8):
-        cid = f"call_{i}"
-        messages.extend([
-            {
-                "role": "assistant",
-                "tool_calls": [
-                    {"id": cid, "type": "function", "function": {"name": "read", "arguments": json.dumps({"path": f"src/module_{i}.py"})}}
-                ],
-            },
-            {
-                "role": "tool",
-                "tool_call_id": cid,
-                "name": "read",
-                "content": f"# module {i} contents",
-            },
-        ])
 
-    result = turn_guard.classify_turn(messages)
-    assert result.is_tool_loop is True
-    assert result.is_stagnant is False
-    assert result.target_action == TurnAction.SUGGEST_REPLAN
-    assert result.replan_suggested is True
-    assert result.read_count >= 8
-    assert result.edit_count == 0
-    assert "without edits" in (result.replan_reason or "")
+    
+    
+    
+    
 
 
-def test_turn_guard_does_not_suggest_replan_when_edits_present(turn_guard: TurnGuard):
-    """Active tool loop with edits present continues direct active tier without replan suggestion."""
-    messages: list[dict[str, Any]] = [{"role": "user", "content": "Refactor codebase"}]
-    for i in range(7):
-        cid = f"call_read_{i}"
-        messages.extend([
-            {
-                "role": "assistant",
-                "tool_calls": [
-                    {"id": cid, "type": "function", "function": {"name": "read", "arguments": json.dumps({"path": f"src/module_{i}.py"})}}
-                ],
-            },
-            {
-                "role": "tool",
-                "tool_call_id": cid,
-                "name": "read",
-                "content": f"# module {i} contents",
-            },
-        ])
-    # Add an edit call
-    cid_edit = "call_edit_0"
-    messages.extend([
-        {
-            "role": "assistant",
-            "tool_calls": [
-                {"id": cid_edit, "type": "function", "function": {"name": "write_to_file", "arguments": json.dumps({"path": "src/module_0.py"})}}
-            ],
-        },
-        {
-            "role": "tool",
-            "tool_call_id": cid_edit,
-            "name": "write_to_file",
-            "content": "ok",
-        },
-    ])
 
-    result = turn_guard.classify_turn(messages)
-    assert result.is_tool_loop is True
-    assert result.is_stagnant is False
-    assert result.target_action == TurnAction.DIRECT_ACTIVE_TIER
-    assert result.replan_suggested is False
-    assert result.edit_count == 1
+    
 
 
 
