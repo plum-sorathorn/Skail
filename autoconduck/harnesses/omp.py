@@ -22,6 +22,32 @@ class OmpAdapter(BaseAdapter):
         "frontier",
         "smart-dag",
     )
+    supports_native_fan_out = True
+
+    def render_plan(self, plan: Any, tools: list[dict[str, Any]] | None = None) -> str:
+        """Format explicit batch delegation directives for OMP's multi-agent coordinator."""
+        from autoconduck.orchestrator.fan_out import build_harness_fan_out_plan
+
+        fan_out = build_harness_fan_out_plan(plan, max_subagents=4, client_type="omp")
+        lines = [
+            "### AutoConduck Task Decomposition",
+            "To execute this plan, delegate independent tasks to subagents:",
+        ]
+        if fan_out.batches:
+            for b in fan_out.batches:
+                lines.append(f"\n{b.batch_label}:")
+                for a in b.agents:
+                    dep_str = f" [requires: {', '.join(a.dependencies)}]" if a.dependencies else ""
+                    scope_str = f" [Scope: {', '.join(a.scope[:2])}]" if a.scope else ""
+                    lines.append(f"- {a.agent_label} ({a.role}){dep_str} => {a.goal}{scope_str}")
+        else:
+            subtasks = getattr(plan, "subtasks", []) or []
+            for i, st in enumerate(subtasks, 1):
+                goal = getattr(st, "goal", "")
+                role = getattr(st, "role", "worker")
+                lines.append(f"- Agent {i} ({role}) => {goal}")
+
+        return "\n".join(lines)
 
     def detect(self) -> bool:
         return self.detect_binary() or self.detect_config()

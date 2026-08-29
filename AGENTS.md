@@ -41,7 +41,8 @@ Do NOT build `model_scores.json` / empirical success-weighted scoring yet. It is
 - `orchestrator/`: `dynamic_factory.py` (Dynamic DAG), `session_guard.py`, `executor_loop.py` + `tools.py`, `handoff.py`, `subagents.py`.
 - `server/`: `server_routes.py` (routes), `server_streaming.py`, `turn_guard.py`, `messages_api.py` (Anthropic shim), `sse_streamer.py`.
 - `config/`: `models.py` (`Config`/`SelectionConfig` pydantic), `manager.py`, `resolver.py`, `paths.py`.
-- `knowledge/` (LanceDB RAG); `auth/`, `launcher/`, `cli/`, `presets/`, `harnesses/`, `tui/`, `_compat/`.
+- `knowledge/` (LanceDB RAG); `auth/`, `launcher/`, `cli/`, `presets/`, `tui/`, `_compat/`.
+- `harnesses/` (`base.py`, `omp.py`, `claude_code.py`, `opencode.py`, `pi.py`): Translation layer with `render_plan()`. AutoConduck plans abstract DAGs via the SLM and delegates execution to outer harnesses in their native syntax (`Agent 1 => Task 1` for OMP, `Task` directives for Claude Code, `subagent` for OpenCode, sequential checklists for Generic). AutoConduck never executes mock tool-less subagents in the proxy.
 
 ## Gotchas
 - TUI quit chord is **Ctrl+C** (Textual default Ctrl+Q is disabled); keymap in `tui/keymap.py`.

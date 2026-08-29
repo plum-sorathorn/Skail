@@ -60,8 +60,8 @@ def format_execution_handoff(
 ) -> ExecutionHandoff:
     """Format a clean, structured implementation plan with verified context for the client agent.
 
-    All subagent analysis is orchestrated server-side within AutoConduck. The synthesized
-    handoff is delivered as structured markdown directives for the client harness.
+    Translates the abstract execution DAG into harness-specific directives for outer
+    agent execution (omp batching, Claude Code Task tools, OpenCode subagents, or generic checklists).
     """
     sections: list[str] = []
 
@@ -102,13 +102,17 @@ def format_execution_handoff(
     if compacted and not subtasks:
         sections.append(f"### Key Findings & Architecture\n\n{compacted}")
 
-    from autoconduck.orchestrator.fan_out import build_harness_fan_out_plan, render_fan_out_directives
-    fan_out_plan = build_harness_fan_out_plan(plan, max_subagents=4, client_type=client_type)
-    directives_md = render_fan_out_directives(fan_out_plan, client_type=client_type)
+    from autoconduck.harnesses import resolve_adapter_for_request
+
+    adapter = resolve_adapter_for_request(client_type=client_type, user_agent=user_agent)
+    directives_md = adapter.render_plan(plan)
     sections.append(directives_md)
 
     # Structured content is additive: old consumers still receive the prose above.
     try:
+        from autoconduck.orchestrator.fan_out import build_harness_fan_out_plan
+
+        fan_out_plan = build_harness_fan_out_plan(plan, max_subagents=4, client_type=client_type)
         phases = getattr(plan, "phases", None) or [
             {"id": getattr(st, "id", ""), "goal": getattr(st, "goal", ""),
              "dependencies": getattr(st, "depends_on", []), "scope": getattr(st, "scope", []),
