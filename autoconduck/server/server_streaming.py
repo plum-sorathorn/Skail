@@ -99,6 +99,63 @@ def _build():
         serve_model_ids, PSEUDO_MODELS, _cached,
     )
 
+    # Plugin runtime — spool tailer (daemon-side) lifecycle: start when plugins.enabled.
+    # Fail-soft: never block app construction; tailer runs only when enabled.
+    try:
+        from contextlib import asynccontextmanager
+
+        _orig_lifespan = getattr(app.router, "lifespan_context", None)
+
+        @asynccontextmanager
+        async def _plugin_lifespan(app_inner):
+            # startup
+            try:
+                from autoconduck.plugin.spool import start_tailer
+                from autoconduck.plugin.ledger import get_ledger
+
+                # start ledger flusher if plugins enabled
+                try:
+                    from autoconduck.config.manager import get_config as _gc
+                    _cfg = _gc()
+                    _enabled = bool(getattr(getattr(_cfg, "plugins", None), "enabled", False))
+                except Exception:
+                    _enabled = False
+                if _enabled:
+                    try:
+                        await get_ledger().start()
+                    except Exception:
+                        pass
+                    try:
+                        await start_tailer()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            # run inner lifespan if any
+            if _orig_lifespan is not None:
+                async with _orig_lifespan(app_inner):
+                    yield
+            else:
+                yield
+            # shutdown
+            try:
+                from autoconduck.plugin.spool import stop_tailer
+                from autoconduck.plugin.ledger import get_ledger as _get_ledger2
+                try:
+                    await stop_tailer()
+                except Exception:
+                    pass
+                try:
+                    await _get_ledger2().stop()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        app.router.lifespan_context = _plugin_lifespan
+    except Exception:
+        pass
+
 
 
 def _get_app():

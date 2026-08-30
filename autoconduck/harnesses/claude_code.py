@@ -52,6 +52,80 @@ class ClaudeCodeAdapter(BaseAdapter):
             home / ".claude" / "settings.json",
         ]
 
+    # Hooks managed by the plugin shim (Phase 3). One command per event, observe-only.
+    HOOK_EVENTS = ("PreToolUse", "PostToolUse", "Stop")
+    HOOK_COMMAND_TMPL = "autoconduck hook claude {event}"
+
+    def _hooks_enabled(self, config: Config) -> bool:
+        try:
+            plugins = getattr(config, "plugins", None)
+            if plugins is None:
+                return False
+            return bool(getattr(plugins, "enabled", False) and getattr(plugins, "claude_enabled", False))
+        except Exception:
+            return False
+
+    def _build_hooks_block(self) -> dict:
+        hooks: dict[str, list[dict]] = {}
+        for ev in self.HOOK_EVENTS:
+            cmd = self.HOOK_COMMAND_TMPL.format(event=ev)
+            hooks[ev] = [
+                {
+                    "matcher": "",
+                    "hooks": [{"type": "command", "command": cmd}],
+                }
+            ]
+        return hooks
+
+    def _is_autoconduck_hook_entry(self, entry: dict) -> bool:
+        try:
+            inner = entry.get("hooks") if isinstance(entry, dict) else None
+            if not isinstance(inner, list):
+                return False
+            for h in inner:
+                if isinstance(h, dict) and "autoconduck hook claude" in str(h.get("command", "")):
+                    return True
+            return False
+        except Exception:
+            return False
+
+    def _merge_hooks(self, existing: dict | None) -> dict:
+        """Merge autoconduck hook entries into existing hooks dict, idempotent."""
+        base: dict[str, list] = {}
+        if isinstance(existing, dict):
+            # copy user hooks, but strip old autoconduck entries to avoid duplicates
+            for k, v in existing.items():
+                if not isinstance(v, list):
+                    base[k] = v  # type: ignore[assignment]
+                    continue
+                kept = [e for e in v if not self._is_autoconduck_hook_entry(e)]
+                if kept:
+                    base[k] = kept
+        managed = self._build_hooks_block()
+        for ev, entries in managed.items():
+            lst = base.get(ev)
+            if not isinstance(lst, list):
+                lst = []
+                base[ev] = lst
+            # append managed entries if not already present
+            for me in entries:
+                if me not in lst:
+                    lst.append(me)
+        return base
+
+    def _strip_autoconduck_hooks(self, existing: dict | None) -> dict | None:
+        if not isinstance(existing, dict):
+            return existing
+        out: dict[str, list] = {}
+        for k, v in existing.items():
+            if not isinstance(v, list):
+                out[k] = v  # type: ignore[assignment]
+                continue
+            kept = [e for e in v if not self._is_autoconduck_hook_entry(e)]
+            if kept:
+                out[k] = kept
+        return out if out else None
+
     def patch(self, config: Config, port: int | None = None) -> None:
         effective_port = int(
             port if port is not None else getattr(config, "port", 11434)
@@ -132,11 +206,48 @@ class ClaudeCodeAdapter(BaseAdapter):
         contributed = marker.get("contributed_permissions", allowed_tools)
         if not isinstance(contributed, list):
             contributed = allowed_tools
+        # Previous hooks snapshot (only on first takeover)
+        previous_hooks = marker.get("previous_hooks")
+        if first_takeover and "previous_hooks" not in marker:
+            # snapshot whatever was there before we touch it
+            raw_hooks = data.get("hooks")
+            if isinstance(raw_hooks, dict):
+                previous_hooks = copy.deepcopy(raw_hooks)
+            elif raw_hooks is not None:
+                previous_hooks = copy.deepcopy(raw_hooks)
+            else:
+                previous_hooks = None
+        # Decide hooks block based on plugin flags
+        hooks_enabled = self._hooks_enabled(config)
+        existing_hooks = data.get("hooks")
+        if hooks_enabled:
+            merged = self._merge_hooks(existing_hooks if isinstance(existing_hooks, dict) else None)
+            data["hooks"] = merged
+            contributed_hooks = list(self.HOOK_EVENTS)
+        else:
+            # flags off → ensure no autoconduck hooks remain (byte-identical to pre-plugin when never enabled)
+            stripped = self._strip_autoconduck_hooks(existing_hooks if isinstance(existing_hooks, dict) else None)
+            if stripped is None:
+                data.pop("hooks", None)
+            else:
+                # if stripping left only empty dict, remove key to stay byte-identical to no-hooks state
+                if not stripped:
+                    data.pop("hooks", None)
+                else:
+                    data["hooks"] = stripped
+            # keep marker but mark as not contributed
+            contributed_hooks = marker.get("contributed_hooks_events", [])
+            if not isinstance(contributed_hooks, list):
+                contributed_hooks = []
+
         data["autoconduck"] = {
             "managed_env_keys": list(values),
             "previous_env": previous,
             "previous_permissions": previous_permissions,
             "contributed_permissions": list(dict.fromkeys(contributed + allowed_tools)),
+            "previous_hooks": previous_hooks,
+            "contributed_hooks_events": contributed_hooks if hooks_enabled else [],
+            "hooks_enabled": bool(hooks_enabled),
         }
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
@@ -199,6 +310,42 @@ class ClaudeCodeAdapter(BaseAdapter):
                                     permissions.pop("allow", None)
                                 if not permissions:
                                     data.pop("permissions", None)
+                    # Restore hooks from previous_hooks snapshot if present, else strip managed hook entries
+                    prev_hooks = marker.get("previous_hooks")
+                    if "previous_hooks" in marker:
+                        if prev_hooks is None:
+                            data.pop("hooks", None)
+                        elif isinstance(prev_hooks, dict):
+                            if prev_hooks:
+                                data["hooks"] = prev_hooks
+                            else:
+                                data.pop("hooks", None)
+                        else:
+                            # non-dict snapshot: strip managed entries defensively
+                            stripped = self._strip_autoconduck_hooks(data.get("hooks") if isinstance(data.get("hooks"), dict) else None)
+                            if stripped is None:
+                                data.pop("hooks", None)
+                            elif not stripped:
+                                data.pop("hooks", None)
+                            else:
+                                data["hooks"] = stripped
+                    else:
+                        stripped = self._strip_autoconduck_hooks(data.get("hooks") if isinstance(data.get("hooks"), dict) else None)
+                        if stripped is None:
+                            data.pop("hooks", None)
+                        elif not stripped:
+                            data.pop("hooks", None)
+                        else:
+                            data["hooks"] = stripped
+                else:
+                    # No marker — still defensively strip any managed hooks
+                    stripped = self._strip_autoconduck_hooks(data.get("hooks") if isinstance(data.get("hooks"), dict) else None)
+                    if stripped is None:
+                        data.pop("hooks", None)
+                    elif isinstance(stripped, dict) and not stripped:
+                        data.pop("hooks", None)
+                    elif isinstance(stripped, dict):
+                        data["hooks"] = stripped
                 data.pop("autoconduck", None)
                 model_overrides = data.get("modelOverrides")
                 if isinstance(model_overrides, dict):

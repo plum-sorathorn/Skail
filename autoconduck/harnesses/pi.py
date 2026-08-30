@@ -112,7 +112,7 @@ class PiAdapter(BaseAdapter):
                 return env_value
         return "autoconduck-local"
 
-    def _render_extension(self, base_url: str, api_key: str, context_window: int = 1000000) -> str:
+    def _render_extension(self, base_url: str, api_key: str, context_window: int = 1000000, hooks_enabled: bool = False) -> str:
         models = [self._model_definition(model, context_window) for model in self.PSEUDO_MODELS]
         models_json = json.dumps(models, indent=6)
         # Re-indent so the array sits correctly inside the object literal.
@@ -120,6 +120,7 @@ class PiAdapter(BaseAdapter):
             ("      " + line if idx else line)
             for idx, line in enumerate(models_json.splitlines())
         )
+        hooks_flag = "true" if hooks_enabled else "false"
         return (
             "// AutoConduck-managed provider registration. Recreate with: autoconduck install pi\n"
             'import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";\n'
@@ -135,6 +136,14 @@ class PiAdapter(BaseAdapter):
             '    },\n'
             f"    models: {indented_models},\n"
             "  });\n"
+            "}\n"
+            "\n"
+            "// --- AutoConduck hooks (Phase 3 stub — inert, gated) ---\n"
+            f"const AUTOCONDUCK_HOOKS_ENABLED = {hooks_flag};\n"
+            "if (AUTOCONDUCK_HOOKS_ENABLED) {\n"
+            "  // Planned: pi.on('tool.execute', ...) → spool append; disabled in v1.\n"
+            "  // When plugins.pi_enabled flips true (Phase 4+), regeneration emits true\n"
+            "  // and this block registers the real hook. Provider registration above unchanged.\n"
             "}\n"
         )
 
@@ -154,9 +163,11 @@ class PiAdapter(BaseAdapter):
         api_key = self._resolve_api_key(pi_settings)
         context_window = int(getattr(pi_settings, "context_window", 1000000)) if pi_settings else 1000000
 
+        plugins = getattr(config, "plugins", None)
+        hooks_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "pi_enabled", False)) if plugins is not None else False
         extension_file = self._extension_path()
         extension_file.parent.mkdir(parents=True, exist_ok=True)
-        extension_file.write_text(self._render_extension(base_url, api_key, context_window), encoding="utf-8")
+        extension_file.write_text(self._render_extension(base_url, api_key, context_window, hooks_enabled=hooks_enabled), encoding="utf-8")
 
         def update(data: dict) -> None:
             data["defaultProvider"] = self.provider_name

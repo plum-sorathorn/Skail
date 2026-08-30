@@ -13,6 +13,7 @@ from autoconduck.config import get_config, load_config, save_config, home_dir
 from autoconduck.server import DEFAULT_PORT, _check_port_available, _find_free_port, _run_proxy, _run_supervisor
 from autoconduck.server.server_streaming import _write_crash_report
 from .cli_launch import cmd_launch_agent, cmd_install, _open_new_terminal
+from .hook import cmd_hook
 
 
 def cmd_omp_link(args):
@@ -449,6 +450,10 @@ def main(argv: list[str] | None = None):
     uninstall = sub.add_parser("uninstall")
     uninstall.add_argument("--force", action="store_true")
     uninstall.set_defaults(handler=cmd_uninstall)
+    hook = sub.add_parser("hook", help="Harness hook spool (observe-only, fails inert)")
+    hook.add_argument("harness", nargs="?", default="claude", help="Harness id (e.g. claude)")
+    hook.add_argument("event", nargs="?", default="unknown", help="Hook event name (e.g. PostToolUse)")
+    hook.set_defaults(handler=cmd_hook)
     try:
         args = parser.parse_args(argv)
         if args.version:
