@@ -1,6 +1,6 @@
 # AutoConduck — AGENTS.md
 
-AutoConduck is a local zero-overhead model router + optional deterministic plugin orchestrator for coding agents (Claude Code, OpenCode, Pi). Python runtime; end users install via npm (`npm install -g autoconduck`). Current version: 0.4.1.
+AutoConduck is a local zero-overhead model router + optional deterministic plugin orchestrator for coding agents (Claude Code, OpenCode, Pi). Python runtime; end users install via npm (`npm install -g autoconduck`). Current version: 0.5.0.
 
 ## Commands
 - Dev install: `pip install -r requirements.txt` then `pip install -e .`

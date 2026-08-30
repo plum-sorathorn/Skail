@@ -1,4 +1,4 @@
-# Pre-Transformation Baseline — Two-Plane
+# Pre-Transformation Baseline - Two-Plane
 
 **Date:** 2026-08-30
 **Branch:** `two-plane`
@@ -6,7 +6,7 @@
 
 ---
 
-## Pytest — Full Suite
+## Pytest - Full Suite
 
 **Command:** `python -m pytest` (pytest `asyncio_mode=auto`; `testpaths = tests`)
 
@@ -63,14 +63,14 @@ tests\test_turn_guard.py .......................                         [100%]
 ================= 286 passed, 2 skipped, 1 warning in 22.03s ==================
 ```
 
-**Summary:** 288 collected → **286 passed, 2 skipped, 0 failed**, 1 warning (StarletteDeprecationWarning from `fastapi/testclient.py`).
-**Failing tests:** _(none — zero failures)_
+**Summary:** 288 collected -> **286 passed, 2 skipped, 0 failed**, 1 warning (StarletteDeprecationWarning from `fastapi/testclient.py`).
+**Failing tests:** _(none - zero failures)_
 
-Skipped tests (2) are in `tests/test_launcher.py` (`.ss` — platform-conditional skips).
+Skipped tests (2) are in `tests/test_launcher.py` (`.ss` - platform-conditional skips).
 
 ---
 
-## Smoke Test — `scripts/end_to_end_smoke.py`
+## Smoke Test - `scripts/end_to_end_smoke.py`
 
 **Command:** `python scripts/end_to_end_smoke.py`
 
@@ -91,14 +91,60 @@ messages	autoconduck	orchestrator-answer (no model field)	502
 Estimated cost: inspect /stats; this smoke uses at most five tiny model calls plus two local endpoints.
 ```
 
-**Outcome:** Chat-completion paths (`fast`/`budget`/`expensive`/`slow`/`messages`) returned **502** (`orchestrator-answer (no model field)`) — expected in this environment because no models are configured in `~/.autoconduck/config.yaml` (fallback warning emitted). Local endpoints `/v1/models` and `/stats` returned **200**. No source fix applied per Phase 0 instructions; recorded honestly.
+**Outcome:** Chat-completion paths (`fast`/`budget`/`expensive`/`slow`/`messages`) returned **502** (`orchestrator-answer (no model field)`) - expected in this environment because no models are configured in `~/.autoconduck/config.yaml` (fallback warning emitted). Local endpoints `/v1/models` and `/stats` returned **200**. No source fix applied per Phase 0 instructions; recorded honestly.
 
 ---
 
 ## Graph
 
-`graphify update .` completed: `2119 nodes, 4578 edges, 132 communities` — `graph.json`, `graph.html`, `GRAPH_REPORT.md` updated; 1 file produced zero nodes (`pricing_fallback.json` warning).
+`graphify update .` completed: `2119 nodes, 4578 edges, 132 communities` - `graph.json`, `graph.html`, `GRAPH_REPORT.md` updated; 1 file produced zero nodes (`pricing_fallback.json` warning).
 
 ---
 
 *One-line note: All results above are pre-transformation baselines captured on 2026-08-30 before any proxy/plugin code changes.*
+
+---
+
+## Acceptance Gates (Phase 6)
+
+**Date:** 2026-08-30
+**Pre-bump commit:** 8cf64dd
+**Branch:** two-plane
+**Script:** python scripts/acceptance_gates.py (offline, no models/network)
+**Result:** ALL GATES PASS (exit 0)
+
+**Full output (verbatim):**
+
+\C:\Users\plum\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+plugin /events ledger error: simulated db I/O failure
+Literal API keys in config.yaml are deprecated; use auth.yaml
+SLM sync planner error: SLM boom; degrading to fallback.
+========================================================================
+AutoConduck Phase 6 - Acceptance Gates (offline)
+python: 3.14.6  home: C:\Users\plum\AppData\Local\Temp\tmpm38gjz3r\ac_home
+========================================================================
+GATE 1 hot-path selection (1000 iters, healthy-tool-loop bypass): p50=0.037ms p95=0.060ms max=0.216ms mean=0.043ms - PASS (threshold p95<5ms)
+GATE 2 Turn Guard classify() (1000 iters): p50=0.016ms p95=0.023ms max=0.696ms mean=0.014ms - PASS (threshold p95<2ms)
+GATE 3 plugin-off parity (same request, plugins off vs on w/o escalation): model off='pricey' on='pricey' floor off=0.3650 on=0.3650 bump=0.0 - PASS
+GATE 4 fail-soft matrix: PASS
+  4a ledger-broken: /plugin/events 200 (expect <500) chat 200 (expect 200) -> ok
+  4b SLM failure fallback: model='cheap' fallback_used=True -> PASS
+  4c deprecated keys: loaded=True warned=True logs=['ignoring deprecated config key: ambiguous_high', 'ignoring deprecated config key: ambiguous_low'] -> PASS
+  4d fuzz endpoints (13 cases): bad(>=500)=none -> PASS
+GATE 5 escalate->bias->floor (session=gate5-sess): control floor=0.3650 biased floor=0.5650 bump=0.2000 elevated=True within_cap<=0.75=True still_present=True control_model='pricey' biased_model='pricey' - PASS
+------------------------------------------------------------------------
+GATE 1: PASS
+GATE 2: PASS
+GATE 3: PASS
+GATE 4: PASS
+GATE 5: PASS
+Total wall time: 4217.6ms
+========================================================================
+ALL GATES PASS
+\
+**Post-bump version:** 0.5.0 (synced pyproject.toml, autoconduck/__init__.py, npm-packaging/**/package.json, README.md, AGENTS.md)
+**Wheels:** npm-packaging/dist/autoconduck-0.5.0-py3-none-any.whl rebuilt and synced to 5 platform python/ dirs; build.py --check clean (5/5 sha256=3a91149aefff)
+**Pytest:** 263 passed, 4 skipped, 1 warning (StarletteDeprecationWarning)
+**Gate thresholds:** hot-path p95<5ms (0.060ms), Turn Guard p95<2ms (0.023ms) - both PASS with sub-ms typical latency.
+
