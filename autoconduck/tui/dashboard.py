@@ -269,11 +269,10 @@ if _TEXTUAL:
             total = int(t.get("total_tokens", 0) or 0)
             avg_lat = float(t.get("avg_latency_ms", 0.0) or 0.0)
             fast_calls = self.paths.get("FAST", 0) + self.paths.get("fast", 0)
-            slow_calls = self.paths.get("SLOW", 0) + self.paths.get("slow", 0)
             return "\n".join(_format_box_lines("Live Telemetry & Routing Savings", [
                 f"Session Spend: [bold green]${cost:.4f}[/bold green] USD  |  Est. Savings vs Frontier: [bold cyan]${savings_usd:.4f} ({savings_pct:.1f}%)[/bold cyan]",
                 f"Requests: [bold]{calls}[/bold]  |  Tokens: [bold]{total:,}[/bold] ([dim]{prompt:,}[/dim] in / [dim]{completion:,}[/dim] out)",
-                f"Avg Turn Latency: [bold]{avg_lat:.1f} ms[/bold]  |  Dispatched: [bold green]FAST={fast_calls}[/bold green], [bold yellow]SLOW={slow_calls}[/bold yellow]",
+                f"Avg Turn Latency: [bold]{avg_lat:.1f} ms[/bold]  |  Dispatched: [bold green]FAST={fast_calls}[/bold green]",
             ], width=76))
 
         def _graph_view(self) -> str:
@@ -292,49 +291,7 @@ if _TEXTUAL:
             val = active.get("task_value", 0.0)
             completed = active.get("subtasks_completed", 0)
             total = active.get("subtasks_total", 0)
-
-            if is_active and decision_path({"path": path}) == "SLOW":
-                tg_n = "[green][OK] GUARD[/green]"
-                slm_n = (
-                    "[bold yellow]● SLM PLAN[/bold yellow]"
-                    if node in ("init", "rag", "slm")
-                    else "[green][OK] SLM PLAN[/green]"
-                )
-                dag_label = (
-                    f"DAG NODES ({completed}/{total})"
-                    if total
-                    else "DYNAMIC DAG"
-                )
-                dag_n = (
-                    f"[bold yellow]● {dag_label}[/bold yellow]"
-                    if node not in ("init", "rag", "slm", "synthesizer", "idle")
-                    else (
-                        "[green][OK] DYNAMIC DAG[/green]"
-                        if node == "synthesizer"
-                        else "[dim]○ DYNAMIC DAG[/dim]"
-                    )
-                )
-                syn_n = (
-                    "[bold yellow]● SYNTHESIZER[/bold yellow]"
-                    if node == "synthesizer"
-                    else "[dim]○ SYNTHESIZER[/dim]"
-                )
-
-                lines = [
-                    f"Target: [bold]{model}[/bold] | Active Node: [bold yellow]{node}[/bold yellow]",
-                    "",
-                    f"[START] ──► {tg_n} ──► {slm_n} ──► {dag_n} ──► {syn_n} ──► [END]",
-                    "",
-                    f"Status: [bold cyan]{detail}[/bold cyan]",
-                ]
-                return "\n".join(
-                    _format_box_lines(
-                        "[bold cyan]Dynamic DAG Execution[/bold cyan]",
-                        lines,
-                        width=76,
-                    )
-                )
-            elif is_active and decision_path({"path": path}) == "FAST":
+            if is_active and decision_path({"path": path}) == "FAST":
                 lines = [
                     f"Selected Model: [bold green]{model}[/bold green] (Task Complexity: [bold]{val:.2f}[/bold])",
                     "",

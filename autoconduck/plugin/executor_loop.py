@@ -9,8 +9,30 @@ from pathlib import Path
 import re
 from dataclasses import dataclass, field
 
-from .helpers import _response_text
 from .tools import TOOL_SCHEMAS, execute_tool, is_read_only_tool, tool_model
+
+
+def _response_text(response) -> str:  # type: ignore[no-untyped-def]
+    if isinstance(response, str):
+        return response
+    if isinstance(response, dict):
+        choices = response.get("choices")
+        if not choices:
+            raise ValueError("No choices in response")
+        msg = choices[0].get("message", {})
+        content = msg.get("content")
+        if content is None:
+            content = msg.get("reasoning_content") or ""
+        return str(content)
+    if hasattr(response, "choices"):
+        if not response.choices:  # type: ignore[union-attr]
+            raise ValueError("No choices in response")
+        msg = response.choices[0].message  # type: ignore[union-attr]
+        content = getattr(msg, "content", None)
+        if content is None:
+            content = getattr(msg, "reasoning_content", None) or ""
+        return str(content)
+    return ""
 
 STAGNATION_MARKER = "<loop-stagnation:true>"
 

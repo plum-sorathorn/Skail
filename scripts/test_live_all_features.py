@@ -30,9 +30,8 @@ from autoconduck.config import Config, ModelEntry, SelectionConfig
 import autoconduck.config as config_module
 from autoconduck.server.turn_guard import TurnGuard, TurnAction
 from autoconduck.routing.model_pool import ModelPool, CapabilitySLA
-from autoconduck.routing.slm_planner import SLMPlanner, ExecutionPlan, SubTaskSpec
-from autoconduck.orchestrator.dynamic_factory import DynamicState, build_dynamic_graph
-from autoconduck.orchestrator.session_guard import SessionGuard
+from autoconduck.routing.slm_planner import SLMPlanner, ExecutionPlan
+from autoconduck.server.session_guard import SessionGuard
 from autoconduck.knowledge.vector_store import KnowledgeVectorStore
 from autoconduck.knowledge.models import CodeChunk
 from autoconduck.server.server_streaming import app
@@ -124,49 +123,11 @@ def test_model_selection() -> tuple[bool, str]:
 
 
 async def test_native_async_dag() -> tuple[bool, str]:
-    """Test 3: Native Async DAG execution with parallel tasks & cycle detection."""
-    import autoconduck.orchestrator.subagents as subagents_mod
-    orig_run_subagent = getattr(subagents_mod, "run_subagent", None)
+    """Test 3: Plugin executor loop (DAG removed, now in plugin)."""
+    from autoconduck.plugin.executor_loop import run_executor_tool_loop
 
-    async def fake_run_subagent(task, *args, **kwargs):
-        return f"Executed subtask {task.id}"
-
-    subagents_mod.run_subagent = fake_run_subagent
-
-    try:
-        plan = ExecutionPlan(
-            route="dynamic_dag",
-            confidence=0.95,
-            task_type="refactor",
-            subtasks=[
-                SubTaskSpec(id="recon_1", goal="Scan auth module", role="recon", depends_on=[]),
-                SubTaskSpec(id="recon_2", goal="Scan config module", role="recon", depends_on=[]),
-                SubTaskSpec(id="edit_1", goal="Apply updates", role="edit", depends_on=["recon_1", "recon_2"]),
-            ],
-        )
-        runner = build_dynamic_graph(plan)
-        state = DynamicState(session_id="test_sess", thread_id="test_th", plan=plan)
-        
-        start = time.perf_counter()
-        result = await runner.ainvoke(state)
-        elapsed_ms = (time.perf_counter() - start) * 1000.0
-        
-        # Test cycle resilience
-        cycle_plan = ExecutionPlan(
-            route="dynamic_dag",
-            subtasks=[
-                SubTaskSpec(id="a", goal="Cycle A", role="read", depends_on=["b"]),
-                SubTaskSpec(id="b", goal="Cycle B", role="read", depends_on=["a"]),
-            ],
-        )
-        cycle_runner = build_dynamic_graph(cycle_plan)
-        cycle_res = await cycle_runner.ainvoke(state)
-        
-        passed = result is not None and cycle_res is not None
-        return passed, f"DAG Execution: OK ({elapsed_ms:.2f}ms), Cycle Resilience: OK"
-    finally:
-        if orig_run_subagent is not None:
-            subagents_mod.run_subagent = orig_run_subagent
+    passed = callable(run_executor_tool_loop)
+    return passed, "Plugin executor loop available (DAG removed in Phase 1B)"
 
 
 def test_session_guard() -> tuple[bool, str]:

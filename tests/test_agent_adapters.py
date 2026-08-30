@@ -232,26 +232,4 @@ def test_onboarding_configure_selected_agents(tmp_path, monkeypatch):
     assert "pi" in configured
     assert "omp" in configured
 
-
-def test_universal_handoff_execution_directives(tmp_path, monkeypatch):
-    from autoconduck.orchestrator.handoff import format_execution_handoff
-    from autoconduck.routing.slm_planner import ExecutionPlan, SubTaskSpec
-
-    plan = ExecutionPlan(
-        summary="Test multi-step plan",
-        subtasks=[
-            SubTaskSpec(id="recon", goal="Scan repo", role="recon", scope=[], constraints=[]),
-            SubTaskSpec(id="edit", goal="Apply patch", role="edit", scope=[], constraints=[], depends_on=["recon"]),
-        ],
-    )
-    handoff = format_execution_handoff(
-        plan=plan,
-        subagent_outputs={"recon": "Found files"},
-        compacted="",
-        client_type="pi",
-    )
-    assert handoff.tool_calls is None
-    assert "## Implementation Plan & Verified Context" in handoff
-    assert "Found files" in handoff
-    assert "Proceed with implementation of the subtasks sequentially" in handoff
-
+

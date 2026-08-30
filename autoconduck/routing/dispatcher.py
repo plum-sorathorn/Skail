@@ -1,11 +1,9 @@
 from dataclasses import dataclass, replace
 from typing import Literal, Any
-import os
-from urllib.parse import urlsplit
 from . import pricing
 from autoconduck.routing.model_pool import CapabilitySLA
-from autoconduck.routing.slm_planner import SLMPlanner, ExecutionPlan, SubTaskSpec
-from autoconduck.server.turn_guard import TurnGuard, TurnAction, TurnClassificationResult
+from autoconduck.routing.slm_planner import SLMPlanner
+from autoconduck.server.turn_guard import TurnGuard, TurnAction
 
 
 def _user_messages(messages: list) -> list:
@@ -18,8 +16,8 @@ def _user_messages(messages: list) -> list:
 
 @dataclass(frozen=True)
 class RoutingDecision:
-    path: Literal["fast", "slow"]
-    confidence_band: Literal["fast", "slow", "ambiguous"]
+    path: Literal["fast"]
+    confidence_band: Literal["fast"]
     confidence: float
     complexity: float
     reason: str
@@ -43,8 +41,6 @@ def route(
     pseudo_model: str = "autoconduck",
     tiebreaker: Any = None,
     config: Any = None,
-    replan_pending: bool = False,
-    escalation_plan: Any = None,
 ) -> RoutingDecision:
     if config is None:
         from ..config import get_config
@@ -59,38 +55,17 @@ def route(
     plan = None
     selection_info = None
     if guard_res.target_action == TurnAction.ESCALATE_SLM:
-        path = "slow"
-        route_name = "dynamic_dag"
-        confidence_band = "slow"
-        confidence = 0.95
-        complexity = 0.85
-        tier = "capability_sla"
-        reason = f"stagnation_escalation: {guard_res.stagnation_reason}"
+        # escalation = fresh classification + floor-tightened selection (no slow path)
         planner = SLMPlanner()
-        plan = planner.create_escalation_plan(
-            messages, reason=f"stagnation_escalation: {guard_res.stagnation_reason}"
-        )
-        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, "escalate")
-        model = selection_info.model or resolve_orchestrator_model(config)
-
-    elif (guard_res.target_action in (TurnAction.DIRECT_ACTIVE_TIER, TurnAction.SUGGEST_REPLAN)) and replan_pending:
-        path = "slow"
-        route_name = "dynamic_dag"
-        confidence_band = "slow"
-        confidence = 0.95
-        complexity = 0.85
+        plan = planner.plan_sync(messages, config)
+        path = "fast"
+        route_name = "fast_direct"
+        confidence_band = "fast"
+        confidence = plan.confidence
+        complexity = 0.2
         tier = "capability_sla"
-        plan = escalation_plan or SLMPlanner().create_escalation_plan(
-            messages, reason="mid_execution_replan"
-        )
-        reason = getattr(plan, "rationale", None) or "mid_execution_replan"
-        selection_info = _select_planned(
-            plan.suggested_sla,
-            plan,
-            config,
-            pseudo_model,
-            "refactor" if getattr(plan, "task_type", None) in ("refactor", "full_workflow", "multi_edit") else "escalate",
-        )
+        reason = plan.rationale or f"escalation_reclassified_{plan.task_type}"
+        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, None)
         model = selection_info.model or resolve_orchestrator_model(config)
 
     elif guard_res.target_action in (TurnAction.DIRECT_ACTIVE_TIER, TurnAction.SUGGEST_REPLAN):
@@ -114,28 +89,15 @@ def route(
         # Step 2: Embedded SLM Task Architect (<100ms circuit breaker)
         planner = SLMPlanner()
         plan = planner.plan_sync(messages, config)
-
-        if plan.route == "dynamic_dag":
-            path = "slow"
-            route_name = "dynamic_dag"
-            confidence_band = "slow"
-            confidence = plan.confidence
-            complexity = 0.85 if plan.task_type in ("refactor", "full_workflow") else 0.75
-            tier = "capability_sla"
-            reason = plan.rationale or f"dynamic_dag_{plan.task_type}"
-            selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, "refactor" if plan.task_type in ("refactor", "full_workflow", "multi_edit") else None)
-            model = selection_info.model or resolve_orchestrator_model(config)
-        else:
-            path = "fast"
-            route_name = "fast_direct"
-            confidence_band = "fast"
-            confidence = plan.confidence
-            complexity = 0.2
-            tier = "capability_sla"
-            reason = plan.rationale or f"fast_direct_{plan.task_type}"
-            model = pricing.select_for_sla(
-                plan.suggested_sla, config=config, pseudo_model=pseudo_model
-            ) or resolve_orchestrator_model(config)
+        path = "fast"
+        route_name = "fast_direct"
+        confidence_band = "fast"
+        confidence = plan.confidence
+        complexity = 0.2
+        tier = "capability_sla"
+        reason = plan.rationale or f"fast_direct_{plan.task_type}"
+        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, None)
+        model = selection_info.model or resolve_orchestrator_model(config)
 
     if model:
         try:

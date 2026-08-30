@@ -78,13 +78,10 @@ class SelectionConfig(BaseModel):
     tiebreaker_enabled: bool = False
     tiebreaker_min_complexity: float = 0.45
     budget_tiebreaker_min_complexity: float = 0.65
-    slow_threshold: float = 0.75
-    min_orchestrator_complexity: float = 0.72
     subagent_timeout_s: float = 120.0
     subagent_max_tokens: int = 4096
     max_file_read_scaled_cost: float = 0.55
     fast_path_max_scaled_cost: float = 0.50
-    deescalation_threshold: float = 0.40
     enable_fast_path_graph: bool = True
     enable_executor_subagents: bool = False
     executor_enable_tools: bool = True
@@ -154,10 +151,7 @@ class Config(BaseModel):
     host: str = "127.0.0.1"
     port: int = 11434
     log_level: str = "INFO"
-    ambiguous_low: float = 0.60
-    ambiguous_high: float = 0.75
     hysteresis_floor: float = 0.50
-    escalation_threshold: float = 0.80
     stack_trace_boost: float = 0.25
     ema_alpha: float = 0.1
     degraded_error_rate: float = 0.20

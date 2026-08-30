@@ -2,104 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from typing import Any
 
 import autoconduck.config as config_module
-
-_session_replan_state: dict[str, dict[str, Any]] = {}
-_MAX_SESSION_STATES = 256
-
-
-def _store_plan_state(session_key: str, plan: Any) -> dict[str, Any]:
-    if len(_session_replan_state) >= _MAX_SESSION_STATES and session_key not in _session_replan_state:
-        oldest = next(iter(_session_replan_state))
-        _session_replan_state.pop(oldest, None)
-    state = _session_replan_state.setdefault(session_key, {})
-    state.update({"active_plan": plan, "plan_id": getattr(plan, "plan_id", ""),
-                  "revision": getattr(plan, "revision", 0),
-                  "ledger": (getattr(plan, "ledger", []) or [])[-8:],
-                  "session_status": getattr(plan, "session_status", "active")})
-    return state
-
-
-def _get_session_key(messages: list[Any], request: Any = None) -> str:
-    """Generate a consistent session key from request headers or conversation root."""
-    if request is not None and hasattr(request, "headers"):
-        for hdr in ("x-session-id", "x-thread-id", "session_id", "conversation_id"):
-            val = request.headers.get(hdr)
-            if val:
-                return str(val)
-    if isinstance(messages, list) and messages:
-        first_user = next((m for m in messages if isinstance(m, dict) and m.get("role") in ("user", "human")), None)
-        if first_user and isinstance(first_user, dict):
-            c = str(first_user.get("content", ""))[:200]
-            return f"sess_{hash(c)}"
-        first = messages[0]
-        if isinstance(first, dict):
-            c = str(first.get("content", ""))[:200]
-            return f"sess_{hash(c)}"
-    return "default_session"
-
-
-async def _run_async_slm_heartbeat(
-    session_key: str,
-    messages: list[Any],
-    current_plan: Any,
-    guard_res: Any,
-    cfg: Any,
-) -> None:
-    """Run async background SLM heartbeat evaluation for mid-execution DAG promotion."""
-    state = _session_replan_state.setdefault(session_key, {})
-    now = time.time()
-    last_eval = state.get("eval_started_at", 0)
-    if state.get("evaluating") and (now - last_eval < 60):
-        return
-    state["evaluating"] = True
-    state["eval_started_at"] = now
-    try:
-        from autoconduck.routing.slm_planner import SLMPlanner
-
-        session_stats = {
-            "read_count": getattr(guard_res, "read_count", 0),
-            "edit_count": getattr(guard_res, "edit_count", 0),
-            "replan_reason": getattr(guard_res, "replan_reason", ""),
-        }
-        planner = SLMPlanner()
-        verdict = await planner.evaluate_session_trajectory_async(
-            messages,
-            current_plan=current_plan,
-            session_stats=session_stats,
-            config=cfg,
-        )
-        mutation = getattr(verdict, "mutation", None)
-        active = state.get("active_plan") or current_plan
-        if mutation is not None and active is not None:
-            from autoconduck.routing.slm_planner import apply_plan_mutation
-            try:
-                updated = apply_plan_mutation(active, mutation)
-                if state.get("active_plan") is None or state.get("revision") == getattr(active, "revision", 0):
-                    _store_plan_state(session_key, updated)
-                    state["last_mutation"] = mutation.action
-                    state["stale_rejection"] = False
-                else:
-                    state["stale_rejection"] = True
-            except Exception:
-                state["stale_rejection"] = True
-        if verdict.should_escalate:
-            state["replan_pending"] = True
-            state["escalation_plan"] = verdict.suggested_plan
-            logging.getLogger("autoconduck").info(
-                "Mid-execution SLM heartbeat scheduled replan for session %s: %s",
-                session_key,
-                verdict.reason,
-            )
-    except Exception as exc:
-        logging.getLogger("autoconduck").debug("Error in async SLM heartbeat: %s", exc)
-    finally:
-        state["evaluating"] = False
 
 
 def is_active_tool_session(messages: list[Any]) -> bool:
@@ -107,8 +14,7 @@ def is_active_tool_session(messages: list[Any]) -> bool:
 
     In an active tool loop, the client agent (Pi, Claude Code, OpenCode, etc.)
     is managing its own tool execution loop. AutoConduck relays requests
-    directly to the selected model rather than hijacking the turn with the
-    multi-agent DAG orchestrator.
+    directly to the selected model rather than hijacking the turn.
     """
     try:
         from autoconduck.server.turn_guard import TurnGuard
@@ -182,7 +88,10 @@ async def route_target(
     normalize_messages_for_llm: Any,
     tools: list[Any] | None = None,
 ) -> tuple[str | None, dict[str, Any]]:
-    """Determine routing path, model selection, and orchestration execution."""
+    """Determine routing path, model selection, and return upstream target.
+
+    Pure turn-by-turn router: Turn Guard -> dispatcher.route() (fast-only) -> selection -> upstream dispatch.
+    """
     started = time.perf_counter()
     cfg = config_module.get_config()
     target, path = body_model, "direct"
@@ -202,26 +111,7 @@ async def route_target(
                 client_type = "opencode"
             elif "claude" in ua:
                 client_type = "claude"
-    is_nested = request_depth >= 1
     decision = None
-
-    session_key = _get_session_key(messages, request)
-    state = _session_replan_state.setdefault(session_key, {})
-    active_session_plan = state.get("active_plan")
-
-    client_replan_hint = False
-    if request is not None and hasattr(request, "headers"):
-        hint = str(request.headers.get("x-autoconduck-escalate", "")).lower()
-        if hint in ("true", "1", "replan", "yes"):
-            client_replan_hint = True
-
-    replan_pending = bool(state.get("replan_pending") or client_replan_hint)
-    escalation_plan = state.get("escalation_plan")
-
-    if replan_pending:
-        state["replan_pending"] = False
-        state["escalation_plan"] = None
-        state["last_replan_turn"] = len(messages)
 
     if body_model in PSEUDO_MODELS:
         try:
@@ -233,18 +123,11 @@ async def route_target(
                 history,
                 pseudo_model=body_model,
                 config=cfg,
-                replan_pending=replan_pending,
-                escalation_plan=escalation_plan,
             )
-            path = getattr(decision, "path", "FAST").upper()
+            path = getattr(decision, "path", "fast").upper()
             route_name = getattr(decision, "route", "fast_direct")
             tier = getattr(decision, "tier", "balanced")
             plan = getattr(decision, "plan", None)
-            in_loop = is_active_tool_session(messages)
-            if active_session_plan is not None and in_loop and not replan_pending and getattr(active_session_plan, "session_status", "active") == "active":
-                plan = active_session_plan
-            elif plan is not None:
-                _store_plan_state(session_key, plan)
             model = getattr(decision, "model", None)
         except Exception:
             decision, path, route_name, tier, plan, model = (
@@ -255,15 +138,7 @@ async def route_target(
                 None,
                 None,
             )
-        task_complexity = float(getattr(decision, "complexity", 0.5))
-        if path == "SLOW" and is_nested:
-            path = "FAST"
-            route_name = "fast_direct"
-            model = model or None
-            logging.getLogger("autoconduck").info(
-                "Nested orchestrator call (depth=%d) downgraded to FAST",
-                request_depth,
-            )
+        task_complexity = float(getattr(decision, "complexity", 0.5) if decision else 0.5)
         if on_progress is not None:
             try:
                 on_progress(
@@ -280,7 +155,7 @@ async def route_target(
                 pseudo_model=body_model,
                 selected_model=model or body_model,
                 task_value=task_complexity,
-                node="slm" if path == "SLOW" else "direct",
+                node="direct",
                 step_detail=f"Dispatched -> {model or body_model} ({route_name})",
                 start_time=time.time(),
                 subtasks_total=subtasks_count,
@@ -313,77 +188,6 @@ async def route_target(
             (time.perf_counter() - started) * 1000,
         )
 
-        # Check if background SLM heartbeat should evaluate session trajectory
-        replan_enabled = getattr(getattr(cfg, "selection", None), "mid_execution_replan_enabled", True)
-        if replan_enabled and not replan_pending:
-            try:
-                from autoconduck.server.turn_guard import TurnGuard
-                guard_res = TurnGuard().classify_turn(messages)
-                min_turns = int(getattr(getattr(cfg, "selection", None), "replan_min_turns_since_slm", 4))
-                turns_since = len(messages) - int(state.get("last_replan_turn", 0))
-
-                if (guard_res.replan_suggested or client_replan_hint) and turns_since >= min_turns and not state.get("evaluating"):
-                    asyncio.create_task(
-                        _run_async_slm_heartbeat(session_key, messages, plan, guard_res, cfg)
-                    )
-            except Exception:
-                pass
-
-        in_tool_loop = is_active_tool_session(messages) and not replan_pending
-        if in_tool_loop and path == "SLOW":
-            logging.getLogger("autoconduck").debug(
-                "Active tool loop detected — delegating completion directly to selected model %s",
-                model or body_model,
-            )
-        plan_context = None
-        if (
-            path == "SLOW"
-            and not in_tool_loop
-            and not (request is not None and await request.is_disconnected())
-        ):
-            try:
-                from autoconduck.orchestrator import run
-
-                result = await run(
-                    messages,
-                    [],
-                    pseudo_model=body_model,
-                    task_value=task_complexity,
-                    request=request,
-                    on_progress=on_progress,
-                    client_type=client_type,
-                    user_agent=request.headers.get("user-agent", "") if request is not None and hasattr(request, "headers") else "",
-                    is_nested=is_nested,
-                    plan=plan,
-                    active_plan=active_session_plan,
-                    tools=tools or [],
-                )
-                if result is not None:
-                    tool_calls = getattr(result, "tool_calls", None) or (
-                        result.get("tool_calls") if isinstance(result, dict) else None
-                    )
-                    content = (
-                        str(result)
-                        if not isinstance(result, dict)
-                        else result.get("content", str(result))
-                    )
-                    if tool_calls:
-                        ans: dict[str, Any] = {"content": content, "tool_calls": tool_calls}
-                        return None, {
-                            "__answer__": ans,
-                            "_path": path,
-                            "_pseudo": body_model,
-                            "_route": route_name,
-                            "_tier": tier,
-                            "_plan": plan,
-                            "_complexity": task_complexity,
-                        }
-                    else:
-                        plan_context = content
-            except Exception as exc:
-                logging.getLogger("autoconduck").warning(
-                    "Orchestrator execution failed: %s", exc
-                )
         if not model:
             try:
                 from autoconduck.config import resolve_orchestrator_model
@@ -421,6 +225,4 @@ async def route_target(
             _tier=getattr(decision, "tier", None) if decision else None,
             _plan=getattr(decision, "plan", None) if decision else None,
         )
-        if plan_context:
-            extra["_plan_context"] = plan_context
     return target, extra

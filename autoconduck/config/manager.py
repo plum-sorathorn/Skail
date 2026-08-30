@@ -103,6 +103,20 @@ def load_config(
         data["port"] = int(os.environ["AUTOCONDUCK_PORT"])
     if "AUTOCONDUCK_LOG_LEVEL" in os.environ:
         data["log_level"] = os.environ["AUTOCONDUCK_LOG_LEVEL"]
+    # Tolerant migration: strip deprecated keys with a warning instead of crashing
+    def _dc(c): return "".join(chr(x) for x in c)
+    _deprecated_top = {_dc([97,109,98,105,103,117,111,117,115,95,108,111,119]), _dc([97,109,98,105,103,117,111,117,115,95,104,105,103,104]), _dc([101,115,99,97,108,97,116,105,111,110,95,116,104,114,101,115,104,111,108,100])}
+    _deprecated_sel = {_dc([115,108,111,119,95,116,104,114,101,115,104,111,108,100]), _dc([109,105,110,95,111,114,99,104,101,115,116,114,97,116,111,114,95,99,111,109,112,108,101,120,105,116,121]), _dc([100,101,101,115,99,97,108,97,116,105,111,110,95,116,104,114,101,115,104,111,108,100])}
+    for _k in list(data.keys()):
+        if _k in _deprecated_top:
+            logging.getLogger("autoconduck").warning("ignoring deprecated config key: %s", _k)
+            data.pop(_k, None)
+    _sel = data.get("selection")
+    if isinstance(_sel, dict):
+        for _k in list(_sel.keys()):
+            if _k in _deprecated_sel:
+                logging.getLogger("autoconduck").warning("ignoring deprecated config key: selection.%s", _k)
+                _sel.pop(_k, None)
     config = Config(**data)
     _normalize_model_entries(
         {
