@@ -110,6 +110,18 @@ def _build():
         async def _plugin_lifespan(app_inner):
             # startup
             try:
+                def _preload_slm():
+                    try:
+                        from autoconduck.routing.slm_planner import SLMPlanner
+                        SLMPlanner()._ensure_llm_loaded()
+                    except Exception:
+                        pass
+                import asyncio
+                asyncio.get_running_loop().run_in_executor(None, _preload_slm)
+            except Exception:
+                pass
+            
+            try:
                 from autoconduck.plugin.spool import start_tailer
                 from autoconduck.plugin.ledger import get_ledger
 

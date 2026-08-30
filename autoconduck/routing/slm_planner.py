@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 _SLM_EXECUTOR: ThreadPoolExecutor | None = None
 _SLM_EXECUTOR_LOCK = __import__("threading").Lock()
 
+_GLOBAL_LLM_CACHE = None
+_GLOBAL_LLM_CACHE_LOCK = __import__("threading").Lock()
+
 
 def _get_slm_executor() -> ThreadPoolExecutor:
     global _SLM_EXECUTOR
@@ -290,26 +293,35 @@ class SLMPlanner:
         """Ensure the underlying SLM runtime model is loaded."""
         if self._llm is not None:
             return
-        model_path = resolve_slm_path(self.model_path, config)
-        if not model_path:
-            return
+            
+        global _GLOBAL_LLM_CACHE
+        with _GLOBAL_LLM_CACHE_LOCK:
+            if _GLOBAL_LLM_CACHE is not None:
+                self._llm = _GLOBAL_LLM_CACHE
+                return
 
-        resolved_path = Path(model_path)
-        if not resolved_path.is_file():
-            logger.debug("SLM model file not found at %s; using fallback.", model_path)
-            return
+            model_path = resolve_slm_path(self.model_path, config)
+            if not model_path:
+                return
 
-        lower_path = model_path.lower()
-        if lower_path.endswith(".onnx") or is_onnx_genai_available() or is_onnx_available():
-            try:
-                self._llm = get_onnx_model(model_path)
-            except Exception as exc:
-                logger.warning("Failed to initialize ONNX SLM from %s: %s", model_path, exc)
-        else:
-            try:
-                self._llm = get_onnx_model(model_path)
-            except Exception as exc:
-                logger.warning("Failed to initialize SLM from %s: %s", model_path, exc)
+            resolved_path = Path(model_path)
+            if not resolved_path.is_file():
+                logger.debug("SLM model file not found at %s; using fallback.", model_path)
+                return
+
+            lower_path = model_path.lower()
+            if lower_path.endswith(".onnx") or is_onnx_genai_available() or is_onnx_available():
+                try:
+                    self._llm = get_onnx_model(model_path)
+                    _GLOBAL_LLM_CACHE = self._llm
+                except Exception as exc:
+                    logger.warning("Failed to initialize ONNX SLM from %s: %s", model_path, exc)
+            else:
+                try:
+                    self._llm = get_onnx_model(model_path)
+                    _GLOBAL_LLM_CACHE = self._llm
+                except Exception as exc:
+                    logger.warning("Failed to initialize SLM from %s: %s", model_path, exc)
 
     def _raw_infer(self, messages: list[dict[str, Any]], config: Any = None) -> str | dict[str, Any]:
         """Classify the request and produce an ExecutionPlan dict using the SLM."""
@@ -347,7 +359,7 @@ class SLMPlanner:
             f"Output valid JSON with fields: task_type, complexity_score (1-10), rationale, confidence."
         )
 
-        result = generate_structured_json(self._llm, prompt, TaskClassification)
+        result = generate_structured_json(self._llm, prompt, TaskClassification, max_tokens=128)
         if not isinstance(result, TaskClassification):
             logger.debug("SLM produced non-TaskClassification result; using fallback plan.")
             return self._create_fallback_plan(messages, reason="SLM structured output validation failed").model_dump()
@@ -398,6 +410,11 @@ class SLMPlanner:
                     is_timeout = True
                 if is_timeout:
                     logger.warning("SLM plan_sync exceeded %sms circuit breaker; degrading to fallback.", timeout_ms)
+                    global _SLM_EXECUTOR
+                    with _SLM_EXECUTOR_LOCK:
+                        if _SLM_EXECUTOR is not None:
+                            _SLM_EXECUTOR.shutdown(wait=False)
+                        _SLM_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="slm-infer")
                     return self._create_fallback_plan(messages, reason=f"Circuit breaker timeout (> {timeout_ms:g}ms)")
                 logger.warning("SLM sync planner error: %s; degrading to fallback.", exc)
                 return self._create_fallback_plan(messages, reason=f"Sync planning error: {exc}")
