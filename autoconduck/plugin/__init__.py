@@ -1,4 +1,4 @@
-"""Plugin sandbox for salvaged executor loop + tools (Phase 1B). Not yet wired."""
+"""Plugin runtime (Phase 2) — ledger, bias, runtime, synthesis."""
 
 from autoconduck.plugin.executor_loop import (
     LoopState,

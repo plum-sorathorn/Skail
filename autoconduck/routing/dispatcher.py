@@ -41,6 +41,7 @@ def route(
     pseudo_model: str = "autoconduck",
     tiebreaker: Any = None,
     config: Any = None,
+    session_id: str | None = None,
 ) -> RoutingDecision:
     if config is None:
         from ..config import get_config
@@ -65,7 +66,7 @@ def route(
         complexity = 0.2
         tier = "capability_sla"
         reason = plan.rationale or f"escalation_reclassified_{plan.task_type}"
-        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, None)
+        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, None, session_id)
         model = selection_info.model or resolve_orchestrator_model(config)
 
     elif guard_res.target_action in (TurnAction.DIRECT_ACTIVE_TIER, TurnAction.SUGGEST_REPLAN):
@@ -96,7 +97,7 @@ def route(
         complexity = 0.2
         tier = "capability_sla"
         reason = plan.rationale or f"fast_direct_{plan.task_type}"
-        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, None)
+        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, None, session_id)
         model = selection_info.model or resolve_orchestrator_model(config)
 
     if model:
@@ -132,7 +133,7 @@ def route(
     )
 
 
-def _select_planned(sla: CapabilitySLA, plan: Any, config: Any, pseudo_model: str, tier: str | None):
+def _select_planned(sla: CapabilitySLA, plan: Any, config: Any, pseudo_model: str, tier: str | None, session_id: str | None = None):
     try:
         confidence = max(0.0, min(1.0, float(plan.confidence)))
         selection = getattr(config, "selection", None)
@@ -141,6 +142,16 @@ def _select_planned(sla: CapabilitySLA, plan: Any, config: Any, pseudo_model: st
             floor = min(base + float(getattr(selection, "confidence_floor_k", 0.15)) * (1 - confidence), float(getattr(selection, "confidence_floor_max", 0.6)))
         else:
             floor = base
+        # Apply session bias (ESCALATE-driven) — may raise above confidence cap up to 0.75
+        try:
+            if session_id:
+                from autoconduck.plugin.bias import get_bias_store
+
+                bump = float(get_bias_store().get_bump(session_id) or 0.0)
+                if bump:
+                    floor = min(floor + bump, 0.75)
+        except Exception:
+            pass
         ceiling = None
         if tier:
             ceilings = getattr(selection, "path_price_cap_usd_per_mtok", {})

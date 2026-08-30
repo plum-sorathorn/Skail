@@ -5,6 +5,7 @@ from autoconduck.config.models import (
     Config,
     ModelEntry,
     PiSettings,
+    PluginConfig,
     SelectionConfig,
 )
 from autoconduck.config.paths import (
@@ -39,6 +40,7 @@ __all__ = [
     "Config",
     "ModelEntry",
     "PiSettings",
+    "PluginConfig",
     "SelectionConfig",
     "backups_dir",
     "config_path",

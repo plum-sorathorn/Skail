@@ -120,6 +120,18 @@ class SelectionConfig(BaseModel):
         return value if value in {"off", "terse", "verbose"} else "terse"
 
 
+class PluginConfig(BaseModel):
+    enabled: bool = False
+    claude_enabled: bool = False
+    pi_enabled: bool = False
+    opencode_enabled: bool = False
+    ledger_retention_days: int = 30
+    escalation_ttl_turns: int = 10
+    escalation_floor_bump: float = 0.15
+    llm_synthesis_enabled: bool = False
+    execute_enabled: bool = False
+
+
 class ClaudeCodeSettings(BaseModel):
     allowed_tools: list[str] = [
         "Task",
@@ -174,5 +186,6 @@ class Config(BaseModel):
     managed_server: bool = False
     launch_in_new_terminal: bool = False
     selection: SelectionConfig = Field(default_factory=SelectionConfig)
+    plugins: PluginConfig = Field(default_factory=PluginConfig)
     claude_code: ClaudeCodeSettings = Field(default_factory=ClaudeCodeSettings)
     pi: PiSettings = Field(default_factory=PiSettings)

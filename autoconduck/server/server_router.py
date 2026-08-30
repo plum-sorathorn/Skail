@@ -112,6 +112,22 @@ async def route_target(
             elif "claude" in ua:
                 client_type = "claude"
     decision = None
+    session_id: str | None = None
+    if request is not None and hasattr(request, "headers"):
+        try:
+            session_id = request.headers.get("x-autoconduck-session-id")  # type: ignore[union-attr]
+            if session_id == "":
+                session_id = None
+            # advance per-turn TTL counter (fail-soft, dict lookup only)
+            if session_id:
+                try:
+                    from autoconduck.plugin.bias import get_bias_store
+
+                    get_bias_store().increment_turn(session_id)
+                except Exception:
+                    pass
+        except Exception:
+            session_id = None
 
     if body_model in PSEUDO_MODELS:
         try:
@@ -123,6 +139,7 @@ async def route_target(
                 history,
                 pseudo_model=body_model,
                 config=cfg,
+                session_id=session_id,
             )
             path = getattr(decision, "path", "fast").upper()
             route_name = getattr(decision, "route", "fast_direct")

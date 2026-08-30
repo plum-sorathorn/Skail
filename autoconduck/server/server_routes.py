@@ -143,6 +143,14 @@ def install_routes(
     app.post("/v1/messages")(messages_endpoint)
     app.post("/v1/messages/count_tokens")(messages_count_tokens)
 
+    # Plugin control plane (fail-soft, off hot path)
+    try:
+        from autoconduck.server.plugin_routes import install_plugin_routes
+
+        install_plugin_routes(app, BaseModel=BaseModel, Field=Field)  # type: ignore[arg-type]
+    except Exception:
+        pass
+
     if cache is not None:
         cache.update(
             CompletionRequest=CompletionRequest,
