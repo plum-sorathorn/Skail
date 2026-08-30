@@ -13,10 +13,7 @@ import copy
 from typing import Any
 import pytest
 
-try:
-    from autoconduck.orchestrator.session_guard import SessionGuard, SessionGuardResult
-except ImportError:
-    pytest.skip("autoconduck.orchestrator.session_guard not yet implemented in this milestone", allow_module_level=True)
+from autoconduck.server.session_guard import SessionGuard, SessionGuardResult
 
 
 @pytest.fixture

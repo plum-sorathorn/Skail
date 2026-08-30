@@ -21,8 +21,6 @@ _active_routing: dict[str, Any] = {
     "task_value": 0.0,
     "node": "idle",
     "step_detail": "Idle",
-    "subtasks_total": 0,
-    "subtasks_completed": 0,
     "plan_id": "",
     "start_time": 0.0,
     "updated_at": 0.0,
@@ -61,8 +59,6 @@ def get_active_routing() -> dict[str, Any]:
                     "task_value": 0.0,
                     "node": "idle",
                     "step_detail": "Idle",
-                    "subtasks_total": 0,
-                    "subtasks_completed": 0,
                 }
     except Exception:
         pass
@@ -85,12 +81,47 @@ def stats_path() -> Path:
 
 
 def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """Estimate cost using catalog entry (price_in/price_out per 1M tokens)."""
     try:
-        entry = pricing._entry(model)
-        return (
-            prompt_tokens * float(entry.get("price_in", 0))
-            + completion_tokens * float(entry.get("price_out", 0))
-        ) / 1_000_000
+        # Try ModelPool entry first (covers custom + preset merged catalog)
+        try:
+            from autoconduck.config import get_config
+            from autoconduck.routing.model_pool import ModelPool
+
+            cfg = get_config()
+            pool = ModelPool(cfg)
+            entries = pool._get_model_entries()
+            found = next((e for e in entries if e.id == model), None)
+            if found is not None:
+                price_in = float(getattr(found, "price_in", 0) or getattr(found, "cost_input", 0) or 0)
+                price_out = float(getattr(found, "price_out", 0) or getattr(found, "cost_output", 0) or 0)
+                if price_in or price_out:
+                    return (prompt_tokens * price_in + completion_tokens * price_out) / 1_000_000
+        except Exception:
+            pass
+        # Fallback to curated catalog / litellm costs (PRESETS is provider->list)
+        try:
+            from autoconduck.presets.model_presets import curated_model_catalog
+            for row in curated_model_catalog():
+                if row.get("id") == model:
+                    price_in = float(row.get("price_in", 0) or 0)
+                    price_out = float(row.get("price_out", 0) or 0)
+                    if price_in or price_out:
+                        return (prompt_tokens * price_in + completion_tokens * price_out) / 1_000_000
+                    break
+        except Exception:
+            pass
+        try:
+            from autoconduck.presets.presets_ingest import _ingest_litellm_costs
+            vals = _ingest_litellm_costs().get(model)
+            if isinstance(vals, dict):
+                price_in = float(vals.get("price_in", 0) or 0)
+                price_out = float(vals.get("price_out", 0) or 0)
+                if price_in or price_out:
+                    return (prompt_tokens * price_in + completion_tokens * price_out) / 1_000_000
+        except Exception:
+            pass
+        return 0.0
     except Exception:
         return 0.0
 
@@ -144,9 +175,13 @@ def record(
 ) -> None:
     try:
         prompt_tokens, completion_tokens = int(prompt_tokens), int(completion_tokens)
-        pricing.record_usage(
-            model, prompt_tokens, completion_tokens, cost=cost, success=success
-        )
+        # pricing.record_usage is optional (no-op if pricing backend lacks it); isolate so failure never aborts jsonl write
+        try:
+            fn = getattr(pricing, "record_usage", None)
+            if callable(fn):
+                fn(model, prompt_tokens, completion_tokens, cost=cost, success=success)
+        except Exception:
+            pass
         row: dict[str, Any] = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "path": path,

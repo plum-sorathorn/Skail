@@ -1,4 +1,4 @@
-"""Turn Guard: Synchronous 0ms tool loop classifier & stagnation escalation.
+"""Turn Guard: Synchronous <2ms tool loop classifier & stagnation escalation.
 
 Classifies incoming request turns in <2ms:
 - Routes active in-flight tool loops directly to the active model tier (DIRECT_ACTIVE_TIER).

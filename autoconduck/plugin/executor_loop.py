@@ -9,6 +9,8 @@ from pathlib import Path
 import re
 from dataclasses import dataclass, field
 
+from typing import Any, Callable
+
 from .tools import TOOL_SCHEMAS, execute_tool, is_read_only_tool, tool_model
 
 
@@ -148,6 +150,7 @@ async def run_executor_tool_loop(
     time_budget_s: float = 180.0,
     tool_retry_cap: int = 3,
     is_escalated: bool = False,
+    tool_observer=None,
 ) -> str:
     """Run tools with fail-open provider compatibility.
 
@@ -160,7 +163,7 @@ async def run_executor_tool_loop(
         from autoconduck.server.messages_api import litellm_params_for
 
         params = litellm_params_for(dispatch_model, cfg)
-        params["_path"] = "orchestrator-executor"
+        params["_path"] = "plugin-executor"
         params["_pseudo"] = "autoconduck"
         params["drop_params"] = True
         if with_tools:
@@ -266,6 +269,11 @@ async def run_executor_tool_loop(
                 allowed_scope=allowed_scope,
                 cfg=cfg,
             )
+            if tool_observer is not None:
+                try:
+                    tool_observer(name, parsed_args, result)
+                except Exception:
+                    pass
             if result.startswith("ERROR:"):
                 state.error_streak += 1
                 state.error_calls += 1

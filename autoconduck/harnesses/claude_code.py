@@ -15,29 +15,7 @@ class ClaudeCodeAdapter(BaseAdapter):
     binary_name = "claude"
     id = "claude_code"
     display_name = "Claude Code"
-    supports_native_fan_out = True
 
-    def render_plan(self, plan: Any, tools: list[dict[str, Any]] | None = None) -> str:
-        """Format system-level steering directives instructing Claude Code to invoke Task tool."""
-        from autoconduck.orchestrator.fan_out import build_harness_fan_out_plan
-
-        fan_out = build_harness_fan_out_plan(plan, max_subagents=4, client_type="claude_code")
-        lines = [
-            "[AUTOCONDUCK EXECUTION DIRECTIVE]",
-            "This task requires multi-agent decomposition.",
-            "You MUST invoke your `Task` tool for the following independent subtasks before making direct edits:",
-        ]
-        batch1 = next((b for b in fan_out.batches if b.batch_index == 1), None)
-        if batch1 and batch1.agents:
-            for a in batch1.agents:
-                prompt_escaped = a.prompt.replace('"', '\\"')
-                lines.append(f"- Task(description=\"{a.goal}\", prompt=\"{prompt_escaped}\")")
-        else:
-            subtasks = getattr(plan, "subtasks", []) or []
-            for st in subtasks:
-                goal = getattr(st, "goal", "")
-                lines.append(f"- Task(description=\"{goal}\")")
-        return "\n".join(lines)
 
     def detect(self) -> bool:
         if shutil.which("claude") is not None:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -19,22 +18,6 @@ class BaseAdapter(ABC):
     display_name: str = "Base"
     supports_native_fan_out: bool = False
 
-    def render_plan(self, plan: Any, tools: list[dict[str, Any]] | None = None) -> str:
-        """Render a clean, sequential execution checklist for generic/unspecialized single agents."""
-        subtasks = getattr(plan, "subtasks", []) or []
-        summary = getattr(plan, "summary", "") or "Execution Plan"
-        lines = [
-            f"### Implementation Plan: {summary}",
-            "Proceed with implementation of the subtasks sequentially using available tools (`read`, `edit`, `write`, `bash`).\n",
-        ]
-        if subtasks:
-            lines.append("Execution Checklist:")
-            for i, st in enumerate(subtasks, 1):
-                goal = getattr(st, "goal", "") or getattr(st, "id", f"Task {i}")
-                scope = getattr(st, "scope", []) or []
-                scope_str = f" [Scope: {', '.join(scope)}]" if scope else ""
-                lines.append(f"- [ ] Step {i}: {goal}{scope_str}")
-        return "\n".join(lines)
 
     @abstractmethod
     def detect(self) -> bool:

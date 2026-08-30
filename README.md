@@ -282,7 +282,7 @@ The plugin plane is **opt-in** (`plugins.enabled=false` by default) and **never 
 
 **Never SLM-only:** escalation, stagnation detection, success/completion claims, tool safety, contract constraints, factual assertions in final output.
 
-**Data path:** Thin shims → `autoconduck hook claude <Event>` (observe-only, exit-0-always, bounded spool file `~/.autoconduck/run/hooks.spool`) → `autoconduck/plugin/spool.py` tailer → `POST /plugin/events` → ledger (SQLite WAL, async bounded queue, batched, durable-only events: task start, escalation, terminal result, errors) / bias / runtime (salvaged `executor_loop` + `tools` proof path, deterministic stagnation → bias) / synthesis (templated, LLM stub off).
+**Data path:** Thin shims → `autoconduck hook claude <Event>` (observe-only, exit-0-always, bounded spool file `~/.autoconduck/run/plugin_spool.jsonl`) → `autoconduck/plugin/spool.py` tailer → `POST /plugin/events` → ledger (SQLite WAL, async bounded queue, batched, durable-only events: task start, escalation, terminal result, errors) / bias / runtime (salvaged `executor_loop` + `tools` proof path, deterministic stagnation → bias) / synthesis (templated, LLM stub off).
 
 **Control surface:**
 

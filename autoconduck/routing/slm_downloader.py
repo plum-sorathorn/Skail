@@ -26,7 +26,7 @@ SLM_MODELS_CATALOG: list[dict[str, Any]] = [
                 "url": "https://huggingface.co/onnx-community/Qwen2.5-Coder-0.5B-Instruct/resolve/main/tokenizer.json",
             }
         ],
-        "description": "Sub-30ms ONNX accelerated task decomposition & micro-router (Default)",
+        "description": "Sub-30ms ONNX accelerated task classification & fit-gate routing (Default)",
     },
     {
         "id": "qwen2.5-coder-1.5b-instruct",
@@ -43,7 +43,7 @@ SLM_MODELS_CATALOG: list[dict[str, Any]] = [
                 "url": "https://huggingface.co/onnx-community/Qwen2.5-Coder-1.5B-Instruct/resolve/main/tokenizer.json",
             }
         ],
-        "description": "High-capacity multi-file DAG planning & ONNX reasoning",
+        "description": "High-capacity ONNX reasoning with classifier-based routing",
     },
     {
         "id": "lfm2.5-1.2b-instruct",

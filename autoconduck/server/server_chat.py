@@ -29,12 +29,7 @@ async def handle_chat_completions(
 
         body.messages = SessionGuard().guard_context(body.messages).messages
     except Exception:
-        try:
-            from autoconduck.orchestrator.session_guard import SessionGuard
-
-            body.messages = SessionGuard().guard_context(body.messages).messages
-        except Exception:
-            pass
+        pass
     body.messages = normalize_messages_for_llm(body.messages)
 
     target, extra = await route_target_fn(body.model, body.messages, request, tools=body.tools)

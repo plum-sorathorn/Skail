@@ -104,9 +104,58 @@ def load_config(
     if "AUTOCONDUCK_LOG_LEVEL" in os.environ:
         data["log_level"] = os.environ["AUTOCONDUCK_LOG_LEVEL"]
     # Tolerant migration: strip deprecated keys with a warning instead of crashing
-    def _dc(c): return "".join(chr(x) for x in c)
-    _deprecated_top = {_dc([97,109,98,105,103,117,111,117,115,95,108,111,119]), _dc([97,109,98,105,103,117,111,117,115,95,104,105,103,104]), _dc([101,115,99,97,108,97,116,105,111,110,95,116,104,114,101,115,104,111,108,100])}
-    _deprecated_sel = {_dc([115,108,111,119,95,116,104,114,101,115,104,111,108,100]), _dc([109,105,110,95,111,114,99,104,101,115,116,114,97,116,111,114,95,99,111,109,112,108,101,120,105,116,121]), _dc([100,101,101,115,99,97,108,97,116,105,111,110,95,116,104,114,101,115,104,111,108,100])}
+    _deprecated_top = {
+        "ambiguous_low",
+        "ambiguous_high",
+        "escalation_threshold",
+        "slow_threshold",
+        "min_orchestrator_complexity",
+        "deescalation_threshold",
+        "hysteresis_floor",
+    }
+    _deprecated_sel = {
+        "slow_threshold",
+        "min_orchestrator_complexity",
+        "deescalation_threshold",
+        # Phase 7C Batch 2a purge — DAG-era / unused keys (warn, don't crash)
+        "complexity_weights",
+        "spend_guard_enabled",
+        "spend_guard_max_usd_per_min",
+        "spend_guard_window_s",
+        "tiebreaker_enabled",
+        "tiebreaker_min_complexity",
+        "budget_tiebreaker_min_complexity",
+        "subagent_timeout_s",
+        "subagent_max_tokens",
+        "max_file_read_scaled_cost",
+        "fast_path_max_scaled_cost",
+        "enable_executor_subagents",
+        "slow_stream_progress",
+        "default_target_bias",
+        "enable_per_turn_task_routing",
+        "recon_task_band",
+        "edit_task_band",
+        "verify_task_band",
+        "bash_task_band",
+        "recon_max_complexity",
+        "edit_min_complexity",
+        "verify_complexity_band",
+        "intent_drift_enabled",
+        "intent_drift_threshold",
+        "hysteresis_window_size",
+        "hysteresis_decay",
+        "non_english_fallback_complexity",
+        "mid_execution_replan_enabled",
+        "replan_min_turns_since_slm",
+        "replan_read_edit_ratio_threshold",
+        "replan_eligible_task_types",
+        "replan_slm_timeout_ms",
+        "enable_fan_out",
+        "fan_out_max_subagents",
+        "planner_model_override",
+        "planner_response_format",
+        "planner_retry_cheaper",
+    }
     for _k in list(data.keys()):
         if _k in _deprecated_top:
             logging.getLogger("autoconduck").warning("ignoring deprecated config key: %s", _k)
@@ -147,46 +196,7 @@ def load_config(
             "No models are configured in %s - add a preset or model_list or every request will fall back to a hardcoded default and may fail auth.",
             p,
         )
-    if getattr(getattr(config, "selection", None), "phase_bands", None):
-        validate_phase_bands(config)
     return config
-
-
-def validate_phase_bands(config: Config) -> list[str]:
-    """Validate configured phase bands against available models in the pool if explicitly specified."""
-    warnings: list[str] = []
-    try:
-        from autoconduck.routing.pricing import pool_ids, scaled_cost
-
-        models = pool_ids(config)
-        if not models:
-            return warnings
-        phase_bands = getattr(
-            getattr(config, "selection", None), "phase_bands", None
-        )
-        if not phase_bands:
-            return warnings
-        costs = {m: scaled_cost(m, config) for m in models}
-        for name, band in phase_bands.items():
-            if not isinstance(band, (list, tuple)) or len(band) < 2:
-                continue
-            lo, hi = float(band[0]), float(band[1])
-            in_band = [m for m, c in costs.items() if lo <= c <= hi]
-            if not in_band:
-                cost_summary = ", ".join(
-                    f"{m}: {c:.2f}"
-                    for m, c in sorted(costs.items(), key=lambda x: x[1])
-                )
-                msg = (
-                    f"Phase band '{name}' [{lo:.2f}, {hi:.2f}] contains 0 configured models "
-                    f"(available pool scaled costs: {cost_summary}). "
-                    f"Orchestration will fall back to closest available model."
-                )
-                warnings.append(msg)
-                logging.getLogger("autoconduck").warning(msg)
-    except Exception:
-        pass
-    return warnings
 
 
 def get_config() -> Config:

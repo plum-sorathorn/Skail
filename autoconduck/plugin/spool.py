@@ -12,9 +12,9 @@ Runs only when plugins.enabled.
 from __future__ import annotations
 
 import asyncio
+import threading as _threading
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
@@ -214,9 +214,6 @@ class SpoolTailer:
 
 # Singleton tailer holder — started with plugin runtime when plugins.enabled
 _tailer: SpoolTailer | None = None
-_tailer_lock = asyncio.Lock() if False else None  # avoid import-time loop dep; use threading lock
-import threading as _threading
-
 _tailer_thread_lock = _threading.Lock()
 
 

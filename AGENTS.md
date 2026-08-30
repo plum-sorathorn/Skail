@@ -35,7 +35,7 @@ The router is a **fast-only, per-turn "fit-gate then cheapest"** selector, not a
 - Explainability flows through `SelectionInfo`/`RoutingDecision` into `/stats`: candidates_considered, candidates_excluded_by, binding_constraint, capability_fit_applied, binding_capability_dim, spend_cap_engaged, fallback_reason.
 
 ## Turn Guard — do not regress
-Healthy tool loops (even touching many files / many turns) route to `DIRECT_ACTIVE_TIER` — the client drives its own loop, **no replanning and no task graph**. Genuine stagnation is ONLY: 3+ IDENTICAL consecutive calls OR 2+ consecutive errors → deterministic trigger to **re-classify** via the SLM classifier (non-binding signal). A prior "complexity drift" escalation (>10 files / >30 turns) was **removed** because it caused runaway replanning cost (the grok-4.6 incident). Do NOT re-add file-count / turn-count escalation for healthy loops. Do NOT add plan-mutation / task graph recompilation on stagnation.
+Healthy tool loops (even touching many files / many turns) route to `DIRECT_ACTIVE_TIER` — the client drives its own loop, **no replanning and no task graph**. Genuine stagnation is ONLY deterministic triggers (code is authority, no LLM): 3+ identical consecutive calls OR 2+ consecutive errors plus additional deterministic error-density signals (error-rate/streak thresholds in executor_loop) → deterministic trigger to **re-classify** via the SLM classifier (non-binding signal). A prior "complexity drift" escalation (>10 files / >30 turns) was **removed** because it caused runaway replanning cost (the grok-4.6 incident). Do NOT re-add file-count / turn-count escalation for healthy loops. Do NOT add plan-mutation / task graph recompilation on stagnation.
 
 ## C6 empirical scoring is deferred
 Do NOT build `model_scores.json` / empirical success-weighted scoring yet. It is gated on real usage data and must stay inert/off until then. Routing must remain purely static + the live per-turn SLM signal (`plan.confidence`).
@@ -43,17 +43,18 @@ Do NOT build `model_scores.json` / empirical success-weighted scoring yet. It is
 ## Structure / entrypoints
 - `autoconduck/` runtime package; `main.py` entry; `stats.py` = **write-only** usage accounting for `/stats` (NOT consumed by routing).
 - `routing/`: `dispatcher.py` (route + `_select_planned` with per-turn floor + session bias), `slm_planner.py` (`TaskClassification` + `ExecutionPlan` stub — classifier-only, no task-graph structures), `model_pool.py` (`CapabilitySLA` + selection), `pricing.py`, `slm_downloader.py`.
-- `server/`: `server_routes.py` (routes), `server_streaming.py`, `turn_guard.py`, `messages_api.py` (Anthropic shim), `sse_streamer.py`, `session_guard.py` (relocated from `orchestrator/`), `plugin_routes.py` (`/plugin/events`, `/plugin/contract`, `/plugin/escalate`, `/plugin/execute` — fail-soft, never 5xx).
+- `server/`: `server_routes.py` (routes), `server_streaming.py`, `turn_guard.py`, `messages_api.py` (Anthropic shim), `session_guard.py` (relocated from `orchestrator/`), `plugin_routes.py` (`/plugin/events`, `/plugin/contract`, `/plugin/escalate`, `/plugin/execute` — fail-soft, never 5xx).
 - `autoconduck/plugin/` (daemon-side, Python — active only when `plugins.enabled=true`): `ledger.py` (SQLite WAL, async bounded queue, batched, durable-only events), `bias.py` (`SessionBiasStore`, TTL turns, additive cap 0.75), `runtime.py` (salvaged `executor_loop` + `tools` proof path, deterministic stagnation 3-identical/2-errors → bias), `synthesis.py` (templated, LLM stub off behind `plugins.llm_synthesis_enabled`), `spool.py` (spool file tailer), `shims/` (per-harness docs; Claude Code hooks via `cli/hook.py`).
-- `autoconduck/cli/hook.py`: `autoconduck hook claude <Event>` — observe-only, appends JSON to `~/.autoconduck/run/hooks.spool` with short timeout, exit-0-always.
-- `orchestrator/`: **residual / transitional** — `__init__.py` re-exports + `runner.py` stub kept for import compatibility; all active orchestration graph machinery (dynamic task graphs, hand-off, subagents, heart-beat, plan mutation) was removed in Phase 1 and salvaged into `autoconduck/plugin/`. Do not add new code here. Slated for full removal / relocation in Phase 7.
+- `autoconduck/cli/hook.py`: `autoconduck hook claude <Event>` — observe-only, appends JSON to `~/.autoconduck/run/plugin_spool.jsonl` with short timeout, exit-0-always.
+- `orchestrator/` package fully removed in the two-plane transformation.
+
 - `config/`: `models.py` (`Config`/`SelectionConfig`/`PluginConfig` pydantic), `manager.py`, `resolver.py`, `paths.py`.
 - `knowledge/` (LanceDB RAG); `auth/`, `launcher/`, `cli/`, `presets/`, `tui/`, `_compat/`.
 - `harnesses/` (`base.py`, `omp.py`, `claude_code.py`, `opencode.py`, `pi.py`): Thin translation layer. Pi extension is a gated constant (inert) behind `plugins.pi_enabled=false`; OpenCode shim is doc-only stub behind `plugins.opencode_enabled=false`. Claude Code hooks are the one shipped shim (gated by `plugins.enabled` AND `plugins.claude_enabled`).
 
 ## Gotchas
 - TUI quit chord is **Ctrl+C** (Textual default Ctrl+Q is disabled); keymap in `tui/keymap.py`.
-- User data lives under `~/.autoconduck/` (auth.yaml, backups, catalogs, `run/` with ledger DB `~/.autoconduck/run/ledger.db` and spool file `~/.autoconduck/run/hooks.spool`).
+- User data lives under `~/.autoconduck/` (auth.yaml, backups, catalogs, `run/` with ledger DB `~/.autoconduck/run/ledger.db` and spool file `~/.autoconduck/run/plugin_spool.jsonl`).
 - `autoconduck hook claude <Event>` is observe-only and **exit-0-always**, even on spool/write failure or when the daemon is down — it never blocks the harness. Local overhead budget <10ms per hook.
 - Smoke has two modes: `python scripts/end_to_end_smoke.py` (mode A, router-only) and `python scripts/end_to_end_smoke.py --plugin` (mode B, router+plugin — offline-safe via TestClient fallback, no models required).
 - Deprecated config keys (6 dead keys removed in the two-plane transformation) are **tolerated with a startup warning, never a crash** — they are ignored. Do not reintroduce them. See `docs/phase-reports/PHASE1A.md` for the exact names.

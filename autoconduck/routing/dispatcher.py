@@ -66,7 +66,7 @@ def route(
         complexity = 0.2
         tier = "capability_sla"
         reason = plan.rationale or f"escalation_reclassified_{plan.task_type}"
-        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, None, session_id)
+        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, _tier_from_pseudo(pseudo_model), session_id)
         model = selection_info.model or resolve_orchestrator_model(config)
 
     elif guard_res.target_action in (TurnAction.DIRECT_ACTIVE_TIER, TurnAction.SUGGEST_REPLAN):
@@ -97,7 +97,7 @@ def route(
         complexity = 0.2
         tier = "capability_sla"
         reason = plan.rationale or f"fast_direct_{plan.task_type}"
-        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, None, session_id)
+        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, _tier_from_pseudo(pseudo_model), session_id)
         model = selection_info.model or resolve_orchestrator_model(config)
 
     if model:
@@ -131,6 +131,15 @@ def route(
         capability_fit_applied=selection_info.capability_fit_applied if selection_info else None,
         binding_capability_dim=selection_info.binding_capability_dim if selection_info else None,
     )
+
+
+def _tier_from_pseudo(pseudo_model: str) -> str | None:
+    pm = str(pseudo_model or "")
+    if pm.endswith("-budget") or pm.endswith(":budget") or pm == "budget":
+        return "budget"
+    if pm.endswith("-expensive") or pm.endswith(":expensive") or pm == "expensive":
+        return "expensive"
+    return "default"
 
 
 def _select_planned(sla: CapabilitySLA, plan: Any, config: Any, pseudo_model: str, tier: str | None, session_id: str | None = None):

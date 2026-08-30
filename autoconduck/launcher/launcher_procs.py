@@ -111,7 +111,6 @@ def kill_process(pid: int) -> bool:
 def get_parent_pid(pid: int) -> int | None:
     """Return the parent PID of a given process ID, or None if unknown."""
     if os.name == "nt":
-        import ctypes
         from ctypes import wintypes
 
         class PROCESSENTRY32(ctypes.Structure):
@@ -326,6 +325,5 @@ def _read_pid():
 
 
 def _parse_ss_output(text: str) -> int | None:
-    import re
     match = re.search(r"pid=(\d+)", text)
     return int(match.group(1)) if match else None

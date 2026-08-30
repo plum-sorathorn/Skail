@@ -175,9 +175,31 @@ def _sanitize_message(msg: dict[str, Any]) -> tuple[dict[str, Any], bool]:
 class SessionGuard:
     """Session lifecycle manager enforcing prefix immutability and context window ceiling."""
 
-    def __init__(self, max_turns: int = 40, max_tokens: int = 128000):
+    def __init__(
+        self,
+        max_turns: int = 40,
+        max_tokens: int = 128000,
+        compaction_ratio: float | None = None,
+    ):
         self.max_turns = max_turns
         self.max_tokens = max_tokens
+        if compaction_ratio is None:
+            try:
+                from autoconduck.config import get_config
+
+                compaction_ratio = float(
+                    getattr(get_config().selection, "session_guard_compaction_ratio", 0.80)
+                )
+            except Exception:
+                compaction_ratio = 0.80
+        # Clamp to sane bounds; default 0.80 preserved.
+        try:
+            compaction_ratio = float(compaction_ratio)
+        except Exception:
+            compaction_ratio = 0.80
+        if not 0.05 <= compaction_ratio <= 0.95:
+            compaction_ratio = 0.80
+        self.compaction_ratio = compaction_ratio
 
     def check_and_compact(
         self, messages: list[dict[str, Any]], max_tokens: int | None = None
@@ -187,7 +209,10 @@ class SessionGuard:
         return self.guard_context(messages, context_window=limit)
 
     def guard_context(
-        self, messages: list[dict[str, Any]], context_window: int = 128000
+        self,
+        messages: list[dict[str, Any]],
+        context_window: int = 128000,
+        compaction_ratio: float | None = None,
     ) -> SessionGuardResult:
         """Guard context window, preserving prompt cache prefix and compacting if needed."""
         if not messages:
@@ -199,8 +224,15 @@ class SessionGuard:
                 cache_prefix_preserved=True,
             )
 
+        ratio = compaction_ratio if compaction_ratio is not None else getattr(self, "compaction_ratio", 0.80)
+        try:
+            ratio = float(ratio)
+        except Exception:
+            ratio = 0.80
+        if not 0.05 <= ratio <= 0.95:
+            ratio = 0.80
         effective_window = context_window if context_window > 0 else 8192
-        ceiling = int(effective_window * 0.80)
+        ceiling = int(effective_window * ratio)
         original_tokens = _count_tokens_messages(messages)
 
         # Snapshot immutable prefix (messages 0 and 1)

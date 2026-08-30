@@ -308,17 +308,9 @@ class ModelPool:
             return model, info
 
         pre_ceiling = eligible
-        ceiling_enabled = sla.max_price_usd_per_mtok is not None or any(
-            e.max_usd_per_min is not None for e in eligible
-        )
-        if ceiling_enabled:
-            ceiling_matches = []
-            for entry in eligible:
-                allowed = sla.max_price_usd_per_mtok if sla.max_price_usd_per_mtok is not None else float("inf")
-                if entry.max_usd_per_min is not None:
-                    allowed = min(allowed, entry.max_usd_per_min)
-                if self._entry_cost(entry) <= allowed:
-                    ceiling_matches.append(entry)
+        if sla.max_price_usd_per_mtok is not None:
+            cap = float(sla.max_price_usd_per_mtok)
+            ceiling_matches = [e for e in eligible if self._entry_cost(e) <= cap]
             removed = len(pre_ceiling) - len(ceiling_matches)
             if removed:
                 info.candidates_excluded_by["price_cap"] = removed

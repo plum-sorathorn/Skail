@@ -32,7 +32,6 @@ from autoconduck.config.manager import (
     get_config,
     load_config,
     save_config,
-    validate_phase_bands,
 )
 
 __all__ = [
@@ -61,5 +60,4 @@ __all__ = [
     "get_config",
     "load_config",
     "save_config",
-    "validate_phase_bands",
 ]

@@ -92,6 +92,14 @@ async def route_target(
 
     Pure turn-by-turn router: Turn Guard -> dispatcher.route() (fast-only) -> selection -> upstream dispatch.
     """
+    # Phase 7C Batch 2a compat: smart-dag pseudo-variant removed; tolerate via warn-once fallback
+    try:
+        from autoconduck.server.messages_models import normalize_pseudo_model
+
+        body_model = normalize_pseudo_model(body_model)
+    except Exception:
+        if body_model and "smart-dag" in body_model:
+            body_model = "autoconduck"
     started = time.perf_counter()
     cfg = config_module.get_config()
     target, path = body_model, "direct"
@@ -206,23 +214,14 @@ async def route_target(
         )
 
         if not model:
-            try:
-                from autoconduck.config import resolve_orchestrator_model
-                from autoconduck.routing.pricing import pool_ids, select_closest
+            from autoconduck.config import resolve_orchestrator_model
 
-                selected = select_closest(
-                    pool_ids(cfg), 0.15, cfg, pseudo_model=body_model
+            model = resolve_orchestrator_model(cfg)
+            if not model:
+                logging.getLogger("autoconduck").warning(
+                    "Model pool is empty - no models configured; falling back to %s",
+                    model,
                 )
-                model = selected or resolve_orchestrator_model(cfg)
-                if not selected:
-                    logging.getLogger("autoconduck").warning(
-                        "Model pool is empty - no models configured; falling back to %s",
-                        model,
-                    )
-            except Exception:
-                from autoconduck.config import resolve_orchestrator_model
-
-                model = resolve_orchestrator_model(cfg)
         if not model:
             logging.getLogger("autoconduck").warning(
                 "No model available for request"

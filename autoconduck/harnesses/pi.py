@@ -24,24 +24,7 @@ class PiAdapter(BaseAdapter):
     binary_name = "pi"
     id = "pi"
     display_name = "Pi"
-    supports_native_fan_out = True
 
-    def render_plan(self, plan: Any, tools: list[dict[str, Any]] | None = None) -> str:
-        """Format explicit batch delegation directives for Pi."""
-        from autoconduck.orchestrator.fan_out import build_harness_fan_out_plan
-
-        fan_out = build_harness_fan_out_plan(plan, max_subagents=4, client_type="pi")
-        lines = [
-            "### Task Execution Plan",
-            "Proceed with implementation of the subtasks sequentially using available tools (`read`, `edit`, `write`, `bash`).",
-            "Delegate the following subtasks in parallel:",
-        ]
-        if fan_out.batches:
-            for b in fan_out.batches:
-                lines.append(f"\n{b.batch_label}:")
-                for a in b.agents:
-                    lines.append(f"- task(goal=\"{a.goal}\")")
-        return "\n".join(lines)
 
     provider_name = "autoconduck"
 

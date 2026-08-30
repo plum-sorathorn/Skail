@@ -28,7 +28,6 @@ def load_auth() -> dict[str, str]:
         auth_fn = getattr(sys.modules.get("autoconduck.auth"), "auth_path", auth_path)
         if not auth_fn().exists():
             return {}
-        auth_fn = getattr(sys.modules.get("autoconduck.auth"), "auth_path", auth_path)
         data = yaml.safe_load(auth_fn().read_text(encoding="utf-8")) or {}
         providers = data.get("providers", {}) if isinstance(data, dict) else {}
         return {str(k): str(v) for k, v in providers.items() if isinstance(v, (str, int, float))}

@@ -9,7 +9,7 @@ from autoconduck import config
 from .launcher_procs import (
     _parse_netstat_output, _parse_lsof_output, _parse_ss_output,
     find_process_on_port, kill_process, prompt_kill_port, _pid_alive,
-    _pid_alive_windows, _create_kill_on_close_job, _clear_dead_owner_claim, _read_pid,
+    _pid_alive_windows, _clear_dead_owner_claim, _read_pid,
     get_parent_pid, is_port_bindable, wait_for_port_free,
 )
 
@@ -120,50 +120,30 @@ def server_alive(port=None, timeout=0.5) -> bool:
         return False
 
 
-def _parse_netstat_output(text: str, port: int | None = None) -> int | None:
-    for line in text.splitlines():
-        fields = line.split()
-        if len(fields) >= 5 and fields[0].upper() == "TCP":
-            local_addr = fields[1]
-            state = fields[3]
-            pid_str = fields[4]
-            if state.upper() == "LISTENING" and pid_str.isdigit():
-                if port is None or local_addr.endswith(f":{port}"):
-                    return int(pid_str)
-    return None
 
 
-def _parse_lsof_output(text: str) -> int | None:
-    for line in text.splitlines():
-        fields = line.split()
-        if len(fields) >= 2 and fields[1].isdigit():
-            return int(fields[1])
-    return None
 
-
-def _parse_ss_output(text: str) -> int | None:
-    match = re.search(r"pid=(\d+)", text)
-    return int(match.group(1)) if match else None
-
-
-def _write_claim(is_owner: bool = False, owner: bool | None = None, pid: int | None = None, client_id: str | None = None) -> None:
+def _write_claim_locked(is_owner: bool = False, owner: bool | None = None, pid: int | None = None, client_id: str | None = None) -> None:
     mod = _pkg()
     files_fn = getattr(mod, "_files", _files)
-    claims_lock_ctx = getattr(mod, "_claims_lock", _claims_lock)
     os_mod = getattr(mod, "os", os)
     _, claims, _ = files_fn()
     claims.parent.mkdir(parents=True, exist_ok=True)
     actual_owner = is_owner if owner is None else owner
-    
     if actual_owner:
         target = str(pid if pid is not None else os_mod.getpid())
     else:
         target = client_id if client_id is not None else str(pid if pid is not None else os_mod.getppid())
-        
     tag = "owner" if actual_owner else "0"
+    with claims.open("a", encoding="utf-8") as stream:
+        stream.write(f"{target} {tag}\n")
+
+
+def _write_claim(is_owner: bool = False, owner: bool | None = None, pid: int | None = None, client_id: str | None = None) -> None:
+    mod = _pkg()
+    claims_lock_ctx = getattr(mod, "_claims_lock", _claims_lock)
     with claims_lock_ctx():
-        with claims.open("a", encoding="utf-8") as stream:
-            stream.write(f"{target} {tag}\n")
+        _write_claim_locked(is_owner=is_owner, owner=owner, pid=pid, client_id=client_id)
 
 
 def _start_daemon(port: int, extra_flags: list[str] | None = None) -> int:
@@ -227,30 +207,33 @@ def ensure_server(port=None, client_id=None) -> bool:
     clear_dead_fn = getattr(mod, "_clear_dead_owner_claim", _clear_dead_owner_claim)
     clear_dead_fn()
     alive_fn = getattr(mod, "server_alive", server_alive)
-    if alive_fn(port):
-        write_claim_fn = getattr(mod, "_write_claim", _write_claim)
-        write_claim_fn(False, client_id=client_id)
-        return False
     find_proc_fn = getattr(mod, "find_process_on_port", find_process_on_port)
     existing_pid = find_proc_fn(port)
     if existing_pid is not None:
-        prompt_fn = getattr(mod, "prompt_kill_port", prompt_kill_port)
-        kill_fn = getattr(mod, "kill_process", kill_process)
-        get_parent_fn = getattr(mod, "get_parent_pid", get_parent_pid)
-        if not prompt_fn(port, existing_pid):
+        # Prompt may block on stdin; handle before acquiring claims lock
+        if not alive_fn(port):
+            prompt_fn = getattr(mod, "prompt_kill_port", prompt_kill_port)
+            kill_fn = getattr(mod, "kill_process", kill_process)
+            get_parent_fn = getattr(mod, "get_parent_pid", get_parent_pid)
+            if not prompt_fn(port, existing_pid):
+                return False
+            ppid = get_parent_fn(existing_pid)
+            if ppid is not None and ppid > 0:
+                kill_fn(ppid)
+            if not kill_fn(existing_pid):
+                return False
+            wait_free_fn = getattr(mod, "wait_for_port_free", wait_for_port_free)
+            wait_free_fn(port, timeout=3.0)
+    claims_lock_ctx = getattr(mod, "_claims_lock", _claims_lock)
+    with claims_lock_ctx():
+        if alive_fn(port):
+            _write_claim_locked(False, client_id=client_id)
             return False
-        ppid = get_parent_fn(existing_pid)
-        if ppid is not None and ppid > 0:
-            kill_fn(ppid)
-        if not kill_fn(existing_pid):
+        try:
+            start_daemon_fn = getattr(mod, "_start_daemon", _start_daemon)
+            start_daemon_fn(port)
+        except OSError:
             return False
-        wait_free_fn = getattr(mod, "wait_for_port_free", wait_for_port_free)
-        wait_free_fn(port, timeout=3.0)
-    try:
-        start_daemon_fn = getattr(mod, "_start_daemon", _start_daemon)
-        start_daemon_fn(port)
-    except OSError:
-        return False
     try:
         ready_budget = max(
             30.0, float(os.environ.get("AUTOCONDUCK_READY_TIMEOUT", "60.0"))
@@ -353,8 +336,9 @@ def stop_server(port=None) -> bool:
         wait_free_fn(resolved_port, timeout=5.0)
         marker = pidfile.parent / f"server_{resolved_port}.ready"
         marker.unlink(missing_ok=True)
-    except Exception:
-        pass
+    except (OSError, RuntimeError) as exc:
+        import logging as _log
+        _log.getLogger(__name__).warning("stop_server port cleanup failed: %s", exc)
 
     # 4. Clean up state files
     for path in (pidfile, claims, child_path):
@@ -363,7 +347,7 @@ def stop_server(port=None) -> bool:
         except OSError:
             pass
 
-    return stopped_anything or (pid is not None)
+    return stopped_anything
 
 
 def release_server(port=None, client_id=None) -> None:

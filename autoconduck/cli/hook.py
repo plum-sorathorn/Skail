@@ -71,6 +71,9 @@ def cmd_hook(args) -> int:  # type: ignore[no-untyped-def]
             # stdin may be tty with no data (EOF immediately)
             data = None
             try:
+                # Claude Code closes stdin after writing hook JSON, so this
+                # blocking read is bounded in practice (EOF arrives promptly
+                # when the harness has no payload; no indefinite hang).
                 raw = sys.stdin.read()
             except Exception:
                 raw = ""

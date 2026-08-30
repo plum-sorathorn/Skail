@@ -30,9 +30,6 @@ class ModelEntry(BaseModel):
 class SelectionConfig(BaseModel):
     phase_role_cards: bool = True
     dump_prompts: bool = False
-    planner_model_override: str | None = None
-    planner_response_format: str = "json_object"
-    planner_retry_cheaper: bool = True
     progress_verbosity: str = "verbose"
     """Selection controls; pool entries may set quality_score and max_usd_per_min."""
 
@@ -45,28 +42,7 @@ class SelectionConfig(BaseModel):
 
     closeness_epsilon: float = 0.02
     expose_value_in_stats: bool = True
-    phase_bands: dict[str, list[float]] = Field(default_factory=dict)
-    complexity_weights: dict[str, float] = Field(
-        default_factory=lambda: {
-            # Layer 1 — surface signals
-            "length": 0.08,
-            "structural": 0.12,
-            "scope_breadth": 0.12,
-            "code_density": 0.05,
-            # Layer 2 — domain-agnostic semantic signals
-            "abstraction_level": 0.12,
-            "uncertainty_hedge": 0.08,
-            "cross_domain": 0.12,
-            "task_novelty": 0.08,
-            "imperative_strength": 0.15,
-            "multi_step": 0.08,
-            # weights sum to 1.00
-        }
-    )
     quality_min_success_rate: float = 0.5
-    spend_guard_enabled: bool = True
-    spend_guard_max_usd_per_min: float = 0.20
-    spend_guard_window_s: int = 300
     path_price_cap_usd_per_mtok: dict[str, float] = Field(
         default_factory=dict
     )
@@ -75,44 +51,12 @@ class SelectionConfig(BaseModel):
     capability_tiebreak_price_band_pct: float = 0.0
     """Optional capability tiebreak band; 0.0 disables it (current behavior)."""
     max_pool_size: int = 200
-    tiebreaker_enabled: bool = False
-    tiebreaker_min_complexity: float = 0.45
-    budget_tiebreaker_min_complexity: float = 0.65
-    subagent_timeout_s: float = 120.0
-    subagent_max_tokens: int = 4096
-    max_file_read_scaled_cost: float = 0.55
-    fast_path_max_scaled_cost: float = 0.50
     enable_fast_path_graph: bool = True
-    enable_executor_subagents: bool = False
     executor_enable_tools: bool = True
     executor_max_tool_rounds: int = 10
     executor_tool_time_budget_s: float = 180.0
     executor_max_read_bytes: int = 200_000
     executor_enable_bash: bool = False
-    slow_stream_progress: bool = True
-    default_target_bias: float = 0.0
-    enable_per_turn_task_routing: bool = True
-    recon_task_band: list[float] = [0.05, 0.35]
-    edit_task_band: list[float] = [0.30, 0.65]
-    verify_task_band: list[float] = [0.15, 0.50]
-    bash_task_band: list[float] = [0.20, 0.55]
-    recon_max_complexity: float = 0.20
-    edit_min_complexity: float = 0.45
-    verify_complexity_band: list[float] = [0.20, 0.50]
-    intent_drift_enabled: bool = True
-    intent_drift_threshold: float = 0.70
-    hysteresis_window_size: int = 5
-    hysteresis_decay: float = 0.85
-    non_english_fallback_complexity: float = 0.45
-    mid_execution_replan_enabled: bool = True
-    replan_min_turns_since_slm: int = 4
-    replan_read_edit_ratio_threshold: int = 5
-    replan_eligible_task_types: list[str] = Field(
-        default_factory=lambda: ["refactor", "full_workflow", "multi_edit", "debug"]
-    )
-    replan_slm_timeout_ms: float = 2000.0
-    enable_fan_out: bool = False
-    fan_out_max_subagents: int = 4
 
     @field_validator("progress_verbosity", mode="before")
     @classmethod
@@ -163,7 +107,6 @@ class Config(BaseModel):
     host: str = "127.0.0.1"
     port: int = 11434
     log_level: str = "INFO"
-    hysteresis_floor: float = 0.50
     stack_trace_boost: float = 0.25
     ema_alpha: float = 0.1
     degraded_error_rate: float = 0.20

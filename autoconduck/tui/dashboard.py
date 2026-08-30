@@ -289,8 +289,6 @@ if _TEXTUAL:
             detail = active.get("step_detail", "Ready")
             model = active.get("selected_model", "autoconduck")
             val = active.get("task_value", 0.0)
-            completed = active.get("subtasks_completed", 0)
-            total = active.get("subtasks_total", 0)
             if is_active and decision_path({"path": path}) == "FAST":
                 lines = [
                     f"Selected Model: [bold green]{model}[/bold green] (Task Complexity: [bold]{val:.2f}[/bold])",

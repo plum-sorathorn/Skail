@@ -37,12 +37,7 @@ async def handle_messages(
 
             oai_messages = SessionGuard().guard_context(oai_messages).messages
         except Exception:
-            try:
-                from autoconduck.orchestrator.session_guard import SessionGuard
-
-                oai_messages = SessionGuard().guard_context(oai_messages).messages
-            except Exception:
-                pass
+            pass
     except Exception as exc:
         return JSONResponse(
             {
@@ -57,9 +52,25 @@ async def handle_messages(
             body.model, oai_messages, request, client_type="claude", tools=tools_list
         )
     except Exception as exc:
+        # Fail-soft: route_target failure must never 500 — mirror upstream 502 degrade path.
+        try:
+            from autoconduck.config import resolve_orchestrator_model as _resolve_model
+            import autoconduck.config as _cfg_mod
+
+            _cfg = _cfg_mod.get_config()
+            _fallback = _resolve_model(_cfg)
+        except Exception:
+            _fallback = body.model
+        try:
+            import logging as _logging
+
+            _logging.getLogger("autoconduck").warning("route_target failed, fail-soft degrade: %s", exc)
+        except Exception:
+            pass
+        # Return 502 degrade consistent with other upstream failures (never 5xx internal leak)
         return JSONResponse(
             {"type": "error", "error": {"type": "api_error", "message": str(exc)}},
-            status_code=500,
+            status_code=502,
         )
     if extra.get("_path") == "FAST":
         try:

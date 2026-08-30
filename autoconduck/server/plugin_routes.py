@@ -60,12 +60,6 @@ async def _events_handler(request: Request):  # type: ignore[no-untyped-def]
                 ledger.enqueue(session_id, task_id, kind, data if isinstance(data, dict) else {"data": data})
             else:
                 ledger.count_in_memory(session_id, kind)
-            try:
-                from autoconduck.plugin.bias import get_bias_store
-
-                get_bias_store().increment_turn(session_id)
-            except Exception:
-                pass
         except Exception as exc:
             logger.warning("plugin /events ledger error: %s", exc)
         return JSONResponse(content={"status": "ok"})

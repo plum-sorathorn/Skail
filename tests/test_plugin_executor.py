@@ -1,10 +1,11 @@
-"""Plugin executor loop + tools tests (salvaged from orchestrator, Phase 1B)."""
+"""Plugin executor loop + tools tests (salvaged from orchestrator, Phase 1B) + bash gating."""
+
 import json
+
 import pytest
-from unittest.mock import MagicMock, patch
 
 from autoconduck.config import Config, SelectionConfig
-
+from autoconduck.config.models import Config as Config2  # alias for bash tests compat
 from autoconduck.plugin.executor_loop import (
     LoopState,
     calculate_stagnation,
@@ -12,7 +13,7 @@ from autoconduck.plugin.executor_loop import (
     strip_tool_call_tags,
     run_executor_tool_loop,
 )
-from autoconduck.plugin.tools import is_read_only_tool, tool_model
+from autoconduck.plugin.tools import execute_tool, is_read_only_tool, tool_model
 
 
 def test_extract_text_tool_calls_opensource_format():
@@ -105,3 +106,40 @@ def test_calculate_stagnation_basic():
     assert 0 <= calculate_stagnation(s) <= 1
     s2 = LoopState(call_signatures=["same", "same", "same"], error_streak=3, distinct_files_touched=set(), total_calls=3)
     assert calculate_stagnation(s2) > calculate_stagnation(s)
+
+
+# --- Bash gating (Phase 7C2b U9) ---
+
+def _cfg_with_bash(enabled: bool):
+    from autoconduck.config.models import Config as CfgModel, SelectionConfig as SelCfg
+    sel = SelCfg(executor_enable_bash=enabled)
+    cfg = CfgModel(selection=sel)
+    return cfg
+
+
+def test_bash_disabled_returns_error(tmp_path):
+    cfg = _cfg_with_bash(False)
+    result = execute_tool("bash", {"command": "echo hello"}, workspace_root=tmp_path, allowed_scope=[], cfg=cfg)
+    assert result == "ERROR: bash tool disabled"
+
+
+def test_bash_enabled_executes(tmp_path, monkeypatch):
+    cfg = _cfg_with_bash(True)
+    import autoconduck.plugin.tools as tools_mod
+
+    called = {}
+
+    def fake_run(cmd, shell, cwd, timeout, capture_output, text):
+        called["cmd"] = cmd
+
+        class R:
+            returncode = 0
+            stdout = "hello\n"
+            stderr = ""
+
+        return R()
+
+    monkeypatch.setattr(tools_mod.subprocess, "run", fake_run)
+    result = execute_tool("bash", {"command": "echo hello"}, workspace_root=tmp_path, allowed_scope=[], cfg=cfg)
+    assert "hello" in result
+    assert called.get("cmd") == "echo hello"

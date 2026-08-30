@@ -51,6 +51,18 @@ def cmd_omp_unlink(args):
     return 0
 
 def _invoke_check_port(port: int, host: str = "127.0.0.1") -> None:
+    # Tests patch autoconduck.main._check_port_available; honor that even if this module's copy is stale.
+    try:
+        import autoconduck.main as _main  # noqa: WPS433
+
+        fn_main = getattr(_main, "_check_port_available", None)
+        if fn_main is not None and fn_main is not _check_port_available:
+            try:
+                return fn_main(port, host)
+            except TypeError:
+                return fn_main(port)
+    except Exception:
+        pass
     fn = getattr(sys.modules.get(__name__), "_check_port_available", _check_port_available)
     try:
         return fn(port, host)
@@ -424,6 +436,8 @@ def main(argv: list[str] | None = None):
         p = sub.add_parser(name)
         p.add_argument("--port", type=int)
         p.add_argument("--client-id", type=str, default=None)
+        if name == "stop":
+            p.description = "Stop daemon and revert Claude Code marker-bounded hooks (marker-bounded, backed up in ~/.autoconduck/backups/)"
         p.set_defaults(handler=func)
     stats_parser = sub.add_parser("stats")
     stats_parser.add_argument("--json", action="store_true")
@@ -480,5 +494,3 @@ def main(argv: list[str] | None = None):
             file=sys.stderr,
         )
         return 1
-from autoconduck.server import DEFAULT_PORT, _check_port_available, _find_free_port, _run_proxy, _run_supervisor
-from .cli_launch import cmd_launch_agent, cmd_install, _open_new_terminal

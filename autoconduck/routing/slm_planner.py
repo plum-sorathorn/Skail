@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import re
 from typing import Any, Literal
@@ -23,6 +24,19 @@ from autoconduck._compat import (
 from autoconduck.routing.model_pool import CapabilitySLA
 
 logger = logging.getLogger(__name__)
+
+# Reused single-thread executor for sync circuit-breaker (no per-call startup cost).
+# ONNX inference thread is abandoned on timeout (cannot be killed) — route proceeds fail-soft.
+_SLM_EXECUTOR: ThreadPoolExecutor | None = None
+_SLM_EXECUTOR_LOCK = __import__("threading").Lock()
+
+
+def _get_slm_executor() -> ThreadPoolExecutor:
+    global _SLM_EXECUTOR
+    with _SLM_EXECUTOR_LOCK:
+        if _SLM_EXECUTOR is None:
+            _SLM_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="slm-infer")
+        return _SLM_EXECUTOR
 
 
 def normalize_confidence(value: Any) -> float:
@@ -348,9 +362,45 @@ class SLMPlanner:
         }
 
     def plan_sync(self, messages: list[dict[str, Any]], config: Any = None) -> ExecutionPlan:
-        """Generate an ExecutionPlan synchronously with circuit breaker / fallback protection."""
+        """Generate an ExecutionPlan synchronously with circuit breaker / fallback protection.
+
+        Sync SLM inference is bounded by slm_circuit_breaker_timeout_ms via a reused
+        single-thread ThreadPoolExecutor. On timeout/exception a fallback plan is
+        returned. Note: the ONNX inference thread is abandoned on timeout (cannot be
+        killed) — route proceeds fail-soft.
+        """
+        # Determine timeout (ms -> sec). Fallback to instance default if config missing.
+        timeout_ms = (
+            float(getattr(getattr(config, "selection", None), "slm_circuit_breaker_timeout_ms", self.circuit_breaker_ms))
+            if config is not None and hasattr(config, "selection")
+            else float(self.circuit_breaker_ms)
+        )
+        timeout_sec = timeout_ms / 1000.0
         try:
-            res = self._raw_infer(messages, config)
+            executor = _get_slm_executor()
+            fut = executor.submit(self._raw_infer, messages, config)
+            try:
+                res = fut.result(timeout=timeout_sec)
+            except Exception as exc:
+                # Timeout or inference exception -> fallback
+                # On TimeoutError the worker thread continues in background (abandoned).
+                try:
+                    # Don't cancel aggressively; let ONNX thread finish abandonded.
+                    pass
+                except Exception:
+                    pass
+                # Distinguish timeout for rationale
+                is_timeout = "TimeoutError" in type(exc).__name__ or "timeout" in str(exc).lower() or isinstance(exc, TimeoutError)
+                # concurrent.futures TimeoutError
+                from concurrent.futures import TimeoutError as _FETimeout
+
+                if isinstance(exc, _FETimeout):
+                    is_timeout = True
+                if is_timeout:
+                    logger.warning("SLM plan_sync exceeded %sms circuit breaker; degrading to fallback.", timeout_ms)
+                    return self._create_fallback_plan(messages, reason=f"Circuit breaker timeout (> {timeout_ms:g}ms)")
+                logger.warning("SLM sync planner error: %s; degrading to fallback.", exc)
+                return self._create_fallback_plan(messages, reason=f"Sync planning error: {exc}")
             if isinstance(res, ExecutionPlan):
                 return res
             if isinstance(res, str):
