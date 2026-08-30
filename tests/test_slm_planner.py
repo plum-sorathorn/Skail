@@ -2,7 +2,7 @@
 
 Verifies:
 - Strict Pydantic validation of ExecutionPlan schema (route, confidence, subtasks, SLA).
-- Fast-direct vs dynamic-dag task classification.
+- Fast-direct vs fast-direct task classification.
 - Selective RAG triggers and query generation.
 - Configurable circuit breaker timeout fallback to safe SLA.
 - Corrupted JSON and syntax error graceful degradation.
@@ -110,7 +110,7 @@ async def test_slm_planner_fast_direct_route_for_simple_chat(slm_planner: SLMPla
 
 
 @pytest.mark.asyncio
-async def test_slm_planner_dynamic_dag_route_for_complex_refactoring(slm_planner: SLMPlanner):
+async def test_slm_planner_refactor_route_for_complex_refactoring(slm_planner: SLMPlanner):
     """Phase 1A: complex refactoring now classifies as refactor task_type (no DAG)."""
     messages = [
         {
@@ -342,8 +342,7 @@ async def test_harness_preamble_in_first_message_and_inline_still_fast_direct(sl
 @pytest.mark.asyncio
 async def test_novel_unknown_boilerplate_does_not_flip_to_dag(slm_planner: SLMPlanner):
     """An unknown/novel boilerplate block -- NOT one of the curated markers --
-    must not be able to force a plain question into dynamic_dag, even though
-    it is left unstripped. Conservative signal-gating (Layer 3), not an
+    must not be able to force a plain question into a multi-edit classification, even though it is left unstripped. Conservative signal-gating (Layer 3), not an
     ever-growing strip dictionary, is what protects against novel noise."""
     novel_noise = "<SYS> foo bar update change directory files </SYS>\n"
     messages = [

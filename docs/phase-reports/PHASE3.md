@@ -54,7 +54,7 @@ Actual tail recorded after run (see verification below).
 
 ## Verification
 
-- [x] `python -m pytest` — all green (244 + new).
+- [x] `python -m pytest` — 262 passed, 4 skipped, 1 warning (15.5s).
 - [x] `autoconduck hook claude PostToolUse` with/without stdin JSON → spool line + exit 0.
 - [x] `graphify update .` attempted.
 
