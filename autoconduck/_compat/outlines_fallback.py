@@ -84,6 +84,14 @@ class OutlinesFallback:
                     elif isinstance(resp, str):
                         raw_text = resp
 
+            # Strip markdown code fencing if present
+            raw_text = raw_text.strip()
+            if raw_text.startswith("```"):
+                lines = raw_text.splitlines()
+                if len(lines) >= 2 and lines[0].startswith("```"):
+                    end_idx = -1 if lines[-1].strip() == "```" else len(lines)
+                    raw_text = "\n".join(lines[1:end_idx]).strip()
+
             # Try parsing with json_repair if available, else json.loads
             try:
                 import json_repair

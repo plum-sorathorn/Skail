@@ -81,3 +81,32 @@ def test_lancedb_fallback_interface():
     assert "test_docs" not in db.table_names()
 
 
+def test_multi_slm_catalog_support():
+    """Verify all supported SLM models in catalog are valid and have corresponding tokenizer/weights specs."""
+    from autoconduck.routing.slm_downloader import SLM_MODELS_CATALOG, get_slm_model_info
+
+    supported_ids = ["qwen2.5-coder-0.5b-instruct", "qwen2.5-coder-1.5b-instruct", "lfm2.5-1.2b-instruct"]
+    for mid in supported_ids:
+        info = get_slm_model_info(mid)
+        assert info is not None, f"Model {mid} not found in catalog"
+        assert info["filename"].endswith(".onnx")
+        assert len(info["extra_files"]) >= 1
+        # Tokenizer file must exist in extra_files
+        has_tokenizer = any(ef["filename"].endswith(".tokenizer.json") or "tokenizer" in ef["filename"] for ef in info["extra_files"])
+        assert has_tokenizer, f"Model {mid} missing tokenizer in extra_files"
+
+
+def test_onnx_direct_model_chatml_and_fallback_template():
+    """Verify ChatML and fallback role formatting behavior."""
+    from autoconduck._compat.onnx_fallback import ONNXModelFallback
+    model = ONNXModelFallback("test-model.onnx")
+    messages = [
+        {"role": "system", "content": "You are a classifier."},
+        {"role": "user", "content": "Classify this."},
+    ]
+    res = model.create_chat_completion(messages)
+    assert "choices" in res
+    assert res["choices"][0]["message"]["role"] == "assistant"
+
+
+

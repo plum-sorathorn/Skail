@@ -120,9 +120,67 @@ class ONNXRuntimeDirectModel:
 
     def __init__(self, model_path: str, **kwargs: Any) -> None:
         self.model_path = model_path
-        self._session = onnxruntime.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+        
+        # Configure session options for high throughput and bounded CPU threads
+        sess_options = onnxruntime.SessionOptions()
+        sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+        sess_options.intra_op_num_threads = min(4, os.cpu_count() or 1)
+        sess_options.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
+
+        self._session = onnxruntime.InferenceSession(model_path, sess_options=sess_options, providers=["CPUExecutionProvider"])
         self._tokenizer = self._load_tokenizer(model_path)
         self._is_fallback = False
+
+        # Detect ChatML template support in tokenizer
+        try:
+            self._has_chatml = self._tokenizer.token_to_id("<|im_start|>") is not None
+        except Exception:
+            self._has_chatml = True
+
+        # Precompute input/output names and KV-cache mappings for zero-overhead loop execution
+        self._output_names = [o.name for o in self._session.get_outputs()]
+        self._input_names = [i.name for i in self._session.get_inputs()]
+        self._past_mappings: list[tuple[str, list[int], Any, str | None]] = []
+        for inp in self._session.get_inputs():
+            if inp.name.startswith(("past_key_values", "past_conv")):
+                shape: list[int] = []
+                for dim in inp.shape:
+                    if isinstance(dim, int):
+                        shape.append(dim)
+                    elif dim in ("batch_size", "batch"):
+                        shape.append(1)
+                    elif "past" in str(dim).lower() or "seq" in str(dim).lower():
+                        shape.append(0)
+                    else:
+                        shape.append(1)
+                dtype = "float32" if "float" in str(inp.type).lower() else "int64"
+                pres_name = None
+                if inp.name.startswith("past_conv."):
+                    idx = inp.name.split(".")[1]
+                    for pres_prefix in ("present_conv.", "present_conv_", "present."):
+                        cand = f"{pres_prefix}{idx}"
+                        if cand in self._output_names:
+                            pres_name = cand
+                            break
+                elif inp.name.startswith("past_key_values."):
+                    parts = inp.name.split(".")
+                    layer_idx, kv_type = parts[1], parts[2]
+                    for pres_prefix in ("present.", "present_key_values.", "present_kv."):
+                        cand = f"{pres_prefix}{layer_idx}.{kv_type}"
+                        if cand in self._output_names:
+                            pres_name = cand
+                            break
+                self._past_mappings.append((inp.name, shape, dtype, pres_name))
+
+        # Precompute EOS token IDs dynamically across model families
+        self._eos_ids: set[int] = {0, 1, 2, 151643, 151644, 151645}
+        for token_name in ("<|im_end|>", "<|endoftext|>", "</s>", "<|eot_id|>", "<eos>", "<end_of_turn>"):
+            try:
+                tid = self._tokenizer.token_to_id(token_name)
+                if tid is not None:
+                    self._eos_ids.add(tid)
+            except Exception:
+                pass
 
     def _load_tokenizer(self, model_path: str) -> Any:
         import tokenizers
@@ -148,6 +206,11 @@ class ONNXRuntimeDirectModel:
             except Exception:
                 pass
         elif "qwen" in lower:
+            if "1.5b" in lower:
+                try:
+                    return tokenizers.Tokenizer.from_pretrained("onnx-community/Qwen2.5-Coder-1.5B-Instruct")
+                except Exception:
+                    pass
             try:
                 return tokenizers.Tokenizer.from_pretrained("onnx-community/Qwen2.5-Coder-0.5B-Instruct")
             except Exception:
@@ -177,26 +240,21 @@ class ONNXRuntimeDirectModel:
             "attention_mask": attention_mask,
         }
 
-        # Initialize past states dynamically from model input metadata
-        for inp in self._session.get_inputs():
-            if inp.name.startswith(("past_key_values", "past_conv")):
-                shape: list[int] = []
-                for dim in inp.shape:
-                    if isinstance(dim, int):
-                        shape.append(dim)
-                    elif dim in ("batch_size", "batch"):
-                        shape.append(1)
-                    elif "past" in str(dim).lower() or "seq" in str(dim).lower():
-                        shape.append(0)
-                    else:
-                        shape.append(1)
-                dtype = np.float32 if "float" in str(inp.type).lower() else np.int64
-                feed[inp.name] = np.zeros(shape, dtype=dtype)
+        # Initialize position_ids and token_type_ids if expected by model graph
+        if "position_ids" in self._input_names:
+            feed["position_ids"] = np.arange(len(encoded.ids), dtype=np.int64).reshape(1, len(encoded.ids))
+        if "token_type_ids" in self._input_names:
+            feed["token_type_ids"] = np.zeros((1, len(encoded.ids)), dtype=np.int64)
+
+        # Initialize past states from pre-computed mappings
+        for inp_name, shape, dtype_str, _ in self._past_mappings:
+            dtype = np.float32 if dtype_str == "float32" else np.int64
+            feed[inp_name] = np.zeros(shape, dtype=dtype)
 
         stop_list = [stop] if isinstance(stop, str) else list(stop or [])
-        stop_list.extend(["<|im_end|>", "<|endoftext|>", "</s>", "<|eot_id|>", "<eos>"])
+        stop_list.extend(["<|im_end|>", "<|endoftext|>", "</s>", "<|eot_id|>", "<eos>", "<end_of_turn>"])
 
-        eos_ids: set[int] = set()
+        eos_ids: set[int] = set(self._eos_ids)
         for token_name in stop_list:
             try:
                 tid = self._tokenizer.token_to_id(token_name)
@@ -205,12 +263,11 @@ class ONNXRuntimeDirectModel:
             except Exception:
                 pass
 
-        output_names = [o.name for o in self._session.get_outputs()]
         generated_tokens: list[int] = []
 
         for _ in range(max_tokens):
-            outputs = self._session.run(output_names, feed)
-            output_dict = dict(zip(output_names, outputs))
+            outputs = self._session.run(self._output_names, feed)
+            output_dict = dict(zip(self._output_names, outputs))
 
             logits = output_dict["logits"]
             next_id = int(np.argmax(logits[0, -1, :]))
@@ -221,23 +278,22 @@ class ONNXRuntimeDirectModel:
             if next_id in eos_ids or any(s in token_str for s in stop_list):
                 break
 
+            # Check if valid JSON closing brace completed
+            if "}" in token_str:
+                cur_text = self._tokenizer.decode(generated_tokens)
+                if "{" in cur_text and cur_text.count("{") <= cur_text.count("}"):
+                    break
+
             feed["input_ids"] = np.array([[next_id]], dtype=np.int64)
             feed["attention_mask"] = np.ones((1, feed["attention_mask"].shape[1] + 1), dtype=np.int64)
+            if "position_ids" in self._input_names:
+                feed["position_ids"] = np.array([[feed["attention_mask"].shape[1] - 1]], dtype=np.int64)
+            if "token_type_ids" in self._input_names:
+                feed["token_type_ids"] = np.zeros((1, 1), dtype=np.int64)
 
-            for inp in self._session.get_inputs():
-                if inp.name.startswith("past_conv."):
-                    idx = inp.name.split(".")[1]
-                    pres = f"present_conv.{idx}"
-                    if pres in output_dict:
-                        feed[inp.name] = output_dict[pres]
-                elif inp.name.startswith("past_key_values."):
-                    parts = inp.name.split(".")
-                    layer_idx, kv_type = parts[1], parts[2]
-                    for pres_prefix in ("present.", "present_key_values.", "present_kv."):
-                        pres = f"{pres_prefix}{layer_idx}.{kv_type}"
-                        if pres in output_dict:
-                            feed[inp.name] = output_dict[pres]
-                            break
+            for inp_name, _, _, pres_name in self._past_mappings:
+                if pres_name and pres_name in output_dict:
+                    feed[inp_name] = output_dict[pres_name]
 
         text = self._tokenizer.decode(generated_tokens)
         for s in stop_list:
@@ -276,12 +332,21 @@ class ONNXRuntimeDirectModel:
         stream: bool = False,
         **kwargs: Any,
     ) -> dict[str, Any] | Iterator[dict[str, Any]]:
-        prompt = ""
-        for m in messages:
-            role = m.get("role", "user")
-            content = m.get("content", "")
-            prompt += f"<|im_start|>{role}\n{content}<|im_end|>\n"
-        prompt += "<|im_start|>assistant\n"
+        if getattr(self, "_has_chatml", True):
+            prompt = ""
+            for m in messages:
+                role = m.get("role", "user")
+                content = m.get("content", "")
+                prompt += f"<|im_start|>{role}\n{content}<|im_end|>\n"
+            prompt += "<|im_start|>assistant\n"
+        else:
+            parts = []
+            for m in messages:
+                role = m.get("role", "user").capitalize()
+                content = m.get("content", "")
+                parts.append(f"{role}: {content}")
+            parts.append("Assistant:")
+            prompt = "\n\n".join(parts) + "\n"
 
         res = self.create_completion(
             prompt=prompt,

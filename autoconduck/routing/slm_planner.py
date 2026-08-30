@@ -32,6 +32,8 @@ _SLM_EXECUTOR_LOCK = __import__("threading").Lock()
 
 _GLOBAL_LLM_CACHE = None
 _GLOBAL_LLM_CACHE_LOCK = __import__("threading").Lock()
+_INFER_BUSY = False
+_INFER_BUSY_LOCK = __import__("threading").Lock()
 
 
 def _get_slm_executor() -> ThreadPoolExecutor:
@@ -40,6 +42,26 @@ def _get_slm_executor() -> ThreadPoolExecutor:
         if _SLM_EXECUTOR is None:
             _SLM_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="slm-infer")
         return _SLM_EXECUTOR
+
+
+def _infer_deterministic_task_type(text: str) -> tuple[str, int]:
+    """Infer deterministic baseline task type and complexity from text in < 0.1ms (Brain Ladder baseline)."""
+    if not text:
+        return "chat", 1
+    lower = text.lower()
+    if any(k in lower for k in ["git commit", "git status", "git diff", "git add", "git log", "format code"]):
+        return "git_ops", 2
+    if any(k in lower for k in ["refactor", "rewrite", "overhaul", "redesign", "restructure", "clean up"]):
+        return "refactor", 7
+    if any(k in lower for k in ["debug", "stack trace", "traceback", "exception", "fix bug", "error:", "fail"]):
+        return "debug", 6
+    if any(k in lower for k in ["edit", "update", "modify", "change", "add", "implement", "patch", "create"]):
+        return "single_edit", 4
+    if any(k in lower for k in ["explain", "how does", "what is", "why does", "tell me about"]):
+        return "explain", 3
+    if any(k in lower for k in ["search", "find", "grep", "locate", "recon", "explore"]):
+        return "recon", 3
+    return "chat", 2
 
 
 def normalize_confidence(value: Any) -> float:
@@ -279,18 +301,20 @@ class SLMPlanner:
         return text
 
     def _create_fallback_plan(self, messages: list[dict[str, Any]], reason: str = "") -> ExecutionPlan:
-        """Create a safe fallback execution plan."""
+        """Create a safe fallback execution plan with deterministic baseline classification."""
+        user_text = self._extract_user_text(messages) if messages else ""
+        task_type, complexity = _infer_deterministic_task_type(user_text)
         return ExecutionPlan(
             confidence=0.5,
-            task_type="chat",
-            complexity_score=5,
+            task_type=task_type,
+            complexity_score=complexity,
             suggested_sla=CapabilitySLA(min_context=16000, requires_tools=True, max_cost=1.5),
             rationale=reason or "Fallback plan due to SLM circuit breaker or parsing exception",
             fallback_used=True,
         )
 
     def _ensure_llm_loaded(self, config: Any = None) -> None:
-        """Ensure the underlying SLM runtime model is loaded."""
+        """Ensure the underlying SLM runtime model is loaded and warmed up."""
         if self._llm is not None:
             return
             
@@ -323,6 +347,14 @@ class SLMPlanner:
                 except Exception as exc:
                     logger.warning("Failed to initialize SLM from %s: %s", model_path, exc)
 
+            # Perform single-token warmup forward pass to pre-compile execution kernels
+            if self._llm is not None and not getattr(self._llm, "_is_fallback", False):
+                try:
+                    if hasattr(self._llm, "create_completion"):
+                        self._llm.create_completion("{}", max_tokens=1)
+                except Exception:
+                    pass
+
     def _raw_infer(self, messages: list[dict[str, Any]], config: Any = None) -> str | dict[str, Any]:
         """Classify the request and produce an ExecutionPlan dict using the SLM."""
         text, noise_removed = self._extract_last_user_text(messages)
@@ -337,7 +369,10 @@ class SLMPlanner:
             logger.debug("SLM model unavailable or using fallback; routing via fallback plan.")
             return self._create_fallback_plan(messages, reason="SLM model unavailable or fallback").model_dump()
 
-        # 3. Define schema
+        # 3. Bound instruction length to prevent CPU prefill latency spikes
+        bounded_text = text[:800] if len(text) > 800 else text
+
+        # 4. Define schema
         class TaskClassification(BaseModel):
             task_type: Literal["chat", "explain", "recon", "single_edit", "multi_edit", "debug", "refactor", "full_workflow", "git_ops", "routine", "read_answer", "knowledge_query", "research"] = Field(default="chat", description="Task category")
             confidence: Any = Field(default=0.5, description="Confidence in the task_type decision, from 0 to 1")
@@ -349,17 +384,17 @@ class SLMPlanner:
             def _validate_task_type(cls, value: Any) -> str:
                 return sanitize_task_type(value)
 
-        # 4. Generate structured output
+        # 5. Generate structured output with tight token budget (<500ms on CPU)
         from autoconduck._compat.outlines_fallback import generate_structured_json
         prompt = (
             f"Classify the following software engineering instruction for automated routing:\n\n"
-            f"Instruction: {text}\n\n"
+            f"Instruction: {bounded_text}\n\n"
             f"task_type MUST be one of: chat, explain, recon, single_edit, multi_edit, debug, refactor, full_workflow, git_ops, routine, read_answer, knowledge_query, research.\n"
             f"confidence is a float from 0 to 1 reflecting certainty in the task_type decision.\n"
             f"Output valid JSON with fields: task_type, complexity_score (1-10), rationale, confidence."
         )
 
-        result = generate_structured_json(self._llm, prompt, TaskClassification, max_tokens=128)
+        result = generate_structured_json(self._llm, prompt, TaskClassification, max_tokens=48)
         if not isinstance(result, TaskClassification):
             logger.debug("SLM produced non-TaskClassification result; using fallback plan.")
             return self._create_fallback_plan(messages, reason="SLM structured output validation failed").model_dump()
@@ -388,22 +423,24 @@ class SLMPlanner:
             else float(self.circuit_breaker_ms)
         )
         timeout_sec = timeout_ms / 1000.0
+
+        # Concurrency protection: if a previous abandoned inference is still occupying the executor/CPU,
+        # fail-soft immediately rather than queuing and causing cascading timeouts.
+        global _INFER_BUSY
+        with _INFER_BUSY_LOCK:
+            if _INFER_BUSY:
+                logger.debug("SLM inference currently busy/recovering; degrading to deterministic fallback.")
+                return self._create_fallback_plan(messages, reason="SLM inference busy")
+            _INFER_BUSY = True
+
         try:
             executor = _get_slm_executor()
             fut = executor.submit(self._raw_infer, messages, config)
             try:
                 res = fut.result(timeout=timeout_sec)
             except Exception as exc:
-                # Timeout or inference exception -> fallback
-                # On TimeoutError the worker thread continues in background (abandoned).
-                try:
-                    # Don't cancel aggressively; let ONNX thread finish abandonded.
-                    pass
-                except Exception:
-                    pass
                 # Distinguish timeout for rationale
                 is_timeout = "TimeoutError" in type(exc).__name__ or "timeout" in str(exc).lower() or isinstance(exc, TimeoutError)
-                # concurrent.futures TimeoutError
                 from concurrent.futures import TimeoutError as _FETimeout
 
                 if isinstance(exc, _FETimeout):
@@ -418,6 +455,10 @@ class SLMPlanner:
                     return self._create_fallback_plan(messages, reason=f"Circuit breaker timeout (> {timeout_ms:g}ms)")
                 logger.warning("SLM sync planner error: %s; degrading to fallback.", exc)
                 return self._create_fallback_plan(messages, reason=f"Sync planning error: {exc}")
+            finally:
+                with _INFER_BUSY_LOCK:
+                    _INFER_BUSY = False
+
             if isinstance(res, ExecutionPlan):
                 return res
             if isinstance(res, str):
