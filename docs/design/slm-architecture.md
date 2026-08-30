@@ -1,20 +1,17 @@
 # Embedded SLM Architecture (Qwen 2.5 Coder 0.5B Instruct)
 
 ## 1. Overview
-AutoConduck's core routing and planning intelligence is powered by embedded Small Language Models (SLMs) such as **Qwen 2.5 Coder 0.5B / 1.5B Instruct** and **Liquid LFM 2.5 1.2B** (ONNX / GGUF), backed by instant zero-overhead rule heuristics. This replaces naive complexity scoring with structured cognitive task planning.
+AutoConduck's per-turn classification intelligence is powered by embedded Small Language Models (SLMs) such as **Qwen 2.5 Coder 0.5B / 1.5B Instruct** and **Liquid LFM 2.5 1.2B** (ONNX / GGUF), backed by instant zero-overhead rule heuristics. The SLM emits a lightweight `TaskClassification` (`task_type` / `confidence` / `complexity_score`) that feeds the fit-gate-then-cheapest selection on every classified turn. Per the Brain Ladder, the SLM is an optional non-binding signal — never an authority for escalation, stagnation, or completion.
 
 ## 2. Invariants & Performance Constraints
 - **Local Model Execution**: Quantized local weights execute on CPU/GPU via ONNX Runtime / llama.cpp or fallback shims.
 - **Strict JSON Schema Conformance**: Guided generation via structured schemas or Pydantic JSON validation.
-- **Dedicated SLM Planning Circuit Breaker**: Any SLM planning timeout (configurable via `slm_circuit_breaker_timeout_ms`, default 2000ms) or parsing error trips the circuit breaker and falls back immediately to deterministic capability SLA-based direct dispatch without crashing. Subagent fan-out and DAG execution operate under independent per-subagent budgets (120s).
+- **Dedicated SLM Classifier Circuit Breaker**: Any SLM inference timeout (configurable via `slm_circuit_breaker_timeout_ms`, default 2000ms) or parsing error trips the circuit breaker and falls back immediately to a deterministic classification and capability SLA-based direct dispatch without crashing.
 
 ## 3. Schema & Output Contract
-The SLM produces an `ExecutionPlan` with the following structure:
-- `route`: `fast_direct` | `dynamic_dag`
+The SLM produces a `TaskClassification` with the following structure:
+- `task_type`: `chat` | `explain` | `reconnaissance` | `single_edit` | `multi_edit` | `debug` | `refactor` | `full_workflow` | `git_ops` | `routine` | `read_answer` | `knowledge_query` | `research`
 - `confidence`: float [0.0, 1.0]
-- `task_type`: `chat` | `explain` | `recon` | `single_edit` | `multi_edit` | `debug` | `refactor` | `full_workflow` | `git_ops` | `routine`
-- `suggested_sla`: `CapabilitySLA` requirements for the selected model
-- `needs_rag`: boolean flag
-- `rag_queries`: list of query strings
-- `subtasks`: list of `SubTaskSpec` items
-- `synthesizer_sla`: `CapabilitySLA` requirements for final synthesis
+- `complexity_score`: float [0.0, 1.0]
+
+`TaskClassification` feeds `routing/dispatcher.py::_select_planned`, which applies the per-turn confidence floor `min(base + 0.15*(1-confidence), 0.60)` and optional session escalation bias (additive, cap 0.75) before fit-gate selection. Detailed weights are defined in `routing/model_pool.py::TASK_TYPE_WEIGHTS`.

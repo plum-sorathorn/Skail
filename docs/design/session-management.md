@@ -1,7 +1,7 @@
 # Session Lifecycle & Context Guard
 
 ## 1. Overview
-Coding assistants frequently maintain long sessions (40+ turns). Naive context manipulation breaks upstream prompt caching (e.g. Anthropic prompt caching, OpenAI prefix caching). AutoConduck provides SessionGuard (orchestrator/session_guard.py) to enforce strict prefix immutability and context window ceiling protection.
+Coding assistants frequently maintain long sessions (40+ turns). Naive context manipulation breaks upstream prompt caching (e.g. Anthropic prompt caching, OpenAI prefix caching). AutoConduck provides SessionGuard (`server/session_guard.py` — relocated from `orchestrator/` in the two-plane transformation) to enforce strict prefix immutability and context window ceiling protection.
 
 ## 2. Invariants
 - **Immutable Prefix Contract**: System prompts and initial user instructions (turns 0 and 1) are guaranteed to remain byte-identical across all turns.

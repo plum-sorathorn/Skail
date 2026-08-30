@@ -1,6 +1,6 @@
 # AutoConduck Two-Plane Transformation — Complete Plan (v1.1)
 
-**Status:** Approved — post-audit (GO-WITH-FIXES applied)
+**Status:** Approved — Phases 0-5 implemented (commits ea0e23b..HEAD); Phase 6 gates pending
 **Date:** 2026-08-30
 **Target state:** Proxy = pure turn-by-turn model router (+ ledger + control API). Plugin = optional orchestrator (thin per-harness shims + daemon-side Python runtime). Plugin off → byte-identical pure-router product.
 **Audit directive (binding):** The local SLM (Qwen 0.5B) is an OPTIONAL, NON-BINDING signal — never an authority. Every plugin duty has a deterministic baseline; the routed LLM handles judgment; the plugin must remain fully functional if the SLM is useless.
