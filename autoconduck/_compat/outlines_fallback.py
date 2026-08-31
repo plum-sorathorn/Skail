@@ -52,7 +52,7 @@ class OutlinesFallback:
                     messages = [
                         {
                             "role": "system",
-                            "content": "You are a specialized JSON classifier. Output ONLY valid JSON matching the requested schema without reasoning, markdown codeblocks, or conversational text.",
+                            "content": "JSON classifier. Output strictly compact 1-line JSON matching schema without codeblocks.",
                         },
                         {"role": "user", "content": prompt},
                     ]

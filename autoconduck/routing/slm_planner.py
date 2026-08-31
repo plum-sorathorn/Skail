@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 _SLM_EXECUTOR: ThreadPoolExecutor | None = None
 _SLM_EXECUTOR_LOCK = __import__("threading").Lock()
 
-_GLOBAL_LLM_CACHE = None
+_GLOBAL_LLM_CACHE: dict[str, Any] = {}
 _GLOBAL_LLM_CACHE_LOCK = __import__("threading").Lock()
 _INFER_BUSY = False
 _INFER_BUSY_LOCK = __import__("threading").Lock()
@@ -203,6 +203,15 @@ class ExecutionPlan(BaseModel):
     def _sanitize_task_type_field(cls, v: Any) -> str:
         return sanitize_task_type(v)
 
+    @field_validator("complexity_score", mode="before")
+    @classmethod
+    def _sanitize_complexity_field(cls, v: Any) -> int:
+        try:
+            val = int(v)
+            return max(1, min(10, val))
+        except Exception:
+            return 5
+
     @property
     def summary(self) -> str:
         return self.rationale or f"Task execution plan ({self.task_type})"
@@ -233,6 +242,33 @@ class ExecutionPlan(BaseModel):
         if name in _legacy_defaults:
             return _legacy_defaults[name]
         raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
+
+
+class TaskClassification(BaseModel):
+    task_type: Literal[
+        "chat", "explain", "recon", "single_edit", "multi_edit", "debug",
+        "refactor", "full_workflow", "git_ops", "routine", "read_answer",
+        "knowledge_query", "research"
+    ] = Field(default="chat", alias="t", description="Task category")
+    confidence: Any = Field(default=0.85, alias="conf", description="Confidence in the task_type decision, from 0 to 1")
+    complexity_score: int = Field(default=1, ge=1, le=10, alias="c", description="1=trivial typo/chat, 10=massive architectural overhaul")
+    rationale: str = Field(default="SLM direct routing", description="Brief explanation of the routing decision")
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    @field_validator("task_type", mode="before")
+    @classmethod
+    def _validate_task_type(cls, value: Any) -> str:
+        return sanitize_task_type(value)
+
+    @field_validator("complexity_score", mode="before")
+    @classmethod
+    def _validate_complexity(cls, value: Any) -> int:
+        try:
+            val = int(value)
+            return max(1, min(10, val))
+        except Exception:
+            return 1
 
 
 class SLMPlanner:
@@ -315,17 +351,17 @@ class SLMPlanner:
 
     def _ensure_llm_loaded(self, config: Any = None) -> None:
         """Ensure the underlying SLM runtime model is loaded and warmed up."""
-        if self._llm is not None:
+        model_path = resolve_slm_path(self.model_path, config)
+        if not model_path:
             return
-            
+
+        if self._llm is not None and getattr(self._llm, "model_path", "") == model_path:
+            return
+
         global _GLOBAL_LLM_CACHE
         with _GLOBAL_LLM_CACHE_LOCK:
-            if _GLOBAL_LLM_CACHE is not None:
-                self._llm = _GLOBAL_LLM_CACHE
-                return
-
-            model_path = resolve_slm_path(self.model_path, config)
-            if not model_path:
+            if model_path in _GLOBAL_LLM_CACHE:
+                self._llm = _GLOBAL_LLM_CACHE[model_path]
                 return
 
             resolved_path = Path(model_path)
@@ -333,19 +369,22 @@ class SLMPlanner:
                 logger.debug("SLM model file not found at %s; using fallback.", model_path)
                 return
 
+            loaded_model = None
             lower_path = model_path.lower()
             if lower_path.endswith(".onnx") or is_onnx_genai_available() or is_onnx_available():
                 try:
-                    self._llm = get_onnx_model(model_path)
-                    _GLOBAL_LLM_CACHE = self._llm
+                    loaded_model = get_onnx_model(model_path)
                 except Exception as exc:
                     logger.warning("Failed to initialize ONNX SLM from %s: %s", model_path, exc)
             else:
                 try:
-                    self._llm = get_onnx_model(model_path)
-                    _GLOBAL_LLM_CACHE = self._llm
+                    loaded_model = get_onnx_model(model_path)
                 except Exception as exc:
                     logger.warning("Failed to initialize SLM from %s: %s", model_path, exc)
+
+            if loaded_model is not None:
+                _GLOBAL_LLM_CACHE[model_path] = loaded_model
+                self._llm = loaded_model
 
             # Perform single-token warmup forward pass to pre-compile execution kernels
             if self._llm is not None and not getattr(self._llm, "_is_fallback", False):
@@ -372,39 +411,27 @@ class SLMPlanner:
         # 3. Bound instruction length to prevent CPU prefill latency spikes
         bounded_text = text[:800] if len(text) > 800 else text
 
-        # 4. Define schema
-        class TaskClassification(BaseModel):
-            task_type: Literal["chat", "explain", "recon", "single_edit", "multi_edit", "debug", "refactor", "full_workflow", "git_ops", "routine", "read_answer", "knowledge_query", "research"] = Field(default="chat", description="Task category")
-            confidence: Any = Field(default=0.5, description="Confidence in the task_type decision, from 0 to 1")
-            complexity_score: int = Field(default=1, ge=1, le=10, description="1=trivial typo/chat, 10=massive architectural overhaul")
-            rationale: str = Field(default="SLM direct routing", description="Brief explanation of the routing decision")
-
-            @field_validator("task_type", mode="before")
-            @classmethod
-            def _validate_task_type(cls, value: Any) -> str:
-                return sanitize_task_type(value)
-
-        # 5. Generate structured output with tight token budget (<500ms on CPU)
+        # 4. Generate structured output with ultra-compact token budget (~10 tokens, <1.0s on 1.5B CPU)
         from autoconduck._compat.outlines_fallback import generate_structured_json
         prompt = (
-            f"Classify the following software engineering instruction for automated routing:\n\n"
+            f"Classify instruction for automated routing:\n\n"
             f"Instruction: {bounded_text}\n\n"
             f"task_type MUST be one of: chat, explain, recon, single_edit, multi_edit, debug, refactor, full_workflow, git_ops, routine, read_answer, knowledge_query, research.\n"
-            f"confidence is a float from 0 to 1 reflecting certainty in the task_type decision.\n"
-            f"Output valid JSON with fields: task_type, complexity_score (1-10), rationale, confidence."
+            f'Output compact JSON: {{"t": "...", "c": 1-10}}'
         )
 
-        result = generate_structured_json(self._llm, prompt, TaskClassification, max_tokens=48)
+        result = generate_structured_json(self._llm, prompt, TaskClassification, max_tokens=16)
         if not isinstance(result, TaskClassification):
             logger.debug("SLM produced non-TaskClassification result; using fallback plan.")
             return self._create_fallback_plan(messages, reason="SLM structured output validation failed").model_dump()
 
+        rationale_text = result.rationale if result.rationale != "SLM direct routing" else f"task={result.task_type}"
         return {
             "confidence": normalize_confidence(result.confidence),
             "task_type": result.task_type,
             "complexity_score": result.complexity_score,
             "suggested_sla": CapabilitySLA(min_context=16000, requires_tools=True, max_cost=1.5),
-            "rationale": f"SLM (score {result.complexity_score}): {result.rationale} " + ("(harness noise stripped)" if noise_removed else ""),
+            "rationale": f"SLM (score {result.complexity_score}): {rationale_text} " + ("(harness noise stripped)" if noise_removed else ""),
             "fallback_used": False,
         }
 

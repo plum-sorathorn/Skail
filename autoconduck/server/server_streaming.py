@@ -108,7 +108,7 @@ def _build():
 
         @asynccontextmanager
         async def _plugin_lifespan(app_inner):
-            # startup
+            # startup: ensure SLM is loaded from disk and warmed up BEFORE proxy is ready
             try:
                 def _preload_slm():
                     try:
@@ -117,7 +117,8 @@ def _build():
                     except Exception:
                         pass
                 import asyncio
-                asyncio.get_running_loop().run_in_executor(None, _preload_slm)
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, _preload_slm)
             except Exception:
                 pass
             
