@@ -10,10 +10,12 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from autoconduck import __version__
+
 logger = logging.getLogger(__name__)
 
 MCP_PROTOCOL_VERSION = "2025-03-26"
-SERVER_INFO = {"name": "autoconduck", "version": "0.5.0"}
+SERVER_INFO = {"name": "autoconduck", "version": __version__}
 
 TOOLS_MANIFEST = [
     {

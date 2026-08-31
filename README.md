@@ -22,7 +22,7 @@
 
 Coding agents (**Claude Code**, **OpenCode**, **Pi**, and **Oh My Pi**) frequently send every prompt—from a single-line typo fix, git status check, or docstring lookup to a 20-file architecture migration—to a single expensive frontier model. This incurs massive token spend on routine turns while bottlenecking large multi-step changes without structured selection.
 
-**AutoConduck 0.5.0** is a local, zero-overhead **model router** with an optional deterministic plugin plane:
+**AutoConduck 0.5.1** is a local, zero-overhead **model router** with an optional deterministic plugin plane:
 
 - **Turn Guard (Regex, <2ms, Synchronous):** Evaluates every turn without I/O or LLM calls. Healthy tool loops stay on `DIRECT_ACTIVE_TIER`; only genuine stagnation (3+ identical consecutive calls or 2+ consecutive errors) triggers a re-classify via the SLM classifier. No replanning, no task graphs.
 - **Embedded SLM Classifier (Qwen 2.5 Coder / LFM 2.5 ONNX / GGUF):** Local small model emits a lightweight `TaskClassification` (`task_type`, `confidence`, `complexity_score`) with a 2000 ms circuit-breaker and deterministic fallback. Optional, non-binding signal—never an authority.

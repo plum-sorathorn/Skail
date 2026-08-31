@@ -69,10 +69,11 @@ class OmpAdapter(BaseAdapter):
             except Exception:
                 spool_path = str(Path.home() / ".autoconduck" / "run" / "plugin_spool.jsonl")
 
+        from autoconduck import __version__
         spool_json = json.dumps(str(spool_path))
 
         return (
-            "// AutoConduck Monitor & Router — managed by autoconduck v0.5.0\n"
+            f"// AutoConduck Monitor & Router — managed by autoconduck v{__version__}\n"
             "// Provides: provider routing, subagent tracking (agent_start/agent_end), codebase search\n"
             "// Reinstall: autoconduck install omp\n"
             "// Remove:    autoconduck uninstall omp\n"

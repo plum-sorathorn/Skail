@@ -45,8 +45,10 @@ class OpenCodeAdapter(BaseAdapter):
         subagent_flag = "true" if subagent_enabled else "false"
         rag_flag = "true" if rag_enabled else "false"
 
+        from autoconduck import __version__
+
         return (
-            "// AutoConduck OpenCode Plugin — managed by autoconduck v0.5.0\n"
+            f"// AutoConduck OpenCode Plugin — managed by autoconduck v{__version__}\n"
             "// Provides: tool interception, subagent tracking, codebase search\n"
             "// Reinstall: autoconduck install opencode\n"
             "// Remove:    autoconduck uninstall opencode\n"

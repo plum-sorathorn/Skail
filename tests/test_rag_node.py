@@ -205,7 +205,8 @@ def test_mcp_routes_manifest_and_tool_calls(tmp_path):
     manifest = res.json()
     assert manifest["protocolVersion"] == "2025-03-26"
     assert manifest["serverInfo"]["name"] == "autoconduck"
-    assert manifest["serverInfo"]["version"] == "0.5.0"
+    from autoconduck import __version__
+    assert manifest["serverInfo"]["version"] == __version__
     tool_names = [t["name"] for t in manifest["tools"]]
     assert "autoconduck_search" in tool_names
     assert "autoconduck_index" in tool_names
