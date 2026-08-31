@@ -335,5 +335,108 @@ def test_all_adapters_install_plugin_visibility_safe(tmp_path, monkeypatch):
         adapter.install_plugin_visibility(cfg_disabled)
 
 
+def test_all_adapters_revert_cleans_all_artifacts(tmp_path, monkeypatch):
+    """Verify revert cleans up all artifacts across Claude Code, OpenCode, Pi, and OMP."""
+    from autoconduck.config.models import PluginConfig
+    from autoconduck.harnesses.claude_code import ClaudeCodeAdapter
+    from autoconduck.harnesses.opencode import OpenCodeAdapter
+    from autoconduck.harnesses.pi import PiAdapter
+    from autoconduck.harnesses.omp import OmpAdapter
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(Path, "cwd", lambda: tmp_path)
+    pi_dir = tmp_path / ".pi" / "agent"
+    pi_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(pi_dir))
+
+    # Pre-populate empty configurations
+    claude_settings = tmp_path / ".claude" / "settings.json"
+    claude_settings.parent.mkdir(parents=True, exist_ok=True)
+    claude_settings.write_text("{}", encoding="utf-8")
+
+    opencode_cfg = tmp_path / "opencode.json"
+    opencode_cfg.write_text(json.dumps({"providers": {}}), encoding="utf-8")
+
+    cfg = Config(
+        port=11434,
+        plugins=PluginConfig(
+            enabled=True,
+            claude_enabled=True,
+            pi_enabled=True,
+            omp_enabled=True,
+            opencode_enabled=True,
+            subagent_enabled=True,
+            rag_enabled=True,
+        ),
+    )
+
+    claude_adapter = ClaudeCodeAdapter()
+    opencode_adapter = OpenCodeAdapter()
+    pi_adapter = PiAdapter()
+    omp_adapter = OmpAdapter()
+
+    # Patch all adapters
+    claude_adapter.patch(cfg, port=11434)
+    opencode_adapter.patch(cfg, port=11434)
+    pi_adapter.patch(cfg, port=11434)
+    omp_adapter.patch(cfg, port=11434)
+
+    # 1. Verify artifacts created
+    # Claude Code
+    c_data = json.loads(claude_settings.read_text(encoding="utf-8"))
+    assert "mcpServers" in c_data
+    assert "autoconduck" in c_data["mcpServers"]
+    assert "hooks" in c_data
+    assert "SubagentStart" in c_data["hooks"]
+    assert "autoconduck" in c_data
+
+    # OpenCode
+    oc_data = json.loads(opencode_cfg.read_text(encoding="utf-8"))
+    assert "mcp" in oc_data
+    assert "autoconduck" in oc_data["mcp"]
+    assert "plugin" in oc_data
+    oc_plugin_file = tmp_path / ".config" / "opencode" / "plugins" / "autoconduck.js"
+    assert oc_plugin_file.exists()
+
+    # OMP
+    omp_ext = tmp_path / ".omp" / "agent" / "extensions" / "autoconduck.ts"
+    assert omp_ext.exists()
+
+    # Pi
+    pi_ext = pi_dir / "extensions" / "autoconduck.ts"
+    assert pi_ext.exists()
+
+    # 2. Revert all adapters
+    claude_adapter.revert()
+    opencode_adapter.revert()
+    pi_adapter.revert()
+    omp_adapter.revert()
+
+    # 3. Verify all artifacts cleaned up
+    # Claude Code
+    c_rev = json.loads(claude_settings.read_text(encoding="utf-8"))
+    assert "autoconduck" not in c_rev
+    assert "mcpServers" not in c_rev or "autoconduck" not in c_rev.get("mcpServers", {})
+    assert "hooks" not in c_rev or not any(
+        "/plugin/events" in str(h.get("url", ""))
+        for entries in (c_rev.get("hooks") or {}).values()
+        if isinstance(entries, list)
+        for entry in entries
+        for h in (entry.get("hooks") or [])
+    )
+
+    # OpenCode
+    oc_rev = json.loads(opencode_cfg.read_text(encoding="utf-8"))
+    assert "mcp" not in oc_rev or "autoconduck" not in oc_rev.get("mcp", {})
+    assert "plugin" not in oc_rev or not any("autoconduck.js" in str(p) for p in oc_rev.get("plugin", []))
+    assert not oc_plugin_file.exists()
+
+    # OMP
+    assert not omp_ext.exists()
+
+    # Pi
+    assert not pi_ext.exists()
+
+
 
 

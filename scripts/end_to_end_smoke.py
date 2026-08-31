@@ -345,6 +345,33 @@ def main():
                 print(f"FAIL: expected ignored/rejected when disabled, got {j5}")
                 sys.exit(1)
 
+        # 6. GET /mcp expect 200 + protocolVersion and tools
+        status6, body6, j6 = target.get("/mcp")
+        print(f"GET /mcp -> {status6} {body6[:400]}")
+        if status6 != 200:
+            print(f"FAIL: GET /mcp returned {status6}")
+            sys.exit(1)
+        if not isinstance(j6, dict) or "protocolVersion" not in j6 or "tools" not in j6:
+            print(f"FAIL: GET /mcp missing protocolVersion or tools: {j6}")
+            sys.exit(1)
+
+        # 7. POST /mcp/tools/call with autoconduck_search expect 200
+        status7, body7, j7 = target.post("/mcp/tools/call", {"tool": "autoconduck_search", "args": {"query": "test"}})
+        print(f"POST /mcp/tools/call autoconduck_search -> {status7} {body7[:400]}")
+        if status7 != 200:
+            print(f"FAIL: POST /mcp/tools/call returned {status7}")
+            sys.exit(1)
+
+        # 8. POST /plugin/events SubagentStart expect 200
+        status8, body8, j8 = target.post("/plugin/events", {"kind": "SubagentStart", "session_id": "parent_smoke", "subagent_id": "child_smoke"})
+        print(f"POST /plugin/events SubagentStart -> {status8} {body8[:400]}")
+        if status8 != 200:
+            print(f"FAIL: POST /plugin/events SubagentStart returned {status8}")
+            sys.exit(1)
+        if plugins_enabled and isinstance(j8, dict) and j8.get("status") != "ok":
+            print(f"FAIL: expected status ok for SubagentStart, got {j8}")
+            sys.exit(1)
+
         print("[smoke] Mode B OK")
         sys.exit(0)
 

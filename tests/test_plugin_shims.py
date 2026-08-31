@@ -428,6 +428,40 @@ def test_claude_code_http_hooks_formatting_and_subagent_inclusion():
     assert mcp == {"autoconduck": {"url": "http://127.0.0.1:12345/mcp", "type": "http"}}
 
 
+def test_claude_code_detects_and_strips_command_type_hooks():
+    from autoconduck.harnesses.claude_code import ClaudeCodeAdapter
+
+    adapter = ClaudeCodeAdapter()
+    # Test recognition of command-type hook entry
+    cmd_entry = {
+        "matcher": "",
+        "hooks": [{"type": "command", "command": "autoconduck hook claude PreToolUse"}],
+    }
+    assert adapter._is_autoconduck_hook_entry(cmd_entry) is True
+
+    # Test recognition of http-type hook entry
+    http_entry = {
+        "matcher": "",
+        "hooks": [{"type": "http", "url": "http://127.0.0.1:11434/plugin/events"}],
+    }
+    assert adapter._is_autoconduck_hook_entry(http_entry) is True
+
+    # User entry should not be matched
+    user_entry = {
+        "matcher": "",
+        "hooks": [{"type": "command", "command": "echo user hook"}],
+    }
+    assert adapter._is_autoconduck_hook_entry(user_entry) is False
+
+    # Stripping hooks removes autoconduck entries while preserving user hooks
+    raw_hooks = {
+        "PreToolUse": [cmd_entry, user_entry],
+        "PostToolUse": [http_entry],
+    }
+    stripped = adapter._strip_autoconduck_hooks(raw_hooks)
+    assert stripped == {"PreToolUse": [user_entry]}
+
+
 def test_plugin_events_subagent_start_and_stop(tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient

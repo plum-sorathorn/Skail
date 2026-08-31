@@ -618,3 +618,28 @@ def test_dispatcher_child_session_routes_budget(tmp_path, monkeypatch):
     # Compare with non-child expensive selection
     assert dec_child.model != dec_expensive.model or dec_child.model == "local-fast"
 
+
+def test_child_session_registration_and_bias_isolation():
+    from autoconduck.plugin.bias import SessionBiasStore
+
+    store = SessionBiasStore()
+    assert store.is_child_session("child_subagent") is False
+    assert store.is_child_session("parent_main") is False
+
+    # Register child session
+    store.register_child_session("child_subagent", "parent_main")
+    assert store.is_child_session("child_subagent") is True
+    assert store.is_child_session("parent_main") is False
+
+    # Escalation bump applies to child session only, not parent session
+    bump = store.apply_escalation("child_subagent", 0.25, ttl_turns=3)
+    assert bump == pytest.approx(0.25)
+    assert store.get_bump("child_subagent") == pytest.approx(0.25)
+    assert store.get_bump("parent_main") == pytest.approx(0.0)
+
+    # Resetting child session clears child registration and bump
+    store.reset_session("child_subagent")
+    assert store.get_bump("child_subagent") == pytest.approx(0.0)
+    assert store.is_child_session("child_subagent") is False
+    assert store.get_bump("parent_main") == pytest.approx(0.0)
+
