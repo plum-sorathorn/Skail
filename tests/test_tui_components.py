@@ -80,9 +80,23 @@ def test_plugin_setup_screen_options_and_config():
 
     screen = PluginSetupScreen(None, ["claude_code"])
     assert len(screen.OPTIONS) == 3
+    assert screen.OPTIONS[0]["id"] == "full"
     assert screen.OPTIONS[0]["plugins_enabled"] is True
     assert screen.OPTIONS[0]["claude_enabled"] is True
+    assert screen.OPTIONS[0]["subagent_enabled"] is True
+    assert screen.OPTIONS[0]["rag_enabled"] is True
+
+    assert screen.OPTIONS[1]["id"] == "runtime_only"
+    assert screen.OPTIONS[1]["plugins_enabled"] is True
+    assert screen.OPTIONS[1]["claude_enabled"] is False
+    assert screen.OPTIONS[1]["subagent_enabled"] is False
+    assert screen.OPTIONS[1]["rag_enabled"] is False
+
+    assert screen.OPTIONS[2]["id"] == "disabled"
     assert screen.OPTIONS[2]["plugins_enabled"] is False
+    assert screen.OPTIONS[2]["claude_enabled"] is False
+    assert screen.OPTIONS[2]["subagent_enabled"] is False
+    assert screen.OPTIONS[2]["rag_enabled"] is False
 
     # Simulate confirming option 0 (Full recommended)
     screen.selected_idx = 0
@@ -90,6 +104,17 @@ def test_plugin_setup_screen_options_and_config():
     cfg = get_config()
     assert cfg.plugins.enabled is True
     assert cfg.plugins.claude_enabled is True
+    assert cfg.plugins.subagent_enabled is True
+    assert cfg.plugins.rag_enabled is True
+
+    # Simulate confirming option 1 (Runtime only)
+    screen.selected_idx = 1
+    screen._confirm_and_continue()
+    cfg = get_config()
+    assert cfg.plugins.enabled is True
+    assert cfg.plugins.claude_enabled is False
+    assert cfg.plugins.subagent_enabled is False
+    assert cfg.plugins.rag_enabled is False
 
     # Simulate confirming option 2 (Disabled)
     screen.selected_idx = 2
@@ -97,4 +122,7 @@ def test_plugin_setup_screen_options_and_config():
     cfg = get_config()
     assert cfg.plugins.enabled is False
     assert cfg.plugins.claude_enabled is False
+    assert cfg.plugins.subagent_enabled is False
+    assert cfg.plugins.rag_enabled is False
+
 

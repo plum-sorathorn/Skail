@@ -256,6 +256,7 @@ def configure_selected_agents(agents, port: int | None = None) -> list[str]:
         try:
             adapter.patch(cfg, port=effective_port)
             adapter.install_features()
+            adapter.install_plugin_visibility(cfg)
             configured.append(aid)
         except Exception:
             pass

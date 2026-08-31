@@ -61,6 +61,10 @@ class BaseAdapter(ABC):
         """Check and install any agent-specific plugins/extensions/features."""
         return []
 
+    def install_plugin_visibility(self, config: Config) -> None:
+        """Write any harness-visible plugin/extension markers. Default no-op. Override per harness."""
+        pass
+
     @abstractmethod
     def patch(self, config: Config, port: int | None = None) -> None:
         ...

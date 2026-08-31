@@ -197,6 +197,18 @@ class PiAdapter(BaseAdapter):
         """Check and install any agent-specific plugins/extensions/features for Pi."""
         return []
 
+    def install_plugin_visibility(self, config: Config) -> None:
+        """Write any harness-visible plugin/extension markers. Fail-soft: log warnings, do not raise."""
+        import logging
+        logger = logging.getLogger(__name__)
+        try:
+            ext_path = self._extension_path()
+            if not ext_path.exists():
+                self.patch(config)
+        except Exception as e:
+            logger.warning(f"Failed to install plugin visibility for Pi: {e}")
+
+
     def patch(self, config: Config, port: int | None = None) -> None:
         effective_port = int(port if port is not None else getattr(config, "port", 11434))
         path = self.config_paths()[0]

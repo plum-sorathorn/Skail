@@ -315,4 +315,25 @@ def test_pi_and_omp_extension_rag_register_tool(tmp_path, monkeypatch):
     assert "http://127.0.0.1:11434/mcp/tools/call" in omp_ext
 
 
+def test_all_adapters_install_plugin_visibility_safe(tmp_path, monkeypatch):
+    from autoconduck.config.models import PluginConfig
+    from autoconduck.harnesses import all_adapters
+    from autoconduck.harnesses.base import GenericAdapter
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(Path, "cwd", lambda: tmp_path)
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(tmp_path / ".pi" / "agent"))
+
+    adapters = [*all_adapters(), GenericAdapter()]
+    cfg_enabled = Config(port=11434, plugins=PluginConfig(enabled=True, claude_enabled=True, pi_enabled=True, omp_enabled=True, opencode_enabled=True, rag_enabled=True))
+    cfg_disabled = Config(port=11434, plugins=PluginConfig(enabled=False))
+
+    for adapter in adapters:
+        # Should run without error on enabled config
+        adapter.install_plugin_visibility(cfg_enabled)
+        # Should run without error on disabled config
+        adapter.install_plugin_visibility(cfg_disabled)
+
+
+
 

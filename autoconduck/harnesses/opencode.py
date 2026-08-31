@@ -280,3 +280,15 @@ class OpenCodeAdapter(BaseAdapter):
             except Exception:
                 continue
 
+    def install_plugin_visibility(self, config: Config) -> None:
+        """Write any harness-visible plugin/extension markers. Fail-soft: log warnings, do not raise."""
+        import logging
+        logger = logging.getLogger(__name__)
+        try:
+            plugin_path = self._plugin_path()
+            if not plugin_path.exists():
+                self.patch(config)
+        except Exception as e:
+            logger.warning(f"Failed to install plugin visibility for OpenCode: {e}")
+
+

@@ -393,3 +393,15 @@ class ClaudeCodeAdapter(BaseAdapter):
                     if not model_overrides:
                         data.pop("modelOverrides", None)
                 p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    def install_plugin_visibility(self, config: Config) -> None:
+        """Write any harness-visible plugin/extension markers. Fail-soft: log warnings, do not raise."""
+        import logging
+        logger = logging.getLogger(__name__)
+        try:
+            plugins = getattr(config, "plugins", None)
+            if plugins is not None and getattr(plugins, "enabled", False):
+                self.patch(config)
+        except Exception as e:
+            logger.warning(f"Failed to install plugin visibility for Claude Code: {e}")
+

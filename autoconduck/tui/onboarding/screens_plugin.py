@@ -27,24 +27,30 @@ if _TEXTUAL:
         OPTIONS = [
             {
                 "id": "full",
-                "title": "Enable Plugin Runtime & Claude Code Hooks (Recommended)",
-                "desc": "Enables deterministic stagnation recovery, escalation bias (+0.15), and auto-configures Claude Code hooks.",
+                "title": "Enable Plugin Runtime — Full Integration (Recommended)",
+                "desc": "HTTP hooks, subagent tracking, codebase search (local RAG via MCP), stagnation recovery, and escalation bias.",
                 "plugins_enabled": True,
                 "claude_enabled": True,
+                "subagent_enabled": True,
+                "rag_enabled": True,
             },
             {
                 "id": "runtime_only",
-                "title": "Enable Plugin Runtime Only (No Hook Injections)",
-                "desc": "Enables stagnation detection and ledger persistence without modifying harness settings.json.",
+                "title": "Enable Plugin Runtime — Stagnation & Escalation Only (No Hooks, No RAG)",
+                "desc": "Deterministic stagnation detection and ledger persistence without modifying harness hooks or enabling RAG tool.",
                 "plugins_enabled": True,
                 "claude_enabled": False,
+                "subagent_enabled": False,
+                "rag_enabled": False,
             },
             {
                 "id": "disabled",
-                "title": "Disable Plugins (Pure Model Router Only)",
+                "title": "Disable Plugin (Pure Router Mode)",
                 "desc": "Zero overhead, zero background tailing, pure stateless model routing across turns.",
                 "plugins_enabled": False,
                 "claude_enabled": False,
+                "subagent_enabled": False,
+                "rag_enabled": False,
             },
         ]
 
@@ -57,10 +63,12 @@ if _TEXTUAL:
             plugins = getattr(cfg, "plugins", None)
             is_enabled = bool(getattr(plugins, "enabled", False))
             claude_enabled = bool(getattr(plugins, "claude_enabled", False))
+            subagent_enabled = bool(getattr(plugins, "subagent_enabled", False))
+            rag_enabled = bool(getattr(plugins, "rag_enabled", False))
 
-            if is_enabled and claude_enabled:
+            if is_enabled and (claude_enabled or subagent_enabled or rag_enabled):
                 self.cursor = 0
-            elif is_enabled and not claude_enabled:
+            elif is_enabled and not claude_enabled and not subagent_enabled and not rag_enabled:
                 self.cursor = 1
             elif plugins is not None and not is_enabled:
                 self.cursor = 2
@@ -132,6 +140,8 @@ if _TEXTUAL:
                 cfg.plugins = PluginConfig()
             cfg.plugins.enabled = opt["plugins_enabled"]
             cfg.plugins.claude_enabled = opt["claude_enabled"]
+            cfg.plugins.subagent_enabled = opt["subagent_enabled"]
+            cfg.plugins.rag_enabled = opt["rag_enabled"]
             save_config(cfg)
 
             from .screens_extra import LauncherIntegrationScreen
