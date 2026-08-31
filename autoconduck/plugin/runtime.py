@@ -47,6 +47,17 @@ async def start_task(
 
     Returns {"task_id", "report", "rounds", "stagnation_triggered", "outcome", "model", "files_touched", "tools_used"}
     """
+    if cfg is None:
+        try:
+            from autoconduck.config.manager import get_config as _gc
+
+            cfg = _gc()
+        except Exception:
+            cfg = None
+
+    if not getattr(getattr(cfg, "plugins", None), "execute_enabled", False):
+        return {"status": "disabled", "error": "execute_enabled must be true to use internal executor."}
+
     try:
         from autoconduck.plugin.ledger import get_ledger
         from autoconduck.plugin.bias import get_bias_store
@@ -56,14 +67,6 @@ async def start_task(
         from autoconduck.plugin.executor_loop import run_executor_tool_loop
     except Exception as exc:
         return {"status": "error", "error": str(exc), "report": f"# Error\n\n{exc}"}
-
-    if cfg is None:
-        try:
-            from autoconduck.config.manager import get_config as _gc
-
-            cfg = _gc()
-        except Exception:
-            cfg = None
 
     session_id = str(session_id or "default")
     task_id = _new_task_id()

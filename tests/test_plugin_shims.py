@@ -303,17 +303,18 @@ def test_claude_patch_hooks_present_when_enabled(tmp_path, monkeypatch):
     data = json.loads(p.read_text(encoding="utf-8"))
     assert "hooks" in data
     hooks = data["hooks"]
-    for ev in ("PreToolUse", "PostToolUse", "Stop"):
+    for ev in ("PreToolUse", "PostToolUse", "Stop", "SubagentStart", "SubagentStop"):
         assert ev in hooks
-        # at least one entry whose command contains autoconduck hook
+        # at least one entry whose url contains /plugin/events
         found = any(
-            "autoconduck hook claude" in str(h.get("command", ""))
+            "/plugin/events" in str(h.get("url", ""))
             for entry in hooks[ev]
             for h in (entry.get("hooks") or [])
         )
-        assert found, f"missing hook command for {ev}"
+        assert found, f"missing hook http url for {ev}"
     # marker present
     assert data.get("autoconduck", {}).get("hooks_enabled") is True
+    assert data.get("autoconduck", {}).get("ingestion_path") == "http"
 
 
 def test_claude_patch_hooks_absent_when_disabled(tmp_path, monkeypatch):
@@ -340,7 +341,7 @@ def test_claude_patch_hooks_absent_when_disabled(tmp_path, monkeypatch):
             if isinstance(entries, list):
                 for entry in entries:
                     for h in (entry.get("hooks") or []):
-                        assert "autoconduck hook claude" not in str(h.get("command", ""))
+                        assert "/plugin/events" not in str(h.get("url", ""))
 
 
 def test_claude_patch_revert_removes_hooks(tmp_path, monkeypatch):
@@ -369,7 +370,7 @@ def test_claude_patch_revert_removes_hooks(tmp_path, monkeypatch):
             if isinstance(entries, list):
                 for entry in entries:
                     for h in (entry.get("hooks") or []):
-                        assert "autoconduck hook claude" not in str(h.get("command", ""))
+                        assert "/plugin/events" not in str(h.get("url", ""))
 
 
 def test_claude_patch_disabled_byte_identical_after_never_enabled(tmp_path, monkeypatch):
@@ -394,7 +395,7 @@ def test_claude_patch_disabled_byte_identical_after_never_enabled(tmp_path, monk
     data = json.loads(path.read_text(encoding="utf-8"))
     # managed env keys still added (proxy routing), but hooks must be absent
     assert "hooks" not in data or not any(
-        "autoconduck hook claude" in str(h.get("command", ""))
+        "/plugin/events" in str(h.get("url", ""))
         for entries in (data.get("hooks") or {}).values()
         if isinstance(entries, list)
         for entry in entries
@@ -402,8 +403,90 @@ def test_claude_patch_disabled_byte_identical_after_never_enabled(tmp_path, monk
     )
 
 
+def test_claude_code_http_hooks_formatting_and_subagent_inclusion():
+    from autoconduck.harnesses.claude_code import ClaudeCodeAdapter
+
+    adapter = ClaudeCodeAdapter()
+    hooks = adapter._build_hooks_block(port=12345)
+    assert len(hooks) == 5
+    assert set(hooks.keys()) == {"PreToolUse", "PostToolUse", "Stop", "SubagentStart", "SubagentStop"}
+    for ev, entries in hooks.items():
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["matcher"] == ""
+        assert len(entry["hooks"]) == 1
+        h = entry["hooks"][0]
+        assert h["type"] == "http"
+        assert h["url"] == "http://127.0.0.1:12345/plugin/events"
+        assert h["timeoutMs"] == 10
+        if "Subagent" in ev:
+            assert h["_name"] == "AutoConduck Subagent Tracker"
+        else:
+            assert h["_name"] == "AutoConduck Monitor"
+
+    mcp = adapter._build_mcp_block(port=12345)
+    assert mcp == {"autoconduck": {"url": "http://127.0.0.1:12345/mcp", "type": "http"}}
+
+
+def test_plugin_events_subagent_start_and_stop(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from autoconduck.server.plugin_routes import install_plugin_routes
+    from autoconduck.config.manager import get_config
+    import autoconduck.config.manager as m
+    from autoconduck.plugin.bias import get_bias_store
+    from autoconduck.plugin.ledger import get_ledger
+
+    cfg = get_config()
+    cfg.plugins.enabled = True
+    m._config = cfg
+    app = FastAPI()
+    install_plugin_routes(app)
+    client = TestClient(app)
+
+    bias_store = get_bias_store()
+    bias_store.clear_all()
+    ledger = get_ledger()
+
+    # SubagentStart
+    res = client.post("/plugin/events", json={
+        "kind": "SubagentStart",
+        "session_id": "parent-sess-1",
+        "subagent_id": "child-sess-1",
+        "task_id": "t-sub-1",
+    })
+    assert res.status_code == 200
+    assert res.json() == {"status": "ok"}
+    assert bias_store.is_child_session("child-sess-1") is True
+    assert bias_store.is_child_session("parent-sess-1") is False
+
+    # Flush ledger and verify durable row
+    ledger.flush_sync()
+    events = ledger.query_events(session_id="child-sess-1")
+    assert any(
+        e["kind"] == "subagent_start" and e.get("parent_session_id") == "parent-sess-1"
+        for e in events
+    )
+
+    # SubagentStop
+    res2 = client.post("/plugin/events", json={
+        "kind": "SubagentStop",
+        "subagent_id": "child-sess-1",
+        "task_id": "t-sub-1",
+        "data": {"outcome": "success"},
+    })
+    assert res2.status_code == 200
+    assert res2.json() == {"status": "ok"}
+
+    ledger.flush_sync()
+    events2 = ledger.query_events(session_id="child-sess-1")
+    stop_events = [e for e in events2 if e["kind"] == "subagent_stop"]
+    assert len(stop_events) == 1
+    assert "success" in str(stop_events[0].get("data", ""))
+
+
 # ---------------------------------------------------------------------------
-# Pi stub
+# Pi stub and extension
 # ---------------------------------------------------------------------------
 
 def test_pi_template_has_inert_gated_hook_section(tmp_path, monkeypatch):
@@ -421,9 +504,9 @@ def test_pi_template_has_inert_gated_hook_section(tmp_path, monkeypatch):
     assert ext.exists()
     text = ext.read_text(encoding="utf-8")
     assert "const AUTOCONDUCK_HOOKS_ENABLED = false;" in text
+    assert "const AUTOCONDUCK_SUBAGENT_ENABLED = false;" in text
+    assert "_appendSpool" in text
     assert "pi.registerProvider" in text
-    # not enabled → flag false
-    assert text.count("AUTOCONDUCK_HOOKS_ENABLED") >= 1
 
 
 def test_pi_template_flag_true_when_pi_enabled(tmp_path, monkeypatch):
@@ -435,11 +518,100 @@ def test_pi_template_flag_true_when_pi_enabled(tmp_path, monkeypatch):
     cfg = Config()
     cfg.plugins.enabled = True
     cfg.plugins.pi_enabled = True
+    cfg.plugins.subagent_enabled = True
     adapter = PiAdapter()
     adapter.patch(cfg)
     ext = tmp_path / ".pi" / "agent" / "extensions" / "autoconduck.ts"
     text = ext.read_text(encoding="utf-8")
     assert "const AUTOCONDUCK_HOOKS_ENABLED = true;" in text
+    assert "const AUTOCONDUCK_SUBAGENT_ENABLED = true;" in text
+    assert "pi.on('subagent.start'" in text
+    assert "pi.on('subagent.stop'" in text
+    assert "SubagentStart" in text
+    assert "SubagentStop" in text
+
+
+# ---------------------------------------------------------------------------
+# OMP extension
+# ---------------------------------------------------------------------------
+
+def test_omp_extension_and_subagent_listeners(tmp_path, monkeypatch):
+    import pathlib
+    monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
+    from autoconduck.config.models import Config
+    from autoconduck.harnesses.omp import OmpAdapter
+
+    adapter = OmpAdapter()
+    ext_path = adapter._extension_path()
+    assert ext_path == tmp_path / ".omp" / "agent" / "extensions" / "autoconduck.ts"
+
+    rendered = adapter._render_extension(port=11434, hooks_enabled=True, subagent_enabled=True)
+    assert "AutoConduck Monitor & Router" in rendered
+    assert "_appendSpool" in rendered
+    assert "pi.on('agent_start'" in rendered
+    assert "pi.on('agent_end'" in rendered
+    assert "event?.agentKind === 'sub'" in rendered
+    assert "event?.parentSessionId" in rendered
+    assert "SubagentStart" in rendered
+    assert "SubagentStop" in rendered
+
+    cfg = Config()
+    cfg.plugins.enabled = True
+    cfg.plugins.omp_enabled = True
+    cfg.plugins.subagent_enabled = True
+    adapter.patch(cfg)
+    assert ext_path.exists()
+    assert "SubagentStart" in ext_path.read_text(encoding="utf-8")
+
+    adapter.revert()
+    assert not ext_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# OpenCode plugin JS and registration
+# ---------------------------------------------------------------------------
+
+def test_opencode_plugin_js_and_registration(tmp_path, monkeypatch):
+    import pathlib
+    monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(pathlib.Path, "cwd", lambda: tmp_path)
+    from autoconduck.config.models import Config
+    from autoconduck.harnesses.opencode import OpenCodeAdapter
+
+    adapter = OpenCodeAdapter()
+    plugin_path = adapter._plugin_path()
+    assert plugin_path == tmp_path / ".config" / "opencode" / "plugins" / "autoconduck.js"
+
+    rendered = adapter._render_plugin_js(port=11434, hooks_enabled=True, subagent_enabled=True)
+    assert "AutoConduckPlugin" in rendered
+    assert "tool.execute.before" in rendered
+    assert "tool.execute.after" in rendered
+    assert "session.start" in rendered
+    assert "session.end" in rendered
+    assert "SubagentStart" in rendered
+    assert "SubagentStop" in rendered
+    assert "_sendEvent" in rendered
+
+    opencode_cfg = tmp_path / "opencode.json"
+    opencode_cfg.write_text(json.dumps({"providers": {}}), encoding="utf-8")
+
+    cfg = Config()
+    cfg.plugins.enabled = True
+    cfg.plugins.opencode_enabled = True
+    cfg.plugins.subagent_enabled = True
+
+    adapter.patch(cfg)
+    assert plugin_path.exists()
+    assert "AutoConduckPlugin" in plugin_path.read_text(encoding="utf-8")
+
+    cfg_data = json.loads(opencode_cfg.read_text(encoding="utf-8"))
+    assert "plugin" in cfg_data
+    assert any("autoconduck.js" in str(p) for p in cfg_data["plugin"])
+
+    adapter.revert()
+    assert not plugin_path.exists()
+    cfg_data_reverted = json.loads(opencode_cfg.read_text(encoding="utf-8"))
+    assert "plugin" not in cfg_data_reverted or not any("autoconduck.js" in str(p) for p in cfg_data_reverted.get("plugin", []))
 
 
 # ---------------------------------------------------------------------------

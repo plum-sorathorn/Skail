@@ -31,10 +31,107 @@ class OpenCodeAdapter(BaseAdapter):
             home / ".opencode" / "config.json",
         ]
 
+    def _plugin_path(self) -> Path:
+        return Path.home() / ".config" / "opencode" / "plugins" / "autoconduck.js"
+
+    def _render_plugin_js(
+        self,
+        port: int,
+        hooks_enabled: bool = False,
+        subagent_enabled: bool = False,
+        rag_enabled: bool = False,
+    ) -> str:
+        hooks_flag = "true" if hooks_enabled else "false"
+        subagent_flag = "true" if subagent_enabled else "false"
+        rag_flag = "true" if rag_enabled else "false"
+
+        return (
+            "// AutoConduck OpenCode Plugin — managed by autoconduck v0.5.0\n"
+            "// Provides: tool interception, subagent tracking, codebase search\n"
+            "// Reinstall: autoconduck install opencode\n"
+            "// Remove:    autoconduck uninstall opencode\n"
+            "\n"
+            f"const AUTOCONDUCK_PORT = {port};\n"
+            f"const AUTOCONDUCK_HOOKS_ENABLED = {hooks_flag};\n"
+            f"const AUTOCONDUCK_SUBAGENT_ENABLED = {subagent_flag};\n"
+            f"const AUTOCONDUCK_RAG_ENABLED = {rag_flag};\n"
+            "\n"
+            "async function _sendEvent(eventData) {\n"
+            "  try {\n"
+            "    const res = await fetch(`http://127.0.0.1:${AUTOCONDUCK_PORT}/plugin/events`, {\n"
+            '      method: "POST",\n'
+            '      headers: { "Content-Type": "application/json" },\n'
+            "      body: JSON.stringify(eventData),\n"
+            "      signal: AbortSignal.timeout(20),\n"
+            "    });\n"
+            "    return res.ok;\n"
+            "  } catch {\n"
+            "    return false;\n"
+            "  }\n"
+            "}\n"
+            "\n"
+            "export const AutoConduckPlugin = async ({ client }) => {\n"
+            "  return {\n"
+            '    "tool.execute.before": async (input, output) => {\n'
+            "      if (!AUTOCONDUCK_HOOKS_ENABLED) return;\n"
+            "      await _sendEvent({\n"
+            '        kind: "tool_call",\n'
+            '        tool_name: input?.tool,\n'
+            "        data: input,\n"
+            "      });\n"
+            "    },\n"
+            '    "tool.execute.after": async (input, output) => {\n'
+            "      if (!AUTOCONDUCK_HOOKS_ENABLED) return;\n"
+            "      await _sendEvent({\n"
+            '        kind: "tool_result",\n'
+            '        tool_name: input?.tool,\n'
+            "        data: output,\n"
+            "      });\n"
+            "    },\n"
+            '    "event": async ({ event }) => {\n'
+            "      if (!AUTOCONDUCK_SUBAGENT_ENABLED) return;\n"
+            '      if (event?.type === "session.start" && event?.parentSessionId) {\n'
+            "        await _sendEvent({\n"
+            '          kind: "SubagentStart",\n'
+            "          session_id: event.parentSessionId,\n"
+            '          subagent_id: event.sessionId || event.id || "",\n'
+            "        });\n"
+            '      } else if (event?.type === "session.end" && event?.parentSessionId) {\n'
+            "        await _sendEvent({\n"
+            '          kind: "SubagentStop",\n'
+            "          session_id: event.parentSessionId,\n"
+            '          subagent_id: event.sessionId || event.id || "",\n'
+            '          outcome: event.outcome || event.status || "unknown",\n'
+            "        });\n"
+            "      }\n"
+            "    },\n"
+            "  };\n"
+            "};\n"
+            "\n"
+            "export default AutoConduckPlugin;\n"
+        )
+
     def patch(self, config: Config, port: int | None = None) -> None:
         effective_port = int(port if port is not None else getattr(config, "port", 11434))
         endpoint = f"http://127.0.0.1:{effective_port}/v1"
         pseudo_model = getattr(config, "pseudo_model", "autoconduck") or "autoconduck"
+
+        plugins = getattr(config, "plugins", None)
+        hooks_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "opencode_enabled", False)) if plugins is not None else False
+        subagent_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "subagent_enabled", False)) if plugins is not None else False
+        rag_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "rag_enabled", False)) if plugins is not None else False
+
+        plugin_file = self._plugin_path()
+        plugin_file.parent.mkdir(parents=True, exist_ok=True)
+        plugin_file.write_text(
+            self._render_plugin_js(
+                effective_port,
+                hooks_enabled=hooks_enabled,
+                subagent_enabled=subagent_enabled,
+                rag_enabled=rag_enabled,
+            ),
+            encoding="utf-8",
+        )
 
         def updater(data: dict) -> None:
             marker = data.get("autoconduck") if isinstance(data.get("autoconduck"), dict) else {}
@@ -77,6 +174,15 @@ class OpenCodeAdapter(BaseAdapter):
                     },
                 }
 
+            # Register plugin in opencode.json
+            plugin_entries = data.get("plugin")
+            if not isinstance(plugin_entries, list):
+                plugin_entries = []
+                data["plugin"] = plugin_entries
+            entry_str = "~/.config/opencode/plugins/autoconduck.js"
+            if entry_str not in plugin_entries and not any("autoconduck.js" in str(x) for x in plugin_entries):
+                plugin_entries.append(entry_str)
+
             # Managed active model
             data["model"] = f"autoconduck/{pseudo_model}"
             marker["managed"] = True
@@ -88,6 +194,13 @@ class OpenCodeAdapter(BaseAdapter):
 
     def revert(self) -> None:
         """Restore previous configuration or cleanly remove AutoConduck entries."""
+        plugin_file = self._plugin_path()
+        if plugin_file.exists():
+            try:
+                plugin_file.unlink()
+            except OSError:
+                pass
+
         dest_dir = backups_dir(self.id)
         if dest_dir.exists():
             for bak in sorted(dest_dir.glob("*.bak"), reverse=True):
@@ -119,6 +232,13 @@ class OpenCodeAdapter(BaseAdapter):
                     data["provider"].pop("autoconduck", None)
                     if not data["provider"]:
                         data.pop("provider", None)
+                if isinstance(data.get("plugin"), list):
+                    data["plugin"] = [
+                        e for e in data["plugin"]
+                        if not ("autoconduck.js" in str(e) or e == str(self._plugin_path()) or e == "~/.config/opencode/plugins/autoconduck.js")
+                    ]
+                    if not data["plugin"]:
+                        data.pop("plugin", None)
                 if isinstance(marker, dict) and "previous_model" in marker:
                     data["model"] = marker["previous_model"]
                 elif str(data.get("model", "")).startswith("autoconduck"):

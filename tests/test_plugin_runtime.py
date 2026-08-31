@@ -331,6 +331,26 @@ def test_execute_disabled_returns_disabled(tmp_path):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
+async def test_runtime_execute_disabled_returns_disabled(tmp_path):
+    from autoconduck.plugin.runtime import start_task
+    from autoconduck.config.manager import get_config
+    import autoconduck.config.manager as m
+
+    cfg = get_config()
+    cfg.plugins.enabled = True
+    cfg.plugins.execute_enabled = False
+    m._config = cfg
+
+    res = await start_task(
+        session_id="sessDisabled",
+        goal="read hello.txt",
+        cfg=cfg,
+    )
+    assert res.get("status") == "disabled"
+    assert "execute_enabled must be true" in res.get("error", "")
+
+
+@pytest.mark.asyncio
 async def test_runtime_trivial_read_only(tmp_path):
     from autoconduck.plugin.runtime import start_task
     from autoconduck.config.manager import get_config
@@ -338,6 +358,7 @@ async def test_runtime_trivial_read_only(tmp_path):
 
     cfg = get_config()
     cfg.plugins.enabled = True
+    cfg.plugins.execute_enabled = True
     cfg.plugins.escalation_ttl_turns = 10
     cfg.plugins.escalation_floor_bump = 0.15
     m._config = cfg
@@ -382,6 +403,7 @@ async def test_runtime_stagnation_triggers_bias(tmp_path):
 
     cfg = get_config()
     cfg.plugins.enabled = True
+    cfg.plugins.execute_enabled = True
     cfg.plugins.escalation_ttl_turns = 5
     cfg.plugins.escalation_floor_bump = 0.2
     m._config = cfg

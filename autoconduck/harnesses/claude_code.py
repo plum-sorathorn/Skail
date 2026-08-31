@@ -30,8 +30,8 @@ class ClaudeCodeAdapter(BaseAdapter):
             home / ".claude" / "settings.json",
         ]
 
-    # Hooks managed by the plugin shim (Phase 3). One command per event, observe-only.
-    HOOK_EVENTS = ("PreToolUse", "PostToolUse", "Stop")
+    # Hooks managed by the plugin shim (Phase B). HTTP hooks per event, observe-only.
+    HOOK_EVENTS = ("PreToolUse", "PostToolUse", "Stop", "SubagentStart", "SubagentStop")
     HOOK_COMMAND_TMPL = "autoconduck hook claude {event}"
 
     def _hooks_enabled(self, config: Config) -> bool:
@@ -43,17 +43,27 @@ class ClaudeCodeAdapter(BaseAdapter):
         except Exception:
             return False
 
-    def _build_hooks_block(self) -> dict:
+    def _build_hooks_block(self, port: int = 11434) -> dict:
         hooks: dict[str, list[dict]] = {}
         for ev in self.HOOK_EVENTS:
-            cmd = self.HOOK_COMMAND_TMPL.format(event=ev)
+            label = "AutoConduck Subagent Tracker" if "Subagent" in ev else "AutoConduck Monitor"
             hooks[ev] = [
                 {
                     "matcher": "",
-                    "hooks": [{"type": "command", "command": cmd}],
+                    "hooks": [
+                        {
+                            "type": "http",
+                            "url": f"http://127.0.0.1:{port}/plugin/events",
+                            "timeoutMs": 10,
+                            "_name": label,
+                        }
+                    ],
                 }
             ]
         return hooks
+
+    def _build_mcp_block(self, port: int = 11434) -> dict:
+        return {"autoconduck": {"url": f"http://127.0.0.1:{port}/mcp", "type": "http"}}
 
     def _is_autoconduck_hook_entry(self, entry: dict) -> bool:
         try:
@@ -61,13 +71,17 @@ class ClaudeCodeAdapter(BaseAdapter):
             if not isinstance(inner, list):
                 return False
             for h in inner:
-                if isinstance(h, dict) and "autoconduck hook claude" in str(h.get("command", "")):
-                    return True
+                if isinstance(h, dict):
+                    cmd = str(h.get("command", ""))
+                    url = str(h.get("url", ""))
+                    name = str(h.get("_name", ""))
+                    if "autoconduck hook claude" in cmd or "/plugin/events" in url or name.startswith("AutoConduck"):
+                        return True
             return False
         except Exception:
             return False
 
-    def _merge_hooks(self, existing: dict | None) -> dict:
+    def _merge_hooks(self, existing: dict | None, port: int = 11434) -> dict:
         """Merge autoconduck hook entries into existing hooks dict, idempotent."""
         base: dict[str, list] = {}
         if isinstance(existing, dict):
@@ -79,7 +93,7 @@ class ClaudeCodeAdapter(BaseAdapter):
                 kept = [e for e in v if not self._is_autoconduck_hook_entry(e)]
                 if kept:
                     base[k] = kept
-        managed = self._build_hooks_block()
+        managed = self._build_hooks_block(port=port)
         for ev, entries in managed.items():
             lst = base.get(ev)
             if not isinstance(lst, list):
@@ -199,7 +213,10 @@ class ClaudeCodeAdapter(BaseAdapter):
         hooks_enabled = self._hooks_enabled(config)
         existing_hooks = data.get("hooks")
         if hooks_enabled:
-            merged = self._merge_hooks(existing_hooks if isinstance(existing_hooks, dict) else None)
+            merged = self._merge_hooks(
+                existing_hooks if isinstance(existing_hooks, dict) else None,
+                port=effective_port,
+            )
             data["hooks"] = merged
             contributed_hooks = list(self.HOOK_EVENTS)
         else:
@@ -226,6 +243,7 @@ class ClaudeCodeAdapter(BaseAdapter):
             "previous_hooks": previous_hooks,
             "contributed_hooks_events": contributed_hooks if hooks_enabled else [],
             "hooks_enabled": bool(hooks_enabled),
+            "ingestion_path": "http",
         }
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -44,6 +45,70 @@ class OmpAdapter(BaseAdapter):
     def settings_paths(self) -> list[Path]:
         home = Path.home() / ".omp" / "agent"
         return [home / "config.yml", home / "config.yaml"]
+
+    def _extension_path(self) -> Path:
+        return Path.home() / ".omp" / "agent" / "extensions" / "autoconduck.ts"
+
+    def _render_extension(
+        self,
+        port: int,
+        hooks_enabled: bool = False,
+        subagent_enabled: bool = False,
+        rag_enabled: bool = False,
+        spool_path: str | None = None,
+    ) -> str:
+        hooks_flag = "true" if hooks_enabled else "false"
+        subagent_flag = "true" if subagent_enabled else "false"
+        rag_flag = "true" if rag_enabled else "false"
+
+        if spool_path is None:
+            try:
+                from autoconduck.config.paths import run_dir
+
+                spool_path = str(run_dir() / "plugin_spool.jsonl")
+            except Exception:
+                spool_path = str(Path.home() / ".autoconduck" / "run" / "plugin_spool.jsonl")
+
+        spool_json = json.dumps(str(spool_path))
+
+        return (
+            "// AutoConduck Monitor & Router — managed by autoconduck v0.5.0\n"
+            "// Provides: subagent tracking, codebase search\n"
+            "// Reinstall: autoconduck install omp\n"
+            "// Remove:    autoconduck uninstall omp\n"
+            'import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";\n'
+            "\n"
+            f"const SPOOL_JSON_PATH = {spool_json};\n"
+            "\n"
+            "function _appendSpool(data: Record<string, unknown>): void {\n"
+            "  try {\n"
+            "    const fs = require('fs');\n"
+            "    const path = require('path');\n"
+            "    const spool = SPOOL_JSON_PATH;\n"
+            "    fs.mkdirSync(path.dirname(spool), { recursive: true });\n"
+            "    fs.appendFileSync(spool, JSON.stringify({ ts: new Date().toISOString(), ...data }) + '\\n');\n"
+            "  } catch {}\n"
+            "}\n"
+            "\n"
+            "export default function (pi: ExtensionAPI) {\n"
+            f"  const AUTOCONDUCK_HOOKS_ENABLED = {hooks_flag};\n"
+            f"  const AUTOCONDUCK_SUBAGENT_ENABLED = {subagent_flag};\n"
+            f"  const AUTOCONDUCK_RAG_ENABLED = {rag_flag};\n"
+            "\n"
+            "  if (AUTOCONDUCK_SUBAGENT_ENABLED) {\n"
+            "    pi.on('agent_start', (event: any) => {\n"
+            "      if (event?.agentKind === 'sub' && event?.parentSessionId) {\n"
+            "        _appendSpool({ event: 'SubagentStart', session_id: event.parentSessionId, subagent_id: event.sessionId || event.id || '' });\n"
+            "      }\n"
+            "    });\n"
+            "    pi.on('agent_end', (event: any) => {\n"
+            "      if (event?.agentKind === 'sub' && event?.parentSessionId) {\n"
+            "        _appendSpool({ event: 'SubagentStop', session_id: event.parentSessionId, subagent_id: event.sessionId || event.id || '', outcome: event.outcome ?? event.status ?? 'unknown' });\n"
+            "      }\n"
+            "    });\n"
+            "  }\n"
+            "}\n"
+        )
 
     def patch(self, config: Config, port: int | None = None) -> None:
         import yaml
@@ -119,8 +184,39 @@ class OmpAdapter(BaseAdapter):
             yaml.safe_dump(settings, sort_keys=False), encoding="utf-8"
         )
 
+        plugins = getattr(config, "plugins", None)
+        hooks_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "omp_enabled", False)) if plugins is not None else False
+        subagent_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "subagent_enabled", False)) if plugins is not None else False
+        rag_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "rag_enabled", False)) if plugins is not None else False
+        try:
+            from autoconduck.config.paths import run_dir
+
+            spool_path = str(run_dir() / "plugin_spool.jsonl")
+        except Exception:
+            spool_path = str(Path.home() / ".autoconduck" / "run" / "plugin_spool.jsonl")
+
+        ext_path = self._extension_path()
+        ext_path.parent.mkdir(parents=True, exist_ok=True)
+        ext_path.write_text(
+            self._render_extension(
+                effective_port,
+                hooks_enabled=hooks_enabled,
+                subagent_enabled=subagent_enabled,
+                rag_enabled=rag_enabled,
+                spool_path=spool_path,
+            ),
+            encoding="utf-8",
+        )
+
     def revert(self) -> None:
         """Restore the latest backup for OMP, or remove only our provider."""
+        ext_path = self._extension_path()
+        if ext_path.exists():
+            try:
+                ext_path.unlink()
+            except OSError:
+                pass
+
         bak_dir = backups_dir(self.id)
         restored_sources: set[Path] = set()
         if bak_dir.exists():

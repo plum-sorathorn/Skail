@@ -95,7 +95,16 @@ class PiAdapter(BaseAdapter):
                 return env_value
         return "autoconduck-local"
 
-    def _render_extension(self, base_url: str, api_key: str, context_window: int = 1000000, hooks_enabled: bool = False) -> str:
+    def _render_extension(
+        self,
+        base_url: str,
+        api_key: str,
+        context_window: int = 1000000,
+        hooks_enabled: bool = False,
+        subagent_enabled: bool = False,
+        rag_enabled: bool = False,
+        spool_path: str | None = None,
+    ) -> str:
         models = [self._model_definition(model, context_window) for model in self.PSEUDO_MODELS]
         models_json = json.dumps(models, indent=6)
         # Re-indent so the array sits correctly inside the object literal.
@@ -104,9 +113,37 @@ class PiAdapter(BaseAdapter):
             for idx, line in enumerate(models_json.splitlines())
         )
         hooks_flag = "true" if hooks_enabled else "false"
+        subagent_flag = "true" if subagent_enabled else "false"
+        rag_flag = "true" if rag_enabled else "false"
+
+        if spool_path is None:
+            try:
+                from autoconduck.config.paths import run_dir
+
+                spool_path = str(run_dir() / "plugin_spool.jsonl")
+            except Exception:
+                spool_path = str(Path.home() / ".autoconduck" / "run" / "plugin_spool.jsonl")
+
+        spool_json = json.dumps(str(spool_path))
+
         return (
-            "// AutoConduck-managed provider registration. Recreate with: autoconduck install pi\n"
+            "// AutoConduck Monitor & Router — managed by autoconduck v0.5.0\n"
+            "// Provides: provider routing, subagent tracking, codebase search\n"
+            "// Reinstall: autoconduck install pi\n"
+            "// Remove:    autoconduck uninstall pi\n"
             'import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";\n'
+            "\n"
+            f"const SPOOL_JSON_PATH = {spool_json};\n"
+            "\n"
+            "function _appendSpool(data: Record<string, unknown>): void {\n"
+            "  try {\n"
+            "    const fs = require('fs');\n"
+            "    const path = require('path');\n"
+            "    const spool = SPOOL_JSON_PATH;\n"
+            "    fs.mkdirSync(path.dirname(spool), { recursive: true });\n"
+            "    fs.appendFileSync(spool, JSON.stringify({ ts: new Date().toISOString(), ...data }) + '\\n');\n"
+            "  } catch {}\n"
+            "}\n"
             "\n"
             "export default function (pi: ExtensionAPI) {\n"
             f'  pi.registerProvider("{self.provider_name}", {{\n'
@@ -119,14 +156,19 @@ class PiAdapter(BaseAdapter):
             '    },\n'
             f"    models: {indented_models},\n"
             "  });\n"
-            "}\n"
             "\n"
-            "// --- AutoConduck hooks (Phase 3 stub — inert, gated) ---\n"
-            f"const AUTOCONDUCK_HOOKS_ENABLED = {hooks_flag};\n"
-            "if (AUTOCONDUCK_HOOKS_ENABLED) {\n"
-            "  // Planned: pi.on('tool.execute', ...) → spool append; disabled in v1.\n"
-            "  // When plugins.pi_enabled flips true (Phase 4+), regeneration emits true\n"
-            "  // and this block registers the real hook. Provider registration above unchanged.\n"
+            f"  const AUTOCONDUCK_HOOKS_ENABLED = {hooks_flag};\n"
+            f"  const AUTOCONDUCK_SUBAGENT_ENABLED = {subagent_flag};\n"
+            f"  const AUTOCONDUCK_RAG_ENABLED = {rag_flag};\n"
+            "\n"
+            "  if (AUTOCONDUCK_SUBAGENT_ENABLED) {\n"
+            "    pi.on('subagent.start', (event: { parentId: string; childId: string }) => {\n"
+            "      _appendSpool({ event: 'SubagentStart', session_id: event.parentId, subagent_id: event.childId });\n"
+            "    });\n"
+            "    pi.on('subagent.stop', (event: { parentId: string; childId: string; outcome?: string }) => {\n"
+            "      _appendSpool({ event: 'SubagentStop', session_id: event.parentId, subagent_id: event.childId, outcome: event.outcome ?? 'unknown' });\n"
+            "    });\n"
+            "  }\n"
             "}\n"
         )
 
@@ -148,9 +190,29 @@ class PiAdapter(BaseAdapter):
 
         plugins = getattr(config, "plugins", None)
         hooks_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "pi_enabled", False)) if plugins is not None else False
+        subagent_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "subagent_enabled", False)) if plugins is not None else False
+        rag_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "rag_enabled", False)) if plugins is not None else False
+        try:
+            from autoconduck.config.paths import run_dir
+
+            spool_path = str(run_dir() / "plugin_spool.jsonl")
+        except Exception:
+            spool_path = str(Path.home() / ".autoconduck" / "run" / "plugin_spool.jsonl")
+
         extension_file = self._extension_path()
         extension_file.parent.mkdir(parents=True, exist_ok=True)
-        extension_file.write_text(self._render_extension(base_url, api_key, context_window, hooks_enabled=hooks_enabled), encoding="utf-8")
+        extension_file.write_text(
+            self._render_extension(
+                base_url,
+                api_key,
+                context_window,
+                hooks_enabled=hooks_enabled,
+                subagent_enabled=subagent_enabled,
+                rag_enabled=rag_enabled,
+                spool_path=spool_path,
+            ),
+            encoding="utf-8",
+        )
 
         def update(data: dict) -> None:
             data["defaultProvider"] = self.provider_name

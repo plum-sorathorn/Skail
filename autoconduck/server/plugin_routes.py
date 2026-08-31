@@ -11,7 +11,17 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_EVENT_KINDS = frozenset({"tool_call", "tool_result", "task_start", "task_progress", "task_done"})
+ALLOWED_EVENT_KINDS = frozenset({
+    "tool_call",
+    "tool_result",
+    "task_start",
+    "task_progress",
+    "task_done",
+    "SubagentStart",
+    "SubagentStop",
+    "subagent_start",
+    "subagent_stop",
+})
 DURABLE_VIA_EVENTS = frozenset({"task_start"})
 ALLOWED_ESCALATE_REASONS = frozenset({"consecutive_errors", "repeated_calls", "requested_review", "acceptance_failed"})
 
@@ -48,10 +58,47 @@ async def _events_handler(request: Request):  # type: ignore[no-untyped-def]
             return JSONResponse(content={"status": "ignored", "reason": "invalid_json"})
         session_id = str(body.get("session_id") or "")
         task_id = str(body.get("task_id") or body.get("taskId") or uuid.uuid4().hex[:8])
-        kind = str(body.get("kind") or "")
+        kind = str(body.get("kind") or body.get("event") or "")
         data = body.get("data")
         if kind not in ALLOWED_EVENT_KINDS:
             return JSONResponse(content={"status": "ignored", "reason": "unknown_kind"})
+
+        if kind in ("SubagentStart", "subagent_start"):
+            parent_id = str(body.get("session_id") or "")
+            child_id = str(body.get("subagent_id") or "")
+            if parent_id and child_id:
+                try:
+                    from autoconduck.plugin.bias import get_bias_store
+                    from autoconduck.plugin.ledger import get_ledger
+
+                    get_bias_store().register_child_session(child_id, parent_id)
+                    get_ledger().enqueue(
+                        child_id,
+                        task_id,
+                        "subagent_start",
+                        {"parent_session_id": parent_id},
+                        parent_session_id=parent_id,
+                    )
+                except Exception as exc:
+                    logger.warning("plugin /events SubagentStart error: %s", exc)
+            return JSONResponse(content={"status": "ok"})
+
+        if kind in ("SubagentStop", "subagent_stop"):
+            child_id = str(body.get("subagent_id") or body.get("session_id") or "")
+            outcome = body.get("data", {}).get("outcome") if isinstance(body.get("data"), dict) else body.get("outcome")
+            try:
+                from autoconduck.plugin.ledger import get_ledger
+
+                get_ledger().enqueue(
+                    child_id,
+                    task_id,
+                    "subagent_stop",
+                    {"outcome": str(outcome or "unknown")},
+                )
+            except Exception as exc:
+                logger.warning("plugin /events SubagentStop error: %s", exc)
+            return JSONResponse(content={"status": "ok"})
+
         try:
             from autoconduck.plugin.ledger import get_ledger
 
