@@ -39,6 +39,7 @@ async def test_all_tui_screens_mount_and_render_without_markup_errors():
     from autoconduck.tui.onboarding.screens import OnboardingScreen, ModelSourceScreen, ModelSelectionScreen
     from autoconduck.tui.onboarding.screens_custom import ApiKeyScreen, CustomProvidersScreen
     from autoconduck.tui.onboarding.screens_extra import ProviderFormScreen, LauncherIntegrationScreen
+    from autoconduck.tui.onboarding.screens_plugin import PluginSetupScreen
     from autoconduck.tui.onboarding.screens_slm import SLMSetupScreen
     from autoconduck.tui.onboarding.screens_models import ModelCatalogScreen
 
@@ -55,6 +56,7 @@ async def test_all_tui_screens_mount_and_render_without_markup_errors():
         ApiKeyScreen(None, [], "anthropic"),
         CustomProvidersScreen(None, []),
         ProviderFormScreen(None, []),
+        PluginSetupScreen(None, ["claude_code"]),
         LauncherIntegrationScreen(None, ["claude_code"]),
         SLMSetupScreen(None),
         ModelCatalogScreen(),
@@ -70,4 +72,29 @@ async def test_all_tui_screens_mount_and_render_without_markup_errors():
 
     app = RenderTestApp()
     await app.run_async(headless=True)
+
+
+def test_plugin_setup_screen_options_and_config():
+    from autoconduck.tui.onboarding.screens_plugin import PluginSetupScreen
+    from autoconduck.config import get_config, save_config
+
+    screen = PluginSetupScreen(None, ["claude_code"])
+    assert len(screen.OPTIONS) == 3
+    assert screen.OPTIONS[0]["plugins_enabled"] is True
+    assert screen.OPTIONS[0]["claude_enabled"] is True
+    assert screen.OPTIONS[2]["plugins_enabled"] is False
+
+    # Simulate confirming option 0 (Full recommended)
+    screen.selected_idx = 0
+    screen._confirm_and_continue()
+    cfg = get_config()
+    assert cfg.plugins.enabled is True
+    assert cfg.plugins.claude_enabled is True
+
+    # Simulate confirming option 2 (Disabled)
+    screen.selected_idx = 2
+    screen._confirm_and_continue()
+    cfg = get_config()
+    assert cfg.plugins.enabled is False
+    assert cfg.plugins.claude_enabled is False
 

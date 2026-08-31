@@ -87,16 +87,10 @@ if _TEXTUAL:
                         cfg.preset_overrides.get(self.key, []), value
                     )
                     _persist(cfg)
-                    if self.agents & LauncherIntegrationScreen.ELIGIBLE:
-                        self.controller.push_screen(
-                            LauncherIntegrationScreen(self.controller, self.agents)
-                        )
-                    else:
-                        configure_selected_agents(self.agents)
-                        from .screens_slm import SLMSetupScreen
-                        self.controller.push_screen(
-                            SLMSetupScreen(self.controller)
-                        )
+                    from .screens_plugin import PluginSetupScreen
+                    self.controller.push_screen(
+                        PluginSetupScreen(self.controller, self.agents)
+                    )
                 except Exception as exc:
                     self.query_one("#error").update(str(exc))
 
@@ -206,16 +200,10 @@ if _TEXTUAL:
                     dict.fromkeys(cfg.selected_presets + ["custom"])
                 )
                 _persist(cfg)
-                if self.agents & LauncherIntegrationScreen.ELIGIBLE:
-                    self.controller.push_screen(
-                        LauncherIntegrationScreen(self.controller, self.agents)
-                    )
-                else:
-                    configure_selected_agents(self.agents)
-                    from .screens_slm import SLMSetupScreen
-                    self.controller.push_screen(
-                        SLMSetupScreen(self.controller)
-                    )
+                from .screens_plugin import PluginSetupScreen
+                self.controller.push_screen(
+                    PluginSetupScreen(self.controller, self.agents)
+                )
 
 
 from .screens_extra import ProviderFormScreen, LauncherIntegrationScreen

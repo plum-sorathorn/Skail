@@ -7,6 +7,7 @@ from .screens import (
 )
 from .screens_custom import ApiKeyScreen, CustomProvidersScreen
 from .screens_extra import ProviderFormScreen, LauncherIntegrationScreen
+from .screens_plugin import PluginSetupScreen
 from .screens_slm import SLMSetupScreen
 from .screens_models import ModelCatalogScreen
 from .slm_progress import DownloadProgress, download_progress
@@ -35,6 +36,7 @@ __all__ = [
     "ApiKeyScreen",
     "CustomProvidersScreen",
     "ProviderFormScreen",
+    "PluginSetupScreen",
     "LauncherIntegrationScreen",
     "SLMSetupScreen",
     "ModelCatalogScreen",
