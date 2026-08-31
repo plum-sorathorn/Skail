@@ -143,6 +143,14 @@ def _tier_from_pseudo(pseudo_model: str) -> str | None:
 
 
 def _select_planned(sla: CapabilitySLA, plan: Any, config: Any, pseudo_model: str, tier: str | None, session_id: str | None = None):
+    effective_pseudo = pseudo_model
+    if session_id:
+        try:
+            from autoconduck.plugin.bias import get_bias_store
+            if get_bias_store().is_child_session(session_id):
+                effective_pseudo = "autoconduck-budget"
+        except Exception:
+            pass
     try:
         confidence = max(0.0, min(1.0, float(plan.confidence)))
         selection = getattr(config, "selection", None)
@@ -171,9 +179,9 @@ def _select_planned(sla: CapabilitySLA, plan: Any, config: Any, pseudo_model: st
             max_price_usd_per_mtok=ceiling,
             task_type=getattr(plan, "task_type", None),
         )
-        return pricing.select_for_sla_detailed(modified, config=config, pseudo_model=pseudo_model)
+        return pricing.select_for_sla_detailed(modified, config=config, pseudo_model=effective_pseudo)
     except Exception:
-        return pricing.select_for_sla_detailed(sla, config=config, pseudo_model=pseudo_model)
+        return pricing.select_for_sla_detailed(sla, config=config, pseudo_model=effective_pseudo)
 
 
 def pick_fast_model(body_model: str = "autoconduck", cfg: Any = None) -> str:

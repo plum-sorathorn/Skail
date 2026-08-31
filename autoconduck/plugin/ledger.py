@@ -15,9 +15,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-DURABLE_KINDS = frozenset({"task_start", "escalation", "terminal_result", "error"})
+DURABLE_KINDS = frozenset({"task_start", "escalation", "terminal_result", "error", "subagent_start", "subagent_stop"})
 # Endpoint-facing kinds that are valid but not all durable (non-durable counted only)
-ALLOWED_EVENT_KINDS = frozenset({"tool_call", "tool_result", "task_start", "task_progress", "task_done"})
+ALLOWED_EVENT_KINDS = frozenset({"tool_call", "tool_result", "task_start", "task_progress", "task_done", "subagent_start", "subagent_stop"})
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -26,10 +26,12 @@ CREATE TABLE IF NOT EXISTS events (
     session_id TEXT NOT NULL,
     task_id TEXT NOT NULL,
     kind TEXT NOT NULL,
-    data TEXT
+    data TEXT,
+    parent_session_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+CREATE INDEX IF NOT EXISTS idx_events_parent ON events(parent_session_id);
 """
 
 
@@ -65,7 +67,22 @@ class PluginLedger:
             conn = sqlite3.connect(str(self.db_path), timeout=5.0)
             try:
                 conn.execute("PRAGMA journal_mode=WAL;")
+                # Migration check for legacy tables before schema/index creation
+                try:
+                    columns = [row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()]
+                    if columns and "parent_session_id" not in columns:
+                        conn.execute("ALTER TABLE events ADD COLUMN parent_session_id TEXT;")
+                except Exception as exc:
+                    logger.warning("ledger pre-migration check failed: %s", exc)
                 conn.executescript(SCHEMA)
+                # Ensure parent_session_id column exists if table was just created or modified
+                try:
+                    columns = [row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()]
+                    if "parent_session_id" not in columns:
+                        conn.execute("ALTER TABLE events ADD COLUMN parent_session_id TEXT;")
+                        conn.execute("CREATE INDEX IF NOT EXISTS idx_events_parent ON events(parent_session_id);")
+                except Exception as exc:
+                    logger.warning("ledger migration failed: %s", exc)
                 conn.commit()
                 # retention prune on startup
                 try:
@@ -83,7 +100,14 @@ class PluginLedger:
             logger.warning("ledger _ensure_db failed: %s", exc)
 
     # -- Enqueue --------------------------------------------------------
-    def enqueue(self, session_id: str, task_id: str, kind: str, data: Any | None = None) -> bool:
+    def enqueue(
+        self,
+        session_id: str,
+        task_id: str,
+        kind: str,
+        data: Any | None = None,
+        parent_session_id: str | None = None,
+    ) -> bool:
         """
         Queue a durable event for batch flush.
         Returns True if queued, False if counted-only or dropped.
@@ -123,6 +147,7 @@ class PluginLedger:
                 "task_id": str(task_id) if task_id else uuid.uuid4().hex[:8],
                 "kind": kind,
                 "data": payload,
+                "parent_session_id": str(parent_session_id) if parent_session_id else None,
             }
             need_signal = False
             with self._lock:
@@ -175,11 +200,18 @@ class PluginLedger:
             try:
                 conn.execute("PRAGMA journal_mode=WAL;")
                 rows = [
-                    (e["ts"], e["session_id"], e["task_id"], e["kind"], e["data"])
+                    (
+                        e["ts"],
+                        e["session_id"],
+                        e["task_id"],
+                        e["kind"],
+                        e["data"],
+                        e.get("parent_session_id"),
+                    )
                     for e in batch
                 ]
                 conn.executemany(
-                    "INSERT INTO events (ts, session_id, task_id, kind, data) VALUES (?,?,?,?,?)",
+                    "INSERT INTO events (ts, session_id, task_id, kind, data, parent_session_id) VALUES (?,?,?,?,?,?)",
                     rows,
                 )
                 conn.commit()
@@ -257,7 +289,7 @@ class PluginLedger:
         try:
             conn = sqlite3.connect(str(self.db_path), timeout=5.0)
             try:
-                q = "SELECT id, ts, session_id, task_id, kind, data FROM events"
+                q = "SELECT id, ts, session_id, task_id, kind, data, parent_session_id FROM events"
                 conds: list[str] = []
                 params: list[Any] = []
                 if session_id is not None:
@@ -278,7 +310,15 @@ class PluginLedger:
                     except Exception:
                         data = {"raw": r[5]}
                     out.append(
-                        {"id": r[0], "ts": r[1], "session_id": r[2], "task_id": r[3], "kind": r[4], "data": data}
+                        {
+                            "id": r[0],
+                            "ts": r[1],
+                            "session_id": r[2],
+                            "task_id": r[3],
+                            "kind": r[4],
+                            "data": data,
+                            "parent_session_id": r[6],
+                        }
                     )
                 return out
             finally:

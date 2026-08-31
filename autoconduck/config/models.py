@@ -39,6 +39,7 @@ class SelectionConfig(BaseModel):
     session_guard_compaction_ratio: float = 0.80
     rag_max_tokens: int = 250
     rag_db_path: str = "~/.autoconduck/rag_db"
+    rag_embedding_model: str = ""
 
     closeness_epsilon: float = 0.02
     expose_value_in_stats: bool = True
@@ -67,6 +68,9 @@ class SelectionConfig(BaseModel):
 class PluginConfig(BaseModel):
     enabled: bool = False
     claude_enabled: bool = False
+    omp_enabled: bool = False
+    subagent_enabled: bool = False
+    rag_enabled: bool = True
     pi_enabled: bool = False
     opencode_enabled: bool = False
     ledger_retention_days: int = 30

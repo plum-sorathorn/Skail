@@ -444,3 +444,155 @@ def test_plugin_endpoints_never_500(tmp_path):
         assert r.status_code != 500
     r = client.get("/plugin/contract")
     assert r.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Phase A Tests
+# ---------------------------------------------------------------------------
+
+def test_phase_a_config_models():
+    from autoconduck.config.models import PluginConfig, SelectionConfig
+
+    p = PluginConfig()
+    assert p.omp_enabled is False
+    assert p.subagent_enabled is False
+    assert p.rag_enabled is True
+    assert p.enabled is False
+    assert p.claude_enabled is False
+    assert p.pi_enabled is False
+    assert p.opencode_enabled is False
+    assert p.ledger_retention_days == 30
+    assert p.escalation_ttl_turns == 10
+    assert p.escalation_floor_bump == 0.15
+    assert p.llm_synthesis_enabled is False
+    assert p.execute_enabled is False
+
+    s = SelectionConfig()
+    assert s.rag_embedding_model == ""
+    assert not hasattr(s, "subagent_budget_cap_mtok")
+
+
+def test_bias_store_child_sessions():
+    from autoconduck.plugin.bias import SessionBiasStore
+
+    store = SessionBiasStore()
+    assert not store.is_child_session(None)
+    assert not store.is_child_session("")
+    assert not store.is_child_session("child_1")
+
+    store.register_child_session("child_1", "parent_1")
+    assert store.is_child_session("child_1")
+    assert not store.is_child_session("parent_1")
+
+    snap = store.snapshot()
+    assert snap.get("children", {}).get("child_1") == "parent_1"
+
+    # Reset specific session
+    store.reset_session("child_1")
+    assert not store.is_child_session("child_1")
+    assert "child_1" not in store.snapshot().get("children", {})
+
+    # Clear all
+    store.register_child_session("child_2", "parent_2")
+    assert store.is_child_session("child_2")
+    store.clear_all()
+    assert not store.is_child_session("child_2")
+    assert len(store.snapshot().get("children", {})) == 0
+
+    # Fail soft on empty inputs
+    store.register_child_session("", "parent")
+    store.register_child_session("child", "")
+    assert not store.is_child_session("child")
+
+
+def test_ledger_subagent_events_and_parent_session(tmp_path):
+    from autoconduck.plugin.ledger import PluginLedger, DURABLE_KINDS, ALLOWED_EVENT_KINDS
+
+    assert "subagent_start" in DURABLE_KINDS
+    assert "subagent_stop" in DURABLE_KINDS
+    assert "subagent_start" in ALLOWED_EVENT_KINDS
+    assert "subagent_stop" in ALLOWED_EVENT_KINDS
+
+    db = tmp_path / "subagent_ledger.db"
+    ledger = PluginLedger(db_path=db, retention_days=30)
+
+    # Enqueue subagent events with parent_session_id
+    assert ledger.enqueue("child_sess", "task_sub_1", "subagent_start", {"subagent": "worker"}, parent_session_id="parent_sess")
+    assert ledger.enqueue("child_sess", "task_sub_1", "subagent_stop", {"status": "success"}, parent_session_id="parent_sess")
+    assert ledger.flush_sync() == 2
+
+    rows = ledger.query_events(session_id="child_sess")
+    assert len(rows) == 2
+    assert rows[0]["parent_session_id"] == "parent_sess"
+    assert rows[1]["parent_session_id"] == "parent_sess"
+
+
+def test_ledger_migration_parent_session_id(tmp_path):
+    from autoconduck.plugin.ledger import PluginLedger
+
+    db = tmp_path / "legacy_ledger.db"
+    # Create legacy schema without parent_session_id column
+    conn = sqlite3.connect(str(db))
+    conn.execute("""
+    CREATE TABLE events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        data TEXT
+    );
+    """)
+    conn.execute("INSERT INTO events (ts, session_id, task_id, kind, data) VALUES ('2026-08-31T00:00:00Z', 's1', 't1', 'task_start', '{}');")
+    conn.commit()
+    conn.close()
+
+    # Now init PluginLedger which should run migration
+    ledger = PluginLedger(db_path=db, retention_days=30)
+    assert ledger.enqueue("s2", "t2", "subagent_start", {"k": "v"}, parent_session_id="p1")
+    assert ledger.flush_sync() == 1
+
+    rows = ledger.query_events(limit=10)
+    assert len(rows) == 2
+    # Old event has None for parent_session_id
+    old_row = next(r for r in rows if r["session_id"] == "s1")
+    assert old_row["parent_session_id"] is None
+    new_row = next(r for r in rows if r["session_id"] == "s2")
+    assert new_row["parent_session_id"] == "p1"
+
+
+def test_dispatcher_child_session_routes_budget(tmp_path, monkeypatch):
+    from autoconduck.plugin.bias import get_bias_store, reset_bias_singleton
+    from autoconduck.routing.dispatcher import route
+    from autoconduck.routing.slm_planner import SLMPlanner, ExecutionPlan
+    import autoconduck.config.manager as m
+
+    reset_bias_singleton()
+    cfg = _cfg_with_models()
+    m._config = cfg
+
+    get_bias_store().register_child_session("child_sess_1", "parent_sess_1")
+
+    def fake_plan_sync(self, messages, config=None):
+        from autoconduck.routing.model_pool import CapabilitySLA
+        return ExecutionPlan(
+            confidence=0.9,
+            task_type="chat",
+            complexity_score=3,
+            rationale="test",
+            suggested_sla=CapabilitySLA(min_capability_score=0.1, min_context=0, requires_tools=False),
+        )
+
+    monkeypatch.setattr(SLMPlanner, "plan_sync", fake_plan_sync)
+    msgs = [{"role": "user", "content": "Subagent query"}]
+
+    # Child session should be routed with effective_pseudo "autoconduck-budget"
+    dec_child = route(msgs, config=cfg, session_id="child_sess_1", pseudo_model="autoconduck-expensive")
+    # For child session, pseudo_model "autoconduck-expensive" is overridden by effective_pseudo "autoconduck-budget"
+    # So it chooses the budget / cheapest model instead of expensive
+    dec_expensive = route(msgs, config=cfg, session_id="normal_sess", pseudo_model="autoconduck-expensive")
+
+    assert dec_child.model is not None
+    # Compare with non-child expensive selection
+    assert dec_child.model != dec_expensive.model or dec_child.model == "local-fast"
+

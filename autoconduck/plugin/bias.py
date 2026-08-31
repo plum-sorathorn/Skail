@@ -26,6 +26,28 @@ class SessionBiasStore:
         self._store: dict[str, dict[str, Any]] = {}
         # session_id -> current turn counter (int)
         self._turns: dict[str, int] = {}
+        # child session_id -> parent session_id
+        self._children: dict[str, str] = {}
+
+    def register_child_session(self, child_id: str, parent_id: str) -> None:
+        """Register child_id as a child of parent_id. O(1) write, thread-safe."""
+        try:
+            if not child_id or not parent_id:
+                return
+            with self._lock:
+                self._children[str(child_id)] = str(parent_id)
+        except Exception as exc:
+            logger.warning("bias register_child_session failed: %s", exc)
+
+    def is_child_session(self, session_id: str | None) -> bool:
+        """Return True if session_id is a known child session. O(1), non-blocking."""
+        if not session_id:
+            return False
+        try:
+            with self._lock:
+                return str(session_id) in self._children
+        except Exception:
+            return False
 
     def apply_escalation(self, session_id: str, bump: float, ttl_turns: int) -> float:
         try:
@@ -102,6 +124,7 @@ class SessionBiasStore:
             with self._lock:
                 self._store.pop(sid, None)
                 self._turns.pop(sid, None)
+                self._children.pop(sid, None)
         except Exception as exc:
             logger.warning("bias reset_session failed: %s", exc)
 
@@ -110,6 +133,7 @@ class SessionBiasStore:
             with self._lock:
                 self._store.clear()
                 self._turns.clear()
+                self._children.clear()
         except Exception:
             pass
 
@@ -118,6 +142,7 @@ class SessionBiasStore:
             return {
                 "store": {k: dict(v) for k, v in self._store.items()},
                 "turns": dict(self._turns),
+                "children": dict(self._children),
             }
 
 
