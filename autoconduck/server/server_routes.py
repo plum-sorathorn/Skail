@@ -151,6 +151,14 @@ def install_routes(
     except Exception:
         pass
 
+    # MCP server routes (fail-soft, off hot path)
+    try:
+        from autoconduck.server.mcp_routes import install_mcp_routes
+
+        install_mcp_routes(app)
+    except Exception:
+        pass
+
     if cache is not None:
         cache.update(
             CompletionRequest=CompletionRequest,

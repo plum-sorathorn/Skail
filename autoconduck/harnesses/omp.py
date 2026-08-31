@@ -107,6 +107,26 @@ class OmpAdapter(BaseAdapter):
             "      }\n"
             "    });\n"
             "  }\n"
+            "\n"
+            "  if (AUTOCONDUCK_RAG_ENABLED) {\n"
+            "    pi.registerTool('autoconduck_search', {\n"
+            "      description: 'Search the AutoConduck indexed knowledge base for codebase symbols.',\n"
+            "      inputSchema: { query: { type: 'string' }, limit: { type: 'number', default: 5 } },\n"
+            "      handler: async (args: any) => {\n"
+            "        try {\n"
+            f"          const res = await fetch(`http://127.0.0.1:{port}/mcp/tools/call`, {{\n"
+            "            method: 'POST',\n"
+            "            headers: { 'content-type': 'application/json' },\n"
+            "            body: JSON.stringify({ tool: 'autoconduck_search', args }),\n"
+            "            signal: AbortSignal.timeout(3000),\n"
+            "          });\n"
+            "          return res.ok ? await res.json() : { error: 'autoconduck unavailable' };\n"
+            "        } catch {\n"
+            "          return { error: 'autoconduck unavailable' };\n"
+            "        }\n"
+            "      },\n"
+            "    });\n"
+            "  }\n"
             "}\n"
         )
 
@@ -187,7 +207,7 @@ class OmpAdapter(BaseAdapter):
         plugins = getattr(config, "plugins", None)
         hooks_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "omp_enabled", False)) if plugins is not None else False
         subagent_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "subagent_enabled", False)) if plugins is not None else False
-        rag_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "rag_enabled", False)) if plugins is not None else False
+        rag_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "omp_enabled", False) and getattr(plugins, "rag_enabled", False)) if plugins is not None else False
         try:
             from autoconduck.config.paths import run_dir
 

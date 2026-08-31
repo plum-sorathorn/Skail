@@ -105,6 +105,21 @@ class OpenCodeAdapter(BaseAdapter):
             "        });\n"
             "      }\n"
             "    },\n"
+            "    ...(AUTOCONDUCK_RAG_ENABLED ? {\n"
+            '      "tool.autoconduck_search": async (args) => {\n'
+            "        try {\n"
+            f"          const res = await fetch(`http://127.0.0.1:${{AUTOCONDUCK_PORT}}/mcp/tools/call`, {{\n"
+            '            method: "POST",\n'
+            '            headers: { "Content-Type": "application/json" },\n'
+            '            body: JSON.stringify({ tool: "autoconduck_search", args }),\n'
+            "            signal: AbortSignal.timeout(3000),\n"
+            "          });\n"
+            '          return res.ok ? await res.json() : { error: "autoconduck unavailable" };\n'
+            "        } catch {\n"
+            '          return { error: "autoconduck unavailable" };\n'
+            "        }\n"
+            "      },\n"
+            "    } : {}),\n"
             "  };\n"
             "};\n"
             "\n"
@@ -119,7 +134,7 @@ class OpenCodeAdapter(BaseAdapter):
         plugins = getattr(config, "plugins", None)
         hooks_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "opencode_enabled", False)) if plugins is not None else False
         subagent_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "subagent_enabled", False)) if plugins is not None else False
-        rag_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "rag_enabled", False)) if plugins is not None else False
+        rag_enabled = bool(getattr(plugins, "enabled", False) and getattr(plugins, "opencode_enabled", False) and getattr(plugins, "rag_enabled", False)) if plugins is not None else False
 
         plugin_file = self._plugin_path()
         plugin_file.parent.mkdir(parents=True, exist_ok=True)
@@ -173,6 +188,20 @@ class OpenCodeAdapter(BaseAdapter):
                         },
                     },
                 }
+
+            # Register MCP in opencode.json
+            if rag_enabled:
+                mcp = data.setdefault("mcp", {})
+                if isinstance(mcp, dict):
+                    mcp["autoconduck"] = {
+                        "type": "http",
+                        "url": f"http://127.0.0.1:{effective_port}/mcp",
+                    }
+            else:
+                if isinstance(data.get("mcp"), dict):
+                    data["mcp"].pop("autoconduck", None)
+                    if not data["mcp"]:
+                        data.pop("mcp", None)
 
             # Register plugin in opencode.json
             plugin_entries = data.get("plugin")
@@ -232,6 +261,10 @@ class OpenCodeAdapter(BaseAdapter):
                     data["provider"].pop("autoconduck", None)
                     if not data["provider"]:
                         data.pop("provider", None)
+                if isinstance(data.get("mcp"), dict):
+                    data["mcp"].pop("autoconduck", None)
+                    if not data["mcp"]:
+                        data.pop("mcp", None)
                 if isinstance(data.get("plugin"), list):
                     data["plugin"] = [
                         e for e in data["plugin"]

@@ -43,6 +43,19 @@ class ClaudeCodeAdapter(BaseAdapter):
         except Exception:
             return False
 
+    def _rag_enabled(self, config: Config) -> bool:
+        try:
+            plugins = getattr(config, "plugins", None)
+            if plugins is None:
+                return False
+            return bool(
+                getattr(plugins, "enabled", False)
+                and getattr(plugins, "claude_enabled", False)
+                and getattr(plugins, "rag_enabled", False)
+            )
+        except Exception:
+            return False
+
     def _build_hooks_block(self, port: int = 11434) -> dict:
         hooks: dict[str, list[dict]] = {}
         for ev in self.HOOK_EVENTS:
@@ -235,6 +248,25 @@ class ClaudeCodeAdapter(BaseAdapter):
             if not isinstance(contributed_hooks, list):
                 contributed_hooks = []
 
+        # RAG / MCP server registration (gated by plugins.enabled AND claude_enabled AND rag_enabled)
+        rag_enabled = self._rag_enabled(config)
+        existing_mcp = data.get("mcpServers")
+        if rag_enabled:
+            if not isinstance(existing_mcp, dict):
+                existing_mcp = {}
+            existing_mcp["autoconduck"] = {
+                "url": f"http://127.0.0.1:{effective_port}/mcp",
+                "type": "http",
+            }
+            data["mcpServers"] = existing_mcp
+        else:
+            if isinstance(existing_mcp, dict):
+                existing_mcp.pop("autoconduck", None)
+                if not existing_mcp:
+                    data.pop("mcpServers", None)
+                else:
+                    data["mcpServers"] = existing_mcp
+
         data["autoconduck"] = {
             "managed_env_keys": list(values),
             "previous_env": previous,
@@ -343,6 +375,13 @@ class ClaudeCodeAdapter(BaseAdapter):
                     elif isinstance(stripped, dict):
                         data["hooks"] = stripped
                 data.pop("autoconduck", None)
+                mcp_servers = data.get("mcpServers")
+                if isinstance(mcp_servers, dict):
+                    mcp_servers.pop("autoconduck", None)
+                    if not mcp_servers:
+                        data.pop("mcpServers", None)
+                    else:
+                        data["mcpServers"] = mcp_servers
                 model_overrides = data.get("modelOverrides")
                 if isinstance(model_overrides, dict):
                     for pseudo_name in (

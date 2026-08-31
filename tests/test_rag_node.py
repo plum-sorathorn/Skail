@@ -182,3 +182,76 @@ def test_rag_table_overwrite_mode():
 
     db.create_table("data", [{"val": 2}, {"val": 3}], mode="overwrite")
     assert db.open_table("data").count_rows() == 2
+
+
+def test_mcp_routes_manifest_and_tool_calls(tmp_path):
+    """Test /mcp manifest and /mcp/tools/call dispatch for search and index."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from autoconduck.server.mcp_routes import install_mcp_routes, reset_mcp_singleton
+    from autoconduck.knowledge.vector_store import KnowledgeVectorStore
+
+    app = FastAPI()
+    install_mcp_routes(app)
+    client = TestClient(app)
+
+    # Use in-memory store
+    store = KnowledgeVectorStore(db_uri=":memory:")
+    reset_mcp_singleton(store)
+
+    # 1. Test GET /mcp
+    res = client.get("/mcp")
+    assert res.status_code == 200
+    manifest = res.json()
+    assert manifest["protocolVersion"] == "2025-03-26"
+    assert manifest["serverInfo"]["name"] == "autoconduck"
+    assert manifest["serverInfo"]["version"] == "0.5.0"
+    tool_names = [t["name"] for t in manifest["tools"]]
+    assert "autoconduck_search" in tool_names
+    assert "autoconduck_index" in tool_names
+    assert manifest["indexed_at"] is None
+
+    # 2. Test search on empty store (returns empty list without 500)
+    res = client.post("/mcp/tools/call", json={"tool": "autoconduck_search", "args": {"query": "hello"}})
+    assert res.status_code == 200
+    data = res.json()
+    assert data.get("results") == []
+
+    # 3. Test index repository
+    test_file = tmp_path / "sample.py"
+    test_file.write_text("def calculate_metrics():\n    return 42\n", encoding="utf-8")
+
+    res = client.post("/mcp/tools/call", json={"tool": "autoconduck_index", "args": {"root_dir": str(tmp_path), "max_files": 10}})
+    assert res.status_code == 200
+    idx_data = res.json()
+    assert idx_data["status"] == "ok"
+    assert idx_data["indexed_files"] >= 1
+    assert idx_data["indexed_at"] is not None
+
+    # Verify manifest now reflects indexed_at
+    res = client.get("/mcp")
+    assert res.json()["indexed_at"] is not None
+
+    # 4. Test search with indexed symbols
+    res = client.post("/mcp/tools/call", json={"name": "autoconduck_search", "arguments": {"query": "calculate_metrics"}})
+    assert res.status_code == 200
+    search_data = res.json()
+    assert len(search_data["results"]) >= 1
+    assert search_data["results"][0]["symbol"] == "calculate_metrics"
+    assert "content" in search_data
+
+    # 5. Test error cases (missing parameters, invalid tools, invalid json)
+    res = client.post("/mcp/tools/call", json={"tool": "autoconduck_search", "args": {}})
+    assert res.status_code == 200
+    assert res.json().get("error") == "missing_query"
+
+    res = client.post("/mcp/tools/call", json={"tool": "autoconduck_index", "args": {}})
+    assert res.status_code == 200
+    assert res.json().get("status") == "error"
+
+    res = client.post("/mcp/tools/call", json={"tool": "unknown_tool"})
+    assert res.status_code == 200
+    assert "unknown_tool" in res.json().get("error", "")
+
+    # Cleanup
+    reset_mcp_singleton()

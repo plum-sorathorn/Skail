@@ -232,4 +232,87 @@ def test_onboarding_configure_selected_agents(tmp_path, monkeypatch):
     assert "pi" in configured
     assert "omp" in configured
 
+
+def test_claude_code_adapter_rag_mcp_patch_and_revert(tmp_path, monkeypatch):
+    from autoconduck.config.models import PluginConfig
+
+    settings_file = tmp_path / ".claude" / "settings.json"
+    settings_file.parent.mkdir(parents=True, exist_ok=True)
+    settings_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    adapter = ClaudeCodeAdapter()
+    cfg = Config(port=11434, plugins=PluginConfig(enabled=True, claude_enabled=True, rag_enabled=True))
+    adapter.patch(cfg, port=11434)
+
+    data = json.loads(settings_file.read_text(encoding="utf-8"))
+    assert "mcpServers" in data
+    assert data["mcpServers"]["autoconduck"]["url"] == "http://127.0.0.1:11434/mcp"
+    assert data["mcpServers"]["autoconduck"]["type"] == "http"
+
+    # Revert removes mcpServers block
+    adapter.revert()
+    data_reverted = json.loads(settings_file.read_text(encoding="utf-8"))
+    assert "mcpServers" not in data_reverted
+
+
+def test_opencode_adapter_rag_mcp_patch_and_revert(tmp_path, monkeypatch):
+    from autoconduck.config.models import PluginConfig
+
+    opencode_cfg = tmp_path / "opencode.json"
+    opencode_cfg.write_text(json.dumps({"providers": {}}), encoding="utf-8")
+    monkeypatch.setattr(Path, "cwd", lambda: tmp_path)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    adapter = OpenCodeAdapter()
+    cfg = Config(port=11434, plugins=PluginConfig(enabled=True, opencode_enabled=True, rag_enabled=True))
+    adapter.patch(cfg, port=11434)
+
+    data = json.loads(opencode_cfg.read_text(encoding="utf-8"))
+    assert "mcp" in data
+    assert data["mcp"]["autoconduck"]["url"] == "http://127.0.0.1:11434/mcp"
+    assert data["mcp"]["autoconduck"]["type"] == "http"
+
+    # Check plugin JS contains autoconduck_search
+    plugin_js = (tmp_path / ".config" / "opencode" / "plugins" / "autoconduck.js").read_text(encoding="utf-8")
+    assert "AUTOCONDUCK_RAG_ENABLED = true" in plugin_js
+    assert "tool.autoconduck_search" in plugin_js
+    assert "/mcp/tools/call" in plugin_js
+
+    # Revert cleans up mcp block
+    adapter.revert()
+    data_reverted = json.loads(opencode_cfg.read_text(encoding="utf-8"))
+    assert "mcp" not in data_reverted
+
+
+def test_pi_and_omp_extension_rag_register_tool(tmp_path, monkeypatch):
+    from autoconduck.config.models import PluginConfig
+    from autoconduck.harnesses.omp import OmpAdapter
+
+    pi_dir = tmp_path / ".pi" / "agent"
+    pi_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(pi_dir))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    # Test Pi Adapter with RAG enabled
+    pi_adapter = PiAdapter()
+    cfg_pi = Config(port=11434, plugins=PluginConfig(enabled=True, pi_enabled=True, rag_enabled=True))
+    pi_adapter.patch(cfg_pi, port=11434)
+
+    pi_ext = (pi_dir / "extensions" / "autoconduck.ts").read_text(encoding="utf-8")
+    assert "const AUTOCONDUCK_RAG_ENABLED = true" in pi_ext
+    assert "pi.registerTool('autoconduck_search'" in pi_ext
+    assert "http://127.0.0.1:11434/mcp/tools/call" in pi_ext
+
+    # Test OMP Adapter with RAG enabled
+    omp_adapter = OmpAdapter()
+    cfg_omp = Config(port=11434, plugins=PluginConfig(enabled=True, omp_enabled=True, rag_enabled=True))
+    omp_adapter.patch(cfg_omp, port=11434)
+
+    omp_ext = (tmp_path / ".omp" / "agent" / "extensions" / "autoconduck.ts").read_text(encoding="utf-8")
+    assert "const AUTOCONDUCK_RAG_ENABLED = true" in omp_ext
+    assert "pi.registerTool('autoconduck_search'" in omp_ext
+    assert "http://127.0.0.1:11434/mcp/tools/call" in omp_ext
+
+
 
