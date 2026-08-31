@@ -108,6 +108,7 @@ def update_docs(new_version: str) -> None:
         content = readme_file.read_text(encoding="utf-8")
         updated = re.sub(r'# AutoConduck\s+\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?', f'# AutoConduck {new_version}', content)
         updated = re.sub(r'\*\*AutoConduck\s+\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?\*\*', f'**AutoConduck {new_version}**', updated)
+        updated = re.sub(r'version-\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?-blue', f'version-{new_version}-blue', updated)
         readme_file.write_text(updated, encoding="utf-8")
         print(f"  [OK] Updated README.md -> {new_version}")
 

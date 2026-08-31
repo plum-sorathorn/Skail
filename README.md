@@ -4,7 +4,7 @@
 
 **Local, zero-overhead SLM model router + optional deterministic plugin orchestrator for coding agents.**
 
-[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg?style=flat)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.5.1-blue.svg?style=flat)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://python.org)
 [![Fast Path Latency](https://img.shields.io/badge/turn--guard-%3C2ms-brightgreen.svg?style=flat)](autoconduck/server/turn_guard.py)
 [![SLM Engine](https://img.shields.io/badge/SLM-Qwen%202.5%20Coder%200.5B%20(ONNX%2FGGUF)-purple.svg?style=flat)](https://github.com/plum-sorathorn/AutoConduck)
