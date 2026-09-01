@@ -370,6 +370,7 @@ async def test_runtime_execute_oma_sidecar_launches_and_records_ledger(tmp_path)
         cfg=cfg,
     )
     assert res.get("status") == "ok"
+    assert res.get("runner_started") is True
     assert res.get("session_id") == "sessOMA"
     assert res.get("mode") == "runTeam"
     assert isinstance(res.get("task_id"), str)
@@ -405,6 +406,7 @@ async def test_runtime_execute_fail_soft_on_missing_node(tmp_path):
         cfg=cfg,
     )
     assert res.get("status") == "error"
+    assert res.get("runner_started") is False
     assert "OMA sidecar launch failed" in res.get("report", "")
     assert res.get("session_id") == "sessMissingNode"
 

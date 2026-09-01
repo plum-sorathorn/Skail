@@ -112,6 +112,7 @@ async def start_task(
     }
 
     res: dict[str, Any]
+    runner_started = False
     try:
         runner_script = Path(__file__).parent / "oma_sidecar" / "runner.js"
         if not runner_script.exists():
@@ -126,6 +127,7 @@ async def start_task(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        runner_started = True
         stdout_bytes, stderr_bytes = await proc.communicate(input=payload_bytes)
 
         if proc.returncode != 0 and not stdout_bytes:
@@ -148,6 +150,7 @@ async def start_task(
             "mode": data.get("mode", oma_mode),
             "tasks": data.get("tasks", []),
             "elapsed_s": elapsed,
+            "runner_started": runner_started,
         }
         if "totalTokenUsage" in data:
             res["totalTokenUsage"] = data["totalTokenUsage"]
@@ -163,6 +166,7 @@ async def start_task(
             "mode": oma_mode,
             "tasks": [],
             "elapsed_s": elapsed,
+            "runner_started": runner_started,
         }
 
     # 2. Enqueue terminal_result event to PluginLedger

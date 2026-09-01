@@ -50,6 +50,36 @@ def test_aggregate_scopes_deduplicates_versioned_events_and_preserves_legacy_row
     assert scoped["windows"]["15m"]["totals"]["calls"] == 1
 
 
+def test_aggregate_exposes_oma_outcomes_without_counting_them_as_completions():
+    now = datetime.now(timezone.utc)
+    records = [
+        _record("completion-1", "session-a", 5),
+        {
+            "stats_version": 2,
+            "event_id": "oma-start-1",
+            "session_id": "session-a",
+            "ts": now.isoformat(),
+            "event_kind": "oma_gate",
+            "oma_outcome": "started",
+        },
+        {
+            "stats_version": 2,
+            "event_id": "oma-completed-1",
+            "session_id": "session-a",
+            "ts": now.isoformat(),
+            "event_kind": "oma_gate",
+            "oma_outcome": "completed",
+        },
+    ]
+
+    scoped = aggregate_scopes(records, session_id="session-a", now=now)
+
+    assert scoped["all_time"]["totals"]["calls"] == 1
+    assert scoped["all_time"]["oma"]["outcomes"] == {"started": 1, "completed": 1}
+    assert scoped["session"]["oma"]["outcomes"] == {"started": 1, "completed": 1}
+    assert scoped["windows"]["15m"]["oma"]["outcomes"] == {"started": 1, "completed": 1}
+
+
 def test_record_persists_versioned_session_and_selection_contract(monkeypatch, tmp_path):
     target = tmp_path / "stats.jsonl"
     monkeypatch.setattr(stats, "stats_path", lambda: target)
@@ -87,6 +117,9 @@ async def test_stats_handler_combines_session_and_window_without_removing_legacy
         _record("event-2", "session-b", 5, model="openai/other"),
         _record("event-3", "session-a", 90, model="openai/older"),
     ]
+    records[0]["selection"] = {
+        "oma": {"outcomes": ["not_eligible"], "reason": "complexity_below_threshold"}
+    }
     monkeypatch.setattr(server_meta, "load_records", lambda: records)
 
     by_session = await server_meta.handle_stats([], session_id="session-a")
@@ -98,6 +131,8 @@ async def test_stats_handler_combines_session_and_window_without_removing_legacy
     assert combined["usage"]["calls"] == 1
     assert by_session["all_time"]["totals"]["calls"] == 3
     assert set(by_session["windows"]) == {"15m", "1h", "1d", "7d", "30d"}
+    assert by_session["oma"]["outcomes"] == {"not_eligible": 1}
+    assert by_session["session"]["oma"]["outcomes"] == {"not_eligible": 1}
 
 
 @pytest.mark.asyncio

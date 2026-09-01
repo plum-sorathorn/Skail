@@ -42,6 +42,14 @@ async def handle_chat_completions(
     if extra.get("_oma_result"):
         oma_res = extra["_oma_result"]
         report = oma_res.get("report", "")
+        try:
+            from autoconduck.stats import record_oma_outcomes
+
+            record_oma_outcomes(
+                extra.get("_stats_session_id"), extra.get("_oma_outcomes", [])
+            )
+        except Exception:
+            pass
         if body.stream:
             async def oma_relay():
                 chunk = {

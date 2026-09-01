@@ -73,6 +73,7 @@ async def test_high_complexity_triggers_oma(monkeypatch):
             "task_id": "t123",
             "session_id": "s123",
             "status": "ok",
+            "runner_started": True,
             "report": "Refactoring completed by OMA subagents",
             "mode": "auto",
             "tasks": [],
@@ -104,6 +105,7 @@ async def test_high_complexity_triggers_oma(monkeypatch):
         extra["_oma_result"]["report"]
         == "Refactoring completed by OMA subagents"
     )
+    assert extra["_stats_selection"]["oma"]["outcomes"] == ["started", "completed"]
 
 
 @pytest.mark.asyncio
@@ -125,6 +127,7 @@ async def test_explicit_refactor_reaches_oma_when_slm_returns_chat(monkeypatch):
     mock_start_task = AsyncMock(
         return_value={
             "status": "ok",
+            "runner_started": True,
             "report": "OMA received the explicit refactor",
         }
     )
@@ -142,6 +145,7 @@ async def test_explicit_refactor_reaches_oma_when_slm_returns_chat(monkeypatch):
 
     mock_start_task.assert_awaited_once()
     assert extra["_oma_result"]["report"] == "OMA received the explicit refactor"
+    assert extra["_stats_selection"]["oma"]["outcomes"] == ["started", "completed"]
 
 
 @pytest.mark.asyncio
@@ -174,6 +178,10 @@ async def test_low_complexity_bypasses_oma(monkeypatch):
     assert not mock_start_task.called
     assert "_oma_result" not in extra
     assert target is not None
+    assert extra["_stats_selection"]["oma"] == {
+        "outcomes": ["not_eligible"],
+        "reason": "complexity_below_threshold",
+    }
 
 
 @pytest.mark.asyncio
@@ -206,6 +214,10 @@ async def test_recursion_header_bypasses_oma(monkeypatch):
     )
     assert not mock_start_task.called
     assert "_oma_result" not in extra1
+    assert extra1["_stats_selection"]["oma"] == {
+        "outcomes": ["not_eligible"],
+        "reason": "request_depth",
+    }
 
     # Case 2: x-oma-sidecar: 1
     req2 = DummyRequest({"x-oma-sidecar": "1"})
@@ -219,6 +231,10 @@ async def test_recursion_header_bypasses_oma(monkeypatch):
     )
     assert not mock_start_task.called
     assert "_oma_result" not in extra2
+    assert extra2["_stats_selection"]["oma"] == {
+        "outcomes": ["not_eligible"],
+        "reason": "oma_sidecar_header",
+    }
 
 
 @pytest.mark.asyncio
@@ -255,11 +271,16 @@ async def test_fail_soft_when_oma_fails(monkeypatch):
 
     assert "_oma_result" not in extra
     assert target is not None
+    assert extra["_stats_selection"]["oma"] == {
+        "outcomes": ["failed_soft"],
+        "reason": "runner_exception",
+    }
 
     # Error status return case
     mock_start_task_err = AsyncMock(
         return_value={
             "status": "error",
+            "runner_started": True,
             "report": "OMA sidecar launch failed: script not found",
         }
     )
@@ -278,6 +299,39 @@ async def test_fail_soft_when_oma_fails(monkeypatch):
 
     assert "_oma_result" not in extra2
     assert target2 is not None
+    assert extra2["_stats_selection"]["oma"] == {
+        "outcomes": ["started", "failed_soft"],
+        "reason": "runner_error",
+    }
+
+
+@pytest.mark.asyncio
+async def test_oma_never_returns_completed_result_without_runner_evidence(monkeypatch):
+    """An unproven runner must fail soft instead of returning an OMA completion."""
+    import autoconduck.config.manager as m
+
+    cfg = _cfg_with_oma()
+    m._config = cfg
+    monkeypatch.setattr(
+        "autoconduck.plugin.runtime.start_task",
+        AsyncMock(return_value={"status": "ok", "report": "unverified result"}),
+    )
+
+    target, extra = await route_target(
+        "autoconduck",
+        [{"role": "user", "content": "Refactor the router end-to-end."}],
+        request=None,
+        PSEUDO_MODELS={"autoconduck"},
+        litellm_params_for=lambda t, c: {},
+        normalize_messages_for_llm=lambda m: m,
+    )
+
+    assert target is not None
+    assert "_oma_result" not in extra
+    assert extra["_stats_selection"]["oma"] == {
+        "outcomes": ["failed_soft"],
+        "reason": "runner_error",
+    }
 
 
 def test_oma_chat_completion_http_endpoint(monkeypatch):
@@ -292,6 +346,7 @@ def test_oma_chat_completion_http_endpoint(monkeypatch):
         return_value={
             "task_id": "task_http",
             "status": "ok",
+            "runner_started": True,
             "report": "OMA subagents completed full refactor workflow",
             "mode": "auto",
         }
@@ -321,3 +376,10 @@ def test_oma_chat_completion_http_endpoint(monkeypatch):
         data["choices"][0]["message"]["content"]
         == "OMA subagents completed full refactor workflow"
     )
+    from autoconduck.stats import aggregate, flush_stats, load_records
+
+    flush_stats()
+    assert aggregate(load_records())["oma"]["outcomes"] == {
+        "started": 1,
+        "completed": 1,
+    }

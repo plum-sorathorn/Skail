@@ -131,6 +131,7 @@ import threading
 import queue
 
 _stats_queue = queue.Queue()
+_OMA_OUTCOMES = frozenset({"not_eligible", "started", "completed", "failed_soft"})
 
 def _stats_worker():
     while True:
@@ -154,6 +155,29 @@ _stats_thread.start()
 def flush_stats() -> None:
     try:
         _stats_queue.join()
+    except Exception:
+        pass
+
+
+def record_oma_outcomes(session_id: str | None, outcomes: list[str]) -> None:
+    """Queue completed OMA gate outcomes without counting them as LLM completions."""
+    try:
+        for outcome in outcomes:
+            if outcome not in _OMA_OUTCOMES:
+                continue
+            _stats_queue.put(
+                (
+                    stats_path(),
+                    {
+                        "stats_version": 2,
+                        "event_id": uuid.uuid4().hex,
+                        "session_id": session_id or "unknown",
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                        "event_kind": "oma_gate",
+                        "oma_outcome": outcome,
+                    },
+                )
+            )
     except Exception:
         pass
 
@@ -290,6 +314,7 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     paths: dict[str, int] = {}
     pseudos: dict[str, int] = {}
     routes: dict[str, int] = {}
+    oma_outcomes: dict[str, int] = {}
 
     # Frontier baseline: ~$5.00/1M in, $15.00/1M out
     FRONTIER_IN_PER_M = 5.00
@@ -298,6 +323,18 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     latencies: list[float] = []
     observed_at: list[datetime] = []
     for row in _deduplicated(records):
+        if row.get("event_kind") == "oma_gate":
+            outcome = row.get("oma_outcome")
+            if outcome in _OMA_OUTCOMES:
+                oma_outcomes[outcome] = oma_outcomes.get(outcome, 0) + 1
+            continue
+        selection = row.get("selection")
+        oma = selection.get("oma") if isinstance(selection, dict) else None
+        outcomes = oma.get("outcomes") if isinstance(oma, dict) else []
+        if isinstance(outcomes, list):
+            for outcome in outcomes:
+                if outcome in _OMA_OUTCOMES:
+                    oma_outcomes[outcome] = oma_outcomes.get(outcome, 0) + 1
         p, c = (
             int(row.get("prompt_tokens", 0) or 0),
             int(row.get("completion_tokens", 0) or 0),
@@ -396,6 +433,7 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
         "paths": paths,
         "pseudos": pseudos,
         "routes": routes,
+        "oma": {"outcomes": oma_outcomes},
     }
     result.update(_latest_selection)
     return result
@@ -451,6 +489,7 @@ def aggregate_scopes(
             "paths": session_aggregate["paths"],
             "pseudos": session_aggregate["pseudos"],
             "routes": session_aggregate["routes"],
+            "oma": session_aggregate["oma"],
         },
         "windows": windows,
     }

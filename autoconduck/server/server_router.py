@@ -320,24 +320,48 @@ async def route_target(
             _plan=getattr(decision, "plan", None) if decision else None,
         )
 
-    # OMA Complexity Gating Intercept
+    # OMA Complexity Gating Intercept. Outcomes stay in completion metadata so
+    # the recorder can journal normal/fail-soft requests off the routing path.
     plugins_cfg = getattr(cfg, "plugins", None)
     plugins_enabled = bool(getattr(plugins_cfg, "enabled", False)) if plugins_cfg else False
     oma_enabled = bool(getattr(plugins_cfg, "oma_enabled", True)) if plugins_cfg else False
+    oma_outcomes = ["not_eligible"]
+    oma_reason = "direct_model"
+    oma_result = None
 
-    if request_depth == 0 and not is_oma_sidecar and plugins_enabled and oma_enabled:
+    if request_depth >= 1:
+        oma_reason = "request_depth"
+    elif is_oma_sidecar:
+        oma_reason = "oma_sidecar_header"
+    elif body_model not in PSEUDO_MODELS:
+        oma_reason = "direct_model"
+    elif not plugins_enabled:
+        oma_reason = "plugins_disabled"
+    elif not oma_enabled:
+        oma_reason = "oma_disabled"
+    else:
         plan = getattr(decision, "plan", None) if decision else None
         task_type = str(getattr(plan, "task_type", "")).lower() if plan else ""
         c_score = getattr(plan, "complexity_score", None) if plan else None
-        comp_val = (float(c_score) / 10.0) if c_score is not None else float(getattr(decision, "complexity", 0.0))
+        try:
+            comp_val = (
+                float(c_score) / 10.0
+                if c_score is not None
+                else float(getattr(decision, "complexity", 0.0))
+            )
+            decision_complexity = float(getattr(decision, "complexity", 0.0))
+        except (TypeError, ValueError):
+            comp_val = decision_complexity = 0.0
 
         is_high_complexity = (
             comp_val >= 0.75
-            or float(getattr(decision, "complexity", 0.0)) >= 0.75
+            or decision_complexity >= 0.75
             or task_type in ("full_workflow", "refactor")
         )
 
-        if is_high_complexity:
+        if not is_high_complexity:
+            oma_reason = "complexity_below_threshold"
+        else:
             user_prompt = ""
             if messages:
                 for m in reversed(messages):
@@ -365,16 +389,38 @@ async def route_target(
                     goal=user_prompt,
                     cfg=cfg,
                 )
-                if res and isinstance(res, dict) and res.get("status") != "error":
-                    extra["_oma_result"] = res
-                elif res and isinstance(res, dict) and res.get("status") == "error":
+                runner_started = bool(res.get("runner_started")) if isinstance(res, dict) else False
+                if runner_started:
+                    oma_outcomes = ["started"]
+                if runner_started and isinstance(res, dict) and res.get("status") == "ok":
+                    oma_outcomes.append("completed")
+                    oma_reason = "completed"
+                    oma_result = res
+                elif isinstance(res, dict) and res.get("status") == "disabled":
+                    oma_outcomes = ["not_eligible"]
+                    oma_reason = "execution_disabled"
+                else:
+                    if not runner_started:
+                        oma_outcomes = []
+                    oma_outcomes.append("failed_soft")
+                    oma_reason = "runner_error"
                     logging.getLogger("autoconduck").warning(
                         "OMA sidecar runner returned error (fail-soft degrade): %s",
-                        res.get("report"),
+                        res.get("report") if isinstance(res, dict) else None,
                     )
             except Exception as exc:
+                oma_outcomes = ["failed_soft"]
+                oma_reason = "runner_exception"
                 logging.getLogger("autoconduck").warning(
                     "OMA execution failed (fail-soft degrade): %s", exc
                 )
+
+    stats_metadata["_stats_selection"]["oma"] = {
+        "outcomes": oma_outcomes,
+        "reason": oma_reason,
+    }
+    if oma_result is not None:
+        extra["_oma_result"] = oma_result
+        extra["_oma_outcomes"] = oma_outcomes
 
     return target, extra

@@ -51,6 +51,7 @@ async def handle_stats(
         "models": selected["models"],
         "path_counts": selected["paths"],
         "pseudo_counts": selected["pseudos"],
+        "oma": selected["oma"],
         "all_time": usage,
         "session": scopes["session"],
         "windows": scopes["windows"],
