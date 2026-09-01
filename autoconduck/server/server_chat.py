@@ -34,6 +34,58 @@ async def handle_chat_completions(
 
     target, extra = await route_target_fn(body.model, body.messages, request, tools=body.tools)
 
+    if extra.get("_oma_result"):
+        oma_res = extra["_oma_result"]
+        report = oma_res.get("report", "")
+        if body.stream:
+            async def oma_relay():
+                chunk = {
+                    "id": f"chatcmpl-oma-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": target or body.model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"role": "assistant", "content": report},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+                yield f"data: {json.dumps(chunk)}\n\n"
+                stop_chunk = {
+                    "id": chunk["id"],
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": target or body.model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                }
+                yield f"data: {json.dumps(stop_chunk)}\n\n"
+                yield "data: [DONE]\n\n"
+
+            return StreamingResponse(oma_relay(), media_type="text/event-stream")
+        else:
+            return JSONResponse({
+                "id": f"chatcmpl-oma-{int(time.time())}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": target or body.model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": report},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": oma_res.get("totalTokenUsage", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}),
+            })
+
     messages = normalize_messages_for_llm(body.messages)
     if extra.get("_path") == "FAST":
         try:

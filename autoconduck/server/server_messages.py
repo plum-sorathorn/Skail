@@ -72,6 +72,32 @@ async def handle_messages(
             {"type": "error", "error": {"type": "api_error", "message": str(exc)}},
             status_code=502,
         )
+    if extra.get("_oma_result"):
+        oma_res = extra["_oma_result"]
+        report = oma_res.get("report", "")
+        if body.stream:
+            async def oma_messages_relay():
+                msg_id = f"msg_oma_{int(time.time())}"
+                yield f"event: message_start\ndata: {json.dumps({'type': 'message_start', 'message': {'id': msg_id, 'type': 'message', 'role': 'assistant', 'content': [], 'model': target or body.model, 'stop_reason': None, 'stop_sequence': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}})}\n\n"
+                yield f"event: content_block_start\ndata: {json.dumps({'type': 'content_block_start', 'index': 0, 'content_block': {'type': 'text', 'text': ''}})}\n\n"
+                yield f"event: content_block_delta\ndata: {json.dumps({'type': 'content_block_delta', 'index': 0, 'delta': {'type': 'text_delta', 'text': report}})}\n\n"
+                yield f"event: content_block_stop\ndata: {json.dumps({'type': 'content_block_stop', 'index': 0})}\n\n"
+                yield f"event: message_delta\ndata: {json.dumps({'type': 'message_delta', 'delta': {'stop_reason': 'end_turn', 'stop_sequence': None}, 'usage': {'output_tokens': len(report.split())}})}\n\n"
+                yield f"event: message_stop\ndata: {json.dumps({'type': 'message_stop'})}\n\n"
+
+            return StreamingResponse(oma_messages_relay(), media_type="text/event-stream")
+        else:
+            return JSONResponse({
+                "id": f"msg_oma_{int(time.time())}",
+                "type": "message",
+                "role": "assistant",
+                "model": target or body.model,
+                "content": [{"type": "text", "text": report}],
+                "stop_reason": "end_turn",
+                "stop_sequence": None,
+                "usage": {"input_tokens": 0, "output_tokens": len(report.split())},
+            })
+
     if extra.get("_path") == "FAST":
         try:
             from autoconduck.digest import maybe_digest_messages

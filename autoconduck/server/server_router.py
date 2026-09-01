@@ -104,11 +104,17 @@ async def route_target(
     cfg = config_module.get_config()
     target, path = body_model, "direct"
     request_depth = 0
+    is_oma_sidecar = False
     if request is not None and hasattr(request, "headers"):
         try:
             request_depth = int(request.headers.get("x-autoconduck-depth", "0"))
         except (ValueError, TypeError):
             request_depth = 0
+        try:
+            hdr_val = str(request.headers.get("x-oma-sidecar", "0")).strip().lower()
+            is_oma_sidecar = hdr_val in ("1", "true")
+        except Exception:
+            is_oma_sidecar = False
         if client_type is None:
             client_type = request.headers.get("x-agent-id", None)
         if client_type is None:
@@ -269,4 +275,62 @@ async def route_target(
             _tier=getattr(decision, "tier", None) if decision else None,
             _plan=getattr(decision, "plan", None) if decision else None,
         )
+
+    # OMA Complexity Gating Intercept
+    plugins_cfg = getattr(cfg, "plugins", None)
+    plugins_enabled = bool(getattr(plugins_cfg, "enabled", False)) if plugins_cfg else False
+    oma_enabled = bool(getattr(plugins_cfg, "oma_enabled", True)) if plugins_cfg else False
+
+    if request_depth == 0 and not is_oma_sidecar and plugins_enabled and oma_enabled:
+        plan = getattr(decision, "plan", None) if decision else None
+        task_type = str(getattr(plan, "task_type", "")).lower() if plan else ""
+        c_score = getattr(plan, "complexity_score", None) if plan else None
+        comp_val = (float(c_score) / 10.0) if c_score is not None else float(getattr(decision, "complexity", 0.0))
+
+        is_high_complexity = (
+            comp_val >= 0.75
+            or float(getattr(decision, "complexity", 0.0)) >= 0.75
+            or task_type in ("full_workflow", "refactor")
+        )
+
+        if is_high_complexity:
+            user_prompt = ""
+            if messages:
+                for m in reversed(messages):
+                    if isinstance(m, dict) and m.get("role") in ("user", "human"):
+                        c = m.get("content")
+                        if isinstance(c, str):
+                            user_prompt = c
+                        elif isinstance(c, list):
+                            parts = [
+                                p.get("text", "")
+                                for p in c
+                                if (isinstance(p, dict) and p.get("type") == "text") or isinstance(p, str)
+                            ]
+                            user_prompt = " ".join(parts)
+                        break
+            if not user_prompt and messages:
+                first_m = messages[-1]
+                user_prompt = str(first_m.get("content", "")) if isinstance(first_m, dict) else str(first_m)
+
+            try:
+                from autoconduck.plugin import runtime
+
+                res = await runtime.start_task(
+                    session_id=session_id or "default",
+                    goal=user_prompt,
+                    cfg=cfg,
+                )
+                if res and isinstance(res, dict) and res.get("status") != "error":
+                    extra["_oma_result"] = res
+                elif res and isinstance(res, dict) and res.get("status") == "error":
+                    logging.getLogger("autoconduck").warning(
+                        "OMA sidecar runner returned error (fail-soft degrade): %s",
+                        res.get("report"),
+                    )
+            except Exception as exc:
+                logging.getLogger("autoconduck").warning(
+                    "OMA execution failed (fail-soft degrade): %s", exc
+                )
+
     return target, extra
