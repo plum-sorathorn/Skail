@@ -1,5 +1,6 @@
 """Server routes, Anthropic /v1/messages shim, /v1/chat/completions, /stats, and JSON repair unit tests."""
 import json
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -93,6 +94,38 @@ def test_stats_endpoint(test_client):
     assert "decisions" in data or "total_requests" in data or "summary" in data or isinstance(data, dict)
 
 
+def test_stats_endpoint_accepts_session_and_window_queries(test_client, monkeypatch):
+    from autoconduck.server import server_meta
+
+    monkeypatch.setattr(
+        server_meta,
+        "load_records",
+        lambda: [
+            {
+                "event_id": "event-1",
+                "session_id": "session-a",
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "upstream_model": "openai/qwen",
+                "pseudo_model": "autoconduck",
+                "prompt_tokens": 2,
+                "completion_tokens": 1,
+                "cost": 0.0,
+            }
+        ],
+    )
+
+    response = test_client.get("/stats?session_id=session-a&window=30d")
+
+    assert response.status_code == 200
+    assert response.json()["usage"]["calls"] == 1
+
+
+def test_stats_endpoint_rejects_unknown_window(test_client):
+    response = test_client.get("/stats?window=forever")
+
+    assert response.status_code == 422
+
+
 def test_completions_with_orchestrator_tool_calls(test_client):
     """Router fast path still dispatches without SLOW handoff."""
     from autoconduck.routing.dispatcher import route
@@ -134,11 +167,30 @@ async def _route_to_upstream(*args, **kwargs):
         "_path": "FAST",
         "_pseudo": "autoconduck",
         "_complexity": 0.5,
+        "_route": "fast_direct",
+        "_tier": "balanced",
+        "_plan": {"task_type": "debug"},
+        "_stats_event_id": "event-1",
+        "_stats_session_id": "session-a",
+        "_stats_upstream_model": "openai/upstream",
+        "_stats_selection": {"binding_constraint": "capability"},
     }
 
 
 async def _consume(response):
     return [chunk async for chunk in response.body_iterator]
+
+
+def _assert_recorded_route_metadata(record):
+    args, kwargs = record
+    assert args[2] == "openai/upstream"
+    assert kwargs["event_id"] == "event-1"
+    assert kwargs["session_id"] == "session-a"
+    assert kwargs["upstream_model"] == "openai/upstream"
+    assert kwargs["route"] == "fast_direct"
+    assert kwargs["tier"] == "balanced"
+    assert kwargs["complexity"] == 0.5
+    assert kwargs["plan"] == {"task_type": "debug"}
 
 
 @pytest.mark.asyncio
@@ -169,6 +221,46 @@ async def test_openai_stream_records_one_stats_event_per_upstream_completion(mon
 
     assert len(records) == 1
     assert records[0][0][1:3] == ("autoconduck", "openai/upstream")
+    _assert_recorded_route_metadata(records[0])
+
+
+@pytest.mark.asyncio
+async def test_openai_nonstream_records_route_metadata(monkeypatch):
+    from autoconduck import stats
+    from autoconduck.server import server_chat
+    from autoconduck.server.server_models import CompletionRequest
+
+    records = []
+    monkeypatch.setattr(stats, "record", lambda *args, **kwargs: records.append((args, kwargs)))
+    llm = _CompletionLLM()
+    stats.install_recorder(llm)
+
+    async def call_with_metadata(model, body, path, pseudo, *, messages, stats_metadata, routing_metadata):
+        await llm.acompletion(
+            model=model,
+            messages=messages,
+            _path=path,
+            _pseudo=pseudo,
+            **routing_metadata,
+            **stats_metadata,
+        )
+        return {"choices": []}
+
+    response = await server_chat.handle_chat_completions(
+        CompletionRequest(model="autoconduck", messages=[{"role": "user", "content": "hi"}]),
+        _ConnectedRequest(),
+        PSEUDO_MODELS={"autoconduck"},
+        route_target_fn=_route_to_upstream,
+        call_litellm_fn=call_with_metadata,
+        sanitize_tools=lambda tools: tools,
+        normalize_messages_for_llm=lambda messages: messages,
+        StreamingResponse=StreamingResponse,
+        JSONResponse=JSONResponse,
+    )
+
+    assert response.status_code == 200
+    assert len(records) == 1
+    _assert_recorded_route_metadata(records[0])
 
 
 @pytest.mark.asyncio
@@ -213,3 +305,4 @@ async def test_anthropic_completion_records_one_stats_event_per_upstream_complet
 
     assert len(records) == 1
     assert records[0][0][1:3] == ("autoconduck", "openai/upstream")
+    _assert_recorded_route_metadata(records[0])

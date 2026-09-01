@@ -163,6 +163,14 @@ async def handle_chat_completions(
             extra.get("_path"),
             extra.get("_pseudo"),
             messages=messages,
+            stats_metadata={
+                key: value for key, value in extra.items() if key.startswith("_stats_")
+            },
+            routing_metadata={
+                key: extra[key]
+                for key in ("_complexity", "_route", "_tier", "_plan")
+                if key in extra
+            },
         )
         return JSONResponse(result)
     except Exception as exc:

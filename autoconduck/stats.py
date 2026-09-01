@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -172,6 +173,12 @@ def record(
     route: str | None = None,
     tier: str | None = None,
     latency_ms: float | None = None,
+    event_id: str | None = None,
+    session_id: str | None = None,
+    upstream_model: str | None = None,
+    selection: dict[str, Any] | None = None,
+    cache_read_tokens: int | None = None,
+    cache_write_tokens: int | None = None,
 ) -> None:
     try:
         prompt_tokens, completion_tokens = int(prompt_tokens), int(completion_tokens)
@@ -183,10 +190,14 @@ def record(
         except Exception:
             pass
         row: dict[str, Any] = {
+            "stats_version": 2,
+            "event_id": event_id or uuid.uuid4().hex,
+            "session_id": session_id or "unknown",
             "ts": datetime.now(timezone.utc).isoformat(),
             "path": path,
             "pseudo_model": pseudo_model,
             "model": model,
+            "upstream_model": upstream_model or model,
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "cost": cost
@@ -205,6 +216,12 @@ def record(
         if latency_ms is not None:
             row["latency_ms"] = float(latency_ms)
             row["turn_latency_ms"] = float(latency_ms)
+        if cache_read_tokens is not None:
+            row["cache_read_tokens"] = int(cache_read_tokens)
+        if cache_write_tokens is not None:
+            row["cache_write_tokens"] = int(cache_write_tokens)
+        if selection:
+            row["selection"] = selection
         if plan is not None:
             if hasattr(plan, "model_dump"):
                 row["plan"] = plan.model_dump()
@@ -232,6 +249,29 @@ def load_records(limit: int | None = None) -> list[dict[str, Any]]:
     return rows[-limit:] if limit is not None else rows
 
 
+def _record_timestamp(row: dict[str, Any]) -> datetime | None:
+    value = row.get("ts")
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def _deduplicated(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen_event_ids: set[str] = set()
+    result: list[dict[str, Any]] = []
+    for row in records:
+        event_id = row.get("event_id")
+        if isinstance(event_id, str) and event_id:
+            if event_id in seen_event_ids:
+                continue
+            seen_event_ids.add(event_id)
+        result.append(row)
+    return result
+
+
 def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     totals = {
         "calls": 0,
@@ -242,8 +282,11 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
         "estimated_frontier_cost": 0.0,
         "estimated_savings_usd": 0.0,
         "savings_percentage": 0.0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
     }
     models: dict[str, dict[str, Any]] = {}
+    pseudo_models: dict[str, dict[str, Any]] = {}
     paths: dict[str, int] = {}
     pseudos: dict[str, int] = {}
     routes: dict[str, int] = {}
@@ -253,7 +296,8 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     FRONTIER_OUT_PER_M = 15.00
 
     latencies: list[float] = []
-    for row in records:
+    observed_at: list[datetime] = []
+    for row in _deduplicated(records):
         p, c = (
             int(row.get("prompt_tokens", 0) or 0),
             int(row.get("completion_tokens", 0) or 0),
@@ -267,6 +311,8 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
         totals["total_tokens"] += p + c
         totals["cost"] += cost
         totals["estimated_frontier_cost"] += frontier_cost
+        totals["cache_read_tokens"] += int(row.get("cache_read_tokens", 0) or 0)
+        totals["cache_write_tokens"] += int(row.get("cache_write_tokens", 0) or 0)
 
         lat = row.get("latency_ms") or row.get("turn_latency_ms")
         if lat is not None:
@@ -275,7 +321,7 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
             except (ValueError, TypeError):
                 pass
 
-        model = str(row.get("model", "unknown"))
+        model = str(row.get("upstream_model") or row.get("model", "unknown"))
         item = models.setdefault(
             model,
             {
@@ -292,14 +338,32 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
         item["total_tokens"] += p + c
         item["cost"] += cost
 
+        pseudo = str(row.get("pseudo_model", "unknown"))
+        pseudo_item = pseudo_models.setdefault(
+            pseudo,
+            {
+                "calls": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "cost": 0.0,
+            },
+        )
+        pseudo_item["calls"] += 1
+        pseudo_item["prompt_tokens"] += p
+        pseudo_item["completion_tokens"] += c
+        pseudo_item["total_tokens"] += p + c
+        pseudo_item["cost"] += cost
+
         paths[str(row.get("path", "unknown"))] = (
             paths.get(str(row.get("path", "unknown")), 0) + 1
         )
-        pseudos[str(row.get("pseudo_model", "unknown"))] = (
-            pseudos.get(str(row.get("pseudo_model", "unknown")), 0) + 1
-        )
+        pseudos[pseudo] = pseudos.get(pseudo, 0) + 1
         if "route" in row:
             routes[str(row.get("route"))] = routes.get(str(row.get("route")), 0) + 1
+        timestamp = _record_timestamp(row)
+        if timestamp is not None:
+            observed_at.append(timestamp)
 
     savings = max(0.0, totals["estimated_frontier_cost"] - totals["cost"])
     totals["estimated_savings_usd"] = savings
@@ -309,6 +373,11 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
         else 0.0
     )
     totals["avg_latency_ms"] = round(sum(latencies) / len(latencies), 1) if latencies else 0.0
+    if len(observed_at) >= 2:
+        observed_days = max((max(observed_at) - min(observed_at)).total_seconds() / 86400, 1 / 24)
+        totals["monthly_projected_cost"] = round(totals["cost"] * 30 / observed_days, 6)
+    else:
+        totals["monthly_projected_cost"] = 0.0
 
     result = {
         "totals": totals,
@@ -318,12 +387,73 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
                 key=lambda x: (-x[1]["cost"], -x[1]["total_tokens"], x[0]),
             )
         ),
+        "pseudo_models": dict(
+            sorted(
+                pseudo_models.items(),
+                key=lambda x: (-x[1]["cost"], -x[1]["total_tokens"], x[0]),
+            )
+        ),
         "paths": paths,
         "pseudos": pseudos,
         "routes": routes,
     }
     result.update(_latest_selection)
     return result
+
+
+_WINDOWS_MINUTES = {"15m": 15, "1h": 60, "1d": 1_440, "7d": 10_080, "30d": 43_200}
+SUPPORTED_WINDOWS = tuple(_WINDOWS_MINUTES)
+
+
+def filter_records(
+    records: list[dict[str, Any]],
+    *,
+    session_id: str | None = None,
+    window: str | None = None,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Return unique records in the requested session/window scope."""
+    rows = _deduplicated(records)
+    if session_id is not None:
+        rows = [row for row in rows if row.get("session_id", "unknown") == session_id]
+    if window is not None:
+        cutoff = (now or datetime.now(timezone.utc)) - timedelta(minutes=_WINDOWS_MINUTES[window])
+        rows = [
+            row
+            for row in rows
+            if (timestamp := _record_timestamp(row)) is not None and timestamp >= cutoff
+        ]
+    return rows
+
+
+def aggregate_scopes(
+    records: list[dict[str, Any]],
+    *,
+    session_id: str | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Return backwards-compatible aggregates plus durable scope views."""
+    all_rows = _deduplicated(records)
+    current_time = now or datetime.now(timezone.utc)
+    windows = {
+        name: aggregate(filter_records(all_rows, window=name, now=current_time))
+        for name in SUPPORTED_WINDOWS
+    }
+    session_rows = filter_records(all_rows, session_id=session_id)
+    session_aggregate = aggregate(session_rows)
+    return {
+        "all_time": aggregate(all_rows),
+        "session": {
+            "id": session_id,
+            "usage": session_aggregate["totals"],
+            "models": session_aggregate["models"],
+            "pseudo_models": session_aggregate["pseudo_models"],
+            "paths": session_aggregate["paths"],
+            "pseudos": session_aggregate["pseudos"],
+            "routes": session_aggregate["routes"],
+        },
+        "windows": windows,
+    }
 
 
 def render_table(agg: dict[str, Any]) -> str:
@@ -367,6 +497,35 @@ def _usage(obj: Any) -> tuple[int, int]:
     )
 
 
+def _cache_usage(obj: Any) -> tuple[int | None, int | None]:
+    try:
+        usage = getattr(obj, "usage", None)
+        if isinstance(obj, dict):
+            usage = obj.get("usage", usage)
+        if usage is None:
+            return None, None
+        if isinstance(usage, dict):
+            details = usage.get("prompt_tokens_details") or {}
+            read = usage.get("cache_read_input_tokens", details.get("cached_tokens"))
+            write = usage.get("cache_creation_input_tokens")
+        else:
+            details = getattr(usage, "prompt_tokens_details", None) or {}
+            read = getattr(usage, "cache_read_input_tokens", None)
+            if read is None:
+                read = (
+                    details.get("cached_tokens")
+                    if isinstance(details, dict)
+                    else getattr(details, "cached_tokens", None)
+                )
+            write = getattr(usage, "cache_creation_input_tokens", None)
+        return (
+            int(read) if read is not None else None,
+            int(write) if write is not None else None,
+        )
+    except (TypeError, ValueError):
+        return None, None
+
+
 def install_recorder(llm: Any) -> None:
     original = getattr(llm, "acompletion", None)
     if original is None or getattr(original, "_autoconduck_recorder", False):
@@ -380,6 +539,10 @@ def install_recorder(llm: Any) -> None:
         route_val = kwargs.pop("_route", None)
         tier_val = kwargs.pop("_tier", None)
         plan_val = kwargs.pop("_plan", None)
+        event_id = kwargs.pop("_stats_event_id", None)
+        session_id = kwargs.pop("_stats_session_id", None)
+        upstream_model = kwargs.pop("_stats_upstream_model", None)
+        selection = kwargs.pop("_stats_selection", None)
         model = str(kwargs.get("model", "unknown"))
         try:
             if not kwargs.get("stream"):
@@ -399,6 +562,7 @@ def install_recorder(llm: Any) -> None:
                     except Exception:
                         pass
                 hidden = getattr(result, "_hidden_params", {}) or {}
+                cache_read_tokens, cache_write_tokens = _cache_usage(result)
                 record(
                     path,
                     pseudo,
@@ -412,6 +576,12 @@ def install_recorder(llm: Any) -> None:
                     tier=tier_val,
                     plan=plan_val,
                     latency_ms=lat_ms,
+                    event_id=event_id,
+                    session_id=session_id,
+                    upstream_model=upstream_model,
+                    selection=selection,
+                    cache_read_tokens=cache_read_tokens,
+                    cache_write_tokens=cache_write_tokens,
                 )
                 return result
             options = dict(kwargs.get("stream_options") or {})
@@ -420,10 +590,11 @@ def install_recorder(llm: Any) -> None:
             response = await original(*args, **kwargs)
             prompt = completion = 0
             final_usage: tuple[int, int] | None = None
+            cache_read_tokens = cache_write_tokens = None
             generated_tokens = 0
 
             async def relay():
-                nonlocal prompt, completion, final_usage, generated_tokens
+                nonlocal prompt, completion, final_usage, generated_tokens, cache_read_tokens, cache_write_tokens
                 try:
                     async for chunk in response:
                         p, c = _usage(chunk)
@@ -431,6 +602,11 @@ def install_recorder(llm: Any) -> None:
                         completion += c
                         if _usage(chunk) != (0, 0):
                             final_usage = _usage(chunk)
+                        chunk_cache_read, chunk_cache_write = _cache_usage(chunk)
+                        if chunk_cache_read is not None:
+                            cache_read_tokens = chunk_cache_read
+                        if chunk_cache_write is not None:
+                            cache_write_tokens = chunk_cache_write
                         if hasattr(chunk, "choices") and chunk.choices:
                             delta = getattr(chunk.choices[0], "delta", None)
                             if delta and getattr(delta, "content", None):
@@ -456,6 +632,12 @@ def install_recorder(llm: Any) -> None:
                         tier=tier_val,
                         plan=plan_val,
                         latency_ms=lat_ms,
+                        event_id=event_id,
+                        session_id=session_id,
+                        upstream_model=upstream_model,
+                        selection=selection,
+                        cache_read_tokens=cache_read_tokens,
+                        cache_write_tokens=cache_write_tokens,
                     )
                 except Exception as exc:
                     lat_ms = round((time.perf_counter() - t0) * 1000, 1)
@@ -476,6 +658,12 @@ def install_recorder(llm: Any) -> None:
                             tier=tier_val,
                             plan=plan_val,
                             latency_ms=lat_ms,
+                            event_id=event_id,
+                            session_id=session_id,
+                            upstream_model=upstream_model,
+                            selection=selection,
+                            cache_read_tokens=cache_read_tokens,
+                            cache_write_tokens=cache_write_tokens,
                         )
                         return
                     pricing.record_error(model)

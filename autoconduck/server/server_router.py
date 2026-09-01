@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from typing import Any
 
 import autoconduck.config as config_module
@@ -49,6 +50,8 @@ async def call_litellm(
     path: str | None = None,
     pseudo: str | None = None,
     messages: list[Any] | None = None,
+    stats_metadata: dict[str, Any] | None = None,
+    routing_metadata: dict[str, Any] | None = None,
     *,
     normalize_messages_for_llm: Any = None,
     sanitize_tools: Any = None,
@@ -71,6 +74,10 @@ async def call_litellm(
         kwargs.update(litellm_params_for(model, config_module.get_config()))
     kwargs["_path"] = path if path is not None else "unknown"
     kwargs["_pseudo"] = pseudo if pseudo is not None else "unknown"
+    if routing_metadata:
+        kwargs.update(routing_metadata)
+    if stats_metadata:
+        kwargs.update(stats_metadata)
     result = await llm.acompletion(**kwargs)
     return result.model_dump() if hasattr(result, "model_dump") else result
 
@@ -128,6 +135,7 @@ async def route_target(
             elif "claude" in ua:
                 client_type = "claude"
     decision = None
+    plan = None
     session_id: str | None = None
     if request is not None and hasattr(request, "headers"):
         try:
@@ -261,11 +269,34 @@ async def route_target(
                 "No model available for request"
             )
         target = model
+    selection = {
+        "route": getattr(decision, "route", "direct") if decision else "direct",
+        "tier": getattr(decision, "tier", None) if decision else None,
+        "complexity": getattr(decision, "complexity", None) if decision else None,
+        "task_type": getattr(plan, "task_type", None) if plan else None,
+        "confidence": getattr(plan, "confidence", None) if plan else None,
+        "candidates_considered": getattr(decision, "candidates_considered", None) if decision else None,
+        "candidates_excluded_by": getattr(decision, "candidates_excluded_by", None) if decision else None,
+        "binding_constraint": getattr(decision, "binding_constraint", None) if decision else None,
+        "capability_fit_applied": getattr(decision, "capability_fit_applied", None) if decision else None,
+        "binding_capability_dim": getattr(decision, "binding_capability_dim", None) if decision else None,
+        "min_capability_score_applied": getattr(decision, "min_capability_score_applied", None) if decision else None,
+        "spend_cap_engaged": getattr(decision, "spend_cap_engaged", None) if decision else None,
+        "fallback_reason": getattr(decision, "fallback_reason", None) if decision else None,
+    }
+    stats_metadata = {
+        "_stats_event_id": uuid.uuid4().hex,
+        "_stats_session_id": session_id or "unknown",
+        # The canonical ID is the final, provider-qualified LiteLLM target.
+        "_stats_upstream_model": str(target or body_model),
+        "_stats_selection": {key: value for key, value in selection.items() if value is not None},
+    }
     extra = litellm_params_for(target, cfg)
     extra.update(
         _path=path if body_model in PSEUDO_MODELS else "direct",
         _pseudo=body_model,
     )
+    extra.update(stats_metadata)
     if body_model in PSEUDO_MODELS:
         extra.update(
             _complexity=float(

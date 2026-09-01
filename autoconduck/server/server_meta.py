@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastapi import HTTPException
+
 import autoconduck.config as config_module
-from autoconduck.stats import aggregate, load_records
+from autoconduck.stats import SUPPORTED_WINDOWS, aggregate, aggregate_scopes, filter_records, load_records
 
 
 def handle_healthz() -> dict[str, str]:
@@ -24,16 +26,33 @@ async def handle_models(serve_model_ids: Any) -> dict[str, Any]:
     }
 
 
-async def handle_stats(decisions: list[dict[str, Any]]) -> dict[str, Any]:
+async def handle_stats(
+    decisions: list[dict[str, Any]],
+    *,
+    session_id: str | None = None,
+    window: str | None = None,
+) -> dict[str, Any]:
     """Aggregate real-time usage and cost savings statistics."""
-    usage = aggregate(load_records())
-    return {
+    if window is not None and window not in SUPPORTED_WINDOWS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported stats window {window!r}; use one of {', '.join(SUPPORTED_WINDOWS)}",
+        )
+    records = load_records()
+    scopes = aggregate_scopes(records, session_id=session_id)
+    usage = scopes["all_time"]
+    selected = aggregate(filter_records(records, session_id=session_id, window=window))
+    response = {
         "counts": decisions,
         "cost_saved_metered": 0.0,
         "cost_saved_subscription": 0.0,
         "cache_hit_ratio": 0.0,
-        "usage": usage["totals"],
-        "models": usage["models"],
-        "path_counts": usage["paths"],
-        "pseudo_counts": usage["pseudos"],
+        "usage": selected["totals"],
+        "models": selected["models"],
+        "path_counts": selected["paths"],
+        "pseudo_counts": selected["pseudos"],
+        "all_time": usage,
+        "session": scopes["session"],
+        "windows": scopes["windows"],
     }
+    return response

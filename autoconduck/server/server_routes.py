@@ -61,7 +61,9 @@ def install_routes(
 
     decisions: list[dict[str, Any]] = []
 
-    async def _call(model, body, path=None, pseudo=None, messages=None):
+    async def _call(
+        model, body, path=None, pseudo=None, messages=None, stats_metadata=None, routing_metadata=None
+    ):
         return await call_litellm(
             model,
             body,
@@ -71,6 +73,8 @@ def install_routes(
             normalize_messages_for_llm=normalize_messages_for_llm,
             sanitize_tools=sanitize_tools,
             litellm_params_for=litellm_params_for,
+            stats_metadata=stats_metadata,
+            routing_metadata=routing_metadata,
         )
 
     async def _route_target(
@@ -95,8 +99,8 @@ def install_routes(
     async def models():
         return await handle_models(serve_model_ids)
 
-    async def get_stats():
-        return await handle_stats(decisions)
+    async def get_stats(session_id: str | None = None, window: str | None = None):
+        return await handle_stats(decisions, session_id=session_id, window=window)
 
     async def completions(body: CompletionRequest, request: Request):
         return await handle_chat_completions(
