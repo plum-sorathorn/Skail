@@ -56,6 +56,12 @@ def validate_patch_paths(paths: list[str], allowed_paths: list[str]) -> list[str
     return [path for path in paths if not any(fnmatch.fnmatch(path.replace("\\", "/"), pattern) for pattern in allowed_paths)]
 
 
+def approve_verifier(plan: TaskPlan, *, approved: bool, evidence: list[str]) -> None:
+    """Apply a separately supplied verifier outcome without executing checks here."""
+    plan.verifier = {"status": "approved" if approved else "rejected", "approved": approved, "evidence": evidence[:20]}
+    plan.status = "verified" if approved else "needs_review"
+
+
 def workflow_store() -> WorkflowStore:
     from autoconduck.config.paths import run_dir
     return WorkflowStore(run_dir() / "workflows")
