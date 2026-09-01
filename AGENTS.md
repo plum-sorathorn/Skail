@@ -1,6 +1,6 @@
 # AutoConduck — AGENTS.md
 
-AutoConduck is a local zero-overhead model router + optional deterministic plugin orchestrator for coding agents (Claude Code, OpenCode, Pi). Python runtime; end users install via npm (`npm install -g autoconduck`). Current version: 0.5.1.
+AutoConduck is a local zero-overhead model router + optional deterministic plugin orchestrator for coding agents (Claude Code, OpenCode, Pi). Python runtime; end users install via npm (`npm install -g autoconduck`). Current version: 0.5.2.
 
 ## Commands
 - Dev install: `pip install -r requirements.txt` then `pip install -e .`
@@ -9,7 +9,8 @@ AutoConduck is a local zero-overhead model router + optional deterministic plugi
 - Smoke: `python scripts/end_to_end_smoke.py` (mode A, router-only) and `python scripts/end_to_end_smoke.py --plugin` (mode B, router+plugin — offline-safe, no models required)
 - Run: TUI `autoconduck`; headless `autoconduck start --headless [--port] [--host]` (default `127.0.0.1:11434`); daemon `--daemon`; stop `autoconduck stop [--port]`; `conduck` is an alias console command for `autoconduck` (both map to `main.py`).
 - Hook: `autoconduck hook claude <Event>` — observe-only shim entrypoint, appends JSON to spool file, exit-0-always (see Gotchas)
-- Version bump: `python scripts/bump_version.py --patch` (syncs pyproject.toml, `__init__.py`, npm package.json, README/AGENTS) — **pending Phase 6**, do not bump in Phase 5
+- Version bump: `python scripts/bump_version.py --patch` (syncs pyproject.toml, `__init__.py`, npm package.json, README/AGENTS)
+- Sync presets: `python scripts/sync_all_presets.py` (syncs 1,000+ models from LiteLLM + DevPass + LLMGateway directly into `presets_data.py`, `presets_fallback.py`, and `docs/model_catalog.md`)
 - Graph: after editing code run `graphify update .`
 - NPM wheels: `python npm-packaging/build.py` (`--check` to verify without rebuild)
 
@@ -28,10 +29,11 @@ AutoConduck is a local zero-overhead model router + optional deterministic plugi
 The router is a **fast-only, per-turn "fit-gate then cheapest"** selector, not a spend meter. There is no slow-path branching, no task-graph, no sub-task/phase planning structures. `select_by_sla()` + dispatcher `_select_planned` do:
 1. Filter: enabled/undegraded/excluded → tools → reasoning → context → capability floor → cost.
 2. **Capability floor** uses 4-dim `capability_vector` (reasoning, tool_reliability, code_quality, latency_class) scored by `capability_fit()` = min-over-dominant-dims (weight>0.25) + 0.1*weighted_sum, weighted per SLM `task_type` via `TASK_TYPE_WEIGHTS`. Legacy models without a vector fall back to scalar `capability_score`.
-3. **Per-turn confidence floor (every classified turn):** `floor = min(base + 0.15*(1-confidence), 0.6)`. Low confidence → higher (more capable) floor; never overrides the price cap.
-4. **Optional session escalation bias (additive, cap 0.75, TTL in turns):** When the plugin runtime fires a deterministic trigger (e.g., 3-identical calls / 2 consecutive errors → `POST /plugin/escalate`), `SessionBiasStore` applies an additive bump to the floor for subsequent turns in that session. Semantics: additive, capped at 0.75, TTL = `plugins.escalation_ttl_turns` (default 10), precedence/reset as implemented in `autoconduck/plugin/bias.py`. No bias when plugins disabled.
-5. Sort remaining by **absolute cost ascending**, pick cheapest (unless pseudo_model contains "expensive").
-6. **`max_price_usd_per_mtok` is an OPT-IN per-selection price cap** (USD per 1M tokens), NOT per-minute and NOT a time-based meter. Disabled by default (`selection.path_price_cap_usd_per_mtok` = `{}`). If it empties the pool it falls back to cheapest available with `fallback_reason="price_cap_emptied_pool"`.
+3. **Per-turn confidence floor (every classified turn):** `floor = min(base + 0.15*(1-confidence), 0.60) + session_bias`, where `base` is derived from `TASK_BASE_FLOORS` (`debug: 0.35`, `refactor: 0.40`, `full_workflow: 0.45`, `multi_edit: 0.25`) scaled by `complexity_score`. Low confidence → higher (more capable) floor; never overrides the price cap.
+4. **Tool loop session floor inheritance:** Turns on `DIRECT_ACTIVE_TIER` inherit the session's active capability floor (`SessionBiasStore.get_session_floor`), preventing deep tool loops from down-tiering.
+5. **Optional session escalation bias (additive, cap 0.75, TTL in turns):** When Turn Guard or plugin runtime fires a deterministic trigger (e.g. `TurnAction.ESCALATE_SLM`, 3-identical calls / 2 consecutive errors → `POST /plugin/escalate`), `SessionBiasStore` applies an additive bump (+0.15) to the floor for subsequent turns in that session. Semantics: additive, capped at 0.75, TTL = `plugins.escalation_ttl_turns` (default 10). No bias when plugins disabled.
+6. Sort remaining by **absolute cost ascending**, with `-capability_fit` as secondary tiebreaker for equal-cost and zero-cost models.
+7. **`max_price_usd_per_mtok` is an OPT-IN per-selection price cap** (USD per 1M tokens), NOT per-minute and NOT a time-based meter. Disabled by default (`selection.path_price_cap_usd_per_mtok` = `{}`). If it empties the pool it falls back to cheapest available with `fallback_reason="price_cap_emptied_pool"`.
 - Explainability flows through `SelectionInfo`/`RoutingDecision` into `/stats`: candidates_considered, candidates_excluded_by, binding_constraint, capability_fit_applied, binding_capability_dim, spend_cap_engaged, fallback_reason.
 
 ## Turn Guard — do not regress

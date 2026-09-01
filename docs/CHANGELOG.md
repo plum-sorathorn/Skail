@@ -1,6 +1,30 @@
 # AutoConduck Changelog
 
-## [Unreleased] — 0.5.0 in progress (two-plane transformation, Phases 0–5)
+## [0.5.2] - 2026-08-31
+
+### Dynamic Task Capability Floors & Tool Loop Floor Inheritance
+- **Dynamic Task-Type Base Floors (`routing/dispatcher.py`)**: Added `TASK_BASE_FLOORS` defining capability baselines per task type (`debug: 0.35`, `refactor: 0.40`, `full_workflow: 0.45`, `multi_edit: 0.25`, etc.) scaled by `complexity_score`. Low confidence dynamically elevates the floor (`floor = min(base + 0.15*(1-confidence), 0.60)`).
+- **Tool Loop Session Floor Inheritance (`plugin/bias.py`, `routing/dispatcher.py`)**: Turns on `TurnAction.DIRECT_ACTIVE_TIER` inherit the session's active capability floor via `SessionBiasStore.get_session_floor`, preventing multi-turn debugging and refactoring loops from down-tiering to inadequate models mid-session.
+- **Deterministic Stagnation Escalation**: Turn Guard `TurnAction.ESCALATE_SLM` immediately applies an escalation bump (+0.15 additive floor, TTL = 10 turns) to the active session.
+- **Equal-Cost Capability Tiebreaker (`routing/model_pool.py`)**: When multiple qualifying models have identical or zero cost, `ModelPool._select` uses `-capability_fit` as the secondary sort key, guaranteeing the highest-capability candidate is chosen rather than alphabetical default.
+
+### Automated Multi-Provider Preset Synchronization
+- **Dynamic Upstream Ingestion (`scripts/sync_all_presets.py`)**: Ingests all active chat models directly from LiteLLM (2,800+ models), DevPass (317 models), and LLMGateway (205 models), automatically categorizing tiers and updating token pricing.
+- **Direct Atomic File Persistence**: Automatically writes synced presets directly to `autoconduck/presets/presets_data.py`, refreshes `presets_fallback.py`, and regenerates `docs/model_catalog.md` (1,024 preset models across 11 providers).
+- **Fallback Clobber Fix**: Fixed an issue where `PRESETS.update(FALLBACK_PRESETS)` in `presets_data.py` clobbered live scraped provider lists with hardcoded fallbacks.
+
+### OMP Harness & Session Extraction
+- **ESM Template Fixes (`harnesses/omp.py`)**: Replaced CommonJS `require` calls with ESM `import * as fs` and `import * as path` for Oh My Pi extension runtime compatibility.
+- **Client-Side Stagnation & Auto-Escalation**: Added client-side repeated call / error tracking in the OMP extension dispatching `POST /plugin/escalate`.
+- **Session Header & Hash Propagation (`server/server_router.py`)**: Extracted session headers (`x-autoconduck-session-id`, `x-session-id`, `x-conversation-id`) with fallback conversation-hash derivation for clients that omit explicit session headers.
+
+## [0.5.1] - 2026-08-30
+
+### Stability & Consolidation
+- Cleaned up obsolete DAG remnants and synchronized package wheels.
+- Finalized two-plane proxy runtime and test suites.
+
+## [0.5.0] - 2026-08-29
 
 ### Transformation — Two-Plane Architecture (Proxy = pure router, Plugin = optional deterministic orchestrator)
 - **Proxy strip-down (Phase 1):** Removed SLOW path, dynamic DAG machinery, subtask/phase planning, DAG handoff/response-rewriting, heartbeat, plan mutation (`orchestrator/dynamic_factory.py`, `handoff.py`, `fan_out.py`, `subagents.py`, `scripts/simulate_slow_path.py`), and SLOW-path tests. SLM planner trimmed to `TaskClassification` (`task_type`/`confidence`/`complexity_score`) with 2000 ms circuit-breaker and deterministic fallback; `SubTaskSpec`/`Phase`/`to_phase`, `create_escalation_plan`, `evaluate_session_trajectory`, and route-decision logic deleted. Dispatcher wired to `TASK_TYPE_WEIGHTS` + per-turn confidence floor `min(base + 0.15*(1-conf), 0.60)` on every classified turn. 6 dead config keys removed (`ambiguous_low`, `ambiguous_high`, `escalation_threshold`, `slow_threshold`, `min_orchestrator_complexity`, `deescalation_threshold`) — tolerated with startup warning, never a crash. `SessionGuard` relocated `orchestrator/session_guard.py` → `server/session_guard.py` (prefix immutability + 80% compaction). `orchestrator/` retained as transitional re-exports + stub (slated for Phase 7 cleanup).

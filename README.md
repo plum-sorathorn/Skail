@@ -4,7 +4,7 @@
 
 **Local, zero-overhead SLM model router + optional deterministic plugin orchestrator for coding agents.**
 
-[![Version](https://img.shields.io/badge/version-0.5.1-blue.svg?style=flat)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.5.2-blue.svg?style=flat)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://python.org)
 [![Fast Path Latency](https://img.shields.io/badge/turn--guard-%3C2ms-brightgreen.svg?style=flat)](autoconduck/server/turn_guard.py)
 [![SLM Engine](https://img.shields.io/badge/SLM-Qwen%202.5%20Coder%200.5B%20(ONNX%2FGGUF)-purple.svg?style=flat)](https://github.com/plum-sorathorn/AutoConduck)
@@ -22,12 +22,13 @@
 
 Coding agents (**Claude Code**, **OpenCode**, **Pi**, and **Oh My Pi**) frequently send every prompt—from a single-line typo fix, git status check, or docstring lookup to a 20-file architecture migration—to a single expensive frontier model. This incurs massive token spend on routine turns while bottlenecking large multi-step changes without structured selection.
 
-**AutoConduck 0.5.1** is a local, zero-overhead **model router** with an optional deterministic plugin plane:
+**AutoConduck 0.5.2** is a local, zero-overhead **model router** with an optional deterministic plugin plane:
 
-- **Turn Guard (Regex, <2ms, Synchronous):** Evaluates every turn without I/O or LLM calls. Healthy tool loops stay on `DIRECT_ACTIVE_TIER`; only genuine stagnation (3+ identical consecutive calls or 2+ consecutive errors) triggers a re-classify via the SLM classifier. No replanning, no task graphs.
+- **Turn Guard (Regex, <2ms, Synchronous):** Evaluates every turn without I/O or LLM calls. Healthy tool loops stay on `DIRECT_ACTIVE_TIER` (inheriting session capability floor); only genuine stagnation (3+ identical consecutive calls or 2+ consecutive errors) triggers an immediate floor bias escalation and SLM re-classification. No replanning, no task graphs.
 - **Embedded SLM Classifier (Qwen 2.5 Coder / LFM 2.5 ONNX / GGUF):** Local small model emits a lightweight `TaskClassification` (`task_type`, `confidence`, `complexity_score`) with a 2000 ms circuit-breaker and deterministic fallback. Optional, non-binding signal—never an authority.
-- **"Fit-Gate Then Cheapest" 4D Capability Selection:** Filters models against a 4-dimensional capability vector (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted per task type, then picks the absolute cheapest qualifying model on **every** classified turn.
-- **Per-Turn Confidence Floor + Session Escalation Bias:** Low SLM confidence tightens the capability floor ($\min(\text{base} + 0.15 \times (1 - \text{conf}), 0.60)$) on every classified turn; an additive session bias (cap 0.75, TTL in turns) raises it further when deterministic stagnation/escalation fires.
+- **"Fit-Gate Then Cheapest" 4D Capability Selection:** Filters models against a 4-dimensional capability vector (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted per task type, with capability tiebreaker sorting on equal/zero-cost candidates, picking the absolute cheapest qualifying model on **every** classified turn.
+- **Dynamic Task Base Floors + Tool Loop Floor Inheritance:** Base floors scale dynamically by task type and complexity (`debug: 0.35`, `refactor: 0.40`, `full_workflow: 0.45`), tightened by low confidence ($\min(\text{base} + 0.15 \times (1 - \text{conf}), 0.60)$) and inherited across tool loops. Additive session bias (+0.15, cap 0.75, TTL 10 turns) elevates selection upon stagnation.
+- **Automated Multi-Provider Preset Catalog (1,000+ Models):** `python scripts/sync_all_presets.py` synchronizes 1,024+ models across 11 providers (`openai`, `anthropic`, `google`, `mistral`, `deepseek`, `groq`, `openrouter`, `together`, `xai`, `devpass`, `llmgateway`) from live upstream endpoints directly into code and docs.
 - **Session Guard (`server/session_guard.py`):** Preserves immutable prompt-caching prefixes (turns 0 & 1) across 40+ turns and compacts at the 80% context window ceiling.
 - **Plugin Plane (Opt-in, Deterministic-First):** Daemon-side Python runtime—ledger (SQLite WAL, batched, durable-only events), bias store, salvaged executor proof path, and templated synthesis. Thin per-harness shims observe via `autoconduck hook` and a bounded spool file.
 - **LanceDB Knowledge & RAG Subsystem:** Embedded vector store with zero-cost 16-dimensional term-hash embeddings retrieves relevant codebase snippets without external API dependencies.
