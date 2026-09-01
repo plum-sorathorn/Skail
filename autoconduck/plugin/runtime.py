@@ -63,6 +63,15 @@ async def start_task(
     start_time = time.time()
     task_id = _new_task_id()
     sess_id = str(session_id or "default")
+    workflow = None
+    if getattr(plugins_cfg, "workflow_enabled", False):
+        try:
+            from autoconduck.plugin.workflows import TaskPlan, workflow_store
+
+            workflow = TaskPlan.new(sess_id, _sanitize_goal(goal), allowed_scope or ["**"], checks or [])
+            workflow_store().save(workflow)
+        except Exception as exc:
+            logger.warning("Workflow plan persistence failed (fail-soft): %s", exc)
 
     if workspace_root:
         ws_root = str(Path(workspace_root).resolve())
@@ -109,6 +118,9 @@ async def start_task(
         "workspace_root": ws_root,
         "base_url": base_url,
         "model": model_name,
+        "workflow_id": workflow.id if workflow else None,
+        "allowed_scope": allowed_scope or ["**"],
+        "acceptance_checks": checks or [],
     }
 
     res: dict[str, Any]
@@ -151,6 +163,7 @@ async def start_task(
             "tasks": data.get("tasks", []),
             "elapsed_s": elapsed,
             "runner_started": runner_started,
+            "workflow_id": workflow.id if workflow else None,
         }
         if "totalTokenUsage" in data:
             res["totalTokenUsage"] = data["totalTokenUsage"]
@@ -167,9 +180,19 @@ async def start_task(
             "tasks": [],
             "elapsed_s": elapsed,
             "runner_started": runner_started,
+            "workflow_id": workflow.id if workflow else None,
         }
 
     # 2. Enqueue terminal_result event to PluginLedger
+    if workflow is not None:
+        try:
+            workflow.status = "completed" if res.get("status") == "ok" else "failed"
+            workflow.verifier = {"status": "pending", "reason": "separate verifier required"}
+            from autoconduck.plugin.workflows import workflow_store
+
+            workflow_store().save(workflow)
+        except Exception:
+            pass
     try:
         if ledger is None:
             from autoconduck.plugin.ledger import get_ledger

@@ -87,6 +87,8 @@ class PluginConfig(BaseModel):
     oma_enabled: bool = True
     oma_mode: str = "auto"
     oma_node_path: str | None = None
+    workflow_enabled: bool = False
+    workflow_max_retries: int = 1
 
 
 class ClaudeCodeSettings(BaseModel):
