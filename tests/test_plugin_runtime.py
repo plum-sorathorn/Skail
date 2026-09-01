@@ -351,23 +351,104 @@ async def test_runtime_execute_disabled_returns_disabled(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_runtime_execute_enabled_returns_removed(tmp_path):
+async def test_runtime_execute_oma_sidecar_launches_and_records_ledger(tmp_path):
     from autoconduck.plugin.runtime import start_task
+    from autoconduck.plugin.ledger import get_ledger
     from autoconduck.config.manager import get_config
     import autoconduck.config.manager as m
 
     cfg = get_config()
     cfg.plugins.enabled = True
     cfg.plugins.execute_enabled = True
+    cfg.plugins.oma_enabled = True
+    cfg.plugins.oma_mode = "auto"
     m._config = cfg
 
     res = await start_task(
-        session_id="sessEnabled",
-        goal="read hello.txt",
+        session_id="sessOMA",
+        goal="Coordinate subagents to write tests",
         cfg=cfg,
     )
-    assert res.get("status") == "disabled"
-    assert "removed in Phase 1" in res.get("error", "")
+    assert res.get("status") == "ok"
+    assert res.get("session_id") == "sessOMA"
+    assert res.get("mode") == "runTeam"
+    assert isinstance(res.get("task_id"), str)
+    assert "report" in res
+    assert "tasks" in res
+
+    # Verify ledger recorded task_start and terminal_result
+    ledger = get_ledger()
+    ledger.flush_sync()
+    events = ledger.query_events(session_id="sessOMA")
+    kinds = [e["kind"] for e in events]
+    assert "task_start" in kinds
+    assert "terminal_result" in kinds
+
+
+@pytest.mark.asyncio
+async def test_runtime_execute_fail_soft_on_missing_node(tmp_path):
+    from autoconduck.plugin.runtime import start_task
+    from autoconduck.plugin.ledger import get_ledger
+    from autoconduck.config.manager import get_config
+    import autoconduck.config.manager as m
+
+    cfg = get_config()
+    cfg.plugins.enabled = True
+    cfg.plugins.execute_enabled = True
+    cfg.plugins.oma_enabled = True
+    cfg.plugins.oma_node_path = "non_existent_node_binary_999"
+    m._config = cfg
+
+    res = await start_task(
+        session_id="sessMissingNode",
+        goal="Perform task with missing node",
+        cfg=cfg,
+    )
+    assert res.get("status") == "error"
+    assert "OMA sidecar launch failed" in res.get("report", "")
+    assert res.get("session_id") == "sessMissingNode"
+
+    # Fail-soft still enqueues task_start and terminal_result in ledger
+    ledger = get_ledger()
+    ledger.flush_sync()
+    events = ledger.query_events(session_id="sessMissingNode")
+    kinds = [e["kind"] for e in events]
+    assert "task_start" in kinds
+    assert "terminal_result" in kinds
+
+
+def test_execute_endpoint_launches_oma_and_returns_ok(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from autoconduck.server.plugin_routes import install_plugin_routes
+    from autoconduck.plugin.ledger import get_ledger
+    from autoconduck.config.manager import get_config
+    import autoconduck.config.manager as m
+
+    cfg = get_config()
+    cfg.plugins.enabled = True
+    cfg.plugins.execute_enabled = True
+    cfg.plugins.oma_enabled = True
+    m._config = cfg
+    app = FastAPI()
+    install_plugin_routes(app)
+    client = TestClient(app)
+
+    r = client.post("/plugin/execute", json={"session_id": "sessEndpoint", "goal": "Build dynamic sidecar router"})
+    assert r.status_code == 200
+    j = r.json()
+    assert j.get("status") == "ok"
+    res = j.get("result", {})
+    assert res.get("status") == "ok"
+    assert res.get("session_id") == "sessEndpoint"
+    assert "report" in res
+
+    ledger = get_ledger()
+    ledger.flush_sync()
+    events = ledger.query_events(session_id="sessEndpoint")
+    kinds = [e["kind"] for e in events]
+    assert "task_start" in kinds
+    assert "terminal_result" in kinds
 
 
 def test_plugin_endpoints_never_500(tmp_path):
@@ -418,6 +499,9 @@ def test_phase_a_config_models():
     assert p.escalation_floor_bump == 0.15
     assert p.llm_synthesis_enabled is False
     assert p.execute_enabled is False
+    assert p.oma_enabled is True
+    assert p.oma_mode == "auto"
+    assert p.oma_node_path is None
 
     s = SelectionConfig()
     assert s.rag_embedding_model == ""

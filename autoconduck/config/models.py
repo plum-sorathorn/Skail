@@ -78,6 +78,9 @@ class PluginConfig(BaseModel):
     escalation_floor_bump: float = 0.15
     llm_synthesis_enabled: bool = False
     execute_enabled: bool = False
+    oma_enabled: bool = True
+    oma_mode: str = "auto"
+    oma_node_path: str | None = None
 
 
 class ClaudeCodeSettings(BaseModel):
