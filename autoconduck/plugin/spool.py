@@ -72,11 +72,72 @@ class SpoolTailer:
             if not isinstance(data, dict):
                 return
             # telemetry kind: hook:<event>  (e.g. hook:PostToolUse)
-            event = str(data.get("event") or "unknown")
+            event = str(data.get("event") or data.get("kind") or "unknown")
             kind = f"hook:{event}"
             # session scoping if present, else count under __global__
             session_id = data.get("session_id")
             sid = str(session_id) if isinstance(session_id, str) and session_id else "__global__"
+            task_id = str(data.get("task_id") or data.get("taskId") or "")
+
+            # Subagent lifecycle events
+            if event in ("SubagentStart", "subagent_start"):
+                parent_id = str(data.get("session_id") or "")
+                child_id = str(data.get("subagent_id") or "")
+                if parent_id and child_id:
+                    try:
+                        from autoconduck.plugin.bias import get_bias_store
+
+                        get_bias_store().register_child_session(child_id, parent_id)
+                    except Exception as exc:
+                        logger.debug("spool register_child_session error: %s", exc)
+                try:
+                    from autoconduck.plugin.ledger import get_ledger
+
+                    ledger = get_ledger()
+                    ledger.enqueue(
+                        child_id or sid,
+                        task_id,
+                        "subagent_start",
+                        {"parent_session_id": parent_id},
+                        parent_session_id=parent_id if parent_id else None,
+                    )
+                except Exception as exc:
+                    logger.debug("spool ledger subagent_start error: %s", exc)
+
+            elif event in ("SubagentStop", "subagent_stop"):
+                child_id = str(data.get("subagent_id") or data.get("session_id") or "")
+                outcome = (
+                    data.get("data", {}).get("outcome")
+                    if isinstance(data.get("data"), dict)
+                    else data.get("outcome")
+                )
+                try:
+                    from autoconduck.plugin.ledger import get_ledger
+
+                    ledger = get_ledger()
+                    ledger.enqueue(
+                        child_id or sid,
+                        task_id,
+                        "subagent_stop",
+                        {"outcome": str(outcome or "unknown")},
+                    )
+                except Exception as exc:
+                    logger.debug("spool ledger subagent_stop error: %s", exc)
+
+            elif event in ("task_start", "TaskStart"):
+                try:
+                    from autoconduck.plugin.ledger import get_ledger
+
+                    ledger = get_ledger()
+                    ledger.enqueue(
+                        sid,
+                        task_id,
+                        "task_start",
+                        data.get("data") if isinstance(data.get("data"), dict) else {"data": data},
+                    )
+                except Exception as exc:
+                    logger.debug("spool ledger task_start error: %s", exc)
+
             # Convert to in-memory telemetry only (not durable)
             try:
                 from autoconduck.plugin.ledger import get_ledger

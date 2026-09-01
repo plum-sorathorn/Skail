@@ -142,6 +142,14 @@ if _TEXTUAL:
             cfg.plugins.claude_enabled = opt["claude_enabled"]
             cfg.plugins.subagent_enabled = opt["subagent_enabled"]
             cfg.plugins.rag_enabled = opt["rag_enabled"]
+            if opt["plugins_enabled"]:
+                cfg.plugins.omp_enabled = bool("omp" in self.agents if self.agents else True)
+                cfg.plugins.pi_enabled = bool("pi" in self.agents if self.agents else False)
+                cfg.plugins.opencode_enabled = bool("opencode" in self.agents if self.agents else False)
+            else:
+                cfg.plugins.omp_enabled = False
+                cfg.plugins.pi_enabled = False
+                cfg.plugins.opencode_enabled = False
             save_config(cfg)
 
             from .screens_extra import LauncherIntegrationScreen

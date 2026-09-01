@@ -113,7 +113,9 @@ async def route_target(
             client_type = request.headers.get("x-agent-id", None)
         if client_type is None:
             ua = request.headers.get("user-agent", "").lower()
-            if "pi" in ua or "pi-coding-agent" in ua:
+            if "omp" in ua or "oh-my-pi" in ua:
+                client_type = "omp"
+            elif "pi" in ua or "pi-coding-agent" in ua:
                 client_type = "pi"
             elif "opencode" in ua:
                 client_type = "opencode"

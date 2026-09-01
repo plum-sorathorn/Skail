@@ -68,7 +68,7 @@
 **3.1 Hook protocol (binding):** shims are NON-BLOCKING. Localhost append to bounded queue with 5–10ms timeout, then drop on failure; never await planning, ledger writes, or LLM calls; local overhead budget <10ms per hook invocation.
 **3.2 Claude Code (the one shipped shim):** `hooks` block added by existing `patch()` → `autoconduck hook claude <event>`; PreToolUse/PostToolUse/Stop → fire-and-forget events; observe-only in v1 (no blocking decisions).
 **3.3 Pi / OpenCode:** stubbed behind disabled flags (`plugins.pi.enabled=false`, `plugins.opencode.enabled=false`) — install machinery present, hooks inert; full implementation deferred.
-**3.4 OMP:** deferred entirely.
+**3.4 OMP:** shipped shim via `~/.omp/agent/extensions/autoconduck.ts` (subagent tracking, session/tool hooks, RAG MCP tool).
 
 → *Verify: shim install/uninstall clean; disabled state = zero behavioral delta; hook overhead measured <10ms; daemon-down → shim silent no-op.*
 **Commit 4.**

@@ -579,11 +579,15 @@ def test_omp_extension_and_subagent_listeners(tmp_path, monkeypatch):
     ext_path = adapter._extension_path()
     assert ext_path == tmp_path / ".omp" / "agent" / "extensions" / "autoconduck.ts"
 
-    rendered = adapter._render_extension(port=11434, hooks_enabled=True, subagent_enabled=True)
+    rendered = adapter._render_extension(port=11434, hooks_enabled=True, subagent_enabled=True, rag_enabled=True)
     assert "AutoConduck Monitor & Router" in rendered
     assert "_appendSpool" in rendered
+    assert "_postOrSpool" in rendered
     assert "pi.on('agent_start'" in rendered
     assert "pi.on('agent_end'" in rendered
+    assert "pi.on('session_start'" in rendered
+    assert "pi.on('tool_call'" in rendered
+    assert "name: 'autoconduck_search'" in rendered
     assert "event?.agentKind === 'sub'" in rendered
     assert "event?.parentSessionId" in rendered
     assert "SubagentStart" in rendered
@@ -593,12 +597,108 @@ def test_omp_extension_and_subagent_listeners(tmp_path, monkeypatch):
     cfg.plugins.enabled = True
     cfg.plugins.omp_enabled = True
     cfg.plugins.subagent_enabled = True
+    cfg.plugins.rag_enabled = True
     adapter.patch(cfg)
     assert ext_path.exists()
-    assert "SubagentStart" in ext_path.read_text(encoding="utf-8")
+    ext_content = ext_path.read_text(encoding="utf-8")
+    assert "SubagentStart" in ext_content
+    assert "const AUTOCONDUCK_HOOKS_ENABLED = true;" in ext_content
+    assert "const AUTOCONDUCK_RAG_ENABLED = true;" in ext_content
+
+    # Check models.yml provider has x-agent-id header
+    models_yml = tmp_path / ".omp" / "agent" / "models.yml"
+    assert models_yml.exists()
+    assert "x-agent-id: omp" in models_yml.read_text(encoding="utf-8")
 
     adapter.revert()
     assert not ext_path.exists()
+
+
+def test_spool_tailer_processes_subagent_start_stop_and_task_start(tmp_path):
+    from autoconduck.plugin.spool import SpoolTailer
+    from autoconduck.plugin.ledger import get_ledger
+    from autoconduck.plugin.bias import get_bias_store
+
+    ledger = get_ledger()
+    bias = get_bias_store()
+    spool = tmp_path / "test_spool_sub.jsonl"
+    tailer = SpoolTailer(spool_path=spool, poll_interval_s=0.05)
+
+    # SubagentStart via spool line
+    rec_start = {
+        "ts": "2026-08-31T19:00:00Z",
+        "event": "SubagentStart",
+        "session_id": "parent-sess-99",
+        "subagent_id": "child-sess-99",
+        "task_id": "task-sub-99",
+    }
+    # TaskStart via spool line
+    rec_task = {
+        "ts": "2026-08-31T19:00:01Z",
+        "event": "task_start",
+        "session_id": "parent-sess-99",
+        "task_id": "task-main-99",
+        "data": {"title": "Test Task"},
+    }
+    # SubagentStop via spool line
+    rec_stop = {
+        "ts": "2026-08-31T19:00:02Z",
+        "event": "SubagentStop",
+        "session_id": "parent-sess-99",
+        "subagent_id": "child-sess-99",
+        "task_id": "task-sub-99",
+        "outcome": "success",
+    }
+
+    spool.write_text(
+        "\n".join([json.dumps(rec_start), json.dumps(rec_task), json.dumps(rec_stop)]) + "\n",
+        encoding="utf-8",
+    )
+    processed = tailer.poll_sync()
+    assert processed == 3
+
+    # Check child session was registered in bias store
+    assert bias.is_child_session("child-sess-99") is True
+    assert bias.is_child_session("parent-sess-99") is False
+
+    # Check events enqueued in ledger
+    ledger.flush_sync()
+    events = ledger.query_events(session_id="child-sess-99")
+    start_events = [e for e in events if e["kind"] == "subagent_start"]
+    stop_events = [e for e in events if e["kind"] == "subagent_stop"]
+    assert len(start_events) == 1
+    assert start_events[0].get("parent_session_id") == "parent-sess-99"
+    assert len(stop_events) == 1
+    assert "success" in str(stop_events[0].get("data", ""))
+
+    main_events = ledger.query_events(session_id="parent-sess-99")
+    task_events = [e for e in main_events if e["kind"] == "task_start"]
+    assert len(task_events) == 1
+
+
+def test_onboarding_plugin_setup_enables_omp_when_full_or_selected(tmp_path, monkeypatch):
+    import pathlib
+    monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
+    from autoconduck.tui.onboarding.screens_plugin import PluginSetupScreen
+    from autoconduck.config.manager import get_config
+
+    # Full integration with omp in agents
+    screen = PluginSetupScreen(agents=["omp"])
+    screen.selected_idx = 0  # Full integration
+    screen._confirm_and_continue()
+    cfg = get_config()
+    assert cfg.plugins.enabled is True
+    assert cfg.plugins.omp_enabled is True
+    assert cfg.plugins.subagent_enabled is True
+    assert cfg.plugins.rag_enabled is True
+
+    # Disabled integration
+    screen2 = PluginSetupScreen(agents=["omp"])
+    screen2.selected_idx = 2  # Disabled
+    screen2._confirm_and_continue()
+    cfg2 = get_config()
+    assert cfg2.plugins.enabled is False
+    assert cfg2.plugins.omp_enabled is False
 
 
 # ---------------------------------------------------------------------------

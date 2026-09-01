@@ -72,8 +72,8 @@ AutoConduck operates under a **Two-Plane Architecture** where the Fast-Path Prox
   Plugin Plane (Daemon-side, Python — Active when plugins.enabled=true)
       ┌─────────────────────────────────────────────────────────┐
       │  Shims (Thin, Non-blocking, <10ms overhead)             │
-      │    Claude Code hooks → autoconduck hook claude <Event>  │
-      │    (observe-only, exit-0-always, spool file appended)   │
+      │    Claude Code hooks → POST /plugin/events (HTTP, 10ms) │
+      │    fallback: autoconduck hook claude <Event> (spool)    │
       │    Pi / OpenCode: gated stubs (inert)                   │
       │                     │                                   │
       │                     ▼                                   │
@@ -161,7 +161,7 @@ autoconduck install claude opencode pi omp
 
 ### Claude Code
 
-AutoConduck provides an Anthropic-compatible `/v1/messages` translation shim and configures `settings.json`. When `plugins.enabled=true` **and** `plugins.claude_enabled=true`, Claude Code hooks (`PreToolUse`, `PostToolUse`, `Stop`) are installed via marker-bounded edits to `settings.json` and invoke `autoconduck hook claude <Event>` (observe-only, exit-0-always, spool file).
+AutoConduck provides an Anthropic-compatible `/v1/messages` translation shim and configures `settings.json`. When `plugins.enabled=true` **and** `plugins.claude_enabled=true`, Claude Code hooks (`PreToolUse`, `PostToolUse`, `Stop`, `SubagentStart`, `SubagentStop`) are installed via marker-bounded edits to `settings.json` as direct HTTP hooks to `http://127.0.0.1:<port>/plugin/events` with a 10 ms timeout. The legacy `autoconduck hook claude <Event>` CLI remains as a fallback and still exits 0-always, appending to the spool file if the host agent or older hook protocol needs it.
 
 ```bash
 # Launch Claude Code directly through AutoConduck
@@ -206,7 +206,12 @@ autoconduck start --pi
 
 ### Oh My Pi (OMP)
 
-AutoConduck supports Oh My Pi through dedicated link commands and config patching (`~/.omp/agent/models.yml` and `config.yml`):
+AutoConduck provides native integration with Oh My Pi via provider registration (`~/.omp/agent/models.yml`), default model role configuration (`~/.omp/agent/config.yml`), and the TypeScript extension `~/.omp/agent/extensions/autoconduck.ts`.
+
+When `plugins.enabled=true` and `plugins.omp_enabled=true`, the extension installs:
+- **Subagent tracking & tier routing:** Automatically observes `agent_start`/`agent_end` events and routes child subagents to the budget model tier.
+- **Session & tool observability:** Dispatches `session_start`, `tool_call`, and `tool_result` events directly to `/plugin/events` with fail-soft spool file fallback.
+- **Codebase knowledge search:** Registers the `autoconduck_search` tool calling AutoConduck's local RAG MCP endpoint (`/mcp/tools/call`).
 
 ```bash
 # Link Oh My Pi to AutoConduck
@@ -337,7 +342,7 @@ Navigate directly to all major views from the main menu:
 | `autoconduck start` | Starts the AutoConduck proxy server | `--headless`, `--daemon`, `--port <int>`, `--host <str>`, `--claude`, `--opencode`, `--pi`, `--new-terminal` |
 | `autoconduck stop` | Stops the running proxy server & supervisor | `--port <int>` |
 | `autoconduck install [agents...]` | Configures agents & installs launcher shims | Positional: `claude`, `opencode`, `pi`, `omp`, `all` |
-| `autoconduck hook claude <Event>` | Plugin shim hook — observe-only, appends to spool file, **exit-0-always** | Event: `PreToolUse`, `PostToolUse`, `Stop`, etc. |
+| `autoconduck hook claude <Event>` | Legacy fallback shim — observe-only, appends to spool file, **exit-0-always** | Event: `PreToolUse`, `PostToolUse`, `Stop`, etc. The primary Claude Code path is direct HTTP to `/plugin/events` with a 10 ms timeout. |
 | `autoconduck omp link` | Links Oh My Pi configuration to AutoConduck | |
 | `autoconduck omp unlink` | Reverts Oh My Pi configuration | |
 | `autoconduck edit` | Opens TUI directly on model/provider editor | |
@@ -431,7 +436,7 @@ AutoConduck exposes standard operational and proxy endpoints:
 | `/v1/messages` | `POST` | Anthropic-compatible messages proxy (supports SSE `thinking_delta`) |
 | `/v1/messages/count_tokens` | `POST` | Anthropic token counting endpoint |
 | `/stats` | `GET` | Live audit telemetry, decision breakdowns, token volume, latency histograms, and explainability metrics |
-| `/plugin/events` | `POST` | Plugin event ingestion (shim → spool → daemon). Never 5xx; returns `ignored` when disabled |
+| `/plugin/events` | `POST` | Plugin event ingestion (HTTP hook direct to daemon; spool remains fallback for legacy shims). Never 5xx; returns `ignored` when disabled |
 | `/plugin/contract?session=` | `GET` | Returns the JSON task contract for a session |
 | `/plugin/escalate` | `POST` | Deterministic trigger matrix → session bias update (`floor_bump`, `ttl_turns`) |
 | `/plugin/execute` | `POST` | Internal executor proof path (gated by `plugins.execute_enabled`) |

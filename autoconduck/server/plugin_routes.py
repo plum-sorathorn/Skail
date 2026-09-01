@@ -17,6 +17,8 @@ ALLOWED_EVENT_KINDS = frozenset({
     "task_start",
     "task_progress",
     "task_done",
+    "session_start",
+    "session_end",
     "SubagentStart",
     "SubagentStop",
     "subagent_start",

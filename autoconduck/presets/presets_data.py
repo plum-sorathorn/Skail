@@ -21,7 +21,6 @@ CATALOG_SHORTLIST = (
 # Preset groups
 
 from .presets_fallback import FALLBACK_PRESETS
-
 PRESETS: dict[str, list[dict[str, Any]]] = {
     "anthropic": [
         {
@@ -135,17 +134,10 @@ PRESETS: dict[str, list[dict[str, Any]]] = {
             "api_key_env": "OPENAI_API_KEY",
         },
         {
-            "id": "gpt-5.6-luna",
-            "provider": "openai",
-            "price_in": 0.2,
-            "price_out": 1.2,
-            "api_key_env": "OPENAI_API_KEY",
-        },
-        {
             "id": "gpt-5.6",
             "provider": "openai",
-            "price_in": 5.0,
-            "price_out": 30.0,
+            "price_in": 4.0,
+            "price_out": 20.0,
             "api_key_env": "OPENAI_API_KEY",
         },
         {
@@ -163,10 +155,10 @@ PRESETS: dict[str, list[dict[str, Any]]] = {
             "api_key_env": "OPENAI_API_KEY",
         },
         {
-            "id": "gpt-5-nano",
+            "id": "gpt-5.1-codex",
             "provider": "openai",
-            "price_in": 0.05,
-            "price_out": 0.4,
+            "price_in": 1.25,
+            "price_out": 10.0,
             "api_key_env": "OPENAI_API_KEY",
         },
         {
@@ -239,19 +231,19 @@ PRESETS: dict[str, list[dict[str, Any]]] = {
         {
             "id": "mistral-large-latest",
             "provider": "mistral",
-            "price_in": 2.0,
-            "price_out": 6.0,
+            "price_in": 0.5,
+            "price_out": 1.5,
             "api_key_env": "MISTRAL_API_KEY",
         },
         {
             "id": "mistral-small-latest",
             "provider": "mistral",
-            "price_in": 0.1,
-            "price_out": 0.3,
+            "price_in": 0.15,
+            "price_out": 0.6,
             "api_key_env": "MISTRAL_API_KEY",
         },
         {
-            "id": "codestral-latest",
+            "id": "codestral-2508",
             "provider": "mistral",
             "price_in": 0.3,
             "price_out": 0.9,
@@ -260,8 +252,15 @@ PRESETS: dict[str, list[dict[str, Any]]] = {
         {
             "id": "ministral-8b-latest",
             "provider": "mistral",
-            "price_in": 0.1,
-            "price_out": 0.1,
+            "price_in": 0.15,
+            "price_out": 0.15,
+            "api_key_env": "MISTRAL_API_KEY",
+        },
+        {
+            "id": "devstral-2512",
+            "provider": "mistral",
+            "price_in": 0.4,
+            "price_out": 2.0,
             "api_key_env": "MISTRAL_API_KEY",
         },
     ],
@@ -269,37 +268,37 @@ PRESETS: dict[str, list[dict[str, Any]]] = {
         {
             "id": "deepseek-chat",
             "provider": "deepseek",
-            "price_in": 0.14,
-            "price_out": 0.28,
+            "price_in": 0.28,
+            "price_out": 0.42,
             "api_key_env": "DEEPSEEK_API_KEY",
         },
         {
             "id": "deepseek-reasoner",
             "provider": "deepseek",
-            "price_in": 0.55,
-            "price_out": 2.19,
+            "price_in": 0.28,
+            "price_out": 0.42,
             "api_key_env": "DEEPSEEK_API_KEY",
             "capability_score": 0.5,
         },
         {
             "id": "deepseek-v3.2",
             "provider": "deepseek",
-            "price_in": 0.26,
-            "price_out": 0.38,
+            "price_in": 0.28,
+            "price_out": 0.4,
             "api_key_env": "DEEPSEEK_API_KEY",
         },
         {
             "id": "deepseek-v4-flash",
             "provider": "deepseek",
-            "price_in": 0.14,
-            "price_out": 0.28,
+            "price_in": 0.44,
+            "price_out": 1.32,
             "api_key_env": "DEEPSEEK_API_KEY",
         },
         {
             "id": "deepseek-v4-pro",
             "provider": "deepseek",
-            "price_in": 0.43,
-            "price_out": 0.87,
+            "price_in": 1.32,
+            "price_out": 3.96,
             "api_key_env": "DEEPSEEK_API_KEY",
         },
     ],

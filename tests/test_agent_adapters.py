@@ -301,7 +301,7 @@ def test_pi_and_omp_extension_rag_register_tool(tmp_path, monkeypatch):
 
     pi_ext = (pi_dir / "extensions" / "autoconduck.ts").read_text(encoding="utf-8")
     assert "const AUTOCONDUCK_RAG_ENABLED = true" in pi_ext
-    assert "pi.registerTool('autoconduck_search'" in pi_ext
+    assert "name: 'autoconduck_search'" in pi_ext
     assert "http://127.0.0.1:11434/mcp/tools/call" in pi_ext
 
     # Test OMP Adapter with RAG enabled
@@ -311,7 +311,7 @@ def test_pi_and_omp_extension_rag_register_tool(tmp_path, monkeypatch):
 
     omp_ext = (tmp_path / ".omp" / "agent" / "extensions" / "autoconduck.ts").read_text(encoding="utf-8")
     assert "const AUTOCONDUCK_RAG_ENABLED = true" in omp_ext
-    assert "pi.registerTool('autoconduck_search'" in omp_ext
+    assert "name: 'autoconduck_search'" in omp_ext
     assert "http://127.0.0.1:11434/mcp/tools/call" in omp_ext
 
 

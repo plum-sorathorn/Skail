@@ -50,7 +50,7 @@ Do NOT build `model_scores.json` / empirical success-weighted scoring yet. It is
 
 - `config/`: `models.py` (`Config`/`SelectionConfig`/`PluginConfig` pydantic), `manager.py`, `resolver.py`, `paths.py`.
 - `knowledge/` (LanceDB RAG); `auth/`, `launcher/`, `cli/`, `presets/`, `tui/`, `_compat/`.
-- `harnesses/` (`base.py`, `omp.py`, `claude_code.py`, `opencode.py`, `pi.py`): Thin translation layer. Pi extension is a gated constant (inert) behind `plugins.pi_enabled=false`; OpenCode shim is doc-only stub behind `plugins.opencode_enabled=false`. Claude Code hooks are the one shipped shim (gated by `plugins.enabled` AND `plugins.claude_enabled`).
+- `harnesses/` (`base.py`, `omp.py`, `claude_code.py`, `opencode.py`, `pi.py`): Translation layer. Claude Code hooks (direct HTTP / spool) and Oh My Pi (`~/.omp/agent/extensions/autoconduck.ts` supporting subagent tracking, tool events, and MCP codebase search) are shipped shims (gated by `plugins.enabled` and respective `<harness>_enabled`). Pi extension is gated behind `plugins.pi_enabled=false`; OpenCode shim is doc-only stub behind `plugins.opencode_enabled=false`.
 
 ## Gotchas
 - TUI quit chord is **Ctrl+C** (Textual default Ctrl+Q is disabled); keymap in `tui/keymap.py`.
