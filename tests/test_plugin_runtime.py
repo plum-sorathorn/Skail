@@ -351,7 +351,7 @@ async def test_runtime_execute_disabled_returns_disabled(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_runtime_trivial_read_only(tmp_path):
+async def test_runtime_execute_enabled_returns_removed(tmp_path):
     from autoconduck.plugin.runtime import start_task
     from autoconduck.config.manager import get_config
     import autoconduck.config.manager as m
@@ -359,85 +359,15 @@ async def test_runtime_trivial_read_only(tmp_path):
     cfg = get_config()
     cfg.plugins.enabled = True
     cfg.plugins.execute_enabled = True
-    cfg.plugins.escalation_ttl_turns = 10
-    cfg.plugins.escalation_floor_bump = 0.15
     m._config = cfg
-    # prepare workspace with a file
-    (tmp_path / "hello.txt").write_text("world", encoding="utf-8")
 
-    class FakeClient:
-        def __init__(self):
-            self.round = 0
-
-        def completion(self, *, messages, **kwargs):
-            self.round += 1
-            if self.round == 1:
-                return {"choices": [{"message": {"content": "", "tool_calls": [
-                    {"id": "c1", "type": "function", "function": {"name": "read", "arguments": '{"path":"hello.txt"}'}}
-                ]}}]}
-            return {"choices": [{"message": {"content": "done after reading hello.txt"}}]}
-
-    client = FakeClient()
     res = await start_task(
-        session_id="sessR",
+        session_id="sessEnabled",
         goal="read hello.txt",
-        checks=["file hello.txt exists"],
-        workspace_root=tmp_path,
-        allowed_scope=[str(tmp_path)],
         cfg=cfg,
-        client=client,
-        max_rounds=5,
     )
-    assert "report" in res
-    assert "hello.txt" in res["report"] or "hello.txt" in str(res.get("files_touched", []))
-    assert res["rounds"] >= 1
-    assert res["outcome"] == "completed"
-
-
-@pytest.mark.asyncio
-async def test_runtime_stagnation_triggers_bias(tmp_path):
-    from autoconduck.plugin.runtime import start_task
-    from autoconduck.plugin.bias import get_bias_store
-    from autoconduck.config.manager import get_config
-    import autoconduck.config.manager as m
-
-    cfg = get_config()
-    cfg.plugins.enabled = True
-    cfg.plugins.execute_enabled = True
-    cfg.plugins.escalation_ttl_turns = 5
-    cfg.plugins.escalation_floor_bump = 0.2
-    m._config = cfg
-    get_bias_store().reset_session("sessStag")
-
-    class StagClient:
-        def completion(self, *, messages, **kwargs):
-            # always return same failing read to trigger 3 identical calls + errors
-            return {"choices": [{"message": {"content": "", "tool_calls": [
-                {"id": "c1", "type": "function", "function": {"name": "read", "arguments": '{"path":"missing.py"}'}}
-            ]}}]}
-
-    client = StagClient()
-    res = await start_task(
-        session_id="sessStag",
-        goal="do something with missing.py",
-        workspace_root=tmp_path,
-        allowed_scope=[str(tmp_path)],
-        cfg=cfg,
-        client=client,
-        max_rounds=4,
-    )
-    assert res["stagnation_triggered"] is True
-    assert get_bias_store().get_bump("sessStag") > 0
-    assert "stagnation" in res["report"].lower() or "rounds" in res["report"].lower()
-
-
-def test_synthesis_llm_stub_annotation():
-    from autoconduck.plugin.synthesis import render_report
-
-    base = render_report("s", "t", "goal", "completed", 1, ["read"], ["a.py"], [], llm_synthesis_enabled=False)
-    assert "llm-synthesis-not-wired" not in base
-    wired = render_report("s", "t", "goal", "completed", 1, ["read"], ["a.py"], [], llm_synthesis_enabled=True)
-    assert "llm-synthesis-not-wired" in wired
+    assert res.get("status") == "disabled"
+    assert "removed in Phase 1" in res.get("error", "")
 
 
 def test_plugin_endpoints_never_500(tmp_path):

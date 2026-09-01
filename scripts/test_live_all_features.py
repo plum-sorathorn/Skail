@@ -123,11 +123,11 @@ def test_model_selection() -> tuple[bool, str]:
 
 
 async def test_native_async_dag() -> tuple[bool, str]:
-    """Test 3: Plugin executor loop (DAG removed, now in plugin)."""
-    from autoconduck.plugin.executor_loop import run_executor_tool_loop
+    """Test 3: Plugin runtime entrypoint."""
+    from autoconduck.plugin import start_task
 
-    passed = callable(run_executor_tool_loop)
-    return passed, "Plugin executor loop available (DAG removed in Phase 1B)"
+    passed = callable(start_task)
+    return passed, "Plugin runtime entrypoint available"
 
 
 def test_session_guard() -> tuple[bool, str]:
