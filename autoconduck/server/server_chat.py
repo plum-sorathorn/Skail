@@ -8,7 +8,6 @@ from typing import Any
 
 import autoconduck.config as config_module
 from autoconduck.server.server_models import CompletionRequest
-from autoconduck.stats import record
 
 
 async def handle_chat_completions(
@@ -127,33 +126,11 @@ async def handle_chat_completions(
             kwargs.update(model=target, drop_params=True)
             kwargs.update(extra)
 
-            t0 = time.perf_counter()
-            prompt_tokens = 0
-            completion_tokens = 0
-            generated_text_tokens = 0
             try:
                 response = await llm.acompletion(**kwargs)
                 async for chunk in response:
                     if await request.is_disconnected():
                         break
-                    usage = getattr(chunk, "usage", None)
-                    if isinstance(chunk, dict):
-                        usage = chunk.get("usage", usage)
-                    if usage:
-                        p = getattr(usage, "prompt_tokens", None) if not isinstance(usage, dict) else usage.get("prompt_tokens")
-                        c = getattr(usage, "completion_tokens", None) if not isinstance(usage, dict) else usage.get("completion_tokens")
-                        if p:
-                            prompt_tokens = max(prompt_tokens, int(p))
-                        if c:
-                            completion_tokens = max(completion_tokens, int(c))
-                    choices = getattr(chunk, "choices", None) if not isinstance(chunk, dict) else chunk.get("choices")
-                    if choices and len(choices) > 0:
-                        choice = choices[0]
-                        delta = getattr(choice, "delta", None) if not isinstance(choice, dict) else choice.get("delta")
-                        if delta:
-                            content = getattr(delta, "content", None) if not isinstance(delta, dict) else delta.get("content")
-                            if content:
-                                generated_text_tokens += len(str(content).split())
                     payload = (
                         chunk.model_dump()
                         if hasattr(chunk, "model_dump")
@@ -174,32 +151,8 @@ async def handle_chat_completions(
                         }
                     )
                     + "\n\n"
-                )
-            finally:
-                lat_ms = round((time.perf_counter() - t0) * 1000, 1)
-                if prompt_tokens == 0:
-                    try:
-                        from autoconduck.server.messages_api import count_tokens
-                        prompt_tokens = count_tokens(json.dumps(kwargs.get("messages", [])))
-                    except Exception:
-                        pass
-                if completion_tokens == 0:
-                    completion_tokens = int(generated_text_tokens * 1.3)
-                try:
-                    record(
-                        extra.get("_path", "FAST"),
-                        extra.get("_pseudo", body.model),
-                        target or body.model,
-                        prompt_tokens,
-                        completion_tokens,
-                        complexity=extra.get("_complexity"),
-                        route=extra.get("_route"),
-                        tier=extra.get("_tier"),
-                        latency_ms=lat_ms,
-                        plan=extra.get("_plan"),
                     )
-                except Exception:
-                    pass
+            finally:
                 yield "data: [DONE]\n\n"
 
         return StreamingResponse(relay(), media_type="text/event-stream")

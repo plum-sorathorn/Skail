@@ -158,7 +158,6 @@ async def handle_messages(
             translator = AnthropicSSETranslator(
                 target, input_text=json.dumps(oai_messages)
             )
-            t0 = time.perf_counter()
             try:
                 for ev in translator._ensure_message_start():
                     yield f"event: {ev['type']}\ndata: {json.dumps(ev)}\n\n"
@@ -174,20 +173,6 @@ async def handle_messages(
                         yield f"event: {ev['type']}\ndata: {json.dumps(ev)}\n\n"
                 for ev in translator.finish():
                     yield f"event: {ev['type']}\ndata: {json.dumps(ev)}\n\n"
-
-                from autoconduck.stats import record
-                record(
-                    extra.get("_path", "FAST"),
-                    extra.get("_pseudo", body.model),
-                    target or body.model,
-                    translator.input_tokens,
-                    translator.output_tokens,
-                    complexity=extra.get("_complexity"),
-                    route=extra.get("_route"),
-                    tier=extra.get("_tier"),
-                    latency_ms=(time.perf_counter() - t0) * 1000,
-                    plan=extra.get("_plan"),
-                )
             except Exception as exc:
                 from autoconduck.routing.pricing import record_error
                 record_error(target)
@@ -199,25 +184,11 @@ async def handle_messages(
                 ):
                     for ev in translator.finish():
                         yield f"event: {ev['type']}\ndata: {json.dumps(ev)}\n\n"
-                    from autoconduck.stats import record
-                    record(
-                        extra.get("_path", "FAST"),
-                        extra.get("_pseudo", body.model),
-                        target or body.model,
-                        translator.input_tokens,
-                        translator.output_tokens,
-                        complexity=extra.get("_complexity"),
-                        route=extra.get("_route"),
-                        tier=extra.get("_tier"),
-                        latency_ms=(time.perf_counter() - t0) * 1000,
-                        plan=extra.get("_plan"),
-                    )
                 else:
                     for ev in translator.error(str(exc)):
                         yield f"event: {ev['event']}\ndata: {ev['data']}\n\n"
 
         return StreamingResponse(relay(), media_type="text/event-stream")
-    t0 = time.perf_counter()
     try:
         result = await llm.acompletion(
             messages=oai_messages, stream=False, drop_params=True, **kwargs
@@ -226,21 +197,6 @@ async def handle_messages(
             result.choices[0].message.content
             if hasattr(result, "choices")
             else None
-        )
-        from autoconduck.stats import record
-        in_tok = count_tokens(json.dumps(oai_messages))
-        out_tok = count_tokens(coerce_content_text(text))
-        record(
-            extra.get("_path", "FAST"),
-            extra.get("_pseudo", body.model),
-            target or body.model,
-            in_tok,
-            out_tok,
-            complexity=extra.get("_complexity"),
-            route=extra.get("_route"),
-            tier=extra.get("_tier"),
-            latency_ms=(time.perf_counter() - t0) * 1000,
-            plan=extra.get("_plan"),
         )
     except Exception as exc:
         from autoconduck.routing.pricing import record_error

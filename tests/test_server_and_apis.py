@@ -1,7 +1,10 @@
 """Server routes, Anthropic /v1/messages shim, /v1/chat/completions, /stats, and JSON repair unit tests."""
 import json
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from autoconduck import main, server_streaming
 from autoconduck.config import Config
@@ -100,3 +103,113 @@ def test_completions_with_orchestrator_tool_calls(test_client):
 def test_messages_endpoint_guards_undeclared_tools(test_client):
     """Messages endpoint works without handoff filtering."""
     assert test_client is not None
+
+
+class _ConnectedRequest:
+    async def is_disconnected(self):
+        return False
+
+
+async def _stream_chunks():
+    yield {
+        "choices": [
+            {"delta": {"role": "assistant", "content": "hello world"}}
+        ]
+    }
+    yield {"usage": {"prompt_tokens": 5, "completion_tokens": 2}, "choices": []}
+
+
+class _CompletionLLM:
+    async def acompletion(self, **kwargs):
+        if kwargs.get("stream"):
+            return _stream_chunks()
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="hello world"))],
+            usage=SimpleNamespace(prompt_tokens=5, completion_tokens=2),
+        )
+
+
+async def _route_to_upstream(*args, **kwargs):
+    return "openai/upstream", {
+        "_path": "FAST",
+        "_pseudo": "autoconduck",
+        "_complexity": 0.5,
+    }
+
+
+async def _consume(response):
+    return [chunk async for chunk in response.body_iterator]
+
+
+@pytest.mark.asyncio
+async def test_openai_stream_records_one_stats_event_per_upstream_completion(monkeypatch):
+    from autoconduck import stats
+    from autoconduck.server import server_chat
+    from autoconduck.server.server_models import CompletionRequest
+
+    records = []
+    monkeypatch.setattr(stats, "record", lambda *args, **kwargs: records.append((args, kwargs)))
+    llm = _CompletionLLM()
+    stats.install_recorder(llm)
+    monkeypatch.setattr(server_streaming, "_litellm", lambda: llm)
+
+    response = await server_chat.handle_chat_completions(
+        CompletionRequest(model="autoconduck", messages=[{"role": "user", "content": "hi"}], stream=True),
+        _ConnectedRequest(),
+        PSEUDO_MODELS={"autoconduck"},
+        route_target_fn=_route_to_upstream,
+        call_litellm_fn=None,
+        sanitize_tools=lambda tools: tools,
+        normalize_messages_for_llm=lambda messages: messages,
+        StreamingResponse=StreamingResponse,
+        JSONResponse=JSONResponse,
+    )
+
+    await _consume(response)
+
+    assert len(records) == 1
+    assert records[0][0][1:3] == ("autoconduck", "openai/upstream")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [True, False])
+async def test_anthropic_completion_records_one_stats_event_per_upstream_completion(monkeypatch, stream):
+    from autoconduck import stats
+    from autoconduck.server import server_messages
+    from autoconduck.server.messages_api import (
+        AnthropicSSETranslator,
+        coerce_content_text,
+        openai_messages_from_anthropic,
+        openai_tool_choice_from_anthropic,
+        openai_tools_from_anthropic,
+    )
+    from autoconduck.server.server_models import MessagesRequest
+
+    records = []
+    monkeypatch.setattr(stats, "record", lambda *args, **kwargs: records.append((args, kwargs)))
+    llm = _CompletionLLM()
+    stats.install_recorder(llm)
+    monkeypatch.setattr(server_streaming, "_litellm", lambda: llm)
+
+    response = await server_messages.handle_messages(
+        MessagesRequest(model="autoconduck", messages=[{"role": "user", "content": "hi"}], max_tokens=10, stream=stream),
+        _ConnectedRequest(),
+        route_target_fn=_route_to_upstream,
+        openai_messages_from_anthropic=openai_messages_from_anthropic,
+        openai_tools_from_anthropic=openai_tools_from_anthropic,
+        openai_tool_choice_from_anthropic=openai_tool_choice_from_anthropic,
+        count_tokens=lambda text: len(text.split()),
+        AnthropicSSETranslator=AnthropicSSETranslator,
+        anthropic_response_text=lambda *args, **kwargs: {"ok": True},
+        coerce_content_text=coerce_content_text,
+        messages_litellm_kwargs=lambda target, extra: {"model": target, **extra},
+        normalize_messages_for_llm=lambda messages: messages,
+        StreamingResponse=StreamingResponse,
+        JSONResponse=JSONResponse,
+    )
+
+    if stream:
+        await _consume(response)
+
+    assert len(records) == 1
+    assert records[0][0][1:3] == ("autoconduck", "openai/upstream")
