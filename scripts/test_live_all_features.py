@@ -2,7 +2,7 @@
 
 Tests all major avenues of AutoConduck:
 1. Turn Guard (sub-2ms synchronous classifier)
-2. Model Pool & Selection (4D capability vector fit-gate)
+2. Model Pool & Selection (4D capability vector Capability Floor Routing)
 3. SLM Planner (structured ExecutionPlan generation & circuit breaker)
 4. Native Async Dynamic DAG (parallel fan-out, synthesizer aggregation, cycle resilience)
 5. LanceDB RAG Vector Store (embedding indexing, query retrieval)

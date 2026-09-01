@@ -26,7 +26,7 @@ AutoConduck is a local zero-overhead model router + optional deterministic plugi
 - **Ledger I/O off the routing hot path**: SQLite WAL, async bounded queue, batched transactions, drop/coalesce non-critical telemetry under pressure; durable-only events (task start, escalation, terminal result, errors).
 
 ## Model selection (`routing/model_pool.py` + `routing/dispatcher.py`) — read before touching routing
-The router is a **fast-only, per-turn "fit-gate then cheapest"** selector, not a spend meter. There is no slow-path branching, no task-graph, no sub-task/phase planning structures. `select_by_sla()` + dispatcher `_select_planned` do:
+The router is a **fast-only, per-turn Capability Floor Routing** selector, not a spend meter. There is no slow-path branching, no task-graph, no sub-task/phase planning structures. `select_by_sla()` + dispatcher `_select_planned` do:
 1. Filter: enabled/undegraded/excluded → tools → reasoning → context → capability floor → cost.
 2. **Capability floor** uses 4-dim `capability_vector` (reasoning, tool_reliability, code_quality, latency_class) scored by `capability_fit()` = min-over-dominant-dims (weight>0.25) + 0.1*weighted_sum, weighted per SLM `task_type` via `TASK_TYPE_WEIGHTS`. Legacy models without a vector fall back to scalar `capability_score`.
 3. **Per-turn confidence floor (every classified turn):** `floor = min(base + 0.15*(1-confidence), 0.60) + session_bias`, where `base` is derived from `TASK_BASE_FLOORS` (`debug: 0.35`, `refactor: 0.40`, `full_workflow: 0.45`, `multi_edit: 0.25`) scaled by `complexity_score`. Low confidence → higher (more capable) floor; never overrides the price cap.

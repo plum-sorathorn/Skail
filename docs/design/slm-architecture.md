@@ -1,7 +1,7 @@
 # Embedded SLM Architecture (Qwen 2.5 Coder 0.5B Instruct)
 
 ## 1. Overview
-AutoConduck's per-turn classification intelligence is powered by embedded Small Language Models (SLMs) such as **Qwen 2.5 Coder 0.5B / 1.5B Instruct** and **Liquid LFM 2.5 1.2B** (ONNX / GGUF), backed by instant zero-overhead rule heuristics. The SLM emits a lightweight `TaskClassification` (`task_type` / `confidence` / `complexity_score`) that feeds the fit-gate-then-cheapest selection on every classified turn. Per the Brain Ladder, the SLM is an optional non-binding signal — never an authority for escalation, stagnation, or completion.
+AutoConduck's per-turn classification intelligence is powered by embedded Small Language Models (SLMs) such as **Qwen 2.5 Coder 0.5B / 1.5B Instruct** and **Liquid LFM 2.5 1.2B** (ONNX / GGUF), backed by instant zero-overhead rule heuristics. The SLM emits a lightweight `TaskClassification` (`task_type` / `confidence` / `complexity_score`) that feeds Capability Floor Routing on every classified turn. Per the Brain Ladder, the SLM is an optional non-binding signal — never an authority for escalation, stagnation, or completion.
 
 ## 2. Invariants & Performance Constraints
 - **Local Model Execution**: Quantized local weights execute on CPU/GPU via ONNX Runtime / llama.cpp or fallback shims.
@@ -14,4 +14,4 @@ The SLM produces a `TaskClassification` with the following structure:
 - `confidence`: float [0.0, 1.0]
 - `complexity_score`: float [0.0, 1.0]
 
-`TaskClassification` feeds `routing/dispatcher.py::_select_planned`, which applies the per-turn confidence floor `min(base + 0.15*(1-confidence), 0.60)` and optional session escalation bias (additive, cap 0.75) before fit-gate selection. Detailed weights are defined in `routing/model_pool.py::TASK_TYPE_WEIGHTS`.
+`TaskClassification` feeds `routing/dispatcher.py::_select_planned`, which applies the per-turn confidence floor `min(base + 0.15*(1-confidence), 0.60)` and optional session escalation bias (additive, cap 0.75) before Capability Floor Routing. Detailed weights are defined in `routing/model_pool.py::TASK_TYPE_WEIGHTS`.

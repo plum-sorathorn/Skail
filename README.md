@@ -26,7 +26,7 @@ Coding agents (**Claude Code**, **OpenCode**, **Pi**, and **Oh My Pi**) frequent
 
 - **Turn Guard (Regex, <2ms, Synchronous):** Evaluates every turn without I/O or LLM calls. Healthy tool loops stay on `DIRECT_ACTIVE_TIER` (inheriting session capability floor); only genuine stagnation (3+ identical consecutive calls or 2+ consecutive errors) triggers an immediate floor bias escalation and SLM re-classification. No replanning, no task graphs.
 - **Embedded SLM Classifier (Qwen 2.5 Coder / LFM 2.5 ONNX / GGUF):** Local small model emits a lightweight `TaskClassification` (`task_type`, `confidence`, `complexity_score`) with a 2000 ms circuit-breaker and deterministic fallback. Optional, non-binding signal—never an authority.
-- **"Fit-Gate Then Cheapest" 4D Capability Selection:** Filters models against a 4-dimensional capability vector (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted per task type, with capability tiebreaker sorting on equal/zero-cost candidates, picking the absolute cheapest qualifying model on **every** classified turn.
+- **Capability Floor Routing (4D Capability Vectors):** Filters models against a 4-dimensional capability vector (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted per task type, with capability tiebreaker sorting on equal/zero-cost candidates, picking the absolute cheapest qualifying model on **every** classified turn.
 - **Dynamic Task Base Floors + Tool Loop Floor Inheritance:** Base floors scale dynamically by task type and complexity (`debug: 0.35`, `refactor: 0.40`, `full_workflow: 0.45`), tightened by low confidence ($\min(\text{base} + 0.15 \times (1 - \text{conf}), 0.60)$) and inherited across tool loops. Additive session bias (+0.15, cap 0.75, TTL 10 turns) elevates selection upon stagnation.
 - **Automated Multi-Provider Preset Catalog (1,000+ Models):** `python scripts/sync_all_presets.py` synchronizes 1,024+ models across 11 providers (`openai`, `anthropic`, `google`, `mistral`, `deepseek`, `groq`, `openrouter`, `together`, `xai`, `devpass`, `llmgateway`) from live upstream endpoints directly into code and docs.
 - **Session Guard (`server/session_guard.py`):** Preserves immutable prompt-caching prefixes (turns 0 & 1) across 40+ turns and compacts at the 80% context window ceiling.
@@ -58,7 +58,7 @@ AutoConduck operates under a **Two-Plane Architecture** where the Fast-Path Prox
       │    2000ms circuit breaker, deterministic fallback)      │
       │                     │                                   │
       │                     ▼                                   │
-      │  Fit-Gate-Then-Cheapest 4D Model Selection              │
+      │  Capability Floor 4D Model Routing                      │
       │    filters: enabled → tools → reasoning → context →     │
       │             capability floor → optional price cap       │
       │    floor = base + 0.15*(1-conf) [cap 0.60]              │
@@ -100,7 +100,7 @@ AutoConduck operates under a **Two-Plane Architecture** where the Fast-Path Prox
 
 1. **Turn Guard (`server/turn_guard.py`):** Pure synchronous regex classifier executing in <2ms, I/O-free. Distinguishes clean user turns (→ classify), active healthy tool loops (`DIRECT_ACTIVE_TIER` — client drives its own loop), and genuine stagnation (3+ identical consecutive calls or 2+ consecutive errors → re-classify). No replanning or task graph recompilation.
 2. **SLM Classifier (`routing/slm_planner.py`):** Local ONNX/GGUF model emitting a lightweight `TaskClassification` (`task_type`, `confidence`, `complexity_score`) with a configurable circuit breaker (default 2000 ms) and deterministic fallback. Optional non-binding signal per the Brain Ladder.
-3. **Capability Vector Model Selection (`routing/model_pool.py` + `routing/dispatcher.py`):** Multi-dimensional capability scoring (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted across task types via `TASK_TYPE_WEIGHTS`. Fit-gate then cheapest; per-turn confidence floor $\min(\text{base} + 0.15 \times (1 - \text{conf}), 0.60)$ on every classified turn plus optional additive session escalation bias (cap 0.75, TTL in turns).
+3. **Capability Vector Model Selection (`routing/model_pool.py` + `routing/dispatcher.py`):** Multi-dimensional capability scoring (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted across task types via `TASK_TYPE_WEIGHTS`. Capability Floor Routing picks the cheapest qualifying model; per-turn confidence floor $\min(\text{base} + 0.15 \times (1 - \text{conf}), 0.60)$ on every classified turn plus optional additive session escalation bias (cap 0.75, TTL in turns).
 4. **Plugin Runtime (`autoconduck/plugin/` — Brain Ladder, Deterministic-First):** SQLite WAL ledger (async bounded queue, batched, durable-only events), bias store (`SessionBiasStore`), salvaged executor proof path (deterministic stagnation 3-identical/2-errors → bias), and templated synthesis (LLM stub off). SLM is never an authority for escalation, stagnation, completion, or safety.
 5. **Session Guard (`server/session_guard.py`):** Enforces byte-identical prompt prefix immutability across turns for upstream provider cache hits, and compacts non-structural message history at 80% context capacity.
 6. **Knowledge Vector Store (`knowledge/vector_store.py`):** Embedded LanceDB vector index using deterministic 16-dimensional term-hash embeddings for zero-overhead local code symbol retrieval.
@@ -230,9 +230,9 @@ AutoConduck exposes three virtual model endpoints to connected coding assistants
 
 | Pseudo-Model | Selection Behavior | Best For |
 | :--- | :--- | :--- |
-| **`autoconduck`** | Standard SLA capability fit-gate; selects the **cheapest qualifying model** | Everyday software engineering, feature work, & mixed workflows |
-| **`autoconduck-budget`** | Standard SLA capability fit-gate; selects the **cheapest qualifying model** | Repetitive tasks, single edits, docs, & high-frequency runs |
-| **`autoconduck-expensive`** | Standard SLA capability fit-gate; selects the **most capable qualifying model** | Complex architectural refactoring, deep reasoning, & greenfield design |
+| **`autoconduck`** | Capability Floor Routing; selects the **cheapest qualifying model** | Everyday software engineering, feature work, & mixed workflows |
+| **`autoconduck-budget`** | Capability Floor Routing; selects the **cheapest qualifying model** | Repetitive tasks, single edits, docs, & high-frequency runs |
+| **`autoconduck-expensive`** | Capability Floor Routing; selects the **most capable qualifying model** | Complex architectural refactoring, deep reasoning, & greenfield design |
 
 ---
 
@@ -241,8 +241,8 @@ AutoConduck exposes three virtual model endpoints to connected coding assistants
 ### 1. Turn Guard (`server/turn_guard.py`)
 
 Turn Guard evaluates incoming messages synchronously in <2ms (regex-only, I/O-free):
-- **Clean User Turn** → Routes to local SLM classification, followed by capability fit-gate selection with per-turn confidence floor.
-- **`DIRECT_ACTIVE_TIER` (Active Tool Loop)** → Bypasses SLM and routes directly to the active model tier. Healthy loops touching multiple files or turns are never interrupted or re-evaluated.
+- **Clean User Turn** → Routes to local SLM classification, followed by Capability Floor Routing with per-turn confidence floor.
+- **`DIRECT_ACTIVE_TIER` (Active Tool Loop)** → Bypasses SLM and routes directly to the active model tier (inheriting active session capability floor). Healthy loops touching multiple files or turns are never interrupted or re-evaluated.
 - **Stagnation Trigger** (3+ identical consecutive tool calls or 2+ consecutive tool execution errors) → Triggers deterministic re-classification via the SLM classifier (no replanning, no plan mutation).
 
 ### 2. SLM Classification (`routing/slm_planner.py`)
@@ -253,7 +253,7 @@ The local Small Language Model (defaulting to Qwen 2.5 Coder 0.5B ONNX) emits a 
 - **`complexity_score`**: Scalar complexity score in `[0, 1]`.
 - The classifier is protected by a 2000 ms circuit breaker with deterministic fallback. There are no sub-tasks, phases, or task graph topologies.
 
-### 3. "Fit-Gate Then Cheapest" Model Selection (`routing/model_pool.py` + `routing/dispatcher.py`)
+### 3. Capability Floor Routing (`routing/model_pool.py` + `routing/dispatcher.py`)
 
 AutoConduck matches candidate models using a multi-dimensional capability vector:
 

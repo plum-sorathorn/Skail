@@ -67,7 +67,7 @@ Date: 2026-08-30
 
 - `AGENTS.md`: `~/.autoconduck/run/hooks.spool` → `~/.autoconduck/run/plugin_spool.jsonl` (both occurrences); `orchestrator/` 11-line residual block → one line `orchestrator/ package fully removed in the two-plane transformation.`; `server/` line removed `sse_streamer.py`; Turn Guard note updated to `deterministic triggers (code is authority, no LLM): 3+ identical consecutive calls OR 2+ consecutive errors plus additional deterministic error-density signals (error-rate/streak thresholds in executor_loop)`; `Turn Guard MUST stay synchronous, <2ms` already `<2ms`.
 - `autoconduck/server/turn_guard.py` docstring: `Synchronous 0ms` → `Synchronous <2ms`.
-- `autoconduck/routing/slm_downloader.py`: `Sub-30ms ONNX accelerated task decomposition & micro-router` → `Sub-30ms ONNX accelerated task classification & fit-gate routing`; `High-capacity multi-file DAG planning & ONNX reasoning` → `High-capacity ONNX reasoning with classifier-based routing`.
+- `autoconduck/routing/slm_downloader.py`: `Sub-30ms ONNX accelerated task decomposition & micro-router` → `Sub-30ms ONNX accelerated task classification & capability floor routing`; `High-capacity multi-file DAG planning & ONNX reasoning` → `High-capacity ONNX reasoning with classifier-based routing`.
 - `autoconduck/server/messages_models.py`: `DAG-era pseudo-variant` → `legacy pseudo-variant`.
 - `autoconduck/stats.py` + `autoconduck/tui/dashboard.py`: removed dead `subtasks_total/subtasks_completed` keys from `_active_routing` initial dict and `get_active_routing` fallback.
 - `README.md`: `hooks.spool` → `plugin_spool.jsonl`.

@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-AutoConduck operates as a **fast-only, per-turn "fit-gate then cheapest"** selector, designed to minimize token costs on routine coding turns while seamlessly routing complex architecture/debugging turns to capable frontier models.
+AutoConduck operates as a **fast-only, per-turn Capability Floor Routing** selector, designed to minimize token costs on routine coding turns while seamlessly routing complex architecture/debugging turns to capable frontier models.
 
 Routing is synchronous, in-memory, sub-millisecond, and operates on an $O(\text{models})$ hot path without slow-path branching, replanning loops, or runtime task graphs.
 
@@ -25,7 +25,7 @@ Turn Guard (Regex, <2ms, synchronous)
                        Capability Floor Calculation
                                 │
                                 ▼
-                       Filtering & Capability Fit Gate
+                       Filtering & Capability Floor Gate
                                 │
                                 ▼
                        Equal-Cost Capability Tiebreaker

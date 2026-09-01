@@ -76,7 +76,7 @@ Verified via `Select-String` in `autoconduck/**/*.py` excluding `build/`:
 | Key group | Verdict | Consumers |
 |-----------|---------|-----------|
 | `complexity_weights` | DELETE | Only `config/models.py` definition; no consumer |
-| `spend_guard_enabled` / `spend_guard_max_usd_per_min` / `spend_guard_window_s` | DELETE | Only `config/models.py`; `AGENTS.md` says router is "fit-gate then cheapest, price cap is opt-in" — spend_guard is pre-router-legacy. `tuning/engine.py` exists only in `build/lib` (stale artifact), not in src — confirms dead. |
+| `spend_guard_enabled` / `spend_guard_max_usd_per_min` / `spend_guard_window_s` | DELETE | Only `config/models.py`; `AGENTS.md` says router is Capability Floor Routing, "price cap is opt-in" — spend_guard is pre-router-legacy. `tuning/engine.py` exists only in `build/lib` (stale artifact), not in src — confirms dead. |
 | `tiebreaker_enabled` / `tiebreaker_min_complexity` / `budget_tiebreaker_min_complexity` | DELETE | Only definition + `routing/dispatcher.py:42` param name `tiebreaker` (unrelated Any stub, not reading those keys) |
 | `subagent_timeout_s` / `subagent_max_tokens` | DELETE | No consumers outside definition |
 | `max_file_read_scaled_cost` / `fast_path_max_scaled_cost` | DELETE | Only `build/lib/autoconduck/orchestrator/subagents.py` + `build/lib/tuning/*` consumers (stale build). No src consumer. Sweep-1 note said retained — now removed after verifying zero src consumers. Documented here. |

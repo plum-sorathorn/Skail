@@ -3,7 +3,7 @@
 # Dynamic DAG Factory — HISTORICAL (superseded)
 
 ## 1. Overview (historical)
-AutoConduck replaced fixed 6-phase static orchestrators with an on-the-fly **Dynamic StateGraph Factory** (orchestrator/dynamic_factory.py). Graphs were compiled dynamically at runtime based on the topology of subtasks defined in the SLM ExecutionPlan. This machinery was removed in Phase 1 of the two-plane transformation. The proxy is now a pure fast-only model router (Turn Guard → SLM classifier → fit-gate-then-cheapest selection) with no DAG, no subtasks, and no phases.
+AutoConduck replaced fixed 6-phase static orchestrators with an on-the-fly **Dynamic StateGraph Factory** (orchestrator/dynamic_factory.py). Graphs were compiled dynamically at runtime based on the topology of subtasks defined in the SLM ExecutionPlan. This machinery was removed in Phase 1 of the two-plane transformation. The proxy is now a pure fast-only model router (Turn Guard → SLM classifier → Capability Floor Routing) with no DAG, no subtasks, and no phases.
 
 ## 2. Dynamic Graph Topology (historical)
 1. **Init Node (init)**: Initializes execution metadata, session IDs, and loads verified context.

@@ -26,7 +26,7 @@ SLM_MODELS_CATALOG: list[dict[str, Any]] = [
                 "url": "https://huggingface.co/onnx-community/Qwen2.5-Coder-0.5B-Instruct/resolve/main/tokenizer.json",
             }
         ],
-        "description": "Sub-30ms ONNX accelerated task classification & fit-gate routing (Default)",
+        "description": "Sub-30ms ONNX accelerated task classification & capability floor routing (Default)",
     },
     {
         "id": "qwen2.5-coder-1.5b-instruct",
