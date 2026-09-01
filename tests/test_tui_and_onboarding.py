@@ -4,7 +4,12 @@ from autoconduck.tui.onboarding import (
     model_option_label,
     render_model_rows,
 )
-from autoconduck.tui.onboarding_models import search_match, upsert_custom_models
+from autoconduck.tui.onboarding_models import (
+    filter_catalog,
+    models_for_provider,
+    search_match,
+    upsert_custom_models,
+)
 
 
 def test_keymap_ctrl_c_single_quit():
@@ -16,6 +21,22 @@ def test_search_match_helper():
     assert search_match("deepseek", "deepseek-v4-flash") is True
     assert search_match("sonnet", "claude-3-5-sonnet") is True
     assert search_match("xyz", "gpt-4o") is False
+
+
+def test_model_lists_are_sorted_by_provider_then_model_id():
+    models = [
+        {"id": "Zulu", "provider": "OpenAI"},
+        {"id": "alpha", "provider": "anthropic"},
+        {"id": "Beta", "provider": "openai"},
+    ]
+
+    assert [model["id"] for model in filter_catalog(models)] == [
+        "alpha",
+        "Beta",
+        "Zulu",
+    ]
+    provider_models = models_for_provider("openai", {"openai": models[::2]})
+    assert [model["id"] for model in provider_models] == ["Beta", "Zulu"]
 
 
 def test_format_price():

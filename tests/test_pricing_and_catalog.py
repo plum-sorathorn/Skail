@@ -112,6 +112,75 @@ def test_discover_models_preserves_literal_api_key():
     assert entries[0].model_dump()["api_key"] == "sk-lit"
 
 
+def test_openrouter_catalog_uses_text_models_and_preserves_routing_metadata(monkeypatch):
+    from scripts import sync_all_presets
+
+    payload = {
+        "data": [
+            {
+                "id": "acme/tool-model",
+                "context_length": 32000,
+                "architecture": {"output_modalities": ["text"]},
+                "pricing": {"prompt": "0.000001", "completion": "0.000002"},
+                "supported_parameters": ["tools", "reasoning"],
+            },
+            {
+                "id": "acme/image-model",
+                "architecture": {"output_modalities": ["image"]},
+                "pricing": {"prompt": "0", "completion": "0"},
+            },
+        ]
+    }
+
+    class Response:
+        def read(self):
+            return __import__("json").dumps(payload).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(sync_all_presets.urllib.request, "urlopen", lambda *args, **kwargs: Response())
+
+    models = sync_all_presets.fetch_openrouter_models()
+
+    assert models == [
+        {
+            "id": "acme/tool-model",
+            "provider": "openrouter",
+            "tier": "budget",
+            "price_in": 1.0,
+            "price_out": 2.0,
+            "context_window": 32000,
+            "supports_tools": True,
+            "is_reasoning": True,
+            "api_key_env": "OPENROUTER_API_KEY",
+        }
+    ]
+
+
+def test_openrouter_model_uses_litellm_openrouter_prefix(monkeypatch):
+    cfg = Config(
+        model_list=[
+            {
+                "id": "anthropic/claude-test",
+                "provider": "openrouter",
+                "api_key_env": "OPENROUTER_API_KEY",
+            }
+        ]
+    )
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+    params = litellm_params_for("anthropic/claude-test", cfg)
+
+    assert params == {
+        "model": "openrouter/anthropic/claude-test",
+        "api_key": "test-openrouter-key",
+    }
+
+
 def test_select_for_sla_integration():
     cfg = Config(
         model_list=[

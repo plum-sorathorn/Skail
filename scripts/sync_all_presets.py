@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 UPSTREAM_LITELLM_URL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
 DEVPASS_MODELS_URL = "https://devpass.llmgateway.io/models"
 LLMGATEWAY_MODELS_URL = "https://api.llmgateway.io/v1/models"
+OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 
 ENV_KEYS = {
     "openai": "OPENAI_API_KEY",
@@ -60,29 +61,9 @@ def fetch_upstream_litellm_costs() -> dict[str, dict[str, Any]]:
         return _ingest_litellm_costs()
 
 
-GATEWAY_SHORTLIST = [
-    "qwen3.7-flash",
-    "claude-sonnet-5",
-    "claude-opus-5",
-    "gemini-3.7-flash",
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gpt-5.6-luna",
-    "gpt-5.6-terra",
-    "gpt-5.6-sol",
-    "glm-5.3",
-    "glm-5.3-flash",
-    "glm-5.2-fast",
-    "deepseek-v3.2",
-    "grok-4.5",
-    "grok-4.6",
-]
-
-
 def sort_gateway_models(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Prioritize curated shortlist at top of gateway model lists."""
-    order_map = {name.lower(): idx for idx, name in enumerate(GATEWAY_SHORTLIST)}
-    return sorted(entries, key=lambda e: (order_map.get(e["id"].lower(), 9999), e["id"].lower()))
+    """Sort gateway models alphabetically by model ID."""
+    return sorted(entries, key=lambda entry: entry["id"].casefold())
 
 
 def fetch_devpass_models(costs: dict[str, dict]) -> list[dict[str, Any]]:
@@ -159,6 +140,50 @@ def fetch_llmgateway_models(costs: dict[str, dict]) -> list[dict[str, Any]]:
     from autoconduck.presets.presets_fallback import FALLBACK_PRESETS
 
     return list(FALLBACK_PRESETS.get("llmgateway", []))
+
+
+def fetch_openrouter_models() -> list[dict[str, Any]]:
+    """Fetch all text-output models from OpenRouter's public catalog."""
+    try:
+        req = urllib.request.Request(
+            OPENROUTER_MODELS_URL, headers={"User-Agent": "autoconduck/1.0"}
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        entries = []
+        for model in data.get("data", []):
+            if not isinstance(model, dict) or not model.get("id"):
+                continue
+            architecture = model.get("architecture") or {}
+            if "text" not in (architecture.get("output_modalities") or []):
+                continue
+            pricing = model.get("pricing") or {}
+            price_in = float(pricing.get("prompt") or 0) * 1_000_000
+            price_out = float(pricing.get("completion") or 0) * 1_000_000
+            supported = set(model.get("supported_parameters") or [])
+            entries.append(
+                {
+                    "id": str(model["id"]),
+                    "provider": "openrouter",
+                    "tier": (
+                        "expensive"
+                        if price_out >= 20.0
+                        else "budget"
+                        if price_out < 3.0
+                        else "balanced"
+                    ),
+                    "price_in": round(price_in, 4),
+                    "price_out": round(price_out, 4),
+                    "context_window": int(model.get("context_length") or 128000),
+                    "supports_tools": "tools" in supported,
+                    "is_reasoning": bool(model.get("reasoning")) or "reasoning" in supported,
+                    "api_key_env": "OPENROUTER_API_KEY",
+                }
+            )
+        return sorted(entries, key=lambda entry: entry["id"].lower())
+    except Exception as exc:
+        print(f"Warning: could not fetch OpenRouter models ({exc}); using LiteLLM presets.")
+        return []
 
 
 def lookup_cost(costs: dict[str, dict[str, Any]], mid: str, provider: str = "") -> dict[str, Any]:
@@ -372,7 +397,10 @@ def build_provider_presets(
         )
         seen_ids.setdefault(matched_provider, set()).add(clean_id.lower())
 
-    return presets
+    return {
+        provider: sorted(rows, key=lambda row: row["id"].casefold())
+        for provider, rows in sorted(presets.items(), key=lambda item: item[0].casefold())
+    }
 
 
 def sync_all() -> dict[str, list[dict[str, Any]]]:
@@ -385,12 +413,18 @@ def sync_all() -> dict[str, list[dict[str, Any]]]:
     )
     presets = build_provider_presets(costs)
 
-    print("3. Fetching DevPass models from https://devpass.llmgateway.io/models...")
+    print("3. Fetching OpenRouter models from https://openrouter.ai/api/v1/models...")
+    openrouter_models = fetch_openrouter_models()
+    if openrouter_models:
+        presets["openrouter"] = openrouter_models
+    print(f"   Synced {len(presets.get('openrouter', []))} OpenRouter models.")
+
+    print("4. Fetching DevPass models from https://devpass.llmgateway.io/models...")
     devpass_models = fetch_devpass_models(costs)
     presets["devpass"] = devpass_models
     print(f"   Synced {len(devpass_models)} DevPass models.")
 
-    print("4. Fetching LLMGateway models from https://api.llmgateway.io/v1/models...")
+    print("5. Fetching LLMGateway models from https://api.llmgateway.io/v1/models...")
     llmgateway_models = fetch_llmgateway_models(costs)
     presets["llmgateway"] = llmgateway_models
     print(f"   Synced {len(llmgateway_models)} LLMGateway models.")
@@ -455,11 +489,11 @@ def format_python_presets(presets: dict[str, list[dict[str, Any]]]) -> str:
         "PRESETS: dict[str, list[dict[str, Any]]] = {",
     ]
 
-    for provider, rows in presets.items():
+    for provider, rows in sorted(presets.items(), key=lambda item: item[0].casefold()):
         if provider in ("ollama", "lmstudio", "vllm"):
             continue
         lines.append(f'    "{provider}": [')
-        for row in rows:
+        for row in sorted(rows, key=lambda item: item["id"].casefold()):
             lines.append("        {")
             for k, v in row.items():
                 if isinstance(v, str):
@@ -478,20 +512,12 @@ def format_python_presets(presets: dict[str, list[dict[str, Any]]]) -> str:
         "    if _p not in PRESETS:",
         "        PRESETS[_p] = _models",
         "",
-        "PRESET_ORDER = [",
-        '    "custom",',
-        '    "openai",',
-        '    "anthropic",',
-        '    "google",',
-        '    "mistral",',
-        '    "deepseek",',
-        '    "groq",',
-        '    "openrouter",',
-        '    "together",',
-        '    "xai",',
-        '    "llmgateway",',
-        '    "devpass",',
-        "]",
+        "PRESETS = {",
+        '    _provider: sorted(_models, key=lambda row: str(row["id"]).casefold())',
+        '    for _provider, _models in sorted(PRESETS.items(), key=lambda item: item[0].casefold())',
+        "}",
+        "",
+        'PRESET_ORDER = sorted(["custom", *PRESETS], key=str.casefold)',
         "",
         "# Compatibility exports from the original ``model_presets`` module.  Keep",
         "# these derived from PRESETS so the catalog cannot silently drift from the",

@@ -14,6 +14,7 @@ from autoconduck.server.messages_api import (
     openai_messages_from_anthropic,
     openai_tool_choice_from_anthropic,
     openai_tools_from_anthropic,
+    serve_model_ids,
 )
 from autoconduck.server.messages_sse import AnthropicSSETranslator, anthropic_response_text, count_tokens
 
@@ -85,6 +86,17 @@ def test_models_endpoint(test_client):
     assert "autoconduck" in ids
     assert "autoconduck-budget" in ids
     assert "autoconduck-expensive" in ids
+
+
+def test_served_model_ids_are_case_insensitively_alphabetical():
+    cfg = Config(
+        custom_models=[
+            {"id": "Zulu", "provider": "custom"},
+            {"id": "alpha", "provider": "custom"},
+        ]
+    )
+
+    assert serve_model_ids(cfg) == sorted(serve_model_ids(cfg), key=str.casefold)
 
 
 def test_stats_endpoint(test_client):

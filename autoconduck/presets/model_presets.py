@@ -110,7 +110,10 @@ def curated_model_catalog() -> list[dict[str, Any]]:
                     "price_out": float(row.get("price_out", 0)),
                 },
             )
-    _catalog_cache = sorted(rows.values(), key=lambda row: (row["provider"], row["id"]))
+    _catalog_cache = sorted(
+        rows.values(),
+        key=lambda row: (str(row["provider"]).casefold(), str(row["id"]).casefold()),
+    )
     return [dict(row) for row in _catalog_cache]
 
 
@@ -208,7 +211,10 @@ def discover_models(
     seen: dict[str, ModelEntry] = {}
     for e in entries:
         seen[e.id] = e
-    return list(seen.values())
+    return sorted(
+        seen.values(),
+        key=lambda model: (model.provider.casefold(), model.id.casefold()),
+    )
 
 
 def normalize_entries(raw_list: list[dict[str, Any]]) -> list[ModelEntry]:

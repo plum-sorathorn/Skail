@@ -23,7 +23,9 @@ if _TEXTUAL:
             super().__init__()
             self.controller = controller
             self.tab = 0
-            self.models = [dict(row) for rows in PRESETS.values() for row in rows]
+            self.models = filter_catalog(
+                [dict(row) for rows in PRESETS.values() for row in rows]
+            )
             self.filtered = self.models
 
         def compose(self):
@@ -41,9 +43,12 @@ if _TEXTUAL:
                 return "Providers: " + ", ".join(chips["providers"]) + "\n" + "\n".join(
                     f"{m.get('provider', '')}/{m.get('id', '')}" for m in self.filtered[:80]) or "No models available."
             if self.tab == 1:
-                rows = getattr(get_config(), "custom_models", [])
+                rows = filter_catalog(getattr(get_config(), "custom_models", []))
                 return "\n".join(f"{m.get('provider', '')}/{m.get('id', '')}  {m.get('base_url', '')}" for m in rows) or "No custom endpoints."
-            rows = getattr(get_config(), "model_list", []) + getattr(get_config(), "custom_models", [])
+            rows = filter_catalog(
+                getattr(get_config(), "model_list", [])
+                + getattr(get_config(), "custom_models", [])
+            )
             return "\n".join(f"{m.get('provider', '')}: {'configured' if m.get('api_key') or m.get('api_key_env') else 'missing'}" for m in rows) or "No API keys configured."
 
         def on_input_changed(self, event):

@@ -55,7 +55,13 @@ def filter_catalog(models: list[dict[str, Any]], term: str = "", provider: str |
             continue
         if search_match(term, model.get("id", ""), model.get("provider", "")):
             result.append(model)
-    return result
+    return sorted(
+        result,
+        key=lambda model: (
+            str(model.get("provider", "")).casefold(),
+            str(model.get("id", "")).casefold(),
+        ),
+    )
 
 
 def catalog_filter_chips(models: list[dict[str, Any]]) -> dict[str, list[str]]:
@@ -72,7 +78,10 @@ def endpoint_check_description(provider: str, base_url: str, has_key: bool) -> d
             "credentials_present": bool(has_key), "status": "ready" if has_key else "missing_credentials"}
 
 def models_for_provider(key: str, presets: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    return [dict(row) for row in presets.get(key, [])]
+    return sorted(
+        (dict(row) for row in presets.get(key, [])),
+        key=lambda model: str(model.get("id", "")).casefold(),
+    )
 
 def overrides_for_toggle(key: str, models: list[dict[str, Any]], enabled: set[str], existing_overrides: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     stored = {row.get("id"): row for row in (existing_overrides or [])}

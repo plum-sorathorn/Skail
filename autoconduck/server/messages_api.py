@@ -248,7 +248,7 @@ def serve_model_ids(cfg) -> list[str]:
         for m in (getattr(cfg, "custom_models", None) or [])
         if m.get("enabled", True) and m.get("id")
     ]
-    return sorted(PSEUDO_MODELS | set(custom_ids))
+    return sorted(PSEUDO_MODELS | set(custom_ids), key=str.casefold)
 
 
 def custom_entry(cfg, model_id: str) -> dict | None:
@@ -314,7 +314,9 @@ def litellm_params_for(model_id: str, cfg) -> dict:
         str(raw_model), str(provider or "")
     )
 
-    if "/" in str(raw_model):
+    if provider == "openrouter":
+        qual_model = f"openrouter/{raw_model_normalized.removeprefix('openrouter/')}"
+    elif "/" in str(raw_model):
         qual_model = str(raw_model)
     elif provider:
         is_known_provider = False
