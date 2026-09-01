@@ -28,6 +28,10 @@ class SessionBiasStore:
         self._turns: dict[str, int] = {}
         # child session_id -> parent session_id
         self._children: dict[str, str] = {}
+        # session_id -> float (active capability floor)
+        self._session_floors: dict[str, float] = {}
+        # session_id -> str (active task type)
+        self._session_task_types: dict[str, str] = {}
 
     def register_child_session(self, child_id: str, parent_id: str) -> None:
         """Register child_id as a child of parent_id. O(1) write, thread-safe."""
@@ -116,6 +120,30 @@ class SessionBiasStore:
             logger.warning("bias increment_turn failed: %s", exc)
             return 0
 
+    def set_session_floor(self, session_id: str | None, floor: float, task_type: str | None = None) -> None:
+        """Cache the latest planned capability floor and task_type for tool-loop inheritance. O(1), thread-safe."""
+        if not session_id:
+            return
+        try:
+            sid = str(session_id)
+            with self._lock:
+                self._session_floors[sid] = float(floor)
+                if task_type:
+                    self._session_task_types[sid] = str(task_type)
+        except Exception as exc:
+            logger.warning("bias set_session_floor failed: %s", exc)
+
+    def get_session_floor(self, session_id: str | None) -> tuple[float, str | None]:
+        """Return (active_floor, task_type) for session_id. O(1), thread-safe."""
+        if not session_id:
+            return 0.0, None
+        try:
+            sid = str(session_id)
+            with self._lock:
+                return float(self._session_floors.get(sid, 0.0)), self._session_task_types.get(sid)
+        except Exception:
+            return 0.0, None
+
     def reset_session(self, session_id: str | None) -> None:
         try:
             if not session_id:
@@ -125,6 +153,8 @@ class SessionBiasStore:
                 self._store.pop(sid, None)
                 self._turns.pop(sid, None)
                 self._children.pop(sid, None)
+                self._session_floors.pop(sid, None)
+                self._session_task_types.pop(sid, None)
         except Exception as exc:
             logger.warning("bias reset_session failed: %s", exc)
 
@@ -134,6 +164,8 @@ class SessionBiasStore:
                 self._store.clear()
                 self._turns.clear()
                 self._children.clear()
+                self._session_floors.clear()
+                self._session_task_types.clear()
         except Exception:
             pass
 
@@ -143,6 +175,8 @@ class SessionBiasStore:
                 "store": {k: dict(v) for k, v in self._store.items()},
                 "turns": dict(self._turns),
                 "children": dict(self._children),
+                "floors": dict(self._session_floors),
+                "task_types": dict(self._session_task_types),
             }
 
 

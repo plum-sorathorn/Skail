@@ -329,12 +329,20 @@ class ModelPool:
             info.binding_constraint = binding
             return eligible[0].id, info
 
-        # Sort remaining models strictly by absolute cost ascending
+        weights = task_weights(sla.task_type)
+
+        def fit(entry: ModelEntry) -> float:
+            vector = entry.capability_vector
+            if vector is None and entry.capability_score is not None:
+                vector = {dim: float(entry.capability_score) for dim in CAPABILITY_DIMS}
+            return capability_fit(vector, weights) if vector is not None else entry.capability_score
+
+        # Sort remaining models strictly by absolute cost ascending, tiebreaking equal cost by capability
         sorted_models = sorted(
             eligible,
-            key=lambda e: (self._entry_cost(e), -e.context_window, e.id),
+            key=lambda e: (self._entry_cost(e), -fit(e), -e.context_window, e.id),
         )
-        
+
         # If the user invoked a high-end pseudo-model explicitly, we might bias towards the top of the eligible list
         if "expensive" in str(pseudo_model):
             info.model = sorted_models[-1].id
@@ -347,14 +355,6 @@ class ModelPool:
         if band_pct > 0.0:
             cheapest_cost = self._entry_cost(sorted_models[0])
             band = [e for e in sorted_models if self._entry_cost(e) <= cheapest_cost * (1.0 + band_pct)]
-            weights = task_weights(sla.task_type)
-
-            def fit(entry: ModelEntry) -> float:
-                vector = entry.capability_vector
-                if vector is None and entry.capability_score is not None:
-                    vector = {dim: float(entry.capability_score) for dim in CAPABILITY_DIMS}
-                return capability_fit(vector, weights) if vector is not None else entry.capability_score
-
             selected = min(band, key=lambda e: (-fit(e), self._entry_cost(e), e.id))
 
         info.model = selected.id

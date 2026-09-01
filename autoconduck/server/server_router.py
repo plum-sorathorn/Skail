@@ -125,19 +125,45 @@ async def route_target(
     session_id: str | None = None
     if request is not None and hasattr(request, "headers"):
         try:
-            session_id = request.headers.get("x-autoconduck-session-id")  # type: ignore[union-attr]
+            session_id = (
+                request.headers.get("x-autoconduck-session-id")
+                or request.headers.get("x-session-id")
+                or request.headers.get("x-conversation-id")
+            )
             if session_id == "":
                 session_id = None
-            # advance per-turn TTL counter (fail-soft, dict lookup only)
-            if session_id:
-                try:
-                    from autoconduck.plugin.bias import get_bias_store
-
-                    get_bias_store().increment_turn(session_id)
-                except Exception:
-                    pass
         except Exception:
             session_id = None
+
+    # Derive a stable session_id from the initial conversation message if header was absent
+    if not session_id and messages:
+        try:
+            import hashlib
+            first_user_content = ""
+            for m in messages:
+                if isinstance(m, dict) and m.get("role") in ("user", "human"):
+                    c = m.get("content")
+                    if isinstance(c, str):
+                        first_user_content = c
+                    elif isinstance(c, list):
+                        parts = [p.get("text", "") for p in c if isinstance(p, dict)]
+                        first_user_content = " ".join(parts)
+                    break
+            if first_user_content:
+                raw_prefix = first_user_content[:200]
+                agent_tag = client_type if client_type else "anon"
+                key = f"{agent_tag}:{raw_prefix}".encode("utf-8")
+                session_id = f"auto_{hashlib.sha256(key).hexdigest()[:16]}"
+        except Exception:
+            session_id = None
+
+    if session_id:
+        try:
+            from autoconduck.plugin.bias import get_bias_store
+
+            get_bias_store().increment_turn(session_id)
+        except Exception:
+            pass
 
     if body_model in PSEUDO_MODELS:
         try:

@@ -35,6 +35,23 @@ class RoutingDecision:
     binding_capability_dim: str | None = None
 
 
+TASK_BASE_FLOORS: dict[str, float] = {
+    "chat": 0.0,
+    "routine": 0.0,
+    "git_ops": 0.0,
+    "explain": 0.15,
+    "recon": 0.15,
+    "read_answer": 0.15,
+    "single_edit": 0.20,
+    "knowledge_query": 0.20,
+    "multi_edit": 0.30,
+    "debug": 0.35,
+    "refactor": 0.40,
+    "research": 0.40,
+    "full_workflow": 0.45,
+}
+
+
 def route(
     messages: list,
     history: Any = None,
@@ -56,6 +73,17 @@ def route(
     plan = None
     selection_info = None
     if guard_res.target_action == TurnAction.ESCALATE_SLM:
+        # Deterministic trigger: apply immediate escalation bias in SessionBiasStore
+        if session_id:
+            try:
+                from autoconduck.plugin.bias import get_bias_store
+                plugins_cfg = getattr(config, "plugins", None)
+                bump = float(getattr(plugins_cfg, "escalation_floor_bump", 0.15)) if plugins_cfg else 0.15
+                ttl = int(getattr(plugins_cfg, "escalation_ttl_turns", 10)) if plugins_cfg else 10
+                get_bias_store().apply_escalation(session_id, bump, ttl)
+            except Exception:
+                pass
+
         # escalation = fresh classification + floor-tightened selection (no slow path)
         planner = SLMPlanner()
         plan = planner.plan_sync(messages, config)
@@ -81,7 +109,24 @@ def route(
             for t in ["read", "glob", "list", "grep", "bash", "status", "diff", "command", "file", "view", "tool"]
         )
         reason = f"tool_loop_bypass: {guard_res.last_tool_name or 'tool'}"
-        sla = CapabilitySLA(min_context=16000, requires_tools=True, max_cost=1.0 if is_routine_tool else 1.5)
+
+        # Inherit session capability floor if available
+        inherited_floor = 0.0
+        inherited_task_type = None
+        if session_id:
+            try:
+                from autoconduck.plugin.bias import get_bias_store
+                inherited_floor, inherited_task_type = get_bias_store().get_session_floor(session_id)
+            except Exception:
+                pass
+
+        sla = CapabilitySLA(
+            min_context=16000,
+            requires_tools=True,
+            max_cost=1.0 if is_routine_tool else 1.5,
+            min_capability_score=inherited_floor,
+            task_type=inherited_task_type,
+        )
         selection_info = pricing.select_for_sla_detailed(sla, config=config, pseudo_model=pseudo_model)
         model = selection_info.model or resolve_orchestrator_model(config)
         tier = "capability_sla"
@@ -152,13 +197,24 @@ def _select_planned(sla: CapabilitySLA, plan: Any, config: Any, pseudo_model: st
         except Exception:
             pass
     try:
-        confidence = max(0.0, min(1.0, float(plan.confidence)))
+        confidence = max(0.0, min(1.0, float(getattr(plan, "confidence", 1.0))))
         selection = getattr(config, "selection", None)
-        base = sla.min_capability_score
-        if base > 0:
-            floor = min(base + float(getattr(selection, "confidence_floor_k", 0.15)) * (1 - confidence), float(getattr(selection, "confidence_floor_max", 0.6)))
-        else:
-            floor = base
+        base = float(getattr(sla, "min_capability_score", 0.0) or 0.0)
+        task_type = getattr(plan, "task_type", None) or "chat"
+        complexity_score = int(getattr(plan, "complexity_score", 1) or 1)
+
+        # Derive base capability floor from task_type and complexity if not explicitly provided
+        if base <= 0.0:
+            base = TASK_BASE_FLOORS.get(task_type, 0.15)
+            if complexity_score >= 7:
+                base += 0.10
+            elif complexity_score >= 4:
+                base += 0.05
+
+        floor = min(
+            base + float(getattr(selection, "confidence_floor_k", 0.15)) * (1 - confidence),
+            float(getattr(selection, "confidence_floor_max", 0.6)),
+        )
         # Apply session bias (ESCALATE-driven) — may raise above confidence cap up to 0.75
         try:
             if session_id:
@@ -169,6 +225,16 @@ def _select_planned(sla: CapabilitySLA, plan: Any, config: Any, pseudo_model: st
                     floor = min(floor + bump, 0.75)
         except Exception:
             pass
+
+        # Cache session floor for tool loop inheritance
+        try:
+            if session_id:
+                from autoconduck.plugin.bias import get_bias_store
+
+                get_bias_store().set_session_floor(session_id, floor, task_type)
+        except Exception:
+            pass
+
         ceiling = None
         if tier:
             ceilings = getattr(selection, "path_price_cap_usd_per_mtok", {})
@@ -177,7 +243,7 @@ def _select_planned(sla: CapabilitySLA, plan: Any, config: Any, pseudo_model: st
             sla,
             min_capability_score=floor,
             max_price_usd_per_mtok=ceiling,
-            task_type=getattr(plan, "task_type", None),
+            task_type=task_type,
         )
         return pricing.select_for_sla_detailed(modified, config=config, pseudo_model=effective_pseudo)
     except Exception:

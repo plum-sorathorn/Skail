@@ -13,7 +13,17 @@ from autoconduck.model_presets import (
 )
 
 
-def fetch_devpass_catalog() -> list[dict]:
+def lookup_cost_devpass(costs: dict[str, dict], mid: str) -> dict:
+    if mid in costs:
+        return costs[mid]
+    clean = clean_model_id(mid).lower()
+    for k, v in costs.items():
+        if clean_model_id(k).lower() == clean:
+            return v
+    return {}
+
+
+def fetch_devpass_catalog(costs: dict[str, dict] | None = None) -> list[dict]:
     all_models = {}
     page = 1
     while True:
@@ -57,14 +67,14 @@ def fetch_devpass_catalog() -> list[dict]:
         if page > 25:
             break
 
-    costs = _ingest_litellm_costs()
-    by_clean = {clean_model_id(k): v for k, v in costs.items()}
+    if costs is None:
+        costs = _ingest_litellm_costs()
 
     devpass_entries = []
     for mid, info in sorted(all_models.items()):
         # Filter out non-chat / media / embedding models
         if any(
-            x in mid
+            x in mid.lower()
             for x in (
                 "embedding",
                 "image",
@@ -78,9 +88,7 @@ def fetch_devpass_catalog() -> list[dict]:
         ):
             continue
         api_id = normalize_model_id_for_provider(mid, "devpass")
-        prices = by_clean.get(clean_model_id(api_id), {}) or by_clean.get(
-            clean_model_id(mid), {}
-        )
+        prices = lookup_cost_devpass(costs, api_id) or lookup_cost_devpass(costs, mid)
         p_in = prices.get("price_in", 0.0)
         p_out = prices.get("price_out", 0.0)
         tier = (
@@ -95,8 +103,8 @@ def fetch_devpass_catalog() -> list[dict]:
                 "id": api_id,
                 "provider": "devpass",
                 "tier": tier,
-                "price_in": p_in,
-                "price_out": p_out,
+                "price_in": round(p_in, 4),
+                "price_out": round(p_out, 4),
                 "api_key_env": "DEVPASS_API_KEY",
                 "base_url": "https://api.llmgateway.io",
             }

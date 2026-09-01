@@ -163,3 +163,76 @@ def test_removed_config_keys_warn_not_error(caplog):
     assert cfg2 is not None
     # At least one warning was emitted
     assert any("ignoring deprecated config key" in r.message for r in caplog.records)
+
+
+def test_task_base_floors_selection_debug_vs_chat(monkeypatch):
+    """Debug task with complexity elevation selects more capable model than trivial chat."""
+    cfg = _cfg_with_models()
+
+    def debug_infer(self, messages, config=None):
+        return ExecutionPlan(confidence=0.9, task_type="debug", complexity_score=8, rationale="hard bug").model_dump()
+
+    monkeypatch.setattr(SLMPlanner, "_raw_infer", debug_infer)
+    dec = route([{"role": "user", "content": "Fix deep concurrency bug"}], config=cfg)
+    assert dec.model == "pricey"
+    assert dec.min_capability_score_applied >= 0.45
+
+
+def test_tool_loop_inherits_session_floor(monkeypatch):
+    """Tool loop turns inherit the session floor set by the initial planning turn."""
+    cfg = _cfg_with_models()
+    from autoconduck.plugin.bias import get_bias_store
+    get_bias_store().clear_all()
+
+    session_id = "test-session-123"
+
+    # Turn 1: Clean user prompt classifies as debug (high floor)
+    def debug_infer(self, messages, config=None):
+        return ExecutionPlan(confidence=0.9, task_type="debug", complexity_score=8, rationale="hard bug").model_dump()
+
+    monkeypatch.setattr(SLMPlanner, "_raw_infer", debug_infer)
+    dec1 = route([{"role": "user", "content": "Fix deep bug"}], config=cfg, session_id=session_id)
+    assert dec1.model == "pricey"
+
+    # Turn 2: Tool loop turn bypasses SLM but inherits the session floor
+    import json as _json
+    messages = [
+        {"role": "user", "content": "Fix deep bug"},
+        {"role": "assistant", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "read", "arguments": _json.dumps({"path": "foo.py"})}}]},
+        {"role": "tool", "tool_call_id": "c1", "name": "read", "content": "def foo(): pass"},
+    ]
+    dec2 = route(messages, config=cfg, session_id=session_id)
+    assert dec2.route == "fast_direct"
+    assert "tool_loop_bypass" in dec2.reason
+    assert dec2.model == "pricey"
+    assert dec2.min_capability_score_applied >= 0.45
+
+
+def test_escalate_slm_applies_immediate_bias(monkeypatch):
+    """TurnGuard ESCALATE_SLM applies an immediate floor bump to SessionBiasStore."""
+    cfg = _cfg_with_models()
+    from autoconduck.plugin.bias import get_bias_store
+    get_bias_store().clear_all()
+
+    session_id = "test-escalate-session"
+    import json as _json
+    messages = [{"role": "user", "content": "Fix bug"}]
+    for i in range(3):
+        cid = f"c{i}"
+        messages.extend([
+            {"role": "assistant", "tool_calls": [{"id": cid, "type": "function", "function": {"name": "read", "arguments": _json.dumps({"path": "a.py"})}}]},
+            {"role": "tool", "tool_call_id": cid, "name": "read", "content": "err"},
+        ])
+
+    def spy_plan_sync(self, messages_arg, config=None):
+        return ExecutionPlan(confidence=0.8, task_type="chat", complexity_score=2, rationale="escalation reclassify")
+
+    monkeypatch.setattr(SLMPlanner, "plan_sync", spy_plan_sync)
+
+    dec = route(messages, config=cfg, session_id=session_id)
+    # The bias store should have recorded an escalation bump
+    bump = get_bias_store().get_bump(session_id)
+    assert bump > 0.0
+    assert dec.path == "fast"
+    assert dec.model is not None
+
