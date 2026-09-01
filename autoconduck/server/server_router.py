@@ -258,6 +258,10 @@ async def route_target(
                     "min_capability_score_applied": getattr(decision, "min_capability_score_applied", 0.0),
                     "spend_cap_engaged": getattr(decision, "spend_cap_engaged", False),
                     "fallback_reason": getattr(decision, "fallback_reason", None),
+                    "benchmark_profile": getattr(decision, "benchmark_profile", None),
+                    "benchmark_score": getattr(decision, "benchmark_score", None),
+                    "benchmark_coverage_state": getattr(decision, "benchmark_coverage_state", None),
+                    "benchmark_snapshot_age_hours": getattr(decision, "benchmark_snapshot_age_hours", None),
                 }
             )
         logging.getLogger("autoconduck").info(
@@ -296,6 +300,10 @@ async def route_target(
         "min_capability_score_applied": getattr(decision, "min_capability_score_applied", None) if decision else None,
         "spend_cap_engaged": getattr(decision, "spend_cap_engaged", None) if decision else None,
         "fallback_reason": getattr(decision, "fallback_reason", None) if decision else None,
+        "benchmark_profile": getattr(decision, "benchmark_profile", None) if decision else None,
+        "benchmark_score": getattr(decision, "benchmark_score", None) if decision else None,
+        "benchmark_coverage_state": getattr(decision, "benchmark_coverage_state", None) if decision else None,
+        "benchmark_snapshot_age_hours": getattr(decision, "benchmark_snapshot_age_hours", None) if decision else None,
     }
     stats_metadata = {
         "_stats_event_id": uuid.uuid4().hex,

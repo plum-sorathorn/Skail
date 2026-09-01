@@ -13,7 +13,7 @@ from typing import Any
 import yaml
 
 from autoconduck.config.models import Config
-from autoconduck.config.paths import backups_dir, config_path
+from autoconduck.config.paths import backups_dir, config_path, run_dir
 from autoconduck.config.resolver import (
     _configured_model_sources,
     _normalize_model_entries,
@@ -167,6 +167,20 @@ def load_config(
                 logging.getLogger("autoconduck").warning("ignoring deprecated config key: selection.%s", _k)
                 _sel.pop(_k, None)
     config = Config(**data)
+    # Snapshot loading happens with configuration/startup I/O, never in ModelPool
+    # selection. A corrupt snapshot is ignored so routing retains static fallback.
+    snapshot = run_dir() / "benchmarks.json"
+    if snapshot.exists():
+        try:
+            from autoconduck.routing.benchmarks import load_snapshot
+            load_snapshot(snapshot, max_age_hours=config.selection.benchmark_snapshot_max_age_hours)
+        except Exception as exc:
+            logging.getLogger("autoconduck").warning("Ignoring invalid benchmark snapshot %s: %s", snapshot, exc)
+            from autoconduck.routing.benchmarks import clear_registry
+            clear_registry()
+    else:
+        from autoconduck.routing.benchmarks import clear_registry
+        clear_registry()
     _normalize_model_entries(
         {
             "custom_models": config.custom_models,

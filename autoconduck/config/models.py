@@ -25,6 +25,10 @@ class ModelEntry(BaseModel):
     max_usd_per_min: float | None = None
     capability_score: float = 0.0
     capability_vector: dict[str, float] | None = None
+    max_output_tokens: int | None = None
+    supported_parameters: list[str] = Field(default_factory=list)
+    input_modalities: list[str] = Field(default_factory=lambda: ["text"])
+    output_modalities: list[str] = Field(default_factory=lambda: ["text"])
 
 
 class SelectionConfig(BaseModel):
@@ -52,6 +56,8 @@ class SelectionConfig(BaseModel):
     capability_tiebreak_price_band_pct: float = 0.0
     """Optional capability tiebreak band; 0.0 disables it (current behavior)."""
     max_pool_size: int = 200
+    benchmark_snapshot_max_age_hours: int = 168
+    benchmark_quality_band_pct: float = 0.10
     enable_fast_path_graph: bool = True
     executor_enable_tools: bool = True
     executor_max_tool_rounds: int = 10

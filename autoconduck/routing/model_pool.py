@@ -57,6 +57,11 @@ class CapabilitySLA:
     # Effective per-token price is input_price + 0.5 * output_price.
     max_price_usd_per_mtok: float | None = None
     task_type: str | None = None
+    domain: str | None = None
+    role: str | None = None
+    requires_structured_output: bool = False
+    requires_image_input: bool = False
+    input_tokens: int = 0
 
 
 @dataclass
@@ -70,6 +75,10 @@ class SelectionInfo:
     fallback_reason: str | None = None
     capability_fit_applied: float | None = None
     binding_capability_dim: str | None = None
+    benchmark_profile: str | None = None
+    benchmark_score: float | None = None
+    benchmark_coverage_state: str = "not_requested"
+    benchmark_snapshot_age_hours: float | None = None
 
 
 @dataclass
@@ -87,13 +96,20 @@ class ModelEntry:
     capability_score: float = 0.0
     max_usd_per_min: float | None = None
     capability_vector: dict[str, float] | None = None
+    max_output_tokens: int | None = None
+    supported_parameters: list[str] = field(default_factory=list)
+    input_modalities: list[str] = field(default_factory=lambda: ["text"])
 
 
 class ModelPool:
     """Manages dynamic model routing based on Capability SLAs."""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, benchmarks: Any = None) -> None:
         self.config = config
+        if benchmarks is None:
+            from autoconduck.routing.benchmarks import get_registry
+            benchmarks = get_registry()
+        self.benchmarks = benchmarks
 
     def _get_model_entries(self) -> list[ModelEntry]:
         """Fetch all configured models with their metadata."""
@@ -167,8 +183,19 @@ class ModelPool:
                  capability_score=cap_score,
                         max_usd_per_min=item.get("max_usd_per_min"),
                         capability_vector=vector,
+                        max_output_tokens=item.get("max_output_tokens"),
+                        supported_parameters=list(item.get("supported_parameters") or []),
+                        input_modalities=list(item.get("input_modalities") or ["text"]),
                  )
                 )
+        for entry in entries:
+            metadata = self.benchmarks.metadata(entry.id) if self.benchmarks is not None else {}
+            if metadata:
+                entry.context_window = int(metadata.get("context_length") or entry.context_window)
+                entry.max_output_tokens = metadata.get("max_output_tokens") or entry.max_output_tokens
+                entry.supported_parameters = list(metadata.get("supported_parameters") or entry.supported_parameters)
+                entry.input_modalities = list(metadata.get("input_modalities") or entry.input_modalities)
+                entry.supports_tools = entry.supports_tools and ("tools" in entry.supported_parameters or not entry.supported_parameters)
         return entries
 
     @staticmethod
@@ -264,8 +291,9 @@ class ModelPool:
                 info.fallback_reason = "reasoning_filter_empty"
 
         # 4. Filter by min_context_window
-        if sla.min_context > 0:
-            ctx_matches = [e for e in eligible if e.context_window >= sla.min_context]
+        required_context = max(sla.min_context, sla.input_tokens + sla.min_output_tokens)
+        if required_context > 0:
+            ctx_matches = [e for e in eligible if e.context_window >= required_context and (e.max_output_tokens is None or e.max_output_tokens >= sla.min_output_tokens)]
             if ctx_matches:
                 if len(ctx_matches) < len(eligible):
                     info.candidates_excluded_by["context"] = len(eligible) - len(ctx_matches)
@@ -273,6 +301,28 @@ class ModelPool:
                 eligible = ctx_matches
             else:
                 eligible = sorted(eligible, key=lambda e: -e.context_window)
+
+        if sla.requires_structured_output:
+            structured = [e for e in eligible if "response_format" in e.supported_parameters or "structured_outputs" in e.supported_parameters]
+            if structured:
+                if len(structured) < len(eligible):
+                    info.candidates_excluded_by["structured_output"] = len(eligible) - len(structured)
+                    binding = "structured_output"
+                eligible = structured
+            else:
+                info.candidates_excluded_by["structured_output"] = len(eligible)
+                info.fallback_reason = "structured_output_filter_empty"
+
+        if sla.requires_image_input:
+            visual = [e for e in eligible if "image" in e.input_modalities]
+            if visual:
+                if len(visual) < len(eligible):
+                    info.candidates_excluded_by["image_input"] = len(eligible) - len(visual)
+                    binding = "image_input"
+                eligible = visual
+            else:
+                info.candidates_excluded_by["image_input"] = len(eligible)
+                info.fallback_reason = "image_input_filter_empty"
 
         # 4.5 Filter by min_capability_score
         if sla.min_capability_score > 0.0:
@@ -291,6 +341,30 @@ class ModelPool:
             else:
                 eligible = sorted(eligible, key=lambda e: -fit(e))
                 binding = "capability_floor"
+
+        # 4.75 Benchmark policy ranking.  Scores are only meaningful within the
+        # source/category cohort normalized by BenchmarkRegistry; no raw source
+        # metrics enter selection.  A missing/stale snapshot preserves static
+        # capability routing rather than inventing a zero score.
+        benchmark_scores: dict[str, float] = {}
+        if sla.domain or sla.role:
+            from autoconduck.routing.benchmarks import profile_for
+            profile = profile_for(sla.domain, sla.role)
+            info.benchmark_profile = profile
+            registry = self.benchmarks
+            if registry is not None and getattr(registry, "is_fresh", False):
+                try:
+                    snapshot_time = registry.as_of.replace("Z", "+00:00")
+                    from datetime import datetime, timezone
+                    info.benchmark_snapshot_age_hours = max(0.0, (datetime.now(timezone.utc) - datetime.fromisoformat(snapshot_time)).total_seconds() / 3600)
+                except Exception:
+                    pass
+                benchmark_scores = {entry.id: score for entry in eligible if (score := registry.profile_score(entry.id, profile)) is not None}
+            if benchmark_scores:
+                info.benchmark_coverage_state = "covered"
+            else:
+                info.benchmark_coverage_state = "unavailable"
+                info.fallback_reason = info.fallback_reason or "benchmark_coverage_unavailable"
 
         # 5. Filter by max_cost (only if there are eligible models below the ceiling)
         cost_matches = [e for e in eligible if self._entry_cost(e) <= sla.max_cost]
@@ -326,6 +400,8 @@ class ModelPool:
         if len(eligible) == 1:
             info.model = eligible[0].id
             self._set_capability_info(info, eligible[0], sla)
+            if eligible[0].id in benchmark_scores:
+                info.benchmark_score = benchmark_scores[eligible[0].id]
             info.binding_constraint = binding
             return eligible[0].id, info
 
@@ -343,10 +419,19 @@ class ModelPool:
             key=lambda e: (self._entry_cost(e), -fit(e), -e.context_window, e.id),
         )
 
+        if benchmark_scores:
+            best_score = max(benchmark_scores.values())
+            band_pct = float(getattr(getattr(self.config, "selection", None), "benchmark_quality_band_pct", 0.10))
+            quality_band = [entry for entry in eligible if entry.id in benchmark_scores and benchmark_scores[entry.id] >= best_score - band_pct]
+            if quality_band:
+                sorted_models = sorted(quality_band, key=lambda e: (self._entry_cost(e), -benchmark_scores[e.id], e.id))
+
         # If the user invoked a high-end pseudo-model explicitly, we might bias towards the top of the eligible list
         if "expensive" in str(pseudo_model):
             info.model = sorted_models[-1].id
             self._set_capability_info(info, sorted_models[-1], sla)
+            if sorted_models[-1].id in benchmark_scores:
+                info.benchmark_score = benchmark_scores[sorted_models[-1].id]
             info.binding_constraint = binding
             return sorted_models[-1].id, info
 
@@ -359,6 +444,8 @@ class ModelPool:
 
         info.model = selected.id
         self._set_capability_info(info, selected, sla)
+        if selected.id in benchmark_scores:
+            info.benchmark_score = benchmark_scores[selected.id]
         info.binding_constraint = binding
         return selected.id, info
 

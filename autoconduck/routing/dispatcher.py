@@ -1,5 +1,6 @@
 from dataclasses import dataclass, replace
 from typing import Literal, Any
+import re
 from . import pricing
 from autoconduck.routing.model_pool import CapabilitySLA
 from autoconduck.routing.slm_planner import SLMPlanner
@@ -33,6 +34,10 @@ class RoutingDecision:
     fallback_reason: str | None = None
     capability_fit_applied: float | None = None
     binding_capability_dim: str | None = None
+    benchmark_profile: str | None = None
+    benchmark_score: float | None = None
+    benchmark_coverage_state: str = "not_requested"
+    benchmark_snapshot_age_hours: float | None = None
 
 
 TASK_BASE_FLOORS: dict[str, float] = {
@@ -94,7 +99,7 @@ def route(
         complexity = 0.2
         tier = "capability_sla"
         reason = plan.rationale or f"escalation_reclassified_{plan.task_type}"
-        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, _tier_from_pseudo(pseudo_model), session_id)
+        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, _tier_from_pseudo(pseudo_model), session_id, messages)
         model = selection_info.model or resolve_orchestrator_model(config)
 
     elif guard_res.target_action in (TurnAction.DIRECT_ACTIVE_TIER, TurnAction.SUGGEST_REPLAN):
@@ -142,7 +147,7 @@ def route(
         complexity = 0.2
         tier = "capability_sla"
         reason = plan.rationale or f"fast_direct_{plan.task_type}"
-        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, _tier_from_pseudo(pseudo_model), session_id)
+        selection_info = _select_planned(plan.suggested_sla, plan, config, pseudo_model, _tier_from_pseudo(pseudo_model), session_id, messages)
         model = selection_info.model or resolve_orchestrator_model(config)
 
     if model:
@@ -175,6 +180,10 @@ def route(
         fallback_reason=selection_info.fallback_reason if selection_info else None,
         capability_fit_applied=selection_info.capability_fit_applied if selection_info else None,
         binding_capability_dim=selection_info.binding_capability_dim if selection_info else None,
+        benchmark_profile=selection_info.benchmark_profile if selection_info else None,
+        benchmark_score=selection_info.benchmark_score if selection_info else None,
+        benchmark_coverage_state=selection_info.benchmark_coverage_state if selection_info else "not_requested",
+        benchmark_snapshot_age_hours=selection_info.benchmark_snapshot_age_hours if selection_info else None,
     )
 
 
@@ -187,7 +196,7 @@ def _tier_from_pseudo(pseudo_model: str) -> str | None:
     return "default"
 
 
-def _select_planned(sla: CapabilitySLA, plan: Any, config: Any, pseudo_model: str, tier: str | None, session_id: str | None = None):
+def _select_planned(sla: CapabilitySLA, plan: Any, config: Any, pseudo_model: str, tier: str | None, session_id: str | None = None, messages: list | None = None):
     effective_pseudo = pseudo_model
     if session_id:
         try:
@@ -239,15 +248,30 @@ def _select_planned(sla: CapabilitySLA, plan: Any, config: Any, pseudo_model: st
         if tier:
             ceilings = getattr(selection, "path_price_cap_usd_per_mtok", {})
             ceiling = ceilings.get(tier)
+        domain = _domain_from_messages(messages or [], task_type)
         modified = replace(
             sla,
             min_capability_score=floor,
             max_price_usd_per_mtok=ceiling,
             task_type=task_type,
+            domain=domain,
+            role="implementer" if domain else None,
         )
         return pricing.select_for_sla_detailed(modified, config=config, pseudo_model=effective_pseudo)
     except Exception:
         return pricing.select_for_sla_detailed(sla, config=config, pseudo_model=effective_pseudo)
+
+
+def _domain_from_messages(messages: list, task_type: str) -> str | None:
+    """Deterministic domain labels; the SLM remains only a task-type signal."""
+    text = " ".join(str(message.get("content", "")) for message in _user_messages(messages) if isinstance(message, dict)).lower()
+    if re.search(r"\b(frontend|ui|ux|css|website)\b|react\s+component", text):
+        return "frontend"
+    if any(term in text for term in ("research", "web search", "browse the web")):
+        return "research"
+    if task_type in {"debug", "refactor", "single_edit", "multi_edit", "full_workflow"}:
+        return "general_software_engineering"
+    return None
 
 
 def pick_fast_model(body_model: str = "autoconduck", cfg: Any = None) -> str:

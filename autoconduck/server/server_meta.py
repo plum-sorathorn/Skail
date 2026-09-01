@@ -56,4 +56,9 @@ async def handle_stats(
         "session": scopes["session"],
         "windows": scopes["windows"],
     }
+    try:
+        from autoconduck.routing.benchmarks import snapshot_status
+        response["benchmark_snapshot"] = snapshot_status()
+    except Exception:
+        response["benchmark_snapshot"] = {"available": False, "fresh": False, "coverage_models": 0}
     return response
