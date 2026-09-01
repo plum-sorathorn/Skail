@@ -63,4 +63,4 @@ def test_update_screen_instantiation():
     from autoconduck.tui.dashboard_screens import UpdateScreen, UpdateCatalogScreen
     screen = UpdateScreen()
     assert screen._running is False
-    assert UpdateCatalogScreen is UpdateScreen
+    assert UpdateCatalogScreen is not UpdateScreen

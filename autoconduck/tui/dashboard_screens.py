@@ -173,7 +173,53 @@ if _TEXTUAL:
                 except Exception:
                     pass
 
-    UpdateCatalogScreen = UpdateScreen
+    class UpdateCatalogScreen(Screen):
+        """Explicit OpenRouter model-and-benchmark maintenance action."""
+
+        BINDINGS = [("enter", "sync", "Refresh model data"), ("left", "back", "Back"), ("escape", "back", "Back")]
+
+        def __init__(self, controller=None):
+            super().__init__()
+            self.controller = controller
+            self._running = False
+            self._status = "Press [bold cyan]ENTER[/bold cyan] to refresh OpenRouter model data and benchmarks."
+
+        def compose(self):
+            yield Vertical(
+                Static("┌─ AutoConduck · Refresh Model Data ─┐", markup=True),
+                Static("Fetches OpenRouter /models and /benchmarks once; routing stays local.", markup=True),
+                Static(self._status, id="status", markup=True),
+                Static("[enter] refresh  [left/esc] back  [ctrl+c] quit", markup=False),
+            )
+
+        def action_sync(self):
+            if not self._running:
+                self._running = True
+                self._status = "[bold cyan]Refreshing model data…[/bold cyan]"
+                self.query_one("#status", Static).update(self._status)
+                self.run_worker(self._sync(), exclusive=True)
+
+        async def _sync(self):
+            try:
+                import asyncio
+                from autoconduck.routing.benchmarks import sync_openrouter_from_env
+
+                registry = await asyncio.to_thread(sync_openrouter_from_env)
+                self._status = f"[bold green][OK] Refreshed {len(registry.models)} models and {len(registry.raw_results)} benchmark results.[/bold green]"
+            except Exception as exc:
+                self._status = f"[bold red]Refresh failed: {str(exc)[:200]}[/bold red]"
+            finally:
+                self._running = False
+                self.query_one("#status", Static).update(self._status)
+
+        def action_back(self):
+            self.app.pop_screen()
+
+        def on_key(self, event):
+            if event.key == "enter":
+                self.action_sync()
+            elif event.key in ("left", "escape"):
+                self.action_back()
 
     class LaunchAgentScreen(Screen):
         """Pick and launch a configured coding agent."""

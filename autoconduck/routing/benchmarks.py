@@ -209,6 +209,13 @@ def sync_openrouter_snapshot(api_key: str, path: Path, *, fetch: Callable[[str, 
     return registry
 
 
+def sync_openrouter_from_env() -> BenchmarkRegistry:
+    """Explicit maintenance helper used by the TUI; never called by routing."""
+    from autoconduck.config.paths import run_dir
+
+    return sync_openrouter_snapshot(os.environ.get("OPENROUTER_API_KEY", ""), run_dir() / "benchmarks.json")
+
+
 def install_registry(registry: BenchmarkRegistry) -> None:
     """Install a registry during startup or explicit maintenance, never on a request."""
     global _registry

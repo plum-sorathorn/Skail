@@ -53,6 +53,7 @@ if _TEXTUAL:
             ("m", "Model Catalog", "Providers, presets, and API key vault"),
             ("c", "Configure Integrations", "Re-configure models and coding agents"),
             ("u", "Check for Updates", "Check latest version & upgrade AutoConduck"),
+            ("r", "Refresh Model Data", "Update OpenRouter models, pricing, and benchmarks"),
             ("s", "Settings", "Launch behaviour, thresholds, log level"),
             ("a", "Launch Agent", "Start a configured coding agent"),
         ]
@@ -142,10 +143,12 @@ if _TEXTUAL:
             elif idx == 3:
                 app.push_screen(UpdateScreen(app))
             elif idx == 4:
+                app.push_screen(UpdateCatalogScreen(app))
+            elif idx == 5:
                 from .settings import SettingsScreen
 
                 app.push_screen(SettingsScreen(app))
-            elif idx == 5:
+            elif idx == 6:
                 app.push_screen(LaunchAgentScreen(app))
 
         def on_key(self, event):
