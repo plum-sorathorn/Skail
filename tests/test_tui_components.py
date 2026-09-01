@@ -1,4 +1,10 @@
-from autoconduck.tui.dashboard_widgets import _format_box_lines, render_log_rows
+from datetime import datetime, timedelta, timezone
+
+from autoconduck.tui.dashboard_widgets import (
+    _format_box_lines,
+    build_dashboard_snapshot,
+    render_log_rows,
+)
 from autoconduck.tui.keymap import KEYMAP, QUIT_KEY
 from autoconduck.tui.onboarding_models import filter_catalog
 
@@ -14,6 +20,138 @@ def test_dashboard_helpers_render_bounded_rows():
     lines = _format_box_lines("Title", ["one", "two"], width=20)
     assert len(lines) == 4
     assert all(len(line) == 20 for line in lines)
+
+
+def _stats_record(
+    event_id: str,
+    session_id: str | None,
+    *,
+    model: str = "openai/qwen",
+    minutes_ago: int = 1,
+    cost: float | None = 0.01,
+    selection: dict | None = None,
+):
+    record = {
+        "event_id": event_id,
+        "ts": (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).isoformat(),
+        "upstream_model": model,
+        "pseudo_model": "autoconduck",
+        "path": "FAST",
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+    }
+    if session_id is not None:
+        record["session_id"] = session_id
+    if cost is not None:
+        record["cost"] = cost
+    if selection is not None:
+        record["selection"] = selection
+    return record
+
+
+def test_dashboard_snapshot_keeps_unknown_session_separate_from_global_and_legacy_usage():
+    snapshot = build_dashboard_snapshot(
+        [
+            _stats_record("legacy", None, model="legacy/local", cost=None),
+            _stats_record("session-a", "session-a", model="openai/qwen"),
+        ],
+        session_id=None,
+        window="1h",
+        plugins_enabled=False,
+    )
+
+    assert snapshot["all_time"]["totals"]["calls"] == 2
+    assert snapshot["window"]["totals"]["calls"] == 2
+    assert snapshot["session"]["status"] == "Unknown session"
+    assert snapshot["session"]["usage"] is None
+    assert snapshot["session"]["decisions"] == []
+    assert snapshot["plugin_status"] == "Disabled"
+
+
+def test_dashboard_snapshot_uses_only_selected_session_for_session_facts_and_decisions():
+    selected = _stats_record(
+        "session-a",
+        "session-a",
+        selection={
+            "task_type": "refactor",
+            "binding_constraint": "capability",
+            "min_capability_score_applied": 0.55,
+            "oma": {"outcomes": ["started", "completed"], "reason": "completed"},
+        },
+    )
+    selected["latency_ms"] = 24.0
+    selected["cache_read_tokens"] = 8
+    snapshot = build_dashboard_snapshot(
+        [selected, _stats_record("session-b", "session-b", model="openai/other")],
+        session_id="session-a",
+        window="1h",
+        plugins_enabled=True,
+    )
+
+    assert snapshot["all_time"]["totals"]["calls"] == 2
+    assert snapshot["session"]["status"] == "session-a"
+    assert snapshot["session"]["usage"]["calls"] == 1
+    assert list(snapshot["session"]["models"]) == ["openai/qwen"]
+    assert [record["event_id"] for record in snapshot["session"]["decisions"]] == ["session-a"]
+    assert snapshot["session"]["evidence"]["floor"] == 0.55
+    assert snapshot["session"]["oma"]["outcomes"] == {"started": 1, "completed": 1}
+    assert snapshot["session"]["evidence"]["cache_reported"] is True
+    assert snapshot["session"]["evidence"]["latency_reported"] is True
+
+
+def test_dashboard_snapshot_marks_empty_and_zero_cost_usage_as_explicit_unknowns():
+    empty = build_dashboard_snapshot([], session_id="session-a", window="1h", plugins_enabled=False)
+    zero_cost = build_dashboard_snapshot(
+        [_stats_record("session-a", "session-a", cost=0.0)],
+        session_id="session-a",
+        window="1h",
+        plugins_enabled=True,
+    )
+
+    assert empty["all_time"]["totals"]["calls"] == 0
+    assert empty["session"]["status"] == "session-a"
+    assert empty["plugin_status"] == "Disabled"
+    assert zero_cost["session"]["evidence"]["cost_known"] is False
+
+
+def test_dashboard_screen_renders_persisted_session_evidence_and_window_controls(monkeypatch):
+    import autoconduck.config as config_module
+    from autoconduck import stats
+    from autoconduck.config import Config
+    from autoconduck.tui.dashboard import DashboardScreen
+
+    record = _stats_record(
+        "session-a",
+        "session-a",
+        selection={
+            "task_type": "debug",
+            "binding_constraint": "capability",
+            "min_capability_score_applied": 0.4,
+            "oma": {"outcomes": ["not_eligible"], "reason": "complexity_below_threshold"},
+        },
+    )
+    record["latency_ms"] = 30.0
+    record["cache_write_tokens"] = 4
+    monkeypatch.setattr(stats, "load_records", lambda *args, **kwargs: [record])
+    monkeypatch.setattr(config_module, "get_config", lambda: Config())
+
+    unknown_session = DashboardScreen()
+    unknown_session._update_stats()
+    assert "Unknown session" in unknown_session._stats_summary()
+    assert "Plugin runtime: [bold]Disabled[/bold]" in unknown_session._telemetry_cards()
+
+    screen = DashboardScreen(session_id="session-a")
+    screen._update_stats()
+
+    assert "Current session: [bold]session-a[/bold]" in screen._stats_summary()
+    assert "openai/qwen" in screen._stats_summary()
+    assert "Floor: 0.40" in screen._telemetry_cards()
+    assert "OMA: not_eligible=1" in screen._telemetry_cards()
+    assert screen.selected_window == "1h"
+    screen.action_next_window()
+    assert screen.selected_window == "1d"
+    screen.action_previous_window()
+    assert screen.selected_window == "1h"
 
 
 def test_catalog_filter_matches_provider_capability_context_and_fuzzy_term():
