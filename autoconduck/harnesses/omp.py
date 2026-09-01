@@ -71,6 +71,7 @@ class OmpAdapter(BaseAdapter):
 
         from autoconduck import __version__
         spool_json = json.dumps(str(spool_path))
+        extension_version_json = json.dumps(__version__)
 
         return (
             f"// AutoConduck Monitor & Router — managed by autoconduck v{__version__}\n"
@@ -83,6 +84,7 @@ class OmpAdapter(BaseAdapter):
             'import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";\n'
             "\n"
             f"const SPOOL_JSON_PATH = {spool_json};\n"
+            f"const AUTOCONDUCK_EXTENSION_VERSION = {extension_version_json};\n"
             "\n"
             "function _appendSpool(data: Record<string, unknown>): void {\n"
             "  try {\n"
@@ -133,6 +135,7 @@ class OmpAdapter(BaseAdapter):
             "  let lastToolName = '';\n"
             "  let sameToolStreak = 0;\n"
             "  let consecutiveErrors = 0;\n"
+            "  let sessionHeartbeatSent = false;\n"
             "\n"
             "  function trackToolStagnation(sessionId: string, toolName: string, isError: boolean): void {\n"
             "    if (isError) {\n"
@@ -169,8 +172,17 @@ class OmpAdapter(BaseAdapter):
             "  if (AUTOCONDUCK_HOOKS_ENABLED) {\n"
             "    pi.on('session_start', (event: any) => {\n"
             "      const sid = event?.sessionId || event?.id || '';\n"
-            "      if (sid) {\n"
-            "        _postOrSpool({ event: 'session_start', session_id: sid });\n"
+            "      if (sid && !sessionHeartbeatSent) {\n"
+            "        sessionHeartbeatSent = true;\n"
+            "        _postOrSpool({\n"
+            "          event: 'session_start',\n"
+            "          session_id: sid,\n"
+            "          data: {\n"
+            "            source: 'omp_extension',\n"
+            "            extension: 'autoconduck',\n"
+            "            extension_version: AUTOCONDUCK_EXTENSION_VERSION,\n"
+            "          },\n"
+            "        });\n"
             "      }\n"
             "    });\n"
             "    pi.on('tool_call', (event: any) => {\n"

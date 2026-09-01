@@ -24,7 +24,7 @@ ALLOWED_EVENT_KINDS = frozenset({
     "subagent_start",
     "subagent_stop",
 })
-DURABLE_VIA_EVENTS = frozenset({"task_start"})
+DURABLE_VIA_EVENTS = frozenset({"session_start", "task_start"})
 ALLOWED_ESCALATE_REASONS = frozenset({"consecutive_errors", "repeated_calls", "requested_review", "acceptance_failed"})
 
 
@@ -126,14 +126,24 @@ async def _contract_handler(request: Request):  # type: ignore[no-untyped-def]
             ledger = get_ledger()
             events = ledger.query_events(session_id=session_id or None, limit=20) if session_id else []
             counts = ledger.get_counts(session_id or None) if session_id else {}
+            activation = ledger.get_session_activation(session_id) if session_id else None
         except Exception:
-            events, counts = [], {}
+            events, counts, activation = [], {}, None
+        extension_status = (
+            "active"
+            if activation is not None
+            else ("events_observed" if events or counts else "no_events")
+        )
         return JSONResponse(content={
             "schema_version": "0.5",
             "session_id": session_id,
             "execution_authority": "plugin-deterministic",
             "brain": "deterministic-first (SLM optional, LLM via router)",
             "acceptance_checks": [],
+            "extension_lifecycle": {
+                "status": extension_status,
+                "activation": activation,
+            },
             "notes": f"events={len(events)} counts={counts}" if session_id else "no session",
         })
     except Exception as exc:
@@ -144,6 +154,7 @@ async def _contract_handler(request: Request):  # type: ignore[no-untyped-def]
             "execution_authority": "plugin-deterministic",
             "brain": "deterministic-first (SLM optional, LLM via router)",
             "acceptance_checks": [],
+            "extension_lifecycle": {"status": "no_events", "activation": None},
             "notes": f"error: {exc}",
         })
 

@@ -614,6 +614,97 @@ def test_omp_extension_and_subagent_listeners(tmp_path, monkeypatch):
     assert not ext_path.exists()
 
 
+def test_omp_extension_session_heartbeat_is_bounded_and_reports_metadata():
+    from autoconduck.harnesses.omp import OmpAdapter
+
+    rendered = OmpAdapter()._render_extension(port=11434, hooks_enabled=True)
+
+    assert "let sessionHeartbeatSent = false;" in rendered
+    assert "if (sid && !sessionHeartbeatSent)" in rendered
+    assert "sessionHeartbeatSent = true;" in rendered
+    assert "event: 'session_start'" in rendered
+    assert "source: 'omp_extension'" in rendered
+    assert "extension: 'autoconduck'" in rendered
+    assert "extension_version:" in rendered
+    assert "event: 'tool_result'" in rendered
+
+
+def test_omp_session_activation_is_durable_and_visible_in_plugin_contract(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from autoconduck.config.manager import get_config
+    from autoconduck.plugin.ledger import get_ledger
+    from autoconduck.server.plugin_routes import install_plugin_routes
+    import autoconduck.config.manager as manager
+
+    cfg = get_config()
+    cfg.plugins.enabled = True
+    manager._config = cfg
+    app = FastAPI()
+    install_plugin_routes(app)
+    client = TestClient(app)
+
+    before = client.get("/plugin/contract", params={"session": "omp-live"})
+    assert before.status_code == 200
+    assert before.json()["extension_lifecycle"]["status"] == "no_events"
+
+    response = client.post("/plugin/events", json={
+        "event": "session_start",
+        "session_id": "omp-live",
+        "data": {
+            "source": "omp_extension",
+            "extension": "autoconduck",
+            "extension_version": "0.5.2",
+        },
+    })
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+    ledger = get_ledger()
+    ledger.flush_sync()
+    events = ledger.query_events(session_id="omp-live")
+    activation = next(event for event in events if event["kind"] == "session_start")
+    assert activation["data"]["source"] == "omp_extension"
+    assert activation["data"]["extension_version"] == "0.5.2"
+
+    # The activation remains diagnostic evidence even after recent-event history rolls over.
+    for index in range(21):
+        ledger.enqueue("omp-live", f"later-{index}", "task_start", {"index": index})
+    ledger.flush_sync()
+
+    after = client.get("/plugin/contract", params={"session": "omp-live"})
+    lifecycle = after.json()["extension_lifecycle"]
+    assert lifecycle["status"] == "active"
+    assert lifecycle["activation"]["source"] == "omp_extension"
+    assert lifecycle["activation"]["extension_version"] == "0.5.2"
+
+
+def test_omp_session_activation_is_ignored_when_plugins_disabled(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from autoconduck.config.manager import get_config
+    from autoconduck.plugin.ledger import get_ledger
+    from autoconduck.server.plugin_routes import install_plugin_routes
+    import autoconduck.config.manager as manager
+
+    cfg = get_config()
+    cfg.plugins.enabled = False
+    manager._config = cfg
+    app = FastAPI()
+    install_plugin_routes(app)
+    client = TestClient(app)
+
+    response = client.post("/plugin/events", json={
+        "event": "session_start",
+        "session_id": "omp-disabled",
+        "data": {"source": "omp_extension"},
+    })
+    assert response.status_code == 200
+    assert response.json() == {"status": "ignored"}
+    get_ledger().flush_sync()
+    assert get_ledger().query_events(session_id="omp-disabled") == []
+
+
 def test_spool_tailer_processes_subagent_start_stop_and_task_start(tmp_path):
     from autoconduck.plugin.spool import SpoolTailer
     from autoconduck.plugin.ledger import get_ledger

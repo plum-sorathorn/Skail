@@ -15,9 +15,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-DURABLE_KINDS = frozenset({"task_start", "escalation", "terminal_result", "error", "subagent_start", "subagent_stop"})
+DURABLE_KINDS = frozenset({"session_start", "task_start", "escalation", "terminal_result", "error", "subagent_start", "subagent_stop"})
 # Endpoint-facing kinds that are valid but not all durable (non-durable counted only)
-ALLOWED_EVENT_KINDS = frozenset({"tool_call", "tool_result", "task_start", "task_progress", "task_done", "subagent_start", "subagent_stop"})
+ALLOWED_EVENT_KINDS = frozenset({"session_start", "tool_call", "tool_result", "task_start", "task_progress", "task_done", "subagent_start", "subagent_stop"})
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -326,6 +326,27 @@ class PluginLedger:
         except Exception as exc:
             logger.warning("ledger query failed: %s", exc)
             return []
+
+    def get_session_activation(self, session_id: str) -> dict[str, Any] | None:
+        """Return the latest durable extension activation metadata for a session."""
+        try:
+            conn = sqlite3.connect(str(self.db_path), timeout=5.0)
+            try:
+                row = conn.execute(
+                    "SELECT data FROM events WHERE session_id=? AND kind='session_start' ORDER BY id DESC LIMIT 1",
+                    (str(session_id),),
+                ).fetchone()
+                if row is None:
+                    return None
+                try:
+                    return json.loads(row[0]) if row[0] else {}
+                except Exception:
+                    return {"raw": row[0]}
+            finally:
+                conn.close()
+        except Exception as exc:
+            logger.warning("ledger session activation query failed: %s", exc)
+            return None
 
     def prune(self) -> int:
         try:
