@@ -12,7 +12,7 @@
 [![FastAPI](https://img.shields.io/badge/server-FastAPI-009688.svg?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](LICENSE)
 
-[Why AutoConduck?](#why-autoconduck) • [Architecture](#architecture) • [Quick Start](#quick-start) • [Supported Agents](#supported-agents) • [The Three Pseudo-Models](#the-three-pseudo-models) • [How It Works Internally](#how-it-works-internally) • [Interactive TUI Dashboard](#interactive-tui-dashboard) • [CLI Command Reference](#cli-command-reference) • [Configuration Reference](#configuration-reference) • [Audit & Observability](#audit--observability) • [Development](#development) • [License](#license)
+[Why AutoConduck?](#why-autoconduck) • [Architecture](#architecture) • [Quick Start](#quick-start) • [Supported Agents](#supported-agents) • [The Three Pseudo-Models](#the-three-pseudo-models) • [How It Works Internally](#how-it-works-internally) • [Open-Multi-Agent (OMA) Sidecar](#open-multi-agent-oma-sidecar) • [Interactive TUI Dashboard](#interactive-tui-dashboard) • [CLI Command Reference](#cli-command-reference) • [Configuration Reference](#configuration-reference) • [Audit & Observability](#audit--observability) • [Development](#development) • [License](#license)
 
 </div>
 
@@ -26,6 +26,7 @@ Coding agents (**Claude Code**, **OpenCode**, **Pi**, and **Oh My Pi**) frequent
 
 - **Turn Guard (Regex, <2ms, Synchronous):** Evaluates every turn without I/O or LLM calls. Healthy tool loops stay on `DIRECT_ACTIVE_TIER` (inheriting session capability floor); only genuine stagnation (3+ identical consecutive calls or 2+ consecutive errors) triggers an immediate floor bias escalation and SLM re-classification. No replanning, no task graphs.
 - **Embedded SLM Classifier (Qwen 2.5 Coder / LFM 2.5 ONNX / GGUF):** Local small model emits a lightweight `TaskClassification` (`task_type`, `confidence`, `complexity_score`) with a 2000 ms circuit-breaker and deterministic fallback. Optional, non-binding signal—never an authority.
+- **Proxy Complexity Gating & OMA Sidecar Intercept:** High-complexity tasks (`complexity >= 0.75` or `full_workflow`/`refactor`) at top-level depth (`request_depth == 0` and `x-oma-sidecar != 1`) are automatically intercepted by `server_router.py` and delegated to the OMA Node.js sidecar runner (`autoconduck/plugin/oma_sidecar/runner.js`) when `plugins.enabled` and `plugins.oma_enabled`. Features `x-oma-sidecar: 1` recursion protection and fail-soft degrade to direct fast-path LLM dispatch.
 - **Capability Floor Routing (4D Capability Vectors):** Filters models against a 4-dimensional capability vector (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted per task type, with capability tiebreaker sorting on equal/zero-cost candidates, picking the absolute cheapest qualifying model on **every** classified turn.
 - **Dynamic Task Base Floors + Tool Loop Floor Inheritance:** Base floors scale dynamically by task type and complexity (`debug: 0.35`, `refactor: 0.40`, `full_workflow: 0.45`), tightened by low confidence ($\min(\text{base} + 0.15 \times (1 - \text{conf}), 0.60)$) and inherited across tool loops. Additive session bias (+0.15, cap 0.75, TTL 10 turns) elevates selection upon stagnation.
 - **Automated Multi-Provider Preset Catalog (1,000+ Models):** `python scripts/sync_all_presets.py` synchronizes 1,024+ models across 11 providers (`openai`, `anthropic`, `google`, `mistral`, `deepseek`, `groq`, `openrouter`, `together`, `xai`, `devpass`, `llmgateway`) from live upstream endpoints directly into code and docs.
@@ -58,6 +59,12 @@ AutoConduck operates under a **Two-Plane Architecture** where the Fast-Path Prox
       │    2000ms circuit breaker, deterministic fallback)      │
       │                     │                                   │
       │                     ▼                                   │
+      │  Proxy Complexity Gating (oma_enabled=true)             │
+      │    High complexity (score ≥ 0.75 or full_workflow)      │
+      │    depth=0 & x-oma-sidecar!=1 ──► OMA Node.js Sidecar   │
+      │    (recursion protected; fail-soft fallback to router)  │
+      │                     │                                   │
+      │                     ▼                                   │
       │  Capability Floor 4D Model Routing                      │
       │    filters: enabled → tools → reasoning → context →     │
       │             capability floor → optional price cap       │
@@ -70,8 +77,11 @@ AutoConduck operates under a **Two-Plane Architecture** where the Fast-Path Prox
                            ▼
                   Upstream Model Provider
 
-  Plugin Plane (Daemon-side, Python — Active when plugins.enabled=true)
+  Plugin Plane (Daemon-side, Python/Node.js — Active when plugins.enabled=true)
       ┌─────────────────────────────────────────────────────────┐
+      │  OMA Node.js Sidecar (autoconduck/plugin/oma_sidecar/)  │
+      │    runner.js + tools.js (workspace tool suite & runner) │
+      │                     │                                   │
       │  Shims (Thin, Non-blocking, <10ms overhead)             │
       │    Claude Code hooks → POST /plugin/events (HTTP, 10ms) │
       │    fallback: autoconduck hook claude <Event> (spool)    │
@@ -85,7 +95,7 @@ AutoConduck operates under a **Two-Plane Architecture** where the Fast-Path Prox
       │  Daemon Runtime (autoconduck/plugin/)                   │
       │    ledger (SQLite WAL, batched, durable-only events)    │
       │    bias (SessionBiasStore, TTL turns, cap 0.75)         │
-      │    runtime (salvaged executor proof path)               │
+      │    runtime (start_task OMA sidecar launcher & proof)    │
       │    synthesis (templated; LLM stub off)                  │
       │                     │                                   │
       │            escalation ─┘                                │
@@ -100,10 +110,11 @@ AutoConduck operates under a **Two-Plane Architecture** where the Fast-Path Prox
 
 1. **Turn Guard (`server/turn_guard.py`):** Pure synchronous regex classifier executing in <2ms, I/O-free. Distinguishes clean user turns (→ classify), active healthy tool loops (`DIRECT_ACTIVE_TIER` — client drives its own loop), and genuine stagnation (3+ identical consecutive calls or 2+ consecutive errors → re-classify). No replanning or task graph recompilation.
 2. **SLM Classifier (`routing/slm_planner.py`):** Local ONNX/GGUF model emitting a lightweight `TaskClassification` (`task_type`, `confidence`, `complexity_score`) with a configurable circuit breaker (default 2000 ms) and deterministic fallback. Optional non-binding signal per the Brain Ladder.
-3. **Capability Vector Model Selection (`routing/model_pool.py` + `routing/dispatcher.py`):** Multi-dimensional capability scoring (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted across task types via `TASK_TYPE_WEIGHTS`. Capability Floor Routing picks the cheapest qualifying model; per-turn confidence floor $\min(\text{base} + 0.15 \times (1 - \text{conf}), 0.60)$ on every classified turn plus optional additive session escalation bias (cap 0.75, TTL in turns).
-4. **Plugin Runtime (`autoconduck/plugin/` — Brain Ladder, Deterministic-First):** SQLite WAL ledger (async bounded queue, batched, durable-only events), bias store (`SessionBiasStore`), salvaged executor proof path (deterministic stagnation 3-identical/2-errors → bias), and templated synthesis (LLM stub off). SLM is never an authority for escalation, stagnation, completion, or safety.
-5. **Session Guard (`server/session_guard.py`):** Enforces byte-identical prompt prefix immutability across turns for upstream provider cache hits, and compacts non-structural message history at 80% context capacity.
-6. **Knowledge Vector Store (`knowledge/vector_store.py`):** Embedded LanceDB vector index using deterministic 16-dimensional term-hash embeddings for zero-overhead local code symbol retrieval.
+3. **Proxy Complexity Gating & OMA Sidecar Intercept (`server/server_router.py` + `plugin/oma_sidecar/`):** When `plugins.enabled` and `plugins.oma_enabled` are true, top-level turns (`request_depth == 0` and `x-oma-sidecar != 1`) with high complexity (`complexity >= 0.75` or task types `full_workflow`/`refactor`) are intercepted and delegated to the OMA Node.js sidecar runner (`runner.js` + `tools.js` workspace tool suite). Recursion headers (`x-oma-sidecar: 1`) prevent loops, and any OMA error fails soft back to direct LLM dispatch.
+4. **Capability Vector Model Selection (`routing/model_pool.py` + `routing/dispatcher.py`):** Multi-dimensional capability scoring (`reasoning`, `tool_reliability`, `code_quality`, `latency_class`) weighted across task types via `TASK_TYPE_WEIGHTS`. Capability Floor Routing picks the cheapest qualifying model; per-turn confidence floor $\min(\text{base} + 0.15 \times (1 - \text{conf}), 0.60)$ on every classified turn plus optional additive session escalation bias (cap 0.75, TTL in turns).
+5. **Plugin Runtime (`autoconduck/plugin/` — Brain Ladder, Deterministic-First):** SQLite WAL ledger (async bounded queue, batched, durable-only events), bias store (`SessionBiasStore`), OMA task launcher (`start_task`), salvaged executor proof path, and templated synthesis (LLM stub off). SLM is never an authority for escalation, stagnation, completion, or safety.
+6. **Session Guard (`server/session_guard.py`):** Enforces byte-identical prompt prefix immutability across turns for upstream provider cache hits, and compacts non-structural message history at 80% context capacity.
+7. **Knowledge Vector Store (`knowledge/vector_store.py`):** Embedded LanceDB vector index using deterministic 16-dimensional term-hash embeddings for zero-overhead local code symbol retrieval.
 
 ---
 
@@ -293,6 +304,95 @@ The plugin plane is **opt-in** (`plugins.enabled=false` by default) and **never 
 
 ---
 
+## Open-Multi-Agent (OMA) Sidecar
+
+AutoConduck includes an embedded **Open-Multi-Agent (OMA)** sidecar (`@autoconduck/oma-sidecar`) for autonomous multi-agent task execution and workspace orchestration.
+
+While AutoConduck's primary proxy plane operates as a synchronous, zero-overhead (<2ms) router for everyday agent turns, high-complexity tasks (such as full architectural refactors, greenfield scaffolding, or multi-stage pipelines) require structured decomposition and multi-step tool execution. The OMA sidecar delivers this capability out-of-band, preserving sub-millisecond proxy routing while delegating heavy workflows to a dedicated Node.js multi-agent engine.
+
+```text
+               Proxy Complexity Gating & OMA Sidecar Intercept
+ 
+   Client Agent (Claude / OpenCode / Pi / OMP)
+         │
+         ▼
+   FastAPI Proxy (server/server_router.py)
+         │
+    Complexity Check (depth == 0, score ≥ 0.75 or task in {full_workflow, refactor})
+         │
+         ├─ Normal Turn (< 0.75) ────────► Capability Floor Routing (Sub-ms fast path)
+         │
+         └─ High Complexity (≥ 0.75) ────► Intercept & Delegate
+                                                  │
+                                                  ▼
+                                       Python Plugin Runtime (start_task)
+                                                  │
+                                                  ▼
+                                       OMA Node.js Sidecar (runner.js)
+                                         mode: auto | runAgent | runTasks | runTeam
+                                                  │
+                                         ┌────────┴────────┐
+                                         ▼                 ▼
+                                   Workspace Tools     Child LLM Calls
+                                   (oma_sidecar/       (x-oma-sidecar: 1)
+                                    tools.js)              │
+                                         │                 ▼
+                                         │         AutoConduck Proxy
+                                         │         (No recursion loop)
+                                         ▼                 │
+                                   Execution Report ◄──────┘
+                                         │
+                                         ▼
+                               Relay Stream / Response
+                               (OpenAI SSE / Anthropic blocks)
+```
+
+### Key Capabilities & Architecture
+
+1. **Proxy Complexity Gating (`server/server_router.py`):**
+   When `plugins.enabled=true` and `plugins.oma_enabled=true`, incoming requests are evaluated for complexity. If a request is at top-level depth (`request_depth == 0` and `x-oma-sidecar != 1`) and exceeds the complexity threshold (`complexity_score >= 0.75` or task type is `full_workflow` or `refactor`), the router intercepts the turn before direct model dispatch and delegates the goal to the OMA runner.
+
+2. **Execution Modes (`oma_mode`):**
+   The OMA runner classifies or executes the task according to one of three orchestration modes:
+   - **`runAgent` (Single Agent):** Focused autonomous agent executing iterative actions for single-domain tasks.
+   - **`runTasks` (Sequential Pipeline):** Decomposes complex goals into an ordered sequence of discrete dependency tasks.
+   - **`runTeam` (Multi-Agent Swarm):** Coordinates a team of specialized agents—decomposing the goal into a DAG, coordinating subagent workers in parallel, and synthesizing their deliverables.
+   - **`auto` (Default):** Dynamically analyzes the user prompt to select `runTeam`, `runTasks`, or `runAgent`.
+
+3. **Workspace-Bounded Tool Suite (`autoconduck/plugin/oma_sidecar/tools.js`):**
+   The OMA sidecar provides a secure, sandboxed set of tools strictly bounded to the workspace root:
+   - **`read`**: Line-slice file reader with total line counts and range filtering.
+   - **`write`**: Safe file creator with automatic recursive directory creation.
+   - **`patch`**: Precision search-and-replace text patcher for targeted diff application.
+   - **`bash`**: Shell command execution with configurable timeouts and workspace sandboxing.
+   - **`glob`**: Fast file tree discovery matching glob patterns.
+   - **`search`**: Workspace-wide regular expression and substring search.
+   - **`git`**: Sandboxed version control operations (`status`, `diff`, `log`, `commit`).
+   - **`subagent`**: Spawns isolated child agent sessions with scoped sub-goals.
+
+4. **Recursion Protection:**
+   When the OMA sidecar issues completion requests back to AutoConduck (`http://127.0.0.1:11434/v1`), it attaches the `x-oma-sidecar: 1` and `x-autoconduck-depth >= 1` headers. AutoConduck detects these markers, bypassing the complexity gate and routing them directly via Capability Floor Routing. This guarantees zero infinite recursion loops.
+
+5. **Synthesis Relay Streaming (`server_chat.py`, `server_messages.py`):**
+   When OMA completes, its structured execution report (tasks completed, synthesis output, token usage) is streamed or formatted directly to the calling agent in their native wire protocol (OpenAI SSE `chatcmpl` chunks or Anthropic `content_block_delta` events).
+
+6. **Fail-Soft Degradation:**
+   If Node.js is not installed, the sidecar process fails, or execution times out, AutoConduck automatically logs a warning and falls back immediately to normal fast-path LLM router dispatch. It **never returns a 500 or broken connection** to the connected client.
+
+### OMA Configuration
+
+Configure the OMA sidecar under the `plugins` section of `~/.autoconduck/config.yaml`:
+
+```yaml
+plugins:
+  enabled: true             # Enable plugin plane
+  oma_enabled: true         # Enable OMA sidecar intercept (default: true when plugins enabled)
+  oma_mode: "auto"          # Execution mode: "auto", "runAgent", "runTasks", or "runTeam"
+  oma_node_path: null       # Path to node executable (defaults to "node" on PATH)
+```
+
+---
+
 ## Interactive TUI Dashboard
 
 AutoConduck includes an interactive terminal UI built with Textual:
@@ -397,6 +497,9 @@ plugins:
   claude_enabled: false
   pi_enabled: false
   opencode_enabled: false
+  oma_enabled: true
+  oma_mode: "auto"
+  oma_node_path: null
   ledger_retention_days: 30
   escalation_ttl_turns: 10
   escalation_floor_bump: 0.15

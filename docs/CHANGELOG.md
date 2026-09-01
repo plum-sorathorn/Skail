@@ -2,6 +2,13 @@
 
 ## [0.5.2] - 2026-08-31
 
+### OMA Node.js Sidecar & Proxy Complexity Gating Intercept
+- **OMA Node.js Sidecar & Tool Suite (`autoconduck/plugin/oma_sidecar/`)**: Implemented standalone Node.js sidecar runner (`runner.js`) and workspace tool suite (`tools.js`: bash execution, file read/write, search, git operations, and subagent dispatch).
+- **Proxy Complexity Gating (`server/server_router.py`)**: Intercepts high-complexity turns (`complexity >= 0.75` or `full_workflow`/`refactor` task types) at top-level depth (`request_depth == 0` and `x-oma-sidecar != 1`) when `plugins.enabled=true` and `plugins.oma_enabled=true`, delegating task execution dynamically to the OMA Node.js sidecar via `plugin.runtime.start_task()`.
+- **Recursion Protection & Fail-Soft Degrade**: Propagates `x-oma-sidecar: 1` and `x-autoconduck-depth >= 1` headers on sidecar requests to prevent re-entrant intercept loops. Any OMA sidecar execution error or crash seamlessly falls back to normal fast-path LLM router dispatch without surfacing errors to the client.
+- **Synthesis Relay Streaming (`server_chat.py`, `server_messages.py`)**: Added relay streaming handlers formatting and relaying OMA sidecar execution reports directly to OpenAI (`/v1/chat/completions`) and Anthropic (`/v1/messages`) client endpoints.
+- **Config Tunables (`config/models.py`)**: Added `oma_enabled: bool = True`, `oma_mode: str = "auto"`, and `oma_node_path: str | None = None` to `PluginConfig`.
+
 ### Dynamic Task Capability Floors & Tool Loop Floor Inheritance
 - **Dynamic Task-Type Base Floors (`routing/dispatcher.py`)**: Added `TASK_BASE_FLOORS` defining capability baselines per task type (`debug: 0.35`, `refactor: 0.40`, `full_workflow: 0.45`, `multi_edit: 0.25`, etc.) scaled by `complexity_score`. Low confidence dynamically elevates the floor (`floor = min(base + 0.15*(1-confidence), 0.60)`).
 - **Tool Loop Session Floor Inheritance (`plugin/bias.py`, `routing/dispatcher.py`)**: Turns on `TurnAction.DIRECT_ACTIVE_TIER` inherit the session's active capability floor via `SessionBiasStore.get_session_floor`, preventing multi-turn debugging and refactoring loops from down-tiering to inadequate models mid-session.

@@ -22,16 +22,20 @@ Turn Guard (Regex, <2ms, synchronous)
    └─ CLEAN / RE-CLASSIFY ─► SLM Classifier (TaskClassification)
                                 │
                                 ▼
-                       Capability Floor Calculation
-                                │
-                                ▼
-                       Filtering & Capability Floor Gate
-                                │
-                                ▼
-                       Equal-Cost Capability Tiebreaker
-                                │
-                                ▼
-                       Cheapest Qualifying Model Selected
+                       Proxy Complexity Gating Intercept (oma_enabled=true)
+                        ├─ High complexity (score ≥ 0.75 or task in {full_workflow, refactor})
+                        │  & depth=0 & x-oma-sidecar!=1 ──► OMA Node.js Sidecar
+                        │                                  (runner.js + workspace tools)
+                        └─ Low complexity / OMA off ──────► Capability Floor Calculation
+                                                                  │
+                                                                  ▼
+                                                         Filtering & Capability Floor Gate
+                                                                  │
+                                                                  ▼
+                                                         Equal-Cost Capability Tiebreaker
+                                                                  │
+                                                                  ▼
+                                                         Cheapest Qualifying Model Selected
 ```
 
 ### 1. Hard Filtering
@@ -51,7 +55,16 @@ For each turn, `capability_fit(model, task_type)` is evaluated:
 $$\text{fit} = \min_{w_i > 0.25} (v_i) + 0.1 \times \sum (w_i \cdot v_i)$$
 where weights $w_i$ are assigned dynamically based on `task_type` (`TASK_TYPE_WEIGHTS`).
 
-### 3. Dynamic Capability Floor & Confidence Scaling
+### 3. Proxy Complexity Gating Intercept (`server/server_router.py`)
+Before executing direct router model selection, `route_target()` checks whether proxy complexity gating applies:
+- **Trigger Conditions**: `request_depth == 0` AND `is_oma_sidecar == False` AND `plugins.enabled == True` AND `plugins.oma_enabled == True`.
+- **Complexity Criterion**: `complexity_score >= 0.75` OR `task_type in ("full_workflow", "refactor")`.
+- **Execution & Relay**: Launches the OMA Node.js sidecar via `autoconduck.plugin.runtime.start_task()`. Upon completion, `_oma_result` is stored in the dispatch context and relayed to the client via `server_chat.py` / `server_messages.py`.
+- **Recursion Protection**: Requests issued by the OMA sidecar pass `x-oma-sidecar: 1` or `x-autoconduck-depth >= 1` to bypass the intercept and avoid infinite delegation loops.
+- **Fail-Soft Guarantee**: Any OMA execution error or exception is caught and logged, gracefully falling back to standard fast-path LLM router selection.
+- **Reference**: See [`docs/design/oma-sidecar.md`](oma-sidecar.md) for full architecture and execution mode details.
+
+### 4. Dynamic Capability Floor & Confidence Scaling
 The minimum required capability floor is derived dynamically per turn:
 $$\text{floor} = \min(\text{base} + 0.15 \times (1 - \text{confidence}), 0.60) + \text{session\_bias}$$
 where `base` is determined by `TASK_BASE_FLOORS` scaled by `complexity_score`:

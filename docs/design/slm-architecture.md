@@ -14,4 +14,4 @@ The SLM produces a `TaskClassification` with the following structure:
 - `confidence`: float [0.0, 1.0]
 - `complexity_score`: float [0.0, 1.0]
 
-`TaskClassification` feeds `routing/dispatcher.py::_select_planned`, which applies the per-turn confidence floor `min(base + 0.15*(1-confidence), 0.60)` and optional session escalation bias (additive, cap 0.75) before Capability Floor Routing. Detailed weights are defined in `routing/model_pool.py::TASK_TYPE_WEIGHTS`.
+`TaskClassification` feeds `routing/dispatcher.py::_select_planned`, which applies the per-turn confidence floor `min(base + 0.15*(1-confidence), 0.60)` and optional session escalation bias (additive, cap 0.75) before Capability Floor Routing. In addition, high complexity classification (`complexity_score >= 0.75` or task types `full_workflow`/`refactor`) triggers the Proxy Complexity Gating Intercept (`server/server_router.py`) to launch the OMA Node.js sidecar runner (`autoconduck/plugin/oma_sidecar/runner.js`) when `plugins.enabled` and `plugins.oma_enabled` are true. Detailed weights are defined in `routing/model_pool.py::TASK_TYPE_WEIGHTS`.
