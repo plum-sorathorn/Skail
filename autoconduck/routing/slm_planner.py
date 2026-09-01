@@ -64,6 +64,13 @@ def _infer_deterministic_task_type(text: str) -> tuple[str, int]:
     return "chat", 2
 
 
+_EXPLICIT_REFACTOR_REQUEST_RE = re.compile(
+    r"(?i)^\s*(?:refactor\b|please\s+refactor\b|(?:can|could|would|will)\s+you\s+refactor\b)"
+    r"|\b(?:i\s+)?(?:need|want)\s+you\s+to\s+refactor\b"
+)
+_EXPLICIT_REFACTOR_COMPLEXITY_FLOOR = 8
+
+
 def normalize_confidence(value: Any) -> float:
     """Return a safe SLM confidence, defaulting conservatively to 0.5."""
     try:
@@ -336,17 +343,50 @@ class SLMPlanner:
         text, _ = self._extract_last_user_text(messages)
         return text
 
+    def _apply_explicit_refactor_floor(
+        self, plan: ExecutionPlan, messages: list[dict[str, Any]]
+    ) -> ExecutionPlan:
+        """Keep a direct refactor request from being downgraded by the SLM.
+
+        This is a narrow deterministic intent floor, not an alternative classifier:
+        it only recognizes a direct request to refactor and preserves every other
+        SLM signal, including confidence and suggested SLA.
+        """
+        if not isinstance(messages, list):
+            return plan
+        if not _EXPLICIT_REFACTOR_REQUEST_RE.search(self._extract_user_text(messages)):
+            return plan
+        if (
+            plan.task_type == "refactor"
+            and plan.complexity_score >= _EXPLICIT_REFACTOR_COMPLEXITY_FLOOR
+        ):
+            return plan
+        return plan.model_copy(
+            update={
+                "task_type": "refactor",
+                "complexity_score": max(
+                    plan.complexity_score, _EXPLICIT_REFACTOR_COMPLEXITY_FLOOR
+                ),
+                "rationale": (
+                    f"{plan.rationale} (deterministic explicit refactor intent)"
+                ).strip(),
+            }
+        )
+
     def _create_fallback_plan(self, messages: list[dict[str, Any]], reason: str = "") -> ExecutionPlan:
         """Create a safe fallback execution plan with deterministic baseline classification."""
         user_text = self._extract_user_text(messages) if messages else ""
         task_type, complexity = _infer_deterministic_task_type(user_text)
-        return ExecutionPlan(
-            confidence=0.5,
-            task_type=task_type,
-            complexity_score=complexity,
-            suggested_sla=CapabilitySLA(min_context=16000, requires_tools=True, max_cost=1.5),
-            rationale=reason or "Fallback plan due to SLM circuit breaker or parsing exception",
-            fallback_used=True,
+        return self._apply_explicit_refactor_floor(
+            ExecutionPlan(
+                confidence=0.5,
+                task_type=task_type,
+                complexity_score=complexity,
+                suggested_sla=CapabilitySLA(min_context=16000, requires_tools=True, max_cost=1.5),
+                rationale=reason or "Fallback plan due to SLM circuit breaker or parsing exception",
+                fallback_used=True,
+            ),
+            messages,
         )
 
     def _ensure_llm_loaded(self, config: Any = None) -> None:
@@ -487,7 +527,7 @@ class SLMPlanner:
                     _INFER_BUSY = False
 
             if isinstance(res, ExecutionPlan):
-                return res
+                return self._apply_explicit_refactor_floor(res, messages)
             if isinstance(res, str):
                 try:
                     data = json.loads(res)
@@ -509,7 +549,9 @@ class SLMPlanner:
             except (TypeError, ValueError, OverflowError):
                 return self._create_fallback_plan(messages, reason="Invalid confidence")
             data["confidence"] = normalize_confidence(data.get("confidence"))
-            return ExecutionPlan.model_validate(data)
+            return self._apply_explicit_refactor_floor(
+                ExecutionPlan.model_validate(data), messages
+            )
         except Exception as exc:
             logger.warning("SLM sync planner error: %s; degrading to fallback.", exc)
             return self._create_fallback_plan(messages, reason=f"Sync planning error: {exc}")
@@ -536,7 +578,7 @@ class SLMPlanner:
                 )
 
             if isinstance(res, ExecutionPlan):
-                return res
+                return self._apply_explicit_refactor_floor(res, messages)
 
             if isinstance(res, str):
                 try:
@@ -559,7 +601,9 @@ class SLMPlanner:
             except (TypeError, ValueError, OverflowError):
                 return self._create_fallback_plan(messages, reason="Invalid confidence")
             data["confidence"] = normalize_confidence(data.get("confidence"))
-            return ExecutionPlan.model_validate(data)
+            return self._apply_explicit_refactor_floor(
+                ExecutionPlan.model_validate(data), messages
+            )
 
         except asyncio.TimeoutError:
             logger.warning("SLM planner exceeded %sms circuit breaker timeout; degrading to fallback.", timeout_ms)

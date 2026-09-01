@@ -75,6 +75,29 @@ def test_slm_failure_fallback_still_yields_model(monkeypatch):
     assert dec.plan.fallback_used is True
 
 
+def test_ordinary_chat_remains_fast_direct_when_slm_classifies_chat(monkeypatch):
+    """The deterministic refactor floor does not widen ordinary chat routing."""
+    cfg = _cfg_with_models()
+
+    def chat_infer(self, messages, config=None):
+        return ExecutionPlan(
+            confidence=0.85,
+            task_type="chat",
+            complexity_score=1,
+            rationale="ordinary chat",
+        ).model_dump()
+
+    monkeypatch.setattr(SLMPlanner, "_raw_infer", chat_infer)
+
+    dec = route([{"role": "user", "content": "Hello, what can you do?"}], config=cfg)
+
+    assert dec.path == "fast"
+    assert dec.route == "fast_direct"
+    assert dec.plan is not None
+    assert dec.plan.task_type == "chat"
+    assert dec.plan.complexity_score == 1
+
+
 def test_escalate_slm_reclassifies_no_slow_path(monkeypatch):
     """ESCALATE_SLM does not go slow; it re-classifies via plan_sync and selects fast."""
     cfg = _cfg_with_models()
@@ -235,4 +258,3 @@ def test_escalate_slm_applies_immediate_bias(monkeypatch):
     assert bump > 0.0
     assert dec.path == "fast"
     assert dec.model is not None
-

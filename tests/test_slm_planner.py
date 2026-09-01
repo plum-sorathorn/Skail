@@ -473,6 +473,50 @@ def test_slm_confidence_is_used():
     planner = SLMPlanner()
     plan = planner.plan_sync([{"role": "user", "content": "hello"}])
     assert 0 < plan.confidence <= 1
+
+
+def test_explicit_refactor_intent_overrides_incorrect_slm_chat_plan(monkeypatch):
+    """A direct end-to-end refactor request cannot be downgraded by the SLM."""
+    planner = SLMPlanner()
+
+    def incorrect_chat(*_args, **_kwargs):
+        return {
+            "confidence": 0.85,
+            "task_type": "chat",
+            "complexity_score": 1,
+            "rationale": "incorrect SLM classification",
+        }
+
+    monkeypatch.setattr(planner, "_raw_infer", incorrect_chat)
+
+    plan = planner.plan_sync(
+        [{"role": "user", "content": "Refactor the routing layer end-to-end."}]
+    )
+
+    assert plan.task_type == "refactor"
+    assert plan.complexity_score >= 8
+    assert plan.confidence == 0.85
+    assert plan.fallback_used is False
+
+
+def test_explicit_refactor_intent_keeps_oma_floor_when_slm_fails(monkeypatch):
+    """The deterministic floor also applies when planning degrades fail-soft."""
+    planner = SLMPlanner()
+
+    def failed_inference(*_args, **_kwargs):
+        raise RuntimeError("SLM unavailable")
+
+    monkeypatch.setattr(planner, "_raw_infer", failed_inference)
+
+    plan = planner.plan_sync(
+        [{"role": "user", "content": "Refactor the routing layer end-to-end."}]
+    )
+
+    assert plan.fallback_used is True
+    assert plan.task_type == "refactor"
+    assert plan.complexity_score >= 8
+
+
 def test_sanitize_task_type():
     """sanitize_task_type normalizes case/whitespace/separators for exact matches and defaults to 'chat'.
 

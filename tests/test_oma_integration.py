@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from autoconduck import server_streaming
 from autoconduck.config.models import Config
+from autoconduck.routing.slm_planner import SLMPlanner
 from autoconduck.server.server_router import route_target
 
 
@@ -103,6 +104,44 @@ async def test_high_complexity_triggers_oma(monkeypatch):
         extra["_oma_result"]["report"]
         == "Refactoring completed by OMA subagents"
     )
+
+
+@pytest.mark.asyncio
+async def test_explicit_refactor_reaches_oma_when_slm_returns_chat(monkeypatch):
+    """Deterministic refactor intent reaches OMA without a real Node sidecar."""
+    import autoconduck.config.manager as m
+
+    cfg = _cfg_with_oma()
+    m._config = cfg
+
+    def incorrect_chat(self, messages, config=None):
+        return {
+            "confidence": 0.85,
+            "task_type": "chat",
+            "complexity_score": 1,
+            "rationale": "incorrect SLM classification",
+        }
+
+    mock_start_task = AsyncMock(
+        return_value={
+            "status": "ok",
+            "report": "OMA received the explicit refactor",
+        }
+    )
+    monkeypatch.setattr(SLMPlanner, "_raw_infer", incorrect_chat)
+    monkeypatch.setattr("autoconduck.plugin.runtime.start_task", mock_start_task)
+
+    _target, extra = await route_target(
+        "autoconduck",
+        [{"role": "user", "content": "Refactor the router end-to-end."}],
+        request=None,
+        PSEUDO_MODELS={"autoconduck"},
+        litellm_params_for=lambda t, c: {},
+        normalize_messages_for_llm=lambda m: m,
+    )
+
+    mock_start_task.assert_awaited_once()
+    assert extra["_oma_result"]["report"] == "OMA received the explicit refactor"
 
 
 @pytest.mark.asyncio
