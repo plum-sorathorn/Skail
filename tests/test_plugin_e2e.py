@@ -95,7 +95,11 @@ def test_plugin_bias_e2e_flow(monkeypatch):
     monkeypatch.setattr(SLMPlanner, "_raw_infer", lambda self, msgs, config=None: fake_plan_sync(self, msgs, config).model_dump())
 
     # mock upstream model dispatch — no network (must be async)
+    dispatched_kwargs = []
+
     async def _fake_acompletion(**kw):
+        dispatched_kwargs.append(kw)
+
         class _Resp:
             def model_dump(self):
                 return {
@@ -104,6 +108,12 @@ def test_plugin_bias_e2e_flow(monkeypatch):
                     "choices": [{"index": 0, "message": {"role": "assistant", "content": "mocked"}, "finish_reason": "stop"}],
                     "usage": {"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10},
                 }
+
+            def __aiter__(self):
+                async def _chunks():
+                    yield {"id": "chatcmpl-mock", "choices": []}
+
+                return _chunks()
 
         return _Resp()
 
@@ -136,7 +146,7 @@ def test_plugin_bias_e2e_flow(monkeypatch):
     main_mod._build()  # type: ignore[attr-defined]
     client = TestClient(main_mod.app)
 
-    session = "e2e-smoke-sess"
+    session = "omp-session-1"
 
     # 1. task_start event
     r = client.post("/plugin/events", json={"session_id": session, "task_id": "t1", "kind": "task_start", "data": {"goal": "fix bug"}})
@@ -154,12 +164,30 @@ def test_plugin_bias_e2e_flow(monkeypatch):
 
     assert get_bias_store().get_bump(session) > 0
 
+    from autoconduck.plugin.bias import SessionBiasStore
+
+    observed_bias_lookups = []
+    original_get_bump = SessionBiasStore.get_bump
+
+    def _record_get_bump(self, session_id):
+        observed_bias_lookups.append(session_id)
+        return original_get_bump(self, session_id)
+
+    monkeypatch.setattr(SessionBiasStore, "get_bump", _record_get_bump)
+
     # Helper to issue chat and capture floor via /stats decisions tail
-    def _post_chat(session_header: str | None):
+    def _post_chat(
+        session_header: str | None = None,
+        payload_session_id: str | None = None,
+        stream: bool = False,
+    ):
         headers = {}
         if session_header is not None:
             headers["x-autoconduck-session-id"] = session_header
-        body = {"model": "autoconduck", "messages": [{"role": "user", "content": "hello from e2e"}], "stream": False}
+        body = {"model": "autoconduck", "messages": [{"role": "user", "content": "hello from e2e"}], "stream": stream}
+        if payload_session_id is not None:
+            headers["x-agent-id"] = "omp"
+            body["autoconduck_session_id"] = payload_session_id
         resp = client.post("/v1/chat/completions", json=body, headers=headers)
         # should not be 5xx; 200 expected via fake LLM, but at minimum not 500
         assert resp.status_code != 500, resp.text[:500]
@@ -175,14 +203,35 @@ def test_plugin_bias_e2e_flow(monkeypatch):
     last_control, _ = _post_chat(None)
     floor_control = float(last_control.get("min_capability_score_applied") or 0.0)
 
-    # 3b. biased (same session that was escalated)
-    last_biased, stats_biased = _post_chat(session)
+    # 3b. The OMP provider payload marker takes precedence and joins its real session.
+    last_biased, stats_biased = _post_chat(
+        session_header="header-session-ignored",
+        payload_session_id=session,
+    )
     floor_biased = float(last_biased.get("min_capability_score_applied") or 0.0)
 
     # Bias should elevate floor vs control
     assert floor_biased > floor_control, f"biased floor {floor_biased} not > control {floor_control} | control={last_control} biased={last_biased}"
     # Bound check: never above hard cap 0.75
     assert floor_biased <= 0.75
+    assert session in observed_bias_lookups
+    assert "header-session-ignored" not in observed_bias_lookups
+    assert all("autoconduck_session_id" not in kwargs for kwargs in dispatched_kwargs)
+
+    # The private marker is also stripped from the streaming upstream path.
+    _post_chat(payload_session_id=session, stream=True)
+    assert "autoconduck_session_id" not in dispatched_kwargs[-1]
+
+    # Legacy clients that only provide the header retain the prior identity behavior.
+    legacy_session = "legacy-header-session"
+    legacy_escalation = client.post(
+        "/plugin/escalate",
+        json={"session_id": legacy_session, "reason": "consecutive_errors"},
+    )
+    assert legacy_escalation.status_code == 200
+    last_legacy, _ = _post_chat(session_header=legacy_session)
+    floor_legacy = float(last_legacy.get("min_capability_score_applied") or 0.0)
+    assert floor_legacy > floor_control
 
     # 4. /stats still 200 and includes the requests (counts grows)
     stats_final = client.get("/stats")

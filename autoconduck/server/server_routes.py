@@ -78,7 +78,13 @@ def install_routes(
         )
 
     async def _route_target(
-        body_model, messages, request=None, on_progress=None, client_type=None, tools=None
+        body_model,
+        messages,
+        request=None,
+        on_progress=None,
+        client_type=None,
+        tools=None,
+        payload_session_id=None,
     ):
         return await route_target(
             body_model,
@@ -91,6 +97,7 @@ def install_routes(
             litellm_params_for=litellm_params_for,
             normalize_messages_for_llm=normalize_messages_for_llm,
             tools=tools,
+            payload_session_id=payload_session_id,
         )
 
     def healthz():

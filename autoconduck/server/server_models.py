@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class CompletionRequest(BaseModel):
     model: str
     messages: list[dict[str, Any]] = Field(default_factory=list)
+    autoconduck_session_id: str | None = None
     stream: bool = False
     temperature: float | None = None
     max_tokens: int | None = None

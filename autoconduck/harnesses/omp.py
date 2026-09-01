@@ -72,6 +72,8 @@ class OmpAdapter(BaseAdapter):
         from autoconduck import __version__
         spool_json = json.dumps(str(spool_path))
         extension_version_json = json.dumps(__version__)
+        provider_json = json.dumps(self.provider_name)
+        pseudo_models_json = json.dumps(list(self.PSEUDO_MODELS))
 
         return (
             f"// AutoConduck Monitor & Router — managed by autoconduck v{__version__}\n"
@@ -85,6 +87,8 @@ class OmpAdapter(BaseAdapter):
             "\n"
             f"const SPOOL_JSON_PATH = {spool_json};\n"
             f"const AUTOCONDUCK_EXTENSION_VERSION = {extension_version_json};\n"
+            f"const AUTOCONDUCK_PROVIDER = {provider_json};\n"
+            f"const AUTOCONDUCK_MODEL_IDS = new Set({pseudo_models_json});\n"
             "\n"
             "function _appendSpool(data: Record<string, unknown>): void {\n"
             "  try {\n"
@@ -136,6 +140,26 @@ class OmpAdapter(BaseAdapter):
             "  let sameToolStreak = 0;\n"
             "  let consecutiveErrors = 0;\n"
             "  let sessionHeartbeatSent = false;\n"
+            "\n"
+            "  pi.on('before_provider_request', (event: any, ctx: any) => {\n"
+            "    try {\n"
+            "      const payload = event?.payload;\n"
+            "      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;\n"
+            "      const currentModel = ctx?.model;\n"
+            "      const model = payload.model;\n"
+            "      if (\n"
+            "        currentModel?.provider !== AUTOCONDUCK_PROVIDER ||\n"
+            "        !AUTOCONDUCK_MODEL_IDS.has(currentModel.id) ||\n"
+            "        typeof model !== 'string' ||\n"
+            "        !AUTOCONDUCK_MODEL_IDS.has(model)\n"
+            "      ) return;\n"
+            "      const sessionId = ctx?.sessionManager?.getSessionId?.();\n"
+            "      if (typeof sessionId !== 'string' || !sessionId.trim()) return;\n"
+            "      return { ...payload, autoconduck_session_id: sessionId.trim() };\n"
+            "    } catch {\n"
+            "      return;\n"
+            "    }\n"
+            "  });\n"
             "\n"
             "  function trackToolStagnation(sessionId: string, toolName: string, isError: boolean): void {\n"
             "    if (isError) {\n"

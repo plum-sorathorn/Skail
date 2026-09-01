@@ -3,11 +3,23 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 import uuid
 from typing import Any
 
 import autoconduck.config as config_module
+
+
+_SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$")
+
+
+def _normalize_session_id(value: Any) -> str | None:
+    """Return a bounded, transport-safe session ID or no value."""
+    if not isinstance(value, str):
+        return None
+    session_id = value.strip()
+    return session_id if _SESSION_ID_PATTERN.fullmatch(session_id) else None
 
 
 def is_active_tool_session(messages: list[Any]) -> bool:
@@ -64,6 +76,7 @@ async def call_litellm(
     if llm is None:
         raise RuntimeError("litellm unavailable")
     kwargs = body.model_dump(exclude_none=True)
+    kwargs.pop("autoconduck_session_id", None)
     if messages is not None and normalize_messages_for_llm is not None:
         kwargs["messages"] = normalize_messages_for_llm(messages)
     if kwargs.get("tools") and sanitize_tools is not None:
@@ -94,6 +107,7 @@ async def route_target(
     litellm_params_for: Any,
     normalize_messages_for_llm: Any,
     tools: list[Any] | None = None,
+    payload_session_id: Any = None,
 ) -> tuple[str | None, dict[str, Any]]:
     """Determine routing path, model selection, and return upstream target.
 
@@ -136,16 +150,15 @@ async def route_target(
                 client_type = "claude"
     decision = None
     plan = None
-    session_id: str | None = None
-    if request is not None and hasattr(request, "headers"):
+    session_id = _normalize_session_id(payload_session_id)
+    if session_id is None and request is not None and hasattr(request, "headers"):
         try:
-            session_id = (
+            header_session_id = (
                 request.headers.get("x-autoconduck-session-id")
                 or request.headers.get("x-session-id")
                 or request.headers.get("x-conversation-id")
             )
-            if session_id == "":
-                session_id = None
+            session_id = _normalize_session_id(header_session_id)
         except Exception:
             session_id = None
 

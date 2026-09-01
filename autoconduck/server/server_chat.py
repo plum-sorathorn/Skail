@@ -31,7 +31,13 @@ async def handle_chat_completions(
         pass
     body.messages = normalize_messages_for_llm(body.messages)
 
-    target, extra = await route_target_fn(body.model, body.messages, request, tools=body.tools)
+    target, extra = await route_target_fn(
+        body.model,
+        body.messages,
+        request,
+        tools=body.tools,
+        payload_session_id=body.autoconduck_session_id,
+    )
 
     if extra.get("_oma_result"):
         oma_res = extra["_oma_result"]
@@ -120,6 +126,7 @@ async def handle_chat_completions(
                 yield "data: [DONE]\n\n"
                 return
             kwargs = body.model_dump(exclude_none=True)
+            kwargs.pop("autoconduck_session_id", None)
             kwargs["messages"] = normalize_messages_for_llm(messages)
             if kwargs.get("tools"):
                 kwargs["tools"] = sanitize_tools(kwargs["tools"])

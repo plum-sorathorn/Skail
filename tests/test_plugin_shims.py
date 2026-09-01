@@ -629,6 +629,21 @@ def test_omp_extension_session_heartbeat_is_bounded_and_reports_metadata():
     assert "event: 'tool_result'" in rendered
 
 
+def test_omp_extension_marks_only_configured_provider_requests_with_session_id():
+    from autoconduck.harnesses.omp import OmpAdapter
+
+    rendered = OmpAdapter()._render_extension(port=11434, hooks_enabled=True)
+
+    assert "const AUTOCONDUCK_PROVIDER = \"autoconduck\";" in rendered
+    assert 'const AUTOCONDUCK_MODEL_IDS = new Set(["fast", "balanced", "frontier"]);' in rendered
+    assert "pi.on('before_provider_request'" in rendered
+    assert "currentModel?.provider !== AUTOCONDUCK_PROVIDER" in rendered
+    assert "AUTOCONDUCK_MODEL_IDS.has(currentModel.id)" in rendered
+    assert "AUTOCONDUCK_MODEL_IDS.has(model)" in rendered
+    assert "ctx?.sessionManager?.getSessionId?.()" in rendered
+    assert "autoconduck_session_id: sessionId.trim()" in rendered
+
+
 def test_omp_session_activation_is_durable_and_visible_in_plugin_contract(tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
