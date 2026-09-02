@@ -1,24 +1,33 @@
-"""Global pytest fixtures for test suite isolation."""
+from __future__ import annotations
 
 import os
+
 import pytest
-from pathlib import Path
 
 
-@pytest.fixture(autouse=True)
-def isolate_autoconduck_home(tmp_path, monkeypatch):
-    """Isolate all test runs to a clean temporary AUTOCONDUCK_HOME directory.
-    
-    This ensures that running pytest will never mutate or wipe the user's
-    live ~/.autoconduck/config.yaml or auth.yaml on disk.
-    """
-    test_home = tmp_path / ".autoconduck"
-    test_home.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setenv("AUTOCONDUCK_HOME", str(test_home))
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--run-provider-live",
+        action="store_true",
+        default=False,
+        help="run provider-live tests when their credential variables are present",
+    )
 
-    # Reset in-memory cached state in manager
-    import autoconduck.config.manager as manager_mod
 
-    manager_mod._config = None
-    manager_mod._config_digest = None
-    manager_mod._config_path = None
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    if config.getoption("--run-provider-live"):
+        for item in items:
+            marker = item.get_closest_marker("provider_live")
+            if marker is None:
+                continue
+            required = tuple(marker.kwargs.get("env", ()))
+            missing = [name for name in required if not os.environ.get(name)]
+            if missing:
+                reason = f"missing credentials: {', '.join(missing)}"
+                item.add_marker(pytest.mark.skip(reason=reason))
+        return
+
+    skip = pytest.mark.skip(reason="provider-live tests require --run-provider-live")
+    for item in items:
+        if item.get_closest_marker("provider_live") is not None:
+            item.add_marker(skip)
