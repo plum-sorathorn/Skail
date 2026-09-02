@@ -20,13 +20,13 @@ Status: Active; implementation is in progress on the `rudder` branch.
 
 ## Durable core
 
-- [ ] 2.1 Implement domain IDs, task/attempt/result, routing, and usage types.
-- [ ] 2.2 Implement versioned event union and event bus.
-- [ ] 2.3 Implement typed layered configuration with provenance.
-- [ ] 2.4 Implement project trust records and gates.
-- [ ] 2.5 Implement Rudder SQLite journal and migrations.
-- [ ] 2.6 Implement LangGraph checkpoint wrapper and reconciliation.
-- [ ] Checkpoint C: durable core contracts.
+- [x] 2.1 Implement domain IDs, task/attempt/result, routing, and usage types.
+- [x] 2.2 Implement versioned event union and event bus.
+- [x] 2.3 Implement typed layered configuration with provenance.
+- [x] 2.4 Implement project trust records and gates.
+- [x] 2.5 Implement Rudder SQLite journal and migrations.
+- [x] 2.6 Implement LangGraph checkpoint wrapper and reconciliation.
+- [x] Checkpoint C: durable core contracts.
 
 ## Providers and models
 

@@ -1,0 +1,12 @@
+{
+  "linux": {
+    "canonical_path": "/work/rudder",
+    "device": 2049,
+    "inode": 42
+  },
+  "windows": {
+    "canonical_path": "C:\\work\\rudder",
+    "device": 305419896,
+    "inode": 42
+  }
+}

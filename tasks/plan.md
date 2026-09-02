@@ -235,11 +235,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Standard UUID4 opaque IDs serialize consistently without an extra runtime dependency.
-- [ ] Task and attempt states accept only legal transitions.
-- [ ] Assignments are immutable and limited to attempt 1 or 2.
-- [ ] Money uses decimal strings at serialization boundaries.
-- [ ] Domain modules import no DeepAgents, Textual, provider, or database packages.
+- [x] Standard UUID4 opaque IDs serialize consistently without an extra runtime dependency.
+- [x] Task and attempt states accept only legal transitions.
+- [x] Assignments are immutable and limited to attempt 1 or 2.
+- [x] Money uses decimal strings at serialization boundaries.
+- [x] Domain modules import no DeepAgents, Textual, provider, or database packages.
 
 **Verification:** table-driven unit tests and import-boundary test.
 
@@ -253,10 +253,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Envelope requires schema version, IDs, sequence, timestamp, type, and typed payload.
-- [ ] All required event families have discriminated payloads.
-- [ ] Round-trip, unknown-version, missing-field, and secret-redaction tests pass.
-- [ ] Sequence allocation is monotonic per run under concurrency.
+- [x] Envelope requires schema version, IDs, sequence, timestamp, type, and typed payload.
+- [x] All required event families have discriminated payloads.
+- [x] Round-trip, unknown-version, missing-field, and secret-redaction tests pass.
+- [x] Sequence allocation is monotonic per run under concurrency.
 
 **Verification:** `python -m pytest tests/unit/test_events.py -q`.
 
@@ -270,11 +270,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Precedence and table/list merge rules match the architecture.
-- [ ] Every effective value can report a redacted source.
-- [ ] Unknown/malformed/security-sensitive keys follow documented behavior.
-- [ ] LLM Gateway URL validation accepts canonical `/v1` and rejects malformed suffixes.
-- [ ] Config files cannot contain literal provider secrets under prohibited fields.
+- [x] Precedence and table/list merge rules match the architecture.
+- [x] Every effective value can report a redacted source.
+- [x] Unknown/malformed/security-sensitive keys follow documented behavior.
+- [x] LLM Gateway URL validation accepts canonical `/v1` and rejects malformed suffixes.
+- [x] Config files cannot contain literal provider secrets under prohibited fields.
 
 **Verification:** fixture matrix in `tests/unit/test_config.py`.
 
@@ -288,11 +288,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Canonical path and filesystem identity are used where available.
-- [ ] Untrusted/denied/trusted transitions are explicit and persisted.
-- [ ] Replacement/move mismatch asks again.
-- [ ] Project profiles, skills, tools, MCP, provider references, and approval rules are gated.
-- [ ] Revocation affects future loads and signals active project tasks.
+- [x] Canonical path and filesystem identity are used where available.
+- [x] Untrusted/denied/trusted transitions are explicit and persisted.
+- [x] Replacement/move mismatch asks again.
+- [x] Project profiles, skills, tools, MCP, provider references, and approval rules are gated.
+- [x] Revocation affects future loads and signals active project tasks.
 
 **Verification:** Windows and Linux path fixtures; unit tests for trust transitions.
 
@@ -306,11 +306,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Initial schema covers sessions, runs, tasks, attempts, assignments, reservations, usage, approvals, and events.
-- [ ] Migrations are transactional and idempotent.
-- [ ] Task state and budget changes can share one transaction.
-- [ ] Concurrent writers respect SQLite busy/retry bounds without data duplication.
-- [ ] Journal queries return typed domain snapshots, not raw UI rows.
+- [x] Initial schema covers sessions, runs, tasks, attempts, assignments, reservations, usage, approvals, and events.
+- [x] Migrations are transactional and idempotent.
+- [x] Task state and budget changes can share one transaction.
+- [x] Concurrent writers respect SQLite busy/retry bounds without data duplication.
+- [x] Journal queries return typed domain snapshots, not raw UI rows.
 
 **Verification:** temporary-database tests including rollback and concurrent reservation fixtures.
 
@@ -324,11 +324,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Checkpointer and journal paths are distinct.
-- [ ] Idempotency keys correlate checkpoint and journal operations.
-- [ ] Recovery marks orphaned calls interrupted and does not duplicate terminal work.
-- [ ] Pending approvals restore as pending, never pre-approved.
-- [ ] Corrupt/unavailable checkpoints produce a structured recovery error and preserve journal data.
+- [x] Checkpointer and journal paths are distinct.
+- [x] Idempotency keys correlate checkpoint and journal operations.
+- [x] Recovery marks orphaned calls interrupted and does not duplicate terminal work.
+- [x] Pending approvals restore as pending, never pre-approved.
+- [x] Corrupt/unavailable checkpoints produce a structured recovery error and preserve journal data.
 
 **Verification:** crash-boundary integration scenarios in `tests/integration/test_recovery.py`.
 
@@ -338,10 +338,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 ### Checkpoint C — Durable core contracts
 
-- [ ] Domain/routing types are framework-independent.
-- [ ] Events round-trip and persist.
-- [ ] Config/trust cannot activate untrusted project behavior.
-- [ ] Crash recovery preserves terminal/task/budget truth.
+- [x] Domain/routing types are framework-independent.
+- [x] Events round-trip and persist.
+- [x] Config/trust cannot activate untrusted project behavior.
+- [x] Crash recovery preserves terminal/task/budget truth.
 
 ## 6. Phase 3 — Providers and model catalog
 

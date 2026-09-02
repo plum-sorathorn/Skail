@@ -1,0 +1,17 @@
+[routing]
+mode = "manual"
+lead_model = "user/lead"
+allow_unmeasured_models = false
+
+[orchestration]
+delegation = "ask"
+max_agents = 2
+max_depth = 1
+
+[budget]
+run_usd = 3.50
+
+[providers.llmgateway]
+type = "openai-compatible"
+base_url = "https://api.llmgateway.io/v1"
+api_key_env = "LLMGATEWAY_API_KEY"

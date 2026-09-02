@@ -564,6 +564,11 @@ Provider adapters receive resolved credentials out-of-band. Events store provide
 
 Do not depend on undocumented checkpointer tables for product queries.
 
+All checkpoint reads and writes go through `CheckpointStore` under a shared per-session,
+cross-process lock. A checkpoint reference records the complete set of live call idempotency keys;
+recovery validates that the referenced checkpoint is the latest deserializable LangGraph state
+before changing the journal.
+
 ### 13.2 Journal tables
 
 Initial logical tables:
@@ -592,6 +597,9 @@ On resume:
 5. release reservations with no live/recoverable execution after confirmation from the reconciliation rule;
 6. restore pending approvals as prompts, not automatic grants;
 7. continue only after the user selects or confirms the session.
+
+An orphaned attempt becomes `interrupted`; its owning non-terminal task becomes
+`returned_to_lead`. Checkpoint-backed live attempts and terminal tasks are never rewritten.
 
 ## 14. Event architecture
 
