@@ -1,6 +1,6 @@
 # Rudder Architecture
 
-Status: Proposed
+Status: Approved
 Date: 2026-09-02
 Depends on: [SPEC.md](./SPEC.md)
 

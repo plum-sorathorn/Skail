@@ -1,6 +1,6 @@
 # Rudder Feature Contracts
 
-Status: Proposed
+Status: Approved
 Date: 2026-09-02
 Depends on: [SPEC.md](./SPEC.md), [ARCHITECTURE.md](./ARCHITECTURE.md)
 

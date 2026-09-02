@@ -154,10 +154,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] A fake chat model drives one tool call and one final response.
-- [ ] Nested DeepAgents/LangGraph events can be adapted without UI-specific types.
-- [ ] A SQLite-backed checkpointer resumes a deliberately interrupted run.
-- [ ] The version range and required framework APIs are documented.
+- [x] A fake chat model drives one tool call and one final response.
+- [x] Nested DeepAgents/LangGraph events can be adapted without UI-specific types.
+- [x] A SQLite-backed checkpointer resumes a deliberately interrupted run.
+- [x] The version range and required framework APIs are documented.
 
 **Verification:** `python -m pytest tests/contract/test_deepagents_lead.py -q`.
 
@@ -173,11 +173,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] The lead invokes the child through `task`.
-- [ ] The assignment node executes before the child's first model request.
-- [ ] Middleware sees the assignment and installs exactly that fake model for every call.
-- [ ] Child context is isolated and its structured result returns to the lead.
-- [ ] A missing or changed assignment produces a tested invariant error.
+- [x] The lead invokes the child through `task`.
+- [x] The assignment node executes before the child's first model request.
+- [x] Middleware sees the assignment and installs exactly that fake model for every call.
+- [x] Child context is isolated and its structured result returns to the lead.
+- [x] A missing or changed assignment produces a tested invariant error.
 
 **Verification:** `python -m pytest tests/contract/test_compiled_subagent.py -q`.
 
@@ -191,11 +191,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Three fake child tasks can execute concurrently and expose distinct task/stream identities.
-- [ ] A fourth task is externally gated rather than started.
-- [ ] Foreground cancellation stops the lead and unfinished children without a false success.
-- [ ] Completed child results remain available when another child fails/cancels.
-- [ ] Windows event-loop behavior is covered.
+- [x] Three fake child tasks can execute concurrently and expose distinct task/stream identities.
+- [x] A fourth task is externally gated rather than started.
+- [x] Foreground cancellation stops the lead and unfinished children without a false success.
+- [x] Completed child results remain available when another child fails/cancels.
+- [x] Windows event-loop behavior is covered.
 
 **Verification:** deterministic barriers rather than timing-only assertions in `tests/contract/test_deepagents_concurrency.py`.
 
@@ -209,10 +209,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] A small `TaskExecutor` contract supports foreground and preview background adapters.
-- [ ] Contract differences and process/server requirements are recorded.
-- [ ] The spec decision is updated to ship experimental or defer.
-- [ ] Failure to support background mode leaves foreground behavior unchanged.
+- [x] A small `TaskExecutor` contract supports foreground and preview background adapters.
+- [x] Contract differences and process/server requirements are recorded.
+- [x] The spec decision is updated to ship experimental or defer.
+- [x] Failure to support background mode leaves foreground behavior unchanged.
 
 **Verification:** fake executor contract suite; preview contract test may be separately marked.
 
@@ -222,10 +222,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 ### Checkpoint B — Framework feasibility
 
-- [ ] Compiled tasks really can bind a model before first child call.
-- [ ] Synchronous nested events, checkpoints, and cancellation satisfy Rudder contracts.
-- [ ] Preview functionality is isolated or deferred.
-- [ ] Blocking incompatibilities result in a documented design revision before more code.
+- [x] Compiled tasks really can bind a model before first child call.
+- [x] Synchronous nested events, checkpoints, and cancellation satisfy Rudder contracts.
+- [x] Preview functionality is isolated or deferred.
+- [x] Blocking incompatibilities result in a documented design revision before more code.
 
 ## 5. Phase 2 — Domain contracts, events, configuration, persistence
 

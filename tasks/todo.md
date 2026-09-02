@@ -12,11 +12,11 @@ Status: Active; implementation is in progress on the `rudder` branch.
 
 ## Framework feasibility
 
-- [ ] 1.1 Prove lead DeepAgent, streaming, tools, and checkpoints.
-- [ ] 1.2 Prove compiled subagent and pre-call task-bound model assignment.
-- [ ] 1.3 Prove nested streaming, three-child concurrency, and cancellation.
-- [ ] 1.4 Decide and isolate/defer preview background agents.
-- [ ] Checkpoint B: framework feasibility.
+- [x] 1.1 Prove lead DeepAgent, streaming, tools, and checkpoints.
+- [x] 1.2 Prove compiled subagent and pre-call task-bound model assignment.
+- [x] 1.3 Prove nested streaming, three-child concurrency, and cancellation.
+- [x] 1.4 Decide and isolate/defer preview background agents.
+- [x] Checkpoint B: framework feasibility.
 
 ## Durable core
 

@@ -30,6 +30,8 @@ The design was checked against the following current upstream behavior:
 
 The implementation baseline used during research was `deepagents==0.7.13`. The implementation must repeat the compatibility spike and pin the exact supported version before writing the runtime adapter.
 
+Phase 1 confirmed that baseline and records the exact supported dependency tuple and adapter-owned limitations in [ADR 0002](../decisions/0002-framework-version-contract.md). Background execution remains experimental under [ADR 0003](../decisions/0003-background-execution.md).
+
 ## Document authority
 
 When documents disagree, use this order:
