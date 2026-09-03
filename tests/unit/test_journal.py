@@ -34,9 +34,7 @@ EXPECTED_TABLES = {
 
 def _table_names(database: Path) -> set[str]:
     with sqlite3.connect(database) as connection:
-        rows = connection.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'"
-        ).fetchall()
+        rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     return {row[0] for row in rows}
 
 
@@ -84,8 +82,7 @@ def test_a_failed_migration_leaves_no_partial_schema_changes(
         (
             (
                 99,
-                "CREATE TABLE partial_migration_artifact(value TEXT); "
-                "THIS IS NOT VALID SQL;",
+                "CREATE TABLE partial_migration_artifact(value TEXT); THIS IS NOT VALID SQL;",
             ),
         ),
     )
@@ -255,16 +252,12 @@ def test_conflicting_idempotency_replay_is_rejected(tmp_path: Path) -> None:
         journal.record_usage(usage_id="usage-b", amount_usd=Decimal("0.11"), **common)
 
     assert caught.value.error.code == "session.idempotency_conflict"
-    assert journal.get_session_snapshot(SESSION_ID).usage_records[0].amount_usd == Decimal(
-        "0.10"
-    )
+    assert journal.get_session_snapshot(SESSION_ID).usage_records[0].amount_usd == Decimal("0.10")
 
 
 def test_event_journal_persists_only_typed_redacted_envelopes(tmp_path: Path) -> None:
     canary = "canary-must-not-reach-sqlite"
-    journal = Journal(
-        tmp_path / "rudder.sqlite", redactor=SecretRedactor([canary])
-    )
+    journal = Journal(tmp_path / "rudder.sqlite", redactor=SecretRedactor([canary]))
     journal.migrate()
     _seed_session(journal)
     event = EventEnvelope(
@@ -274,9 +267,7 @@ def test_event_journal_persists_only_typed_redacted_envelopes(tmp_path: Path) ->
         sequence=1,
         occurred_at=NOW,
         type="diagnostic.error",
-        payload=DiagnosticPayload(
-            code="test.error", summary=canary, details={"api_key": canary}
-        ),
+        payload=DiagnosticPayload(code="test.error", summary=canary, details={"api_key": canary}),
     )
 
     journal.append_event(event=event)
@@ -288,7 +279,7 @@ def test_event_journal_persists_only_typed_redacted_envelopes(tmp_path: Path) ->
     assert journal.get_session_snapshot(SESSION_ID).events == (redacted,)
 
 
-def test_one_attempt_cannot_receive_conflicting_assignments(tmp_path: Path) -> None:
+def test_one_attempt_preserves_distinct_transport_fallback_assignments(tmp_path: Path) -> None:
     journal = Journal(tmp_path / "rudder.sqlite")
     journal.migrate()
     _seed_session(journal)
@@ -318,19 +309,20 @@ def test_one_attempt_cannot_receive_conflicting_assignments(tmp_path: Path) -> N
         created_at=NOW,
     )
 
-    with pytest.raises(JournalIdempotencyError):
-        journal.create_assignment(
-            assignment_id="assignment-b",
-            attempt_id="attempt-for-assignment",
-            provider="fake",
-            model="model-b",
-            estimated_cost_usd=Decimal("0.20"),
-            idempotency_key="assignment-key-b",
-            created_at=NOW,
-        )
+    journal.create_assignment(
+        assignment_id="assignment-b",
+        attempt_id="attempt-for-assignment",
+        provider="fallback",
+        model="model-a",
+        estimated_cost_usd=Decimal("0.20"),
+        idempotency_key="assignment-key-b",
+        payload={"fallback_of_assignment_id": "assignment-a"},
+        created_at=NOW,
+    )
 
-    models = [item.model for item in journal.get_session_snapshot(SESSION_ID).assignments]
-    assert models == ["model-a"]
+    assignments = journal.get_session_snapshot(SESSION_ID).assignments
+    assert [item.provider for item in assignments] == ["fake", "fallback"]
+    assert assignments[1].payload["fallback_of_assignment_id"] == "assignment-a"
 
 
 def test_task_replay_requires_identical_content(tmp_path: Path) -> None:

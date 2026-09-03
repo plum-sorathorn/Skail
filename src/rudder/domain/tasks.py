@@ -159,10 +159,11 @@ class ModelConstraint(BaseModel):
 
 class CapabilityRequirements(BaseModel):
     model_config = ConfigDict(frozen=True)
-    capability_floor: float = Field(ge=0, le=1)
+    capability_floor: float | None = Field(ge=0, le=1)
     tools_required: bool = False
     structured_output_required: bool = False
     minimum_context_tokens: int = Field(default=0, ge=0)
+    minimum_output_tokens: int = Field(default=0, ge=0)
     modalities: tuple[str, ...] = ("text",)
 
 

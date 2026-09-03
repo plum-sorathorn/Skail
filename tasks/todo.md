@@ -40,13 +40,13 @@ Status: Active; implementation is in progress on the `rudder` branch.
 
 ## Routing and budgets
 
-- [ ] 4.1 Implement capability requirements and floors.
-- [ ] 4.2 Implement deterministic selector and route explanations.
-- [ ] 4.3 Implement total-attempt cost estimates.
-- [ ] 4.4 Implement transactional budget reservations.
-- [ ] 4.5 Implement assignment service and batch funding.
-- [ ] 4.6 Implement task-bound model middleware and provider fallback.
-- [ ] Checkpoint E: economic routing.
+- [x] 4.1 Implement capability requirements and floors.
+- [x] 4.2 Implement deterministic selector and route explanations.
+- [x] 4.3 Implement total-attempt cost estimates.
+- [x] 4.4 Implement transactional budget reservations.
+- [x] 4.5 Implement assignment service and batch funding.
+- [x] 4.6 Implement task-bound model middleware and provider fallback.
+- [x] Checkpoint E: economic routing.
 
 ## Tools and safety
 

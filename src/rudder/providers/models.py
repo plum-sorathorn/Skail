@@ -43,6 +43,7 @@ class ModelProfile(BaseModel):
     support_level: ProviderSupportLevel = ProviderSupportLevel.UNVERIFIED
     input_usd_per_million: Decimal | None = None
     output_usd_per_million: Decimal | None = None
+    cached_input_usd_per_million: Decimal | None = None
     context_tokens: int | None = None
     max_output_tokens: int | None = None
     supports_tools: bool | None = None

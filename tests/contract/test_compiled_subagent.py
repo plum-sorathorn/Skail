@@ -5,10 +5,13 @@ from typing import Any
 
 import pytest
 from fakes.models import ScriptedChatModel, tool_call_message
+from fakes.provider import FakeProviderAdapter, FakeProviderChatModel
 from langchain.agents.middleware import ModelRequest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 
+from rudder.providers.errors import ProviderError, ProviderErrorKind
+from rudder.providers.fallback import FallbackBinding, ProviderFallbackPolicy
 from rudder.runtime.deepagents_adapter import build_lead_agent
 from rudder.runtime.model_middleware import (
     AssignmentInvariantError,
@@ -211,6 +214,7 @@ def test_task_bound_middleware_installs_one_sticky_assigned_model() -> None:
     )
     middleware = TaskBoundModelMiddleware(
         {"assigned-model": assigned_model},
+        assignments={"assignment-1": "assigned-model"},
         allow_delegation=False,
     )
     state = {
@@ -264,7 +268,10 @@ def test_missing_or_mutated_assignment_stops_before_the_model_call(
         model_name="assigned-model",
         responses=[AIMessage(content="must not run")],
     )
-    middleware = TaskBoundModelMiddleware({"assigned-model": assigned_model})
+    middleware = TaskBoundModelMiddleware(
+        {"assigned-model": assigned_model},
+        assignments={"assignment-original": "assigned-model"},
+    )
     request = ModelRequest(model=assigned_model, messages=[], state=state)
 
     with pytest.raises(AssignmentInvariantError) as raised:
@@ -275,3 +282,61 @@ def test_missing_or_mutated_assignment_stops_before_the_model_call(
 
     assert raised.value.error.code == code
     assert assigned_model.calls == ()
+
+
+def test_unpersisted_assignment_id_stops_before_the_model_call() -> None:
+    assigned_model = ScriptedChatModel(responses=[AIMessage(content="must not run")])
+    middleware = TaskBoundModelMiddleware({"assigned-model": assigned_model}, assignments={})
+    state = {
+        "messages": [],
+        "current_assignment_id": "unknown",
+        "locked_assignment_id": "unknown",
+        "assigned_model": "assigned-model",
+        "attempt_id": "attempt-1",
+    }
+    with pytest.raises(AssignmentInvariantError) as raised:
+        middleware.wrap_model_call(
+            ModelRequest(model=assigned_model, messages=[], state=state),
+            lambda bound: bound,  # type: ignore[arg-type,return-value]
+        )
+    assert raised.value.error.code == "route.assignment_unknown"
+    assert assigned_model.calls == ()
+
+
+def test_compiled_tool_loop_keeps_transport_fallback_binding_for_later_calls() -> None:
+    primary = FakeProviderChatModel(model_name="primary", failures=[ProviderErrorKind.RATE_LIMIT])
+    fallback = ScriptedChatModel(
+        model_name="fallback",
+        responses=[
+            tool_call_message("probe", {"value": "one"}, call_id="probe-1"),
+            AIMessage(content="fallback complete"),
+        ],
+    )
+    calls = 0
+
+    def persisted_fallback(previous: str, error: ProviderError) -> FallbackBinding:
+        nonlocal calls
+        calls += 1
+        return FallbackBinding(
+            assignment_id="fallback-assignment",
+            provider="backup",
+            model="primary",
+            model_key="fallback",
+            reservation_id="fallback-reservation",
+        )
+
+    child = build_compiled_task_subagent(
+        name="fallback-child",
+        description="Keep fallback sticky.",
+        assignment=SpikeAssignment("primary-assignment", "attempt", "primary"),
+        models={"primary": primary, "fallback": fallback},
+        tools=[probe],
+        providers={"fake": FakeProviderAdapter(primary)},
+        fallback_policy=ProviderFallbackPolicy(
+            {("fake", "primary"): persisted_fallback},
+            is_persisted=lambda binding: True,
+        ),
+    )
+    child["runnable"].invoke({"messages": [HumanMessage(content="Run fallback loop")]})
+    assert calls == 1
+    assert len(fallback.calls) >= 2

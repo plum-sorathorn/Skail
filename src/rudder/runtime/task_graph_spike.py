@@ -13,6 +13,8 @@ from langchain_core.runnables import RunnableLambda
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 
+from rudder.providers.base import ProviderAdapter
+from rudder.providers.fallback import FallbackBinding, ProviderFallbackPolicy
 from rudder.runtime.deepagents_adapter import ChildRunGate
 from rudder.runtime.errors import FrameworkContractError
 from rudder.runtime.model_middleware import AssignmentState, TaskBoundModelMiddleware
@@ -23,6 +25,8 @@ class SpikeAssignment:
     assignment_id: str
     attempt_id: str
     model_id: str
+    provider: str = "fake"
+    reservation_id: str = "spike-reservation"
 
 
 class SpikeTaskState(AssignmentState):
@@ -42,6 +46,11 @@ def build_compiled_task_subagent(
     tools: Sequence[BaseTool | Callable[..., Any] | dict[str, Any]] = (),
     execution_gate: ChildRunGate | None = None,
     task_id_factory: Callable[[], str] | None = None,
+    providers: Mapping[str, ProviderAdapter] | None = None,
+    fallback_policy: ProviderFallbackPolicy | None = None,
+    assignment_models: Mapping[str, str] | None = None,
+    active_assignments: Mapping[str, FallbackBinding] | None = None,
+    usage_callback: Callable[[str, object, str], None] | None = None,
 ) -> CompiledSubAgent:
     try:
         selected_model = models[assignment.model_id]
@@ -52,7 +61,17 @@ def build_compiled_task_subagent(
             model=assignment.model_id,
         ) from exc
 
-    middleware = TaskBoundModelMiddleware(models, allow_delegation=False)
+    recorded_assignments = dict(assignment_models or {})
+    recorded_assignments[assignment.assignment_id] = assignment.model_id
+    middleware = TaskBoundModelMiddleware(
+        models,
+        assignments=recorded_assignments,
+        allow_delegation=False,
+        providers=providers,
+        fallback_policy=fallback_policy,
+        active_assignments=active_assignments,
+        usage_callback=usage_callback,
+    )
     create_task_id = task_id_factory or (lambda: str(uuid4()))
     child = create_deep_agent(
         model=construction_model or selected_model,
@@ -82,6 +101,8 @@ def build_compiled_task_subagent(
             "current_assignment_id": assignment.assignment_id,
             "locked_assignment_id": assignment.assignment_id,
             "assigned_model": assignment.model_id,
+            "assigned_provider": assignment.provider,
+            "reservation_id": assignment.reservation_id,
             "attempt_id": assignment.attempt_id,
             "validation_trace": ("validated", "assigned"),
         }
@@ -93,6 +114,7 @@ def build_compiled_task_subagent(
 
     async def arun_profile_agent(state: SpikeTaskState) -> dict[str, Any]:
         child_input, before = _prepare_child_input(state)
+
         async def invoke_child() -> Any:
             return await child.ainvoke(child_input)
 
@@ -142,9 +164,7 @@ def build_compiled_task_subagent(
     graph = StateGraph(SpikeTaskState)
     graph.add_node("validate_task", validate_task)
     graph.add_node("assign_attempt", assign_attempt)
-    graph.add_node(
-        "run_profile_agent", RunnableLambda(run_profile_agent, arun_profile_agent)
-    )
+    graph.add_node("run_profile_agent", RunnableLambda(run_profile_agent, arun_profile_agent))
     graph.add_node("return_result", return_result)
     graph.add_edge(START, "validate_task")
     graph.add_edge("validate_task", "assign_attempt")

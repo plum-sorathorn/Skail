@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -65,6 +66,7 @@ class AssignmentSnapshot:
     provider: str
     model: str
     estimated_cost_usd: Decimal
+    payload: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -111,6 +113,10 @@ class JournalTransaction:
     def __init__(self, connection: sqlite3.Connection, redactor: SecretRedactor) -> None:
         self.connection = connection
         self.redactor = redactor
+        self.after_commit_callbacks: list[Callable[[], None]] = []
+
+    def after_commit(self, callback: Callable[[], None]) -> None:
+        self.after_commit_callbacks.append(callback)
 
     def create_session(
         self, session_id: str, title: str, created_at: datetime, status: str = "active"
@@ -190,8 +196,12 @@ class JournalTransaction:
         estimated_cost_usd: Decimal,
         created_at: datetime,
         idempotency_key: str | None = None,
+        payload: dict[str, Any] | None = None,
     ) -> None:
         key = idempotency_key or f"assignment:{attempt_id}"
+        payload_json = json.dumps(
+            self.redactor.scrub(payload or {}), sort_keys=True, separators=(",", ":")
+        )
         values = (
             assignment_id,
             attempt_id,
@@ -199,13 +209,20 @@ class JournalTransaction:
             model,
             format(estimated_cost_usd, "f"),
             key,
+            payload_json,
         )
         self._insert_idempotent(
             table="assignments",
             key=key,
-            columns="assignment_id,attempt_id,provider,model,estimated_cost_usd,idempotency_key",
+            columns=(
+                "assignment_id,attempt_id,provider,model,estimated_cost_usd,"
+                "idempotency_key,payload_json"
+            ),
             values=values,
-            insert_values=(*values, "{}", _now(created_at)),
+            insert_values=(
+                *values,
+                _now(created_at),
+            ),
         )
 
     def create_reservation(
@@ -217,15 +234,16 @@ class JournalTransaction:
         status: str,
         idempotency_key: str,
         created_at: datetime,
+        purpose: str = "task_attempt",
     ) -> None:
         amount = format(amount_usd, "f")
-        values = (reservation_id, run_id, task_id, amount, status, idempotency_key)
+        values = (reservation_id, run_id, task_id, amount, status, idempotency_key, purpose)
         self._insert_idempotent(
             table="budget_reservations",
             key=idempotency_key,
-            columns="reservation_id,run_id,task_id,amount_usd,status,idempotency_key",
+            columns=("reservation_id,run_id,task_id,amount_usd,status,idempotency_key,purpose"),
             values=values,
-            insert_values=(*values, _now(created_at)),
+            insert_values=(*values[:-1], _now(created_at), purpose),
         )
 
     def record_usage(
@@ -252,6 +270,9 @@ class JournalTransaction:
             columns="usage_id,run_id,task_id,amount_usd,authoritative,idempotency_key",
             values=values,
             insert_values=(*values, _now(created_at)),
+            insert_columns=(
+                "usage_id,run_id,task_id,amount_usd,authoritative,idempotency_key,created_at"
+            ),
         )
 
     def create_approval(
@@ -301,12 +322,12 @@ class JournalTransaction:
         columns: str,
         values: tuple[Any, ...],
         insert_values: tuple[Any, ...],
+        insert_columns: str | None = None,
     ) -> None:
         placeholders = ",".join("?" for _ in insert_values)
+        target = table if insert_columns is None else f"{table} ({insert_columns})"
         try:
-            self.connection.execute(
-                f"INSERT INTO {table} VALUES ({placeholders})", insert_values
-            )
+            self.connection.execute(f"INSERT INTO {target} VALUES ({placeholders})", insert_values)
         except sqlite3.IntegrityError as exc:
             row = self.connection.execute(
                 f"SELECT {columns} FROM {table} WHERE idempotency_key=?", (key,)
@@ -378,13 +399,16 @@ class Journal:
                 time.sleep(min(0.005 * (attempt + 1), 0.025))
         if connection is None:
             raise JournalBusyError("journal connection was not acquired")
+        transaction = JournalTransaction(connection, self.redactor)
         try:
-            yield JournalTransaction(connection, self.redactor)
+            yield transaction
         except BaseException:
             connection.rollback()
             raise
         else:
             connection.commit()
+            for callback in transaction.after_commit_callbacks:
+                callback()
         finally:
             connection.close()
 
@@ -458,6 +482,7 @@ class Journal:
         estimated_cost_usd: Decimal,
         created_at: datetime,
         idempotency_key: str | None = None,
+        payload: dict[str, Any] | None = None,
     ) -> None:
         self._write("create_assignment", **locals_without_self(locals()))
 
@@ -471,6 +496,7 @@ class Journal:
         status: str,
         idempotency_key: str,
         created_at: datetime,
+        purpose: str = "task_attempt",
     ) -> None:
         self._write("create_reservation", **locals_without_self(locals()))
 
@@ -535,7 +561,7 @@ class Journal:
             attempt_ids = tuple(row["attempt_id"] for row in attempts)
             attempt_placeholders = ",".join("?" for _ in attempt_ids) or "NULL"
             assignments = connection.execute(
-                f"SELECT assignment_id,attempt_id,provider,model,estimated_cost_usd "
+                f"SELECT assignment_id,attempt_id,provider,model,estimated_cost_usd,payload_json "
                 f"FROM assignments "
                 f"WHERE attempt_id IN ({attempt_placeholders}) ORDER BY rowid",
                 attempt_ids,
@@ -556,8 +582,7 @@ class Journal:
                 run_ids,
             ).fetchall()
             events = connection.execute(
-                f"SELECT envelope_json FROM events "
-                f"WHERE run_id IN ({placeholders}) ORDER BY rowid",
+                f"SELECT envelope_json FROM events WHERE run_id IN ({placeholders}) ORDER BY rowid",
                 run_ids,
             ).fetchall()
         return SessionSnapshot(
@@ -598,20 +623,27 @@ class Journal:
                     row["provider"],
                     row["model"],
                     Decimal(row["estimated_cost_usd"]),
+                    json.loads(row["payload_json"]),
                 )
                 for row in assignments
             ),
             budget_reservations=tuple(
                 ReservationSnapshot(
-                    row["reservation_id"], row["task_id"], Decimal(row["amount_usd"]),
-                    row["status"], row["idempotency_key"]
+                    row["reservation_id"],
+                    row["task_id"],
+                    Decimal(row["amount_usd"]),
+                    row["status"],
+                    row["idempotency_key"],
                 )
                 for row in reservations
             ),
             usage_records=tuple(
                 UsageSnapshot(
-                    row["usage_id"], row["task_id"], Decimal(row["amount_usd"]),
-                    bool(row["authoritative"]), row["idempotency_key"]
+                    row["usage_id"],
+                    row["task_id"],
+                    Decimal(row["amount_usd"]),
+                    bool(row["authoritative"]),
+                    row["idempotency_key"],
                 )
                 for row in usage
             ),

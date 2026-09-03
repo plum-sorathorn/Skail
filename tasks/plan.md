@@ -466,11 +466,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Initial role/risk floors match the approved spec.
-- [ ] Economy never falls below hard minimum.
-- [ ] Quality and escalation caps are enforced.
-- [ ] Explicit tool/context/modality requirements are hard filters.
-- [ ] Lead/model-generated hints cannot weaken hard requirements.
+- [x] Initial role/risk floors match the approved spec.
+- [x] Economy never falls below hard minimum.
+- [x] Quality and escalation caps are enforced.
+- [x] Explicit tool/context/modality requirements are hard filters.
+- [x] Lead/model-generated hints cannot weaken hard requirements.
 
 **Verification:** exhaustive table tests around all floor boundaries.
 
@@ -484,11 +484,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] `auto`, `economy`, `quality`, and `manual` match documented ordering.
-- [ ] Stable keys resolve complete ties deterministically.
-- [ ] Failed model and user exclusions are enforced.
-- [ ] Empty pools return `route.no_qualified_model`, not a hidden fallback.
-- [ ] Recorded explanation includes binding constraint and exclusion counts.
+- [x] `auto`, `economy`, `quality`, and `manual` match documented ordering.
+- [x] Stable keys resolve complete ties deterministically.
+- [x] Failed model and user exclusions are enforced.
+- [x] Empty pools return `route.no_qualified_model`, not a hidden fallback.
+- [x] Recorded explanation includes binding constraint and exclusion counts.
 
 **Verification:** replayable routing fixtures and property tests for determinism.
 
@@ -502,10 +502,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Estimate uses input, tool-result allowance, output allowance, expected calls, and cache price when supported.
-- [ ] Missing price is distinct from zero price.
-- [ ] Assumptions are present in the route/budget explanation.
-- [ ] Decimal arithmetic and token rounding are consistent.
+- [x] Estimate uses input, tool-result allowance, output allowance, expected calls, and cache price when supported.
+- [x] Missing price is distinct from zero price.
+- [x] Assumptions are present in the route/budget explanation.
+- [x] Decimal arithmetic and token rounding are consistent.
 
 **Verification:** price fixtures including cached input, missing data, and boundary rounding.
 
@@ -519,11 +519,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Reserve/settle/release are atomic and idempotent.
-- [ ] Actual, estimated actual, reserved, and available remain distinct.
-- [ ] Concurrent reservation race cannot exceed the limit except recorded provider estimate overshoot.
-- [ ] Lead continuation allowance is retained for child batches.
-- [ ] Warning threshold emits without repetition.
+- [x] Reserve/settle/release are atomic and idempotent.
+- [x] Actual, estimated actual, reserved, and available remain distinct.
+- [x] Concurrent reservation race cannot exceed the limit except recorded provider estimate overshoot.
+- [x] Lead continuation allowance is retained for child batches.
+- [x] Warning threshold emits without repetition.
 
 **Verification:** barrier-based concurrent database tests and crash/retry cases.
 
@@ -537,10 +537,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Assignment snapshots config/catalog/health/budget inputs.
-- [ ] Selection and reservation race retries from a fresh snapshot within a bound.
-- [ ] Assignment event persists before model construction/call.
-- [ ] Batch assignment either funds an affordable subset plus lead allowance or launches none incorrectly.
+- [x] Assignment snapshots config/catalog/health/budget inputs.
+- [x] Selection and reservation race retries from a fresh snapshot within a bound.
+- [x] Assignment event persists before model construction/call.
+- [x] Batch assignment either funds an affordable subset plus lead allowance or launches none incorrectly.
 
 **Verification:** integration fixtures with concurrent catalog/budget state changes.
 
@@ -554,11 +554,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Middleware never calls selector during a healthy attempt.
-- [ ] Every call validates the assignment ID.
-- [ ] Configured equivalent transport fallback creates a new assignment/event.
-- [ ] Authentication/invalid-model errors do not retry pointlessly.
-- [ ] Normalized usage settles the correct reservation once.
+- [x] Middleware never calls selector during a healthy attempt.
+- [x] Every call validates the assignment ID.
+- [x] Configured equivalent transport fallback creates a new assignment/event.
+- [x] Authentication/invalid-model errors do not retry pointlessly.
+- [x] Normalized usage settles the correct reservation once.
 
 **Verification:** fake-provider sequences for healthy, rate-limit, outage, auth, malformed, and duplicate callback paths.
 
@@ -568,10 +568,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 ### Checkpoint E — Economic routing
 
-- [ ] Every model call maps to a persisted assignment.
-- [ ] Auto/manual/mode behavior is deterministic and explainable.
-- [ ] Concurrent work cannot over-reserve the run budget.
-- [ ] Transport fallback and task escalation are visibly different.
+- [x] Every model call maps to a persisted assignment.
+- [x] Auto/manual/mode behavior is deterministic and explainable.
+- [x] Concurrent work cannot over-reserve the run budget.
+- [x] Transport fallback and task escalation are visibly different.
 
 ## 8. Phase 5 — Tools, permissions, and extensions
 

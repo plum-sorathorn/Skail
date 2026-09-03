@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
+from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
-from rudder.domain.events import LifecyclePayload, TaskPayload
-from rudder.domain.ids import RunId, SessionId, new_run_id, new_session_id
+from rudder.domain.events import EventEnvelope, LifecyclePayload, RoutePayload, TaskPayload
+from rudder.domain.ids import RunId, SessionId, new_event_id, new_run_id, new_session_id
 from rudder.runtime.event_bus import EventBus
+from rudder.sessions import Journal
 
 
 async def _publish_batch(
@@ -110,3 +114,51 @@ async def test_subscriber_receives_only_its_run_events_in_publish_order() -> Non
 
     assert await pending == expected
     await stream.aclose()
+
+
+@pytest.mark.asyncio
+async def test_journal_backed_bus_continues_after_transactional_route_events(
+    tmp_path: Path,
+) -> None:
+    journal = Journal(tmp_path / "rudder.sqlite")
+    journal.migrate()
+    session_id = new_session_id()
+    run_id = new_run_id()
+    now = datetime.now(UTC)
+    journal.create_session(session_id=session_id, title="events", created_at=now)
+    journal.create_run(
+        run_id=run_id,
+        session_id=session_id,
+        status="running",
+        budget_limit_usd=Decimal("1"),
+        created_at=now,
+    )
+    journal.append_event(
+        event=EventEnvelope(
+            event_id=new_event_id(),
+            session_id=session_id,
+            run_id=run_id,
+            sequence=1,
+            type="route.selected",
+            payload=RoutePayload(action="selected", assignment_id="assignment"),
+        )
+    )
+    bus = EventBus(journal)
+    first = await bus.publish(
+        session_id=session_id,
+        run_id=run_id,
+        type="run.started",
+        payload=LifecyclePayload(status="started"),
+    )
+    second = await bus.publish(
+        session_id=session_id,
+        run_id=run_id,
+        type="run.completed",
+        payload=LifecyclePayload(status="completed"),
+    )
+    assert (first.sequence, second.sequence) == (2, 3)
+    assert [event.sequence for event in journal.get_session_snapshot(str(session_id)).events] == [
+        1,
+        2,
+        3,
+    ]

@@ -87,4 +87,61 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
         """,
     ),
+    (
+        2,
+        """
+        ALTER TABLE budget_reservations ADD COLUMN purpose TEXT NOT NULL DEFAULT 'task_attempt';
+        ALTER TABLE usage_records ADD COLUMN reservation_id TEXT
+            REFERENCES budget_reservations(reservation_id);
+        CREATE UNIQUE INDEX usage_reservation_unique
+            ON usage_records(reservation_id) WHERE reservation_id IS NOT NULL;
+        CREATE TABLE budget_warning_state (
+            run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+            warning_percent TEXT NOT NULL,
+            is_above_threshold INTEGER NOT NULL
+        );
+        """,
+    ),
+    (
+        3,
+        """
+        ALTER TABLE assignments RENAME TO assignments_v1;
+        CREATE TABLE assignments (
+            assignment_id TEXT PRIMARY KEY,
+            attempt_id TEXT NOT NULL REFERENCES attempts(attempt_id),
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            estimated_cost_usd TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL UNIQUE,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        INSERT INTO assignments SELECT * FROM assignments_v1;
+        DROP TABLE assignments_v1;
+        """,
+    ),
+    (
+        4,
+        """
+        CREATE TABLE assignment_batches (
+            idempotency_key TEXT PRIMARY KEY,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        """,
+    ),
+    (
+        5,
+        """
+        CREATE TABLE assignment_call_usage (
+            assignment_id TEXT NOT NULL REFERENCES assignments(assignment_id),
+            call_id TEXT NOT NULL,
+            input_tokens INTEGER NOT NULL,
+            output_tokens INTEGER NOT NULL,
+            amount_usd TEXT NOT NULL,
+            authoritative INTEGER NOT NULL,
+            PRIMARY KEY (assignment_id, call_id)
+        );
+        """,
+    ),
 )

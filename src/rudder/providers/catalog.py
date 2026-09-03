@@ -168,6 +168,7 @@ def _merge_profile(key: tuple[str, str], entries: list[CatalogEntry]) -> ModelPr
         support_level=ProviderSupportLevel.UNVERIFIED,
         input_usd_per_million=_decimal(fields.get("input_usd_per_million")),
         output_usd_per_million=_decimal(fields.get("output_usd_per_million")),
+        cached_input_usd_per_million=_decimal(fields.get("cached_input_usd_per_million")),
         context_tokens=fields.get("context_tokens"),
         max_output_tokens=fields.get("max_output_tokens"),
         supports_tools=fields.get("supports_tools"),
