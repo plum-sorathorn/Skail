@@ -108,7 +108,7 @@ def transition_attempt(current: AttemptStatus, target: AttemptStatus) -> Attempt
 class TaskRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    description: str = Field(min_length=1, max_length=20_000)
+    description: str
     profile: str = "general-purpose"
     success_criteria: tuple[str, ...] = ()
     depends_on: tuple[TaskId, ...] = ()
@@ -172,6 +172,7 @@ class PermissionSet(BaseModel):
     read: bool = True
     write: bool = False
     execute: bool = False
+    network: bool = False
     allowed_paths: tuple[str, ...] = ()
 
 

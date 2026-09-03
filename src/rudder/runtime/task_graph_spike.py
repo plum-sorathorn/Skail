@@ -13,6 +13,7 @@ from langchain_core.runnables import RunnableLambda
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 
+from rudder.agents.context import ContextAssembler
 from rudder.providers.base import ProviderAdapter
 from rudder.providers.fallback import FallbackBinding, ProviderFallbackPolicy
 from rudder.runtime.deepagents_adapter import ChildRunGate
@@ -34,6 +35,7 @@ class SpikeTaskState(AssignmentState):
     task_description: NotRequired[str]
     validation_trace: NotRequired[tuple[str, ...]]
     child_output: NotRequired[str]
+    context_packet: NotRequired[object]
 
 
 def build_compiled_task_subagent(
@@ -85,10 +87,16 @@ def build_compiled_task_subagent(
         task_description = _last_message_text(state.get("messages", []))
         if not task_description.strip():
             raise FrameworkContractError("task.invalid", "delegated task description is empty")
+        task_id = create_task_id()
         return {
             "task_description": task_description,
-            "rudder_task_id": create_task_id(),
+            "rudder_task_id": task_id,
             "validation_trace": ("validated",),
+            "context_packet": ContextAssembler().assemble(
+                task_id=task_id,
+                objective=task_description,
+                state="validated delegated task",
+            ),
         }
 
     def assign_attempt(state: SpikeTaskState) -> dict[str, Any]:

@@ -96,6 +96,15 @@ class ApprovalSnapshot:
 
 
 @dataclass(frozen=True)
+class ContextPacketSnapshot:
+    packet_id: str
+    run_id: str
+    task_id: str | None
+    attempt_id: str | None
+    payload: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class SessionSnapshot:
     session_id: str
     status: str
@@ -107,6 +116,7 @@ class SessionSnapshot:
     usage_records: tuple[UsageSnapshot, ...]
     approvals: tuple[ApprovalSnapshot, ...]
     events: tuple[EventEnvelope, ...]
+    context_packets: tuple[ContextPacketSnapshot, ...] = ()
 
 
 class JournalTransaction:
@@ -290,6 +300,32 @@ class JournalTransaction:
             table="approvals",
             key=idempotency_key,
             columns="approval_id,run_id,task_id,status,question,idempotency_key",
+            values=values,
+            insert_values=(*values, _now(created_at)),
+        )
+
+    def create_context_packet(
+        self,
+        packet_id: str,
+        run_id: str,
+        task_id: str | None,
+        attempt_id: str | None,
+        payload: dict[str, Any],
+        idempotency_key: str,
+        created_at: datetime,
+    ) -> None:
+        payload_json = json.dumps(
+            self.redactor.scrub(payload), sort_keys=True, separators=(",", ":")
+        )
+        values = (
+            packet_id, run_id, task_id, attempt_id, payload_json, idempotency_key
+        )
+        self._insert_idempotent(
+            table="context_packets",
+            key=idempotency_key,
+            columns=(
+                "packet_id,run_id,task_id,attempt_id,payload_json,idempotency_key"
+            ),
             values=values,
             insert_values=(*values, _now(created_at)),
         )
@@ -526,6 +562,19 @@ class Journal:
     ) -> None:
         self._write("create_approval", **locals_without_self(locals()))
 
+    def create_context_packet(
+        self,
+        *,
+        packet_id: str,
+        run_id: str,
+        task_id: str | None,
+        attempt_id: str | None,
+        payload: dict[str, Any],
+        idempotency_key: str,
+        created_at: datetime,
+    ) -> None:
+        self._write("create_context_packet", **locals_without_self(locals()))
+
     def append_event(self, *, event: EventEnvelope) -> None:
         self._write("append_event", event=event)
 
@@ -579,6 +628,11 @@ class Journal:
             approvals = connection.execute(
                 f"SELECT approval_id,task_id,status,question FROM approvals "
                 f"WHERE run_id IN ({placeholders}) ORDER BY rowid",
+                run_ids,
+            ).fetchall()
+            context_packets = connection.execute(
+                f"SELECT packet_id,run_id,task_id,attempt_id,payload_json "
+                f"FROM context_packets WHERE run_id IN ({placeholders}) ORDER BY rowid",
                 run_ids,
             ).fetchall()
             events = connection.execute(
@@ -649,4 +703,11 @@ class Journal:
             ),
             approvals=tuple(ApprovalSnapshot(**dict(row)) for row in approvals),
             events=tuple(EventEnvelope.from_json(row["envelope_json"]) for row in events),
+            context_packets=tuple(
+                ContextPacketSnapshot(
+                    row["packet_id"], row["run_id"], row["task_id"],
+                    row["attempt_id"], json.loads(row["payload_json"])
+                )
+                for row in context_packets
+            ),
         )

@@ -20,6 +20,12 @@ class AgentProfile:
     model_policy: str | None = None
     delegation: bool = False
     response_schema: str | None = None
+    role_floor: float = 0.0
+    expected_calls: int = 1
+
+    @property
+    def write_capable(self) -> bool:
+        return self.permissions.write or self.permissions.execute
 
 
 class ProfileLoader:

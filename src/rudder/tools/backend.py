@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import AbstractContextManager, nullcontext
 from contextvars import ContextVar
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
@@ -14,6 +15,7 @@ from deepagents.backends.protocol import (
     WriteResult,
 )
 
+from rudder.runtime.leases import WorkspaceLeaseManager
 from rudder.runtime.redaction import RedactionRegistry
 from rudder.tools.filesystem import FilesystemBoundary, PathBoundaryError
 
@@ -31,10 +33,12 @@ class PolicyFilesystemBackend(FilesystemBackend):
         *,
         redactor: RedactionRegistry,
         task_id: str,
+        lease_manager: WorkspaceLeaseManager | None = None,
     ) -> None:
         super().__init__(root_dir=root_dir, virtual_mode=True)
         self.boundary = FilesystemBoundary(root_dir, redactor=redactor)
         self.task_id = task_id
+        self.lease_manager = lease_manager
         self._call_number = 0
 
     @staticmethod
@@ -102,12 +106,10 @@ class PolicyFilesystemBackend(FilesystemBackend):
     def write(self, file_path: str, content: str) -> WriteResult:
         relative = self._relative(file_path)
         try:
-            self.boundary.write_text(
-                relative,
-                content,
-                task_id=self.task_id,
-                tool_call_id=self._next_call(),
-            )
+            with self._lease():
+                self.boundary.write_text(
+                    relative, content, task_id=self.task_id, tool_call_id=self._next_call()
+                )
         except (PermissionError, OSError) as error:
             return WriteResult(error=str(error))
         return WriteResult(path=file_path)
@@ -130,12 +132,10 @@ class PolicyFilesystemBackend(FilesystemBackend):
             if occurrences > 1 and not replace_all:
                 return EditResult(error="old_string occurs multiple times")
             updated = content.replace(old_string, new_string, -1 if replace_all else 1)
-            self.boundary.write_text(
-                relative,
-                updated,
-                task_id=self.task_id,
-                tool_call_id=self._next_call(),
-            )
+            with self._lease():
+                self.boundary.write_text(
+                    relative, updated, task_id=self.task_id, tool_call_id=self._next_call()
+                )
         except (PermissionError, OSError) as error:
             return EditResult(error=str(error))
         return EditResult(path=file_path, occurrences=occurrences)
@@ -159,3 +159,8 @@ class PolicyFilesystemBackend(FilesystemBackend):
         except (PermissionError, OSError):
             return False
         return True
+
+    def _lease(self) -> AbstractContextManager[None]:
+        if self.lease_manager is None:
+            return nullcontext()
+        return self.lease_manager.hold(self.task_id)

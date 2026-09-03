@@ -144,4 +144,18 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
         """,
     ),
+    (
+        6,
+        """
+        CREATE TABLE context_packets (
+            packet_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES runs(run_id),
+            task_id TEXT REFERENCES tasks(task_id),
+            attempt_id TEXT REFERENCES attempts(attempt_id),
+            payload_json TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+        );
+        """,
+    ),
 )

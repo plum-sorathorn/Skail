@@ -19,6 +19,7 @@ from langgraph.types import interrupt
 
 from rudder.runtime.deepagents_adapter import build_lead_agent
 from rudder.runtime.interrupts import QuestionStore
+from rudder.runtime.leases import WorkspaceLeaseManager
 from rudder.runtime.redaction import RedactionRegistry
 from rudder.tools.approvals import ApprovalStore
 from rudder.tools.artifacts import ArtifactStore
@@ -155,6 +156,7 @@ def build_default_agent(
     execution_context: ExecutionSecurityContext | None = None,
     registry: ToolRegistry | None = None,
     extension_tools: Sequence[Any] = (),
+    lease_manager: WorkspaceLeaseManager | None = None,
 ) -> Any:
     """Assemble pinned DeepAgents tools behind Rudder's workspace and shell policy."""
 
@@ -169,11 +171,15 @@ def build_default_agent(
     def execute(command: str, arguments: tuple[str, ...] = ()) -> dict[str, Any]:
         """Execute a structured command under Rudder policy."""
 
-        result = policy.run(
-            CommandRequest(command, arguments, workspace),
-            interactive=False,
-            approvals=approvals,
-        )
+        from contextlib import nullcontext
+
+        lease = nullcontext() if lease_manager is None else lease_manager.hold(task_id)
+        with lease:
+            result = policy.run(
+                CommandRequest(command, arguments, workspace),
+                interactive=False,
+                approvals=approvals,
+            )
         captured = artifacts.capture(
             "execute", {"stdout": result.stdout, "stderr": result.stderr}
         )
@@ -235,7 +241,7 @@ def build_default_agent(
         tools=custom_tools,
         subagents=subagents,
         backend=PolicyFilesystemBackend(
-            workspace, redactor=redaction, task_id=task_id
+            workspace, redactor=redaction, task_id=task_id, lease_manager=lease_manager
         ),
         skills=skills,
         memory=memory,

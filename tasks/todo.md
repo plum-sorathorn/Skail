@@ -60,15 +60,15 @@ Status: Active; implementation is in progress on the `rudder` branch.
 
 ## Orchestration
 
-- [ ] 6.1 Implement built-in profile definitions.
-- [ ] 6.2 Implement task validation, fingerprint, and registry.
-- [ ] 6.3 Implement dependency scheduler and three-child semaphore.
-- [ ] 6.4 Implement shared-workspace write leases.
-- [ ] 6.5 Implement production compiled task graph, context packets, and result evaluation.
-- [ ] 6.6 Implement deterministic failure monitor.
-- [ ] 6.7 Implement one escalation then return-to-lead.
-- [ ] 6.8 Build capable lead graph and delegation controls.
-- [ ] Checkpoint G: headless Rudder core.
+- [x] 6.1 Implement built-in profile definitions.
+- [x] 6.2 Implement task validation, fingerprint, and registry.
+- [x] 6.3 Implement dependency scheduler and three-child semaphore.
+- [x] 6.4 Implement shared-workspace write leases.
+- [x] 6.5 Implement production compiled task graph, context packets, and result evaluation.
+- [x] 6.6 Implement deterministic failure monitor.
+- [x] 6.7 Implement one escalation then return-to-lead.
+- [x] 6.8 Build capable lead graph and delegation controls.
+- [x] Checkpoint G: headless Rudder core.
 
 ## Sessions and UX
 

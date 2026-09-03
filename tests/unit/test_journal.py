@@ -29,6 +29,7 @@ EXPECTED_TABLES = {
     "usage_records",
     "approvals",
     "events",
+    "context_packets",
 }
 
 
@@ -342,3 +343,21 @@ def test_task_replay_requires_identical_content(tmp_path: Path) -> None:
         journal.create_task(task_id="task-replay", description="same", **common)
 
     assert len(journal.get_session_snapshot(SESSION_ID).tasks) == 1
+
+
+def test_context_packets_are_idempotent_and_redacted(tmp_path: Path) -> None:
+    canary = "context-canary-secret"
+    journal = Journal(tmp_path / "rudder.sqlite", redactor=SecretRedactor([canary]))
+    journal.migrate()
+    _seed_session(journal)
+    values = {
+        "packet_id": "packet-1", "run_id": RUN_ID, "task_id": None,
+        "attempt_id": None, "payload": {"objective": canary},
+        "idempotency_key": "context:run", "created_at": NOW,
+    }
+    journal.create_context_packet(**values)
+    journal.create_context_packet(**values)
+
+    snapshot = journal.get_session_snapshot(SESSION_ID)
+    assert len(snapshot.context_packets) == 1
+    assert canary not in repr(snapshot.context_packets[0].payload)

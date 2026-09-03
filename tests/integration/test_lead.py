@@ -1,0 +1,182 @@
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+from fakes.models import ScriptedChatModel, tool_call_message
+from langchain_core.messages import AIMessage
+
+from rudder.agents.lead import LeadControls
+from rudder.domain.ids import new_session_id
+from rudder.runtime.run_controller import RunController
+from rudder.sessions.journal import Journal
+
+
+def _journal(tmp_path: Path) -> Journal:
+    j = Journal(tmp_path / "journal.sqlite")
+    j.migrate()
+    return j
+
+
+@pytest.mark.asyncio
+async def test_lead_completes_direct_coding_flow_without_delegation(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Direct coding", created_at=datetime.now(UTC)
+    )
+
+    # Scripted lead model: writes a file directly using write_file tool
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message(
+                "write_file",
+                {"file_path": "solution.py", "content": "def solve(): return 42\n"},
+                call_id="call-write-1",
+            ),
+            AIMessage(content="I have written solution.py successfully without delegating."),
+        ],
+    )
+
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model},
+        default_lead_model="lead-model",
+    )
+
+    result = await controller.run_instruction("Write solution.py")
+
+    assert "solution.py" in (tmp_path / "solution.py").name
+    assert (tmp_path / "solution.py").read_text(encoding="utf-8") == "def solve(): return 42\n"
+    assert "written solution.py" in result.output
+    assert result.lead_assignment.model == "lead-model"
+    assert result.lead_assignment.attempt_number == 1
+    assert result.lead_context_packet.task_id == str(result.run_id)
+
+
+@pytest.mark.asyncio
+async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Delegated coding", created_at=datetime.now(UTC)
+    )
+
+    # Scripted child model completes the work
+    child_model = ScriptedChatModel(
+        model_name="implementer-model",
+        responses=[
+            tool_call_message(
+                "write_file",
+                {"file_path": "child_output.txt", "content": "hello from child\n"},
+                call_id="child-write-1",
+            ),
+            AIMessage(content="Child finished writing child_output.txt"),
+        ],
+    )
+
+    # Lead model delegates to implementer, then synthesizes
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message(
+                "task",
+                {
+                    "description": "Write child_output.txt file",
+                    "subagent_type": "implementer",
+                },
+                call_id="task-call-1",
+            ),
+            AIMessage(content="Delegated task completed: child output created."),
+        ],
+    )
+
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": child_model},
+        default_lead_model="lead-model",
+        default_child_model="implementer-model",
+    )
+
+    result = await controller.run_instruction("Delegate writing to implementer")
+
+    assert (tmp_path / "child_output.txt").read_text(encoding="utf-8") == "hello from child\n"
+    assert "Delegated task completed" in result.output
+    assert len(result.child_results) == 1
+    assert result.child_results[0].status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_lead_assignment_persists_before_first_model_call(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Persistence check", created_at=datetime.now(UTC)
+    )
+
+    observed_assignments_before_call = []
+
+    def check_persisted(messages):
+        # Query journal database directly to verify assignment was already inserted
+        with journal.transaction() as tx:
+            rows = tx.connection.execute("SELECT * FROM assignments").fetchall()
+            observed_assignments_before_call.append(len(rows))
+
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[AIMessage(content="Direct answer.")],
+    )
+    orig_agenerate = lead_model._agenerate
+
+    async def hooked_agenerate(*args, **kwargs):
+        check_persisted(args)
+        return await orig_agenerate(*args, **kwargs)
+
+    lead_model._agenerate = hooked_agenerate  # type: ignore[method-assign]
+
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model},
+    )
+
+    result = await controller.run_instruction("Direct prompt")
+    assert observed_assignments_before_call == [1]
+    assert result.output == "Direct answer."
+
+
+@pytest.mark.asyncio
+async def test_explicit_instruction_constraints_apply_only_to_current_run(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Controls check", created_at=datetime.now(UTC)
+    )
+
+    lead_custom = ScriptedChatModel(
+        model_name="custom-lead", responses=[AIMessage(content="Custom lead run")]
+    )
+    lead_default = ScriptedChatModel(
+        model_name="lead-model", responses=[AIMessage(content="Default lead run")]
+    )
+
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"custom-lead": lead_custom, "lead-model": lead_default},
+        default_lead_model="lead-model",
+    )
+
+    # Instruction 1: explicit model constraint
+    res1 = await controller.run_instruction("Run 1", controls=LeadControls(model="custom-lead"))
+    assert res1.lead_assignment.model == "custom-lead"
+
+    # Instruction 2: default controls - must not retain custom-lead
+    res2 = await controller.run_instruction("Run 2")
+    assert res2.lead_assignment.model == "lead-model"
