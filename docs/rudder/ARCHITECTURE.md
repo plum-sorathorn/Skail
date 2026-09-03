@@ -179,6 +179,23 @@ Implementations:
 
 If async framework support changes, only `BackgroundTaskExecutor` and its contract tests change.
 
+### 5.6 Context assembly
+
+Before each lead or compiled-child model attempt, Rudder assembles a versioned context packet. The
+packet contains the minimum stable task state plus labelled references selected under user, trust,
+permission, task-scope, and budget boundaries. It records approximate token pressure, component
+sources/revisions, and whether content was selected, compressed, truncated, or omitted.
+
+The packet keeps the model-facing working set distinct from journal and checkpoint state. Journal and
+checkpoint records retain authoritative history; artifacts and event IDs make detail available just
+in time without reinjecting it. Task packets never inherit the lead transcript by default. Failure
+handoffs and child results are structured, bounded evidence objects.
+
+Context pressure triggers deterministic compaction that preserves current intent, explicit user
+constraints, task/attempt state, assignments/budgets, approvals/questions, changed paths and
+verification, unresolved errors, and references to original records. Runtime policy—not prompt
+instructions—enforces trust, permissions, and context scope.
+
 ## 6. Domain contracts
 
 The names below are normative; field details may change through an ADR before implementation.

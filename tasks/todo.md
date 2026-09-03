@@ -64,7 +64,7 @@ Status: Active; implementation is in progress on the `rudder` branch.
 - [ ] 6.2 Implement task validation, fingerprint, and registry.
 - [ ] 6.3 Implement dependency scheduler and three-child semaphore.
 - [ ] 6.4 Implement shared-workspace write leases.
-- [ ] 6.5 Implement production compiled task graph and result evaluation.
+- [ ] 6.5 Implement production compiled task graph, context packets, and result evaluation.
 - [ ] 6.6 Implement deterministic failure monitor.
 - [ ] 6.7 Implement one escalation then return-to-lead.
 - [ ] 6.8 Build capable lead graph and delegation controls.
@@ -72,7 +72,7 @@ Status: Active; implementation is in progress on the `rudder` branch.
 
 ## Sessions and UX
 
-- [ ] 7.1 Implement session lifecycle, resume, compaction, and export.
+- [ ] 7.1 Implement session lifecycle, resume, context-aware compaction, and export.
 - [ ] 7.2 Implement CLI, print/JSONL modes, and exit codes.
 - [ ] 7.3 Build conversation-first TUI shell and projections.
 - [ ] 7.4 Add agent rail, route, and budget views.
@@ -81,11 +81,11 @@ Status: Active; implementation is in progress on the `rudder` branch.
 
 ## Validation and release
 
-- [ ] 8.1 Build deterministic evaluation runner.
+- [ ] 8.1 Build deterministic evaluation runner including context-policy metrics.
 - [ ] 8.2 Curate at least 50 approved oracle-backed fixtures.
 - [ ] 8.3 Validate and tune completion, cost, and parallel-time gates.
 - [ ] 8.4 Complete security/recovery hardening.
-- [ ] 8.5 Complete performance/context hardening.
+- [ ] 8.5 Complete performance/context hardening and context-policy benchmarking.
 - [ ] 8.6 Complete packaging, docs, installation, and release candidate.
 - [ ] Final checkpoint: all stable-release criteria pass.
 

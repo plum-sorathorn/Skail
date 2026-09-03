@@ -157,6 +157,14 @@ Each delegated task has:
 - at most two attempts;
 - a structured terminal result.
 
+Before a lead or child model attempt, Rudder assembles a small, inspectable context packet. It
+contains current intent and explicit constraints, task/profile requirements, required state, and
+labelled references selected within trust, permission, task-scope, and budget boundaries. Repository
+detail, prior artifacts, skills, memory, and history load progressively through permitted tools or
+explicit references; a child never receives the complete lead transcript by default. Under pressure,
+compaction preserves current intent, task state, assignments/budgets, approvals/questions, changed
+paths/verification, unresolved errors, and references to retained records.
+
 Default child agents cannot delegate further. User-defined agents may opt into delegation, but the default maximum depth is one and the global three-agent concurrency limit still applies.
 
 ### 5.3 Foreground and background work

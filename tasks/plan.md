@@ -772,11 +772,17 @@ These tasks are intentionally disposable at first. Promote spike code only after
 - [ ] Success requires structured result plus required verification.
 - [ ] Compact result returns to lead; full transcript/events remain by ID.
 - [ ] Blocked, budget-blocked, cancelled, failed, and succeeded remain distinct.
+- [ ] Every lead/child attempt receives a versioned, inspectable context packet with source labels,
+      selection rationale, token-pressure estimate, and bounded component references.
+- [ ] Task packets include only minimum stable state plus permitted just-in-time references; they
+      never inherit a full lead transcript by default.
+- [ ] Failure handoffs and returned child results are compact, structured evidence with references to
+      full journal/artifact detail.
 
 **Verification:** actual compiled graph with fake profiles/models/tools.
 
 **Dependencies:** 4.6, 5.1–5.4, 6.1–6.4.
-**Likely files:** `src/rudder/agents/task_graph.py`, `src/rudder/agents/result_evaluator.py`, `src/rudder/runtime/task_executor.py`, `tests/integration/test_task_graph.py`, `tests/contract/test_task_result.py`.
+**Likely files:** `src/rudder/agents/task_graph.py`, `src/rudder/agents/context.py`, `src/rudder/agents/result_evaluator.py`, `src/rudder/runtime/task_executor.py`, `tests/integration/test_task_graph.py`, `tests/contract/test_task_result.py`, `tests/unit/test_context_assembly.py`.
 **Size:** L.
 
 ### Task 6.6: Implement deterministic failure monitor
@@ -853,6 +859,8 @@ These tasks are intentionally disposable at first. Promote spike code only after
 - [ ] Compaction preserves all fields listed in `FEATURES.md`.
 - [ ] Export is redacted and includes tasks/routes/usage/verification.
 - [ ] Process lock prevents concurrent mutation of one session.
+- [ ] Compaction records source coverage and preserves ADR 0005 context-packet invariants; dropped
+      detail remains retrievable through redacted event/artifact references.
 
 **Verification:** crash/resume/compact/export integration suite.
 
@@ -951,6 +959,8 @@ These tasks are intentionally disposable at first. Promote spike code only after
 - [ ] Runner compares auto, fixed economy, fixed quality, serial, and no-delegation policies where applicable.
 - [ ] Results include completion, total cost, wall time, escalations, interrupts, and safety/state defects.
 - [ ] Provider-live evaluation is opt-in and results identify model/catalog revisions.
+- [ ] Results include context-packet pressure, selected/compressed/dropped estimates, artifact
+      retrievals, and handoff size without recording secret-bearing content.
 
 **Verification:** seeded fake suite gives reproducible report.
 
@@ -1022,6 +1032,8 @@ These tasks are intentionally disposable at first. Promote spike code only after
 - [ ] Large tool outputs and child results respect context bounds.
 - [ ] Database growth/retention behavior is measured.
 - [ ] No optimization bypasses journal, safety, or assignment invariants.
+- [ ] Context-packet selection and compaction are benchmarked against completion, cost, latency, and
+      context-pressure regressions; policy changes require reproducible evaluation evidence.
 
 **Verification:** reproducible local benchmarks with thresholds documented, not timing-flaky unit assertions.
 

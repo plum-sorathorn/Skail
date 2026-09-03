@@ -548,6 +548,24 @@ Rudder memory means deliberate user/project instructions and bounded session sum
 
 Subagents receive the task request, applicable profile/skills, selected workspace references, and failure handoff when applicable. They do not automatically inherit the lead's full transcript. Persistent child memory is opt-in by profile and policy.
 
+### Context assembly and pressure
+
+Rudder treats context as a finite working set, not a transcript dump. Before a lead or child model
+attempt, it records a context packet containing selected components, source labels/revisions,
+approximate token pressure, and explicit reasons for omitted, truncated, or compressed content.
+
+The always-present portion is minimal: product/safety guidance, the current instruction and explicit
+constraints, task success criteria, selected profile, and required current state. Workspace content,
+skills, memory, artifacts, and historical detail are introduced through trusted just-in-time tools or
+explicit references. Raw tool output is bounded and represented by a redacted artifact reference when
+large.
+
+Compaction preserves current objective, user constraints, task/attempt state, assignments, budgets,
+approvals/questions, changed paths and verification, unresolved errors, and references to full
+events/artifacts. It may discard verbose intermediate output, but never changes authoritative journal
+records. Rudder does not silently create cross-session semantic memory or inject vector-retrieved
+content in the first stable release.
+
 ## 20. Human questions and steering
 
 ### `ask_user`
