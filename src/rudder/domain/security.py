@@ -7,6 +7,19 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 
+class PermissionSet(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    read: bool = False
+    write: bool = False
+    execute: bool = False
+    network: bool = False
+
+    def contains(self, requested: PermissionSet) -> bool:
+        return all(
+            not getattr(requested, name) or getattr(self, name) for name in self.model_fields
+        )
+
+
 class ProjectTrustLevel(StrEnum):
     UNTRUSTED = "untrusted"
     TRUSTED = "trusted"

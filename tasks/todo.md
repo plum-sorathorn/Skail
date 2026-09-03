@@ -50,13 +50,13 @@ Status: Active; implementation is in progress on the `rudder` branch.
 
 ## Tools and safety
 
-- [ ] 5.1 Assemble and describe the default DeepAgents tool surface.
-- [ ] 5.2 Enforce virtual workspace filesystem boundaries.
-- [ ] 5.3 Implement command policy and durable approvals.
-- [ ] 5.4 Implement `ask_user` interrupts.
-- [ ] 5.5 Implement trusted profiles, skills, and memory loading.
-- [ ] 5.6 Implement optional MCP/custom tool boundary.
-- [ ] Checkpoint F: safe useful tools.
+- [x] 5.1 Assemble and describe the default DeepAgents tool surface.
+- [x] 5.2 Enforce virtual workspace filesystem boundaries.
+- [x] 5.3 Implement command policy and durable approvals.
+- [x] 5.4 Implement `ask_user` interrupts.
+- [x] 5.5 Implement trusted profiles, skills, and memory loading.
+- [x] 5.6 Implement optional MCP/custom tool boundary.
+- [x] Checkpoint F: safe useful tools.
 
 ## Orchestration
 

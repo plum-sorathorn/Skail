@@ -6,6 +6,8 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from deepagents import create_deep_agent
+from deepagents.backends.protocol import BackendProtocol
+from deepagents.middleware.filesystem import FilesystemPermission
 from deepagents.middleware.subagents import CompiledSubAgent
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.human_in_the_loop import InterruptOnConfig
@@ -52,6 +54,10 @@ def build_lead_agent(
     middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
     checkpointer: BaseCheckpointSaver[Any] | None = None,
     interrupt_on: dict[str, bool | InterruptOnConfig] | None = None,
+    backend: BackendProtocol | None = None,
+    skills: list[str] | None = None,
+    memory: list[str] | None = None,
+    permissions: list[FilesystemPermission] | None = None,
     name: str = "rudder-lead",
 ) -> Runnable[Any, Any]:
     """Build a DeepAgent while keeping its concrete type behind this adapter."""
@@ -63,6 +69,10 @@ def build_lead_agent(
         middleware=middleware,
         checkpointer=checkpointer,
         interrupt_on=interrupt_on,
+        backend=backend,
+        skills=skills,
+        memory=memory,
+        permissions=permissions,
         name=name,
     )
 

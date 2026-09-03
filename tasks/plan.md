@@ -581,10 +581,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] List/glob/grep/read/write/edit/execute/todos/task/skills/memory and `ask_user` have stable Rudder metadata.
-- [ ] Duplicate names and unknown schemas fail at startup.
-- [ ] Each tool declares source, version, side effects, approvals, and profile visibility.
-- [ ] Large output becomes a redacted artifact plus bounded excerpt.
+- [x] List/glob/grep/read/write/edit/execute/todos/task/skills/memory and `ask_user` have stable Rudder metadata.
+- [x] Duplicate names and unknown schemas fail at startup.
+- [x] Each tool declares source, version, side effects, approvals, and profile visibility.
+- [x] Large output becomes a redacted artifact plus bounded excerpt.
 
 **Verification:** registry and output-boundary contract tests.
 
@@ -598,10 +598,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Normal, absolute, traversal, symlink, and Windows junction cases are tested.
-- [ ] Outside-workspace grants require explicit canonical paths.
-- [ ] Sensitive-file patterns apply before content enters context.
-- [ ] Writes record task/path and before/after hashes.
+- [x] Normal, absolute, traversal, symlink, and Windows junction cases are tested.
+- [x] Outside-workspace grants require explicit canonical paths.
+- [x] Sensitive-file patterns apply before content enters context.
+- [x] Writes record task/path and before/after hashes.
 
 **Verification:** platform-specific temp workspace adversarial tests.
 
@@ -615,11 +615,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] PowerShell and POSIX invocations preserve structured working directory/arguments where possible.
-- [ ] Action classes and default allow/ask/reject behavior match feature contracts.
-- [ ] Decisions support once/session/narrow-project-rule/edit/reject.
-- [ ] Edited command becomes a new request.
-- [ ] Non-interactive approval-required exits without hanging.
+- [x] PowerShell and POSIX invocations preserve structured working directory/arguments where possible.
+- [x] Action classes and default allow/ask/reject behavior match feature contracts.
+- [x] Decisions support once/session/narrow-project-rule/edit/reject.
+- [x] Edited command becomes a new request.
+- [x] Non-interactive approval-required exits without hanging.
 
 **Verification:** command policy table tests plus harmless subprocess integration tests on Windows/Linux.
 
@@ -633,10 +633,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Question, options, reason, task, and blocking scope persist.
-- [ ] Answer resumes only the correct waiting graph.
-- [ ] Cancellation and invalid/stale answer behavior are explicit.
-- [ ] Resume restores pending questions without granting an answer.
+- [x] Question, options, reason, task, and blocking scope persist.
+- [x] Answer resumes only the correct waiting graph.
+- [x] Cancellation and invalid/stale answer behavior are explicit.
+- [x] Resume restores pending questions without granting an answer.
 
 **Verification:** checkpointed lead and child interrupt scenarios.
 
@@ -650,11 +650,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Precedence and frontmatter validation match feature contracts.
-- [ ] Project sources stay inactive until trusted.
-- [ ] Running task retains source revision after files change.
-- [ ] Skills/memory context is bounded and source-labelled.
-- [ ] A child cannot expand global permissions/depth/budget from its profile.
+- [x] Precedence and frontmatter validation match feature contracts.
+- [x] Project sources stay inactive until trusted.
+- [x] Running task retains source revision after files change.
+- [x] Skills/memory context is bounded and source-labelled.
+- [x] A child cannot expand global permissions/depth/budget from its profile.
 
 **Verification:** trusted/untrusted fixture trees and reload tests.
 
@@ -668,11 +668,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Extensions are opt-in and list permissions/side effects before activation.
-- [ ] Unknown side effect is treated as write-capable and approval-worthy.
-- [ ] Tool name collisions require explicit resolution.
-- [ ] Secrets pass out-of-band where supported and are redacted.
-- [ ] Disabled/broken extension cannot prevent core startup unless selected as required.
+- [x] Extensions are opt-in and list permissions/side effects before activation.
+- [x] Unknown side effect is treated as write-capable and approval-worthy.
+- [x] Tool name collisions require explicit resolution.
+- [x] Secrets pass out-of-band where supported and are redacted.
+- [x] Disabled/broken extension cannot prevent core startup unless selected as required.
 
 **Verification:** fake MCP/custom tool fixtures for read, write, unknown, collision, and failure.
 
@@ -682,10 +682,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 ### Checkpoint F — Safe useful tools
 
-- [ ] Default tool surface supports daily coding without duplicate abstractions.
-- [ ] Filesystem and shell boundaries are enforced outside prompts.
-- [ ] Project extensions cannot activate before trust.
-- [ ] Questions/approvals survive checkpoints.
+- [x] Default tool surface supports daily coding without duplicate abstractions.
+- [x] Filesystem and shell boundaries are enforced outside prompts.
+- [x] Project extensions cannot activate before trust.
+- [x] Questions/approvals survive checkpoints.
 
 ## 9. Phase 6 — Profiles, task lifecycle, scheduler, and lead
 
