@@ -58,3 +58,25 @@ def test_core_import_requires_no_credentials_or_legacy_modules() -> None:
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_runtime_does_not_import_textual() -> None:
+    violations: list[str] = []
+    for path in SOURCE.rglob("*.py"):
+        rel = path.relative_to(SOURCE).as_posix()
+        # Only files within tui/ can import textual (and projection.py must not)
+        if rel.startswith("tui/") and rel != "tui/projection.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(
+                    alias.name == "textual" or alias.name.startswith("textual.")
+                    for alias in node.names
+                ):
+                    violations.append(f"{path}: imports textual")
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                if node.module == "textual" or node.module.startswith("textual."):
+                    violations.append(f"{path}: imports textual")
+    assert violations == []
+

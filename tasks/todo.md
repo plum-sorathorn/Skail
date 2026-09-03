@@ -72,12 +72,12 @@ Status: Active; implementation is in progress on the `rudder` branch.
 
 ## Sessions and UX
 
-- [ ] 7.1 Implement session lifecycle, resume, context-aware compaction, and export.
-- [ ] 7.2 Implement CLI, print/JSONL modes, and exit codes.
-- [ ] 7.3 Build conversation-first TUI shell and projections.
-- [ ] 7.4 Add agent rail, route, and budget views.
-- [ ] 7.5 Add commands, approvals, questions, cancellation, and supported steering.
-- [ ] Checkpoint H: complete daily-use harness.
+- [x] 7.1 Implement session lifecycle, resume, context-aware compaction, and export.
+- [x] 7.2 Implement CLI, print/JSONL modes, and exit codes.
+- [x] 7.3 Build conversation-first TUI shell and projections.
+- [x] 7.4 Add agent rail, route, and budget views.
+- [x] 7.5 Add commands, approvals, questions, cancellation, and supported steering.
+- [x] Checkpoint H: complete daily-use harness.
 
 ## Validation and release
 

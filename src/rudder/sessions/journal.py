@@ -105,6 +105,15 @@ class ContextPacketSnapshot:
 
 
 @dataclass(frozen=True)
+class SessionSummary:
+    session_id: str
+    title: str
+    status: str
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
 class SessionSnapshot:
     session_id: str
     status: str
@@ -117,6 +126,9 @@ class SessionSnapshot:
     approvals: tuple[ApprovalSnapshot, ...]
     events: tuple[EventEnvelope, ...]
     context_packets: tuple[ContextPacketSnapshot, ...] = ()
+    title: str = ""
+    created_at: str = ""
+    updated_at: str = ""
 
 
 class JournalTransaction:
@@ -135,6 +147,17 @@ class JournalTransaction:
         self.connection.execute(
             "INSERT INTO sessions VALUES (?,?,?,?,?)", (session_id, title, status, now, now)
         )
+
+    def update_session_status(
+        self, session_id: str, status: str, updated_at: datetime | None = None
+    ) -> None:
+        now = _now(updated_at or datetime.now(UTC))
+        cursor = self.connection.execute(
+            "UPDATE sessions SET status=?, updated_at=? WHERE session_id=?",
+            (status, now, session_id),
+        )
+        if cursor.rowcount == 0:
+            raise KeyError(session_id)
 
     def create_run(
         self,
@@ -463,6 +486,50 @@ class Journal:
             status=status,
         )
 
+    def update_session_status(
+        self, *, session_id: str, status: str, updated_at: datetime | None = None
+    ) -> None:
+        self._write(
+            "update_session_status",
+            session_id=session_id,
+            status=status,
+            updated_at=updated_at,
+        )
+
+    def list_sessions(self) -> tuple[SessionSummary, ...]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT session_id, title, status, created_at, updated_at "
+                "FROM sessions ORDER BY created_at DESC"
+            ).fetchall()
+            return tuple(
+                SessionSummary(
+                    session_id=row["session_id"],
+                    title=row["title"],
+                    status=row["status"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+                for row in rows
+            )
+
+    def get_session_record(self, session_id: str) -> SessionSummary:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT session_id, title, status, created_at, updated_at "
+                "FROM sessions WHERE session_id=?",
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(session_id)
+            return SessionSummary(
+                session_id=row["session_id"],
+                title=row["title"],
+                status=row["status"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+
     def create_run(
         self,
         *,
@@ -581,7 +648,9 @@ class Journal:
     def get_session_snapshot(self, session_id: str) -> SessionSnapshot:
         with self._connect() as connection:
             session = connection.execute(
-                "SELECT session_id,status FROM sessions WHERE session_id=?", (session_id,)
+                "SELECT session_id,title,status,created_at,updated_at "
+                "FROM sessions WHERE session_id=?",
+                (session_id,),
             ).fetchone()
             if session is None:
                 raise KeyError(session_id)
@@ -592,7 +661,20 @@ class Journal:
             run_ids = tuple(row["run_id"] for row in run_rows)
             if not run_ids:
                 return SessionSnapshot(
-                    session_id, session["status"], (), (), (), (), (), (), (), ()
+                    session_id=session["session_id"],
+                    status=session["status"],
+                    runs=(),
+                    tasks=(),
+                    attempts=(),
+                    assignments=(),
+                    budget_reservations=(),
+                    usage_records=(),
+                    approvals=(),
+                    events=(),
+                    context_packets=(),
+                    title=session["title"],
+                    created_at=session["created_at"],
+                    updated_at=session["updated_at"],
                 )
             placeholders = ",".join("?" for _ in run_ids)
             tasks = connection.execute(
@@ -710,4 +792,7 @@ class Journal:
                 )
                 for row in context_packets
             ),
+            title=session["title"],
+            created_at=session["created_at"],
+            updated_at=session["updated_at"],
         )

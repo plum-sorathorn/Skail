@@ -854,12 +854,12 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Active/idle/interrupted/completed/archived transitions are valid.
-- [ ] Resume restores lead/task/assignment/budget/question state without duplicate calls.
-- [ ] Compaction preserves all fields listed in `FEATURES.md`.
-- [ ] Export is redacted and includes tasks/routes/usage/verification.
-- [ ] Process lock prevents concurrent mutation of one session.
-- [ ] Compaction records source coverage and preserves ADR 0005 context-packet invariants; dropped
+- [x] Active/idle/interrupted/completed/archived transitions are valid.
+- [x] Resume restores lead/task/assignment/budget/question state without duplicate calls.
+- [x] Compaction preserves all fields listed in `FEATURES.md`.
+- [x] Export is redacted and includes tasks/routes/usage/verification.
+- [x] Process lock prevents concurrent mutation of one session.
+- [x] Compaction records source coverage and preserves ADR 0005 context-packet invariants; dropped
       detail remains retrievable through redacted event/artifact references.
 
 **Verification:** crash/resume/compact/export integration suite.
@@ -874,11 +874,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Flags and precedence match `SPEC.md`.
-- [ ] Print stdout/stderr separation is exact.
-- [ ] JSONL emits only versioned event objects and one terminal event.
-- [ ] Completion/failure/blocked/cancel/usage have documented exit codes.
-- [ ] No command starts a proxy/server or recognizes old aliases.
+- [x] Flags and precedence match `SPEC.md`.
+- [x] Print stdout/stderr separation is exact.
+- [x] JSONL emits only versioned event objects and one terminal event.
+- [x] Completion/failure/blocked/cancel/usage have documented exit codes.
+- [x] No command starts a proxy/server or recognizes old aliases.
 
 **Verification:** subprocess tests on Windows/Linux with fake provider.
 
@@ -892,11 +892,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Main transcript/editor/footer operate with fake events.
-- [ ] UI state reconstructs from snapshot plus event stream.
-- [ ] Tool/task events may collapse but errors/approvals remain visible.
-- [ ] Resize, keyboard navigation, screen readers/contrast, and terminal-width fallbacks are tested.
-- [ ] Runtime modules do not import Textual.
+- [x] Main transcript/editor/footer operate with fake events.
+- [x] UI state reconstructs from snapshot plus event stream.
+- [x] Tool/task events may collapse but errors/approvals remain visible.
+- [x] Resize, keyboard navigation, screen readers/contrast, and terminal-width fallbacks are tested.
+- [x] Runtime modules do not import Textual.
 
 **Verification:** Textual pilot/component tests and manual Windows smoke.
 
@@ -910,11 +910,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Rail shows task parentage, profile, fixed model, true state, elapsed, and cost.
-- [ ] Route view renders the recorded decision and lineage rather than recomputing.
-- [ ] Budget view separates authoritative actual, estimate, reserve, available, and lead allowance.
-- [ ] Queued, approval-waiting, blocked, cancelled, escalated, and returned states are distinct.
-- [ ] Empty/unknown data is explicit, never fabricated.
+- [x] Rail shows task parentage, profile, fixed model, true state, elapsed, and cost.
+- [x] Route view renders the recorded decision and lineage rather than recomputing.
+- [x] Budget view separates authoritative actual, estimate, reserve, available, and lead allowance.
+- [x] Queued, approval-waiting, blocked, cancelled, escalated, and returned states are distinct.
+- [x] Empty/unknown data is explicit, never fabricated.
 
 **Verification:** projection fixtures and component snapshots.
 
@@ -928,11 +928,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Required slash commands in `SPEC.md` parse and dispatch.
-- [ ] Questions and approvals focus the correct task and resume correctly.
-- [ ] Whole-run cancellation is safe in foreground mode.
-- [ ] Individual steering/cancel appears only when background adapter supports it.
-- [ ] New input classification is visible before replacing active work.
+- [x] Required slash commands in `SPEC.md` parse and dispatch.
+- [x] Questions and approvals focus the correct task and resume correctly.
+- [x] Whole-run cancellation is safe in foreground mode.
+- [x] Individual steering/cancel appears only when background adapter supports it.
+- [x] New input classification is visible before replacing active work.
 
 **Verification:** TUI interaction tests plus manual cancellation/resume scenarios.
 
@@ -942,10 +942,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 ### Checkpoint H — Complete daily-use harness
 
-- [ ] Interactive, print, and JSONL modes share one runtime/event truth.
-- [ ] Agent/model/cost/task state is visible and accurate.
-- [ ] Approvals, questions, cancellation, compaction, resume, and export work.
-- [ ] Windows and Linux end-to-end fake-provider flows pass.
+- [x] Interactive, print, and JSONL modes share one runtime/event truth.
+- [x] Agent/model/cost/task state is visible and accurate.
+- [x] Approvals, questions, cancellation, compaction, resume, and export work.
+- [x] Windows and Linux end-to-end fake-provider flows pass.
 
 ## 11. Phase 8 — Evaluation, hardening, and stable release
 

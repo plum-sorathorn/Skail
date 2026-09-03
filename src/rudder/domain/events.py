@@ -31,6 +31,7 @@ ALLOWED_EVENT_TYPES = frozenset(
         "run.completed",
         "run.failed",
         "run.cancelled",
+        "run.blocked",
         "lead.delta",
         "lead.completed",
         "model.started",
