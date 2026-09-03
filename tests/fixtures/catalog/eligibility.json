@@ -1,0 +1,80 @@
+[
+  {
+    "provider": "fixture",
+    "model": "expensive-ultra-code-9000",
+    "source": "discovered",
+    "as_of": "2026-09-01T00:00:00Z",
+    "trusted": false,
+    "fields": {
+      "input_usd_per_million": "50.00",
+      "output_usd_per_million": "100.00",
+      "context_tokens": 1000000,
+      "supports_tools": true,
+      "input_modalities": ["text"]
+    }
+  },
+  {
+    "provider": "fixture",
+    "model": "stale-price",
+    "source": "maintained",
+    "as_of": "2026-01-01T00:00:00Z",
+    "trusted": true,
+    "fields": {
+      "input_usd_per_million": "0.10",
+      "output_usd_per_million": "0.20"
+    }
+  },
+  {
+    "provider": "fixture",
+    "model": "stale-price",
+    "source": "evaluated",
+    "as_of": "2026-09-01T00:00:00Z",
+    "trusted": true,
+    "fields": {
+      "supports_tools": true,
+      "input_modalities": ["text"],
+      "capability": {
+        "coding": 0.72,
+        "reasoning": 0.70,
+        "tool_reliability": 0.75,
+        "latency": 0.68
+      }
+    }
+  },
+  {
+    "provider": "fixture",
+    "model": "missing-price",
+    "source": "evaluated",
+    "as_of": "2026-09-01T00:00:00Z",
+    "trusted": true,
+    "fields": {
+      "supports_tools": true,
+      "input_modalities": ["text"],
+      "capability": {
+        "coding": 0.74,
+        "reasoning": 0.72,
+        "tool_reliability": 0.78,
+        "latency": 0.65
+      }
+    }
+  },
+  {
+    "provider": "fixture",
+    "model": "fresh-measured",
+    "source": "evaluated",
+    "as_of": "2026-09-01T00:00:00Z",
+    "trusted": true,
+    "fields": {
+      "input_usd_per_million": "0.30",
+      "output_usd_per_million": "0.90",
+      "supports_tools": true,
+      "input_modalities": ["text"],
+      "capability": {
+        "coding": 0.78,
+        "reasoning": 0.76,
+        "tool_reliability": 0.81,
+        "latency": 0.70
+      }
+    }
+  }
+]

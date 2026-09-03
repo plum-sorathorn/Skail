@@ -1,0 +1,8 @@
+data: {"id":"chatcmpl-text","object":"chat.completion.chunk","created":1,"model":"openai/test-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-text","object":"chat.completion.chunk","created":1,"model":"openai/test-model","choices":[{"index":0,"delta":{"content":" Rudder"},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-text","object":"chat.completion.chunk","created":1,"model":"openai/test-model","choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}
+
+data: [DONE]
+

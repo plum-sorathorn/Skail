@@ -30,13 +30,13 @@ Status: Active; implementation is in progress on the `rudder` branch.
 
 ## Providers and models
 
-- [ ] 3.1 Implement provider adapter/model factory and fake provider.
-- [ ] 3.2 Implement credential resolution and redaction.
-- [ ] 3.3 Implement first-class LLM Gateway adapter.
-- [ ] 3.4 Implement DevPass and generic OpenAI-compatible adapters.
-- [ ] 3.5 Implement lazy LangChain provider registry.
-- [ ] 3.6 Implement evidence-bearing model catalog.
-- [ ] Checkpoint D: usable providers.
+- [x] 3.1 Implement provider adapter/model factory and fake provider.
+- [x] 3.2 Implement credential resolution and redaction.
+- [x] 3.3 Implement first-class LLM Gateway adapter.
+- [x] 3.4 Implement DevPass and generic OpenAI-compatible adapters.
+- [x] 3.5 Implement lazy LangChain provider registry.
+- [x] 3.6 Implement evidence-bearing model catalog.
+- [x] Checkpoint D: usable providers.
 
 ## Routing and budgets
 

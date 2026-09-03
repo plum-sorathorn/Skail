@@ -102,9 +102,14 @@ class SecretRedactor:
                 value = value.replace(secret, REDACTED)
             return value
         if isinstance(value, dict):
-            return {key: self.scrub(item) for key, item in value.items()}
+            return {
+                self.scrub(key) if isinstance(key, str) else key: self.scrub(item)
+                for key, item in value.items()
+            }
         if isinstance(value, (list, tuple)):
             return [self.scrub(item) for item in value]
+        if isinstance(value, (set, frozenset)):
+            return [self.scrub(item) for item in sorted(value, key=repr)]
         return value
 
 

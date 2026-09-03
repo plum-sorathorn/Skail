@@ -351,11 +351,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Native, OpenAI-compatible, manual, and unverified levels are represented.
-- [ ] Factory instances are keyed by safe immutable configuration.
-- [ ] Missing optional provider package produces an install hint.
-- [ ] Errors normalize to stable auth/rate-limit/transient/invalid-model/protocol classes.
-- [ ] Fake provider supports streaming, tools, structured output, usage, and injected failures.
+- [x] Native, OpenAI-compatible, manual, and unverified levels are represented.
+- [x] Factory instances are keyed by safe immutable configuration.
+- [x] Missing optional provider package produces an install hint.
+- [x] Errors normalize to stable auth/rate-limit/transient/invalid-model/protocol classes.
+- [x] Fake provider supports streaming, tools, structured output, usage, and injected failures.
 
 **Verification:** provider contract suite against the fake adapter.
 
@@ -369,11 +369,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Provider config stores credential references only.
-- [ ] Environment resolver fails with actionable missing-key error.
-- [ ] Optional keyring path follows the approved Task 0.1 decision.
-- [ ] Resolved values are registered with log/event/tool-output redaction.
-- [ ] Exports and exception chains contain no fixture secret.
+- [x] Provider config stores credential references only.
+- [x] Environment resolver fails with actionable missing-key error.
+- [x] Optional keyring path follows the approved Task 0.1 decision.
+- [x] Resolved values are registered with log/event/tool-output redaction.
+- [x] Exports and exception chains contain no fixture secret.
 
 **Verification:** canary-secret tests over errors, events, logs, and exports.
 
@@ -387,11 +387,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Canonical `https://api.llmgateway.io/v1` configuration works.
-- [ ] Streaming text and fragmented tool arguments normalize correctly.
-- [ ] Structured-output support is tested or marked unsupported per model.
-- [ ] Usage and pricing/model discovery responses normalize with provenance.
-- [ ] Auth, rate-limit, transient, invalid-model, and protocol failures classify correctly.
+- [x] Canonical `https://api.llmgateway.io/v1` configuration works.
+- [x] Streaming text and fragmented tool arguments normalize correctly.
+- [x] Structured-output support is tested or marked unsupported per model.
+- [x] Usage and pricing/model discovery responses normalize with provenance.
+- [x] Auth, rate-limit, transient, invalid-model, and protocol failures classify correctly.
 
 **Verification:** fake HTTP contract suite; optional marked live smoke with user credentials.
 
@@ -405,10 +405,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] DevPass has a separate provider identity/configuration and contract fixtures.
-- [ ] Generic endpoint requires explicit base URL and model declaration.
-- [ ] Non-standard fields are ignored or mapped only when tested.
-- [ ] Generic models default to manual/unverified auto-routing status.
+- [x] DevPass has a separate provider identity/configuration and contract fixtures.
+- [x] Generic endpoint requires explicit base URL and model declaration.
+- [x] Non-standard fields are ignored or mapped only when tested.
+- [x] Generic models default to manual/unverified auto-routing status.
 
 **Verification:** adapter contract suite with distinct fake endpoints.
 
@@ -422,10 +422,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Registry lists installed/constructible/tested/auto-eligible levels separately.
-- [ ] Provider SDKs import lazily.
-- [ ] A manually configured supported integration constructs via documented LangChain APIs.
-- [ ] Unsupported kwargs and provider mismatch fail before a paid call.
+- [x] Registry lists installed/constructible/tested/auto-eligible levels separately.
+- [x] Provider SDKs import lazily.
+- [x] A manually configured supported integration constructs via documented LangChain APIs.
+- [x] Unsupported kwargs and provider mismatch fail before a paid call.
 
 **Verification:** test two representative optional providers with fakes/mocks; no live credentials in default suite.
 
@@ -439,11 +439,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Field-level provenance and as-of times survive merging.
-- [ ] Unknown capability never derives from name or price.
-- [ ] Hard-budget routing can reject missing/stale price data.
-- [ ] Manual selection remains possible for unmeasured models with clear status.
-- [ ] Catalog snapshots have deterministic revision IDs.
+- [x] Field-level provenance and as-of times survive merging.
+- [x] Unknown capability never derives from name or price.
+- [x] Hard-budget routing can reject missing/stale price data.
+- [x] Manual selection remains possible for unmeasured models with clear status.
+- [x] Catalog snapshots have deterministic revision IDs.
 
 **Verification:** merge precedence, stale data, and auto-eligibility fixture tests.
 
@@ -453,10 +453,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 ### Checkpoint D — Usable providers
 
-- [ ] Fake provider and LLM Gateway contract paths support required agent features.
-- [ ] DevPass and generic endpoints are isolated and honestly labelled.
-- [ ] Optional provider breadth does not inflate the core install.
-- [ ] Unknown models are manual, not silently auto-routed.
+- [x] Fake provider and LLM Gateway contract paths support required agent features.
+- [x] DevPass and generic endpoints are isolated and honestly labelled.
+- [x] Optional provider breadth does not inflate the core install.
+- [x] Unknown models are manual, not silently auto-routed.
 
 ## 7. Phase 4 — Routing and budget control
 
