@@ -4,6 +4,7 @@ from benchmarks.bench_runner import (
     benchmark_context_assembly,
     benchmark_event_persistence,
     benchmark_tui_projection,
+    validate_benchmarks,
 )
 
 
@@ -24,3 +25,19 @@ def test_performance_benchmarks_smoke() -> None:
     assert ctx_res["candidate_items"] == 20.0
     assert ctx_res["selected_components"] > 0
     assert ctx_res["duration_seconds"] >= 0
+
+
+def test_benchmark_gate_rejects_missed_thresholds() -> None:
+    failures = validate_benchmarks(
+        {
+            "event_persistence": {
+                "appends_per_sec": 1.0,
+                "read_seconds": 1.0,
+                "bytes_per_event": 5000.0,
+            },
+            "tui_projection": {"events_per_sec": 1.0},
+            "context_assembly": {"duration_seconds": 1.0},
+        }
+    )
+
+    assert len(failures) == 5

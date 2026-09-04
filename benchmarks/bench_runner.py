@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 from __future__ import annotations
 
+import argparse
 import gc
+import json
 import sys
 import tempfile
 import time
@@ -174,26 +176,67 @@ def benchmark_context_assembly(item_count: int = 100) -> dict[str, float]:
     }
 
 
-def main() -> None:
+def run_benchmarks() -> dict[str, dict[str, float]]:
+    return {
+        "event_persistence": benchmark_event_persistence(1000),
+        "tui_projection": benchmark_tui_projection(1000),
+        "context_assembly": benchmark_context_assembly(100),
+    }
+
+
+def validate_benchmarks(results: dict[str, dict[str, float]]) -> list[str]:
+    persistence = results["event_persistence"]
+    projection = results["tui_projection"]
+    context = results["context_assembly"]
+    failures: list[str] = []
+    if persistence["appends_per_sec"] < 75.0:
+        failures.append("event persistence below 75 appends/sec")
+    if persistence["read_seconds"] >= 0.1:
+        failures.append("event snapshot query exceeded 100ms")
+    if persistence["bytes_per_event"] >= 1024.0:
+        failures.append("event storage exceeded 1KiB/event")
+    if projection["events_per_sec"] < 50_000.0:
+        failures.append("TUI projection below 50,000 events/sec")
+    if context["duration_seconds"] >= 0.01:
+        failures.append("context assembly exceeded 10ms")
+    return failures
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run Rudder performance gates")
+    parser.add_argument("--json", action="store_true", help="emit machine-readable results")
+    args = parser.parse_args()
+    results = run_benchmarks()
+    failures = validate_benchmarks(results)
+    if args.json:
+        print(json.dumps({"results": results, "failures": failures}, sort_keys=True))
+        return 1 if failures else 0
+
     print("=== Rudder Performance Benchmarks ===")
 
     print("\n1. Event Persistence Throughput (1,000 events):")
-    res_persist = benchmark_event_persistence(1000)
+    res_persist = results["event_persistence"]
     for k, v in res_persist.items():
         print(f"  {k}: {v}")
 
     print("\n2. TUI Projection Responsiveness (1,000 events with 3 child agents):")
-    res_tui = benchmark_tui_projection(1000)
+    res_tui = results["tui_projection"]
     for k, v in res_tui.items():
         print(f"  {k}: {v}")
 
     print("\n3. Context Assembly & Budget Enforcement (100 items):")
-    res_ctx = benchmark_context_assembly(100)
+    res_ctx = results["context_assembly"]
     for k, v in res_ctx.items():
         print(f"  {k}: {v}")
 
-    print("\nAll benchmarks finished cleanly.")
+    if failures:
+        print("\nBenchmark gates failed:")
+        for failure in failures:
+            print(f"  - {failure}")
+        return 1
+    print("\nAll benchmark gates passed.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
