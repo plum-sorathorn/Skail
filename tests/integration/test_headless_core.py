@@ -75,19 +75,38 @@ async def test_headless_core_three_subagent_delegated_path(tmp_path: Path) -> No
                 {"file_path": "code.py", "content": "def run(): return 'ok'\n"},
                 call_id="impl-write",
             ),
-            AIMessage(content="Implemented code.py"),
+            AIMessage(
+                content=(
+                    '{"status":"succeeded","summary":"Implemented code.py",'
+                    '"changed_paths":["code.py"],"verification":[{'
+                    '"criterion":"Provide evidence for the completed task",'
+                    '"passed":true,"evidence":"code.py was written through write_file"}]}'
+                )
+            ),
         ],
     )
     tester_model = ScriptedChatModel(
         model_name="test-model",
         responses=[
-            AIMessage(content="Tests passed: 100% coverage"),
+            AIMessage(
+                content=(
+                    '{"status":"succeeded","summary":"Tests passed",'
+                    '"verification":[{"criterion":"Provide evidence for the completed task",'
+                    '"passed":true,"evidence":"test execution reported success"}]}'
+                )
+            ),
         ],
     )
     reviewer_model = ScriptedChatModel(
         model_name="review-model",
         responses=[
-            AIMessage(content="Code review passed: clean architecture"),
+            AIMessage(
+                content=(
+                    '{"status":"succeeded","summary":"Review passed",'
+                    '"verification":[{"criterion":"Provide evidence for the completed task",'
+                    '"passed":true,"evidence":"review completed with no findings"}]}'
+                )
+            ),
         ],
     )
 

@@ -264,6 +264,31 @@ def build_run_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_storage(
+    *,
+    no_session: bool,
+    redaction: RedactionRegistry,
+    ephemeral_dir: Path | None = None,
+) -> tuple[Journal, CheckpointStore, Path]:
+    if no_session:
+        if ephemeral_dir is None:
+            import tempfile
+
+            ephemeral_dir = Path(tempfile.mkdtemp(prefix="rudder-ephemeral-"))
+        journal_path = ephemeral_dir / "journal.sqlite"
+        checkpoints_path = ephemeral_dir / "checkpoints.sqlite"
+        session_path = ephemeral_dir / "sessions"
+    else:
+        journal_path = default_journal_path()
+        checkpoints_path = default_checkpoints_path()
+        session_path = sessions_dir()
+    return (
+        Journal(journal_path, redactor=redaction),
+        CheckpointStore(checkpoints_path, redactor=redaction),
+        session_path,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
 
@@ -328,17 +353,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return handle_models(args)
 
     # 5. Storage and session initialization
-    if args.no_session:
-        import tempfile
-
-        temp_dir = Path(tempfile.mkdtemp(prefix="rudder-ephemeral-"))
-        journal = Journal(temp_dir / "journal.sqlite")
-        checkpoints = CheckpointStore(temp_dir / "checkpoints.sqlite")
-        s_dir = temp_dir / "sessions"
-    else:
-        journal = Journal(default_journal_path())
-        checkpoints = CheckpointStore(default_checkpoints_path())
-        s_dir = sessions_dir()
+    redaction = RedactionRegistry()
+    journal, checkpoints, s_dir = _build_storage(
+        no_session=args.no_session,
+        redaction=redaction,
+    )
 
     journal.migrate()
     checkpoints.initialize()
@@ -390,7 +409,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             render_print_stdout("Use 'rudder [PROMPT]' or slash commands. Type '/quit' to exit.")
             return EXIT_OK
 
-    redaction = RedactionRegistry()
     approvals = ApprovalStore(workspace / ".rudder" / "approvals.sqlite")
     question_store = QuestionStore(workspace / ".rudder" / "questions.sqlite")
 
@@ -648,8 +666,8 @@ async def _execute_instruction(
     if result.status == "blocked":
         if args.print_mode:
             render_print_stderr(
-                f"Execution blocked on run {result.run_id}: approval or user interaction "
-                "required in non-interactive mode."
+                f"Execution blocked on run {result.run_id}: approval, budget, safety policy, "
+                "or user interaction prevented execution."
             )
         return EXIT_BLOCKED
     if result.status == "cancelled":

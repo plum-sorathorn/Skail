@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, NotRequired, TypedDict, cast
@@ -9,6 +10,7 @@ from deepagents.graph import DeepAgentState
 from deepagents.middleware.subagents import CompiledSubAgent
 from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph import END, START, StateGraph
+from pydantic import ValidationError
 
 from rudder.agents.context import ContextAssembler, ContextComponent, ContextPacket
 from rudder.agents.profile_loader import AgentProfile
@@ -62,6 +64,25 @@ class ProfileTaskState(DeepAgentState):
     spec: NotRequired[TaskSpec]
     result: NotRequired[TaskResult]
     validation_error: NotRequired[str]
+
+
+def decode_task_request(description: str, *, profile: str) -> TaskRequest:
+    """Decode Rudder's optional structured packet carried by the standard task description."""
+    stripped = description.strip()
+    if not stripped.startswith("{"):
+        return TaskRequest(
+            description=description,
+            profile=profile,
+            success_criteria=("Provide evidence for the completed task",),
+        )
+    try:
+        payload = json.loads(stripped)
+        if not isinstance(payload, dict):
+            raise ValueError("task packet must be an object")
+        payload["profile"] = profile
+        return TaskRequest.model_validate(payload)
+    except (json.JSONDecodeError, ValidationError, ValueError) as exc:
+        raise TaskValidationError("task.description_packet_invalid") from exc
 
 
 def build_task_graph(
@@ -195,7 +216,7 @@ def build_task_graph(
                 if task_id_str not in scheduler._children:
                     scheduler.submit(
                         task_id_str,
-                        priority=0,
+                        priority=spec.request.priority,
                         depends_on=tuple(str(d) for d in spec.request.depends_on),
                     )
                 if task_id_str in scheduler.blocked:
@@ -360,8 +381,8 @@ def build_compiled_profile_subagent(
     )
 
     def validate(state: ProfileTaskState) -> dict[str, Any]:
-        request = TaskRequest(
-            description=_last_message_text(state.get("messages", [])),
+        request = decode_task_request(
+            _last_message_text(state.get("messages", [])),
             profile=profile.name,
         )
         spec = validator.create_spec(

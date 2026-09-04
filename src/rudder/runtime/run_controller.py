@@ -19,6 +19,7 @@ from rudder.agents.context import ContextAssembler, ContextPacket
 from rudder.agents.lead import LeadControls, build_production_lead
 from rudder.agents.profile_loader import AgentProfile
 from rudder.agents.profiles import builtin_profiles
+from rudder.agents.result_evaluator import parse_child_result
 from rudder.agents.task_graph import (
     AttemptBinding,
     build_compiled_profile_subagent,
@@ -54,7 +55,7 @@ from rudder.routing.assignment import (
     config_revision,
 )
 from rudder.routing.budget import BudgetLedger
-from rudder.routing.requirements import ROLE_FLOORS, RequirementBuilder, TaskRisk
+from rudder.routing.requirements import ROLE_FLOORS, RequirementBuilder
 from rudder.routing.selector import RouteCandidate, RouteFailure
 from rudder.runtime.deepagents_adapter import ChildRunGate
 from rudder.runtime.interrupts import QuestionStore
@@ -75,7 +76,7 @@ DEFAULT_CONFIG_SNAPSHOT: dict[str, Any] = {"routing": {"mode": "auto"}}
 @dataclass(frozen=True)
 class RunResult:
     run_id: RunId
-    lead_assignment: TaskAssignment
+    lead_assignment: TaskAssignment | None
     lead_context_packet: ContextPacket
     output: str
     messages: Sequence[BaseMessage]
@@ -467,13 +468,42 @@ class RunController:
             lambda: self._get_candidates(for_lead=True, target_lead_model=lead_model_name),
         )
         if isinstance(assigned_lead, RouteFailure):
-            self.journal.update_attempt_status(
-                attempt_id=str(lead_attempt_id), status=AttemptStatus.FAILED
+            budget_blocked = assigned_lead.binding_constraint == "budget_unaffordable"
+            lead_context_packet = self.assembler.assemble(
+                task_id=str(run_id),
+                objective=instruction,
+                constraints=(),
+                state=f"run_id={run_id}; route_failure={assigned_lead.binding_constraint}",
             )
-            self.journal.update_task_status(task_id=str(lead_task_id), status=TaskStatus.FAILED)
-            self.journal.update_run_status(run_id=str(run_id), status="failed")
-            self.journal.update_session_status(session_id=str(self.session_id), status="idle")
-            raise RuntimeError(f"Failed to route lead model: {assigned_lead.binding_constraint}")
+            self._persist_context_packet(
+                lead_context_packet,
+                run_id=run_id,
+                task_id=str(lead_task_id),
+                attempt_id=str(lead_attempt_id),
+            )
+            with self.journal.transaction() as tx:
+                tx.update_attempt_status(
+                    attempt_id=str(lead_attempt_id), status=AttemptStatus.BLOCKED
+                )
+                tx.update_task_status(
+                    task_id=str(lead_task_id),
+                    status=TaskStatus.BUDGET_BLOCKED if budget_blocked else TaskStatus.BLOCKED,
+                )
+                tx.update_run_status(run_id=str(run_id), status="blocked")
+                tx.update_session_status(session_id=str(self.session_id), status="idle")
+            self._emit_event(
+                run_id=run_id,
+                type="run.blocked",
+                payload=LifecyclePayload(status="blocked"),
+            )
+            return RunResult(
+                run_id=run_id,
+                lead_assignment=None,
+                lead_context_packet=lead_context_packet,
+                output="",
+                messages=(),
+                status="blocked",
+            )
         lead_assignment = assigned_lead
 
         # 4. Assemble and persist lead context packet BEFORE first model call
@@ -902,10 +932,10 @@ class RunController:
                     )
                     break
 
-            result = TaskResult(
+            result = parse_child_result(
+                child_output,
                 task_id=spec.task_id,
-                status="succeeded",
-                summary=child_output or "child execution completed",
+                required_criteria=spec.request.success_criteria,
             )
             recorded_child_results.append(result)
             return result
@@ -983,5 +1013,8 @@ def _format_context_packet(packet: ContextPacket) -> str:
         f"<context_packet revision='{packet.revision}' tokens='{packet.estimated_tokens}'>\n"
         f"{component_text}\n"
         f"omissions: {omissions}\n"
-        "</context_packet>"
+        "</context_packet>\n"
+        "Return only a JSON object with status, summary, changed_paths, artifacts, and "
+        "verification. Every success criterion must have a passed=true verification item "
+        "with concrete evidence."
     )

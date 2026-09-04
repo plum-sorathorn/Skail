@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import deque
 from decimal import Decimal
 
@@ -12,6 +13,7 @@ from rudder.agents.task_graph import (
     AttemptBinding,
     build_compiled_profile_subagent,
     build_task_graph,
+    decode_task_request,
 )
 from rudder.domain.ids import (
     AssignmentId,
@@ -19,9 +21,10 @@ from rudder.domain.ids import (
     new_assignment_id,
     new_attempt_id,
     new_run_id,
+    new_task_id,
 )
 from rudder.domain.routing import RoutingMode, TaskAssignment
-from rudder.domain.tasks import TaskRequest, TaskResult
+from rudder.domain.tasks import TaskRequest, TaskResult, VerificationResult
 from rudder.routing.selector import RouteFailure
 from rudder.runtime.deepagents_adapter import ChildRunGate, build_lead_agent
 from rudder.runtime.leases import WorkspaceLeaseManager
@@ -48,6 +51,37 @@ def _assignment(spec, number: int, model: str) -> TaskAssignment:
         reservation_id=ReservationId(new_assignment_id()), explanation=("fixture",),
         catalog_revision="catalog",
     )
+
+
+def test_standard_task_description_decodes_structured_rudder_fields() -> None:
+    dependency = new_task_id()
+    request = decode_task_request(
+        json.dumps(
+            {
+                "description": "Verify the parser",
+                "success_criteria": ["focused test passes"],
+                "depends_on": [str(dependency)],
+                "write_scope": ["src/rudder"],
+                "budget_usd": "0.25",
+                "priority": 7,
+            }
+        ),
+        profile="implementer",
+    )
+
+    assert request.description == "Verify the parser"
+    assert request.success_criteria == ("focused test passes",)
+    assert request.depends_on == (dependency,)
+    assert request.write_scope == ("src/rudder",)
+    assert request.budget_usd == Decimal("0.25")
+    assert request.priority == 7
+
+
+def test_plain_task_description_requires_evidence_by_default() -> None:
+    request = decode_task_request("Inspect the implementation", profile="reviewer")
+
+    assert request.description == "Inspect the implementation"
+    assert request.success_criteria == ("Provide evidence for the completed task",)
 
 
 @pytest.mark.asyncio
@@ -153,7 +187,18 @@ async def test_standard_task_surface_creates_distinct_task_and_assignment_identi
         return AttemptBinding(new_attempt_id(), assignment)
 
     async def execute(spec, assignment, packet):
-        return TaskResult(task_id=spec.task_id, status="succeeded", summary="done")
+        return TaskResult(
+            task_id=spec.task_id,
+            status="succeeded",
+            summary="done",
+            verification=(
+                VerificationResult(
+                    criterion="Provide evidence for the completed task",
+                    passed=True,
+                    evidence="bounded child execution completed",
+                ),
+            ),
+        )
 
     child = build_compiled_profile_subagent(
         name="implementer", description="Implement bounded work.",

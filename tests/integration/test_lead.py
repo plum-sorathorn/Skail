@@ -73,7 +73,14 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
                 {"file_path": "child_output.txt", "content": "hello from child\n"},
                 call_id="child-write-1",
             ),
-            AIMessage(content="Child finished writing child_output.txt"),
+            AIMessage(
+                content=(
+                    '{"status":"succeeded","summary":"Child finished writing",'
+                    '"changed_paths":["child_output.txt"],"verification":[{'
+                    '"criterion":"Provide evidence for the completed task",'
+                    '"passed":true,"evidence":"child_output.txt was written through write_file"}]}'
+                )
+            ),
         ],
     )
 

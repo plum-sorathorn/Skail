@@ -706,7 +706,7 @@ class EvaluationRunner:
                     ]
                     if journal_assignments:
                         assignments = journal_assignments
-                    else:
+                    elif run_result.lead_assignment is not None:
                         assignments = [run_result.lead_assignment]
 
                     journal_cost = sum(

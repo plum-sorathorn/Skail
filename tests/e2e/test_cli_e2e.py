@@ -191,6 +191,19 @@ def test_cli_normal_mode_without_fake_provider_fails_when_no_credentials() -> No
     )
 
 
+def test_cli_budget_denial_returns_blocked_exit_code() -> None:
+    result = run_cli(
+        "-p",
+        "do not launch unaffordable work",
+        "--fake-provider",
+        "--budget",
+        "0.001",
+    )
+
+    assert result.returncode == EXIT_BLOCKED
+    assert "budget" in result.stderr.lower()
+
+
 def test_cli_returns_blocked_exit_code_on_interrupted_run(tmp_path: Path) -> None:
     import argparse
     import asyncio

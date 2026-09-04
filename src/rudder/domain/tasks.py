@@ -106,7 +106,7 @@ def transition_attempt(current: AttemptStatus, target: AttemptStatus) -> Attempt
 
 
 class TaskRequest(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     description: str
     profile: str = "general-purpose"
@@ -116,6 +116,7 @@ class TaskRequest(BaseModel):
     model_policy: ModelConstraint | None = None
     budget_usd: Decimal | None = Field(default=None, ge=0)
     background: bool = False
+    priority: int = Field(default=0, ge=-100, le=100)
 
     @field_serializer("budget_usd")
     def serialize_budget(self, value: Decimal | None) -> str | None:

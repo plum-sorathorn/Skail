@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from rudder.cli.main import _build_storage
 from rudder.domain.ids import SessionId, new_session_id
 from rudder.providers.credentials import EnvironmentCredentialResolver
 from rudder.providers.fake import DeterministicFakeChatModel
@@ -15,6 +16,19 @@ from rudder.sessions.checkpoints import CheckpointStore
 from rudder.sessions.export import export_session
 from rudder.sessions.journal import Journal
 from rudder.sessions.service import SessionService
+
+
+def test_cli_storage_uses_the_run_scoped_redaction_registry(tmp_path: Path) -> None:
+    redaction = RedactionRegistry()
+    journal, checkpoints, sessions = _build_storage(
+        no_session=True,
+        redaction=redaction,
+        ephemeral_dir=tmp_path,
+    )
+
+    assert journal.redactor is redaction
+    assert checkpoints.redactor is redaction
+    assert sessions == tmp_path / "sessions"
 
 
 @pytest.mark.asyncio
