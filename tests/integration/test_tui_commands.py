@@ -2,6 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from langchain_core.messages import AIMessage
 
 from rudder.domain.ids import SessionId, new_session_id
 from rudder.domain.routing import RoutingMode
@@ -12,11 +13,13 @@ from rudder.sessions.checkpoints import CheckpointStore
 from rudder.sessions.journal import Journal
 from rudder.sessions.service import SessionService
 from rudder.tools.approvals import ApprovalStore
+from rudder.tools.execution import CommandRequest
 from rudder.tui.app import RudderApp
 from rudder.tui.commands import dispatch_slash_command, parse_slash_command
 from rudder.tui.projection import InterruptItem, TuiProjection
 from rudder.tui.widgets.composer import PromptComposer
 from rudder.tui.widgets.interrupts import InterruptWidget
+from tests.fakes.models import ScriptedChatModel, tool_call_message
 
 
 def test_parse_slash_command() -> None:
@@ -278,3 +281,179 @@ async def test_tui_approval_store_and_question_store_integration(tmp_path: Path)
         assert app.projection.pending_interrupt is None
         answered = q_store.pending("lead")
         assert len(answered) == 0
+
+
+@pytest.mark.asyncio
+async def test_tui_answer_resumes_the_interrupted_controller(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.migrate()
+    checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
+    checkpoints.initialize()
+    session_service = SessionService(
+        journal=journal,
+        checkpoints=checkpoints,
+        sessions_dir=tmp_path / "sessions",
+    )
+    session = session_service.create_session(title="TUI Resume Session")
+    sid = SessionId(session.session_id)
+    questions = QuestionStore(tmp_path / "questions.sqlite")
+    model = ScriptedChatModel(
+        responses=[
+            tool_call_message(
+                "ask_user",
+                {"prompt": "Proceed?", "reason": "confirmation"},
+                call_id="ask-1",
+            ),
+            AIMessage(content="Continued after the answer."),
+        ]
+    )
+    controller = RunController(
+        session_id=sid,
+        workspace=tmp_path,
+        journal=journal,
+        checkpoints=checkpoints,
+        models={"lead-model": model, "implementer-model": model},
+        default_lead_model="lead-model",
+        default_child_model="implementer-model",
+        question_store=questions,
+    )
+    app = RudderApp(
+        controller=controller,
+        session_service=session_service,
+        session_id=sid,
+        question_store=questions,
+    )
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.on_prompt_composer_prompt_submitted(PromptComposer.PromptSubmitted("Ask first"))
+        assert app._active_worker is not None
+        await app._active_worker.wait()
+        await pilot.pause()
+        assert app.projection.pending_interrupt is not None, [
+            item.content for item in app.projection.transcript_items
+        ]
+
+        await pilot.click("#btn-approve")
+        assert app._active_worker is not None
+        await app._active_worker.wait()
+        await pilot.pause()
+
+        assert questions.pending("lead") == ()
+        assert any(
+            "Continued after the answer." in item.content
+            for item in app.projection.transcript_items
+        ), [item.content for item in app.projection.transcript_items]
+        assert journal.get_session_snapshot(str(sid)).runs[-1].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_tui_command_approval_executes_once_and_resumes(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.migrate()
+    checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
+    checkpoints.initialize()
+    session_service = SessionService(
+        journal=journal,
+        checkpoints=checkpoints,
+        sessions_dir=tmp_path / "sessions",
+    )
+    session = session_service.create_session(title="TUI Command Approval")
+    sid = SessionId(session.session_id)
+    approvals = ApprovalStore(tmp_path / "approvals.sqlite")
+    request = CommandRequest("pwsh", ("-Command", "Write-Output approved"), tmp_path)
+    model = ScriptedChatModel(
+        responses=[
+            tool_call_message(
+                "execute",
+                {"command": request.executable, "arguments": list(request.arguments)},
+                call_id="exec-1",
+            ),
+            AIMessage(content="Approved command completed."),
+        ]
+    )
+    controller = RunController(
+        session_id=sid,
+        workspace=tmp_path,
+        journal=journal,
+        checkpoints=checkpoints,
+        models={"lead-model": model, "implementer-model": model},
+        default_lead_model="lead-model",
+        default_child_model="implementer-model",
+        approvals=approvals,
+    )
+    app = RudderApp(
+        controller=controller,
+        session_service=session_service,
+        session_id=sid,
+        approval_store=approvals,
+    )
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.on_prompt_composer_prompt_submitted(PromptComposer.PromptSubmitted("Run command"))
+        assert app._active_worker is not None
+        await app._active_worker.wait()
+        await pilot.pause()
+        assert app.projection.pending_interrupt is not None
+
+        await pilot.click("#btn-approve")
+        assert app._active_worker is not None
+        await app._active_worker.wait()
+        await pilot.pause()
+
+        assert any(
+            "Approved command completed." in item.content
+            for item in app.projection.transcript_items
+        )
+        assert not approvals.is_allowed(request)
+
+
+@pytest.mark.asyncio
+async def test_tui_rejection_blocks_the_interrupted_run(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.migrate()
+    checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
+    checkpoints.initialize()
+    session_service = SessionService(
+        journal=journal,
+        checkpoints=checkpoints,
+        sessions_dir=tmp_path / "sessions",
+    )
+    session = session_service.create_session(title="TUI Rejection")
+    sid = SessionId(session.session_id)
+    questions = QuestionStore(tmp_path / "questions.sqlite")
+    model = ScriptedChatModel(
+        responses=[
+            tool_call_message(
+                "ask_user",
+                {"prompt": "Proceed?", "reason": "confirmation"},
+                call_id="ask-reject",
+            )
+        ]
+    )
+    controller = RunController(
+        session_id=sid,
+        workspace=tmp_path,
+        journal=journal,
+        checkpoints=checkpoints,
+        models={"lead-model": model, "implementer-model": model},
+        default_lead_model="lead-model",
+        default_child_model="implementer-model",
+        question_store=questions,
+    )
+    app = RudderApp(
+        controller=controller,
+        session_service=session_service,
+        session_id=sid,
+        question_store=questions,
+    )
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.on_prompt_composer_prompt_submitted(PromptComposer.PromptSubmitted("Ask first"))
+        assert app._active_worker is not None
+        await app._active_worker.wait()
+        await pilot.pause()
+        await pilot.click("#btn-reject")
+        await pilot.pause()
+
+        assert questions.pending("lead") == ()
+        assert journal.get_session_snapshot(str(sid)).runs[-1].status == "blocked"

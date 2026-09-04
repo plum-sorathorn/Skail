@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 from rich.text import Text
@@ -18,9 +19,10 @@ from rudder.runtime.interrupts import QuestionStore
 from rudder.runtime.run_controller import RunController
 from rudder.sessions.journal import SessionSnapshot
 from rudder.sessions.service import SessionService
-from rudder.tools.approvals import ApprovalStore
+from rudder.tools.approvals import ApprovalChoice, ApprovalStore
+from rudder.tools.execution import CommandRequest
 from rudder.tui.commands import dispatch_slash_command
-from rudder.tui.projection import TranscriptItem, TuiProjection
+from rudder.tui.projection import InterruptItem, TranscriptItem, TuiProjection
 from rudder.tui.widgets.agents import AgentRail
 from rudder.tui.widgets.budget import BudgetView
 from rudder.tui.widgets.chat import ChatTranscript
@@ -205,15 +207,7 @@ class RudderApp(App[int]):
         )
         try:
             result = await self.controller.run_instruction(text, controls=controls)
-            if result.output:
-                self.projection.transcript_items.append(
-                    TranscriptItem(
-                        id=f"lead-{len(self.projection.transcript_items)}",
-                        role="lead",
-                        title="Rudder Response",
-                        content=result.output,
-                    )
-                )
+            self._apply_run_result(result)
         except (KeyboardInterrupt, asyncio.CancelledError):
             self.projection.transcript_items.append(
                 TranscriptItem(
@@ -234,6 +228,54 @@ class RudderApp(App[int]):
             )
         finally:
             self.update_views()
+
+    async def _resume_prompt(self, answer: str) -> None:
+        if self.controller is None:
+            return
+        try:
+            result = await self.controller.resume_interrupted(answer)
+            self._apply_run_result(result)
+        except Exception as exc:
+            self.projection.transcript_items.append(
+                TranscriptItem(
+                    id=f"err-{len(self.projection.transcript_items)}",
+                    role="error",
+                    title="Resume Error",
+                    content=str(exc),
+                )
+            )
+        finally:
+            self.update_views()
+
+    def _apply_run_result(self, result: Any) -> None:
+        if result.pending_interrupt:
+            payload = result.pending_interrupt
+            approval_id = str(
+                payload.get("question_id") or f"command:{result.run_id}"
+            )
+            question = str(
+                payload.get("prompt")
+                or " ".join(
+                    [str(payload.get("command", "command")), *payload.get("arguments", ())]
+                )
+            )
+            self.projection.pending_interrupt = InterruptItem(
+                approval_id=approval_id,
+                task_id=payload.get("task_id"),
+                question=question,
+                payload=payload,
+            )
+        else:
+            self.projection.pending_interrupt = None
+        if result.output:
+            self.projection.transcript_items.append(
+                TranscriptItem(
+                    id=f"lead-{len(self.projection.transcript_items)}",
+                    role="lead",
+                    title="Rudder Response",
+                    content=result.output,
+                )
+            )
 
     # User input handling
     def on_prompt_composer_prompt_submitted(
@@ -321,6 +363,36 @@ class RudderApp(App[int]):
 
     # Interrupt handling
     def on_interrupt_widget_approved(self, event: InterruptWidget.Approved) -> None:
+        pending = self.projection.pending_interrupt
+        if (
+            pending is not None
+            and pending.payload.get("type") == "command_approval"
+            and self.approval_store is not None
+        ):
+            request = CommandRequest(
+                str(pending.payload["command"]),
+                tuple(str(value) for value in pending.payload.get("arguments", ())),
+                Path(
+                    str(
+                        pending.payload.get(
+                            "cwd",
+                            (
+                                self.controller.workspace
+                                if self.controller is not None
+                                else Path.cwd()
+                            ),
+                        )
+                    )
+                ),
+            )
+            self.approval_store.decide(request, ApprovalChoice.ALLOW_ONCE)
+        if self.controller is not None:
+            self.projection.pending_interrupt = None
+            self._active_worker = self.run_worker(
+                self._resume_prompt(event.response), exclusive=True
+            )
+            self.update_views()
+            return
         if self.question_store is not None:
             try:
                 self.question_store.answer(
@@ -341,6 +413,20 @@ class RudderApp(App[int]):
         self.apply_event(answer_ev)
 
     def on_interrupt_widget_rejected(self, event: InterruptWidget.Rejected) -> None:
+        if self.controller is not None:
+            pending = self.projection.pending_interrupt
+            if (
+                pending is not None
+                and pending.payload.get("question_id")
+                and self.question_store is not None
+            ):
+                try:
+                    self.question_store.cancel(
+                        str(pending.payload["question_id"]), graph_id="lead"
+                    )
+                except Exception:
+                    pass
+            self.controller.reject_interrupted()
         self.projection.pending_interrupt = None
         self.projection.transcript_items.append(
             TranscriptItem(

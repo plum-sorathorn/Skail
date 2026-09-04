@@ -70,6 +70,7 @@ class InterruptItem:
     task_id: str | None
     question: str
     status: str = "pending"  # "pending", "approved", "rejected"
+    payload: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

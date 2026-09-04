@@ -29,6 +29,7 @@ from rudder.domain.events import (
     EventPayload,
     LifecyclePayload,
     SecretRedactor,
+    UserPayload,
 )
 from rudder.domain.ids import (
     AttemptId,
@@ -57,7 +58,7 @@ from rudder.routing.assignment import (
 from rudder.routing.budget import BudgetLedger
 from rudder.routing.requirements import ROLE_FLOORS, RequirementBuilder
 from rudder.routing.selector import RouteCandidate, RouteFailure
-from rudder.runtime.deepagents_adapter import ChildRunGate
+from rudder.runtime.deepagents_adapter import ChildRunGate, resume_agent
 from rudder.runtime.interrupts import QuestionStore
 from rudder.runtime.leases import WorkspaceLeaseManager
 from rudder.runtime.model_middleware import TaskBoundModelMiddleware
@@ -86,6 +87,20 @@ class RunResult:
     child_wall_seconds: float = 0.0
     child_peak_active: int = 0
     child_count: int = 0
+    pending_interrupt: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class _PendingRun:
+    run_id: RunId
+    instruction: str
+    controls: LeadControls
+    workspace_revision: str
+    delegation_approved: bool
+    lead_task_id: TaskId
+    lead_attempt_id: AttemptId
+    lead_assignment: TaskAssignment
+    lead_context_packet: ContextPacket
 
 
 AssignChildAttempt = Callable[
@@ -176,6 +191,7 @@ class RunController:
         )
         self.candidates_fn = candidates_fn
         self.catalog_revision = catalog_revision
+        self._pending_run: _PendingRun | None = None
 
     def _record_model_usage(
         self, assignment_id: str, response: object, call_id: str = ""
@@ -363,6 +379,68 @@ class RunController:
             self.event_observer(event)
         return event
 
+    def _build_lead_for_run(
+        self,
+        *,
+        run_id: RunId,
+        controls: LeadControls,
+        workspace_revision: str,
+        delegation_approved: bool,
+        recorded_child_results: list[TaskResult],
+        leases: WorkspaceLeaseManager,
+        gate: ChildRunGate,
+        scheduler: ChildScheduler,
+        saver: Any,
+        lead_assignment: TaskAssignment,
+    ) -> Any:
+        delegation_approved = delegation_approved or controls.delegation == "auto"
+        allow_delegation = controls.delegation in ("auto", "ask")
+        subagents: list[CompiledSubAgent] = []
+        if allow_delegation:
+            for profile in builtin_profiles().values():
+                if profile.name == "lead":
+                    continue
+                subagents.append(
+                    self._build_profile_subagent(
+                        profile=profile,
+                        run_id=run_id,
+                        workspace_revision=workspace_revision,
+                        leases=leases,
+                        gate=gate,
+                        scheduler=scheduler,
+                        controls=controls,
+                        delegation_approved=delegation_approved,
+                        recorded_child_results=recorded_child_results,
+                    )
+                )
+        lead_chat_model = self._all_models.get(lead_assignment.model)
+        if lead_chat_model is None:
+            raise ValueError(
+                f"model {lead_assignment.model} is not available in registered models"
+            )
+        assignments, active = self.persisted_registry.runtime_bindings()
+        lead_middleware = TaskBoundModelMiddleware(
+            self._all_models,
+            assignments=assignments,
+            allow_delegation=allow_delegation,
+            providers=self.providers,
+            usage_callback=self._record_model_usage,
+            active_assignments=active,
+        )
+        return build_production_lead(
+            lead_chat_model,
+            workspace=self.workspace,
+            controls=controls,
+            subagents=subagents,
+            delegation_approved=delegation_approved,
+            leases=leases,
+            extra_middleware=[lead_middleware],
+            redactor=self.redaction,
+            checkpointer=saver,
+            approvals=self.approvals,
+            question_store=self.question_store,
+        )
+
     async def _run_instruction_impl(
         self,
         instruction: str,
@@ -534,59 +612,18 @@ class RunController:
 
         recorded_child_results: list[TaskResult] = []
 
-        # 5. Build subagents if delegation is allowed
-        delegation_approved = delegation_approved or (active_controls.delegation == "auto")
-        allow_delegation = active_controls.delegation in ("auto", "ask")
-        subagents: list[CompiledSubAgent] = []
-
-        if allow_delegation:
-            for profile in builtin_profiles().values():
-                if profile.name == "lead":
-                    continue
-                subagents.append(
-                    self._build_profile_subagent(
-                        profile=profile,
-                        run_id=run_id,
-                        workspace_revision=workspace_revision,
-                        leases=leases,
-                        gate=gate,
-                        scheduler=scheduler,
-                        controls=active_controls,
-                        delegation_approved=delegation_approved,
-                        recorded_child_results=recorded_child_results,
-                    )
-                )
-
-        # 6. Build and execute lead agent bound by PersistedAssignmentRegistry
-        # and TaskBoundModelMiddleware
-        lead_chat_model = self._all_models.get(lead_assignment.model)
-        if lead_chat_model is None:
-            raise ValueError(
-                f"model {lead_assignment.model} is not available in registered models"
-            )
-
-        assignments, active = self.persisted_registry.runtime_bindings()
-        lead_middleware = TaskBoundModelMiddleware(
-            self._all_models,
-            assignments=assignments,
-            allow_delegation=allow_delegation,
-            providers=self.providers,
-            usage_callback=self._record_model_usage,
-            active_assignments=active,
-        )
-
-        lead_agent = build_production_lead(
-            lead_chat_model,
-            workspace=self.workspace,
+        # 5. Build and execute the lead with the persisted assignment binding.
+        lead_agent = self._build_lead_for_run(
+            run_id=run_id,
             controls=active_controls,
-            subagents=subagents,
+            workspace_revision=workspace_revision,
             delegation_approved=delegation_approved,
+            recorded_child_results=recorded_child_results,
             leases=leases,
-            extra_middleware=[lead_middleware],
-            redactor=self.redaction,
-            checkpointer=saver,
-            approvals=self.approvals,
-            question_store=self.question_store,
+            gate=gate,
+            scheduler=scheduler,
+            saver=saver,
+            lead_assignment=lead_assignment,
         )
 
         input_message = HumanMessage(content=instruction)
@@ -649,6 +686,18 @@ class RunController:
 
         is_interrupted = bool(result_state.get("__interrupt__"))
         if is_interrupted:
+            pending_interrupt = _first_interrupt_payload(result_state)
+            self._pending_run = _PendingRun(
+                run_id=run_id,
+                instruction=instruction,
+                controls=active_controls,
+                workspace_revision=workspace_revision,
+                delegation_approved=delegation_approved,
+                lead_task_id=lead_task_id,
+                lead_attempt_id=lead_attempt_id,
+                lead_assignment=lead_assignment,
+                lead_context_packet=lead_context_packet,
+            )
             with self.journal.transaction() as tx:
                 tx.update_attempt_status(
                     attempt_id=str(lead_attempt_id), status=AttemptStatus.RUNNING
@@ -674,6 +723,7 @@ class RunController:
                 child_wall_seconds=scheduler.gate.child_wall_seconds,
                 child_peak_active=scheduler.gate.peak_active,
                 child_count=len(scheduler.gate.completed),
+                pending_interrupt=pending_interrupt,
             )
 
         with self.journal.transaction() as tx:
@@ -715,6 +765,155 @@ class RunController:
             child_wall_seconds=scheduler.gate.child_wall_seconds,
             child_peak_active=scheduler.gate.peak_active,
             child_count=len(scheduler.gate.completed),
+        )
+
+    async def resume_interrupted(self, answer: str) -> RunResult:
+        pending = self._pending_run
+        if pending is None:
+            raise RuntimeError("no interrupted run is available to resume")
+        if self.checkpoints is None:
+            raise RuntimeError("interrupted run has no checkpoint store")
+
+        leases = WorkspaceLeaseManager()
+        max_children = min(max(pending.controls.max_children, 1), 3)
+        gate = ChildRunGate(max_children)
+        scheduler = ChildScheduler(max_children=max_children)
+        child_results: list[TaskResult] = []
+        invoke_config: RunnableConfig = {
+            "configurable": {"thread_id": str(self.session_id)}
+        }
+        self._emit_event(
+            run_id=pending.run_id,
+            type="user.answer",
+            payload=UserPayload(action="answer", content=answer),
+        )
+        async with self.checkpoints.saver(str(self.session_id)) as saver:
+            await saver.setup()
+            lead_agent = self._build_lead_for_run(
+                run_id=pending.run_id,
+                controls=pending.controls,
+                workspace_revision=pending.workspace_revision,
+                delegation_approved=pending.delegation_approved,
+                recorded_child_results=child_results,
+                leases=leases,
+                gate=gate,
+                scheduler=scheduler,
+                saver=saver,
+                lead_assignment=pending.lead_assignment,
+            )
+            result_state = cast(
+                dict[str, Any],
+                await resume_agent(lead_agent, answer, config=invoke_config),
+            )
+            checkpoint = await saver.aget_tuple(invoke_config)
+            if checkpoint is not None:
+                checkpoint_id = checkpoint.config.get("configurable", {}).get(
+                    "checkpoint_id"
+                )
+                if checkpoint_id:
+                    self.checkpoints.record(
+                        session_id=str(self.session_id),
+                        checkpoint_id=checkpoint_id,
+                        idempotency_key=f"run:{pending.run_id}:resumed",
+                        status=(
+                            "interrupted"
+                            if result_state.get("__interrupt__")
+                            else "committed"
+                        ),
+                        payload={"run_id": str(pending.run_id), "boundary": "resumed"},
+                        created_at=datetime.now(UTC),
+                        live_idempotency_keys=(
+                            f"attempt:{pending.lead_attempt_id}",
+                        ),
+                    )
+
+        messages = cast(list[BaseMessage], result_state.get("messages", []))
+        if result_state.get("__interrupt__"):
+            self.journal.update_session_status(
+                session_id=str(self.session_id), status="interrupted"
+            )
+            return RunResult(
+                run_id=pending.run_id,
+                lead_assignment=pending.lead_assignment,
+                lead_context_packet=pending.lead_context_packet,
+                output="",
+                messages=messages,
+                child_results=child_results,
+                status="blocked",
+                interrupted=True,
+                child_wall_seconds=gate.child_wall_seconds,
+                child_peak_active=gate.peak_active,
+                child_count=len(gate.completed),
+                pending_interrupt=_first_interrupt_payload(result_state),
+            )
+
+        output_text = ""
+        for message in reversed(messages):
+            if isinstance(message, AIMessage) and message.content:
+                output_text = (
+                    message.content if isinstance(message.content, str) else str(message.content)
+                )
+                break
+        with self.journal.transaction() as tx:
+            tx.update_attempt_status(
+                attempt_id=str(pending.lead_attempt_id), status=AttemptStatus.SUCCEEDED
+            )
+            tx.update_task_status(
+                task_id=str(pending.lead_task_id), status=TaskStatus.SUCCEEDED
+            )
+            tx.update_run_status(run_id=str(pending.run_id), status="completed")
+            tx.update_session_status(session_id=str(self.session_id), status="idle")
+        self.usage_settler.settle_attempt(str(pending.lead_assignment.assignment_id))
+        self._emit_event(
+            run_id=pending.run_id,
+            type="run.completed",
+            payload=LifecyclePayload(status="completed"),
+        )
+        self._pending_run = None
+        return RunResult(
+            run_id=pending.run_id,
+            lead_assignment=pending.lead_assignment,
+            lead_context_packet=pending.lead_context_packet,
+            output=output_text,
+            messages=messages,
+            child_results=child_results,
+            status="completed",
+            child_wall_seconds=gate.child_wall_seconds,
+            child_peak_active=gate.peak_active,
+            child_count=len(gate.completed),
+        )
+
+    def reject_interrupted(self) -> RunResult:
+        pending = self._pending_run
+        if pending is None:
+            raise RuntimeError("no interrupted run is available to reject")
+        with self.journal.transaction() as tx:
+            tx.update_attempt_status(
+                attempt_id=str(pending.lead_attempt_id), status=AttemptStatus.BLOCKED
+            )
+            tx.update_task_status(
+                task_id=str(pending.lead_task_id), status=TaskStatus.BLOCKED
+            )
+            tx.update_run_status(run_id=str(pending.run_id), status="blocked")
+            tx.update_session_status(session_id=str(self.session_id), status="idle")
+        assignment_id = str(pending.lead_assignment.assignment_id)
+        if self._has_calls(assignment_id):
+            self.usage_settler.settle_attempt(assignment_id)
+        else:
+            self.ledger.release(str(pending.lead_assignment.reservation_id))
+        self._emit_event(
+            run_id=pending.run_id,
+            type="user.cancellation",
+            payload=UserPayload(action="cancellation", content="interrupt rejected"),
+        )
+        self._pending_run = None
+        return RunResult(
+            run_id=pending.run_id,
+            lead_assignment=pending.lead_assignment,
+            lead_context_packet=pending.lead_context_packet,
+            output="",
+            messages=(),
+            status="blocked",
         )
 
     def _persist_context_packet(
@@ -1031,3 +1230,11 @@ def _format_context_packet(packet: ContextPacket) -> str:
         "verification. Every success criterion must have a passed=true verification item "
         "with concrete evidence."
     )
+
+
+def _first_interrupt_payload(state: Mapping[str, Any]) -> dict[str, Any] | None:
+    interrupts = state.get("__interrupt__")
+    if not isinstance(interrupts, (list, tuple)) or not interrupts:
+        return None
+    value = getattr(interrupts[0], "value", interrupts[0])
+    return dict(value) if isinstance(value, Mapping) else {"prompt": str(value)}

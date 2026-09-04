@@ -116,7 +116,7 @@ async def resume_agent(
     *,
     config: RunnableConfig,
 ) -> Any:
-    return await agent.ainvoke(Command(resume=answer), config=config, version="v2")
+    return await agent.ainvoke(Command(resume=answer), config=config)
 
 
 class ChildRunGate:
