@@ -44,9 +44,6 @@ jobs:
       - name: Run fake-provider smoke test
         run: python scripts/smoke.py --fake-provider
 
-      - name: Run deterministic routing evaluation suite
-        run: python scripts/eval_routing.py --fixtures evals/manifest.toml
-
       - name: Build wheel and sdist
         run: python -m build
 

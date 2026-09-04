@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -72,11 +74,34 @@ def check_smoke() -> None:
 
 
 def check_evals() -> None:
-    print("[4/4] Verifying evaluation results...")
-    run_1 = ROOT / "evals" / "results" / "run_1.json"
-    if not run_1.exists():
-        raise FileNotFoundError(f"Evaluation result missing: {run_1}")
-    print(f"  -> Evaluation results present: {run_1.name}")
+    print("[4/4] Running and validating fresh evaluation results...")
+    with tempfile.TemporaryDirectory(prefix="rudder-release-eval-") as directory:
+        output = Path(directory) / "report.json"
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "eval_routing.py"),
+                "--fixtures",
+                "evals/manifest.toml",
+                "--output",
+                str(output),
+            ],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"Evaluation failed:\n{proc.stderr or proc.stdout}")
+        report = json.loads(output.read_text(encoding="utf-8"))
+    if report.get("fixture_count") != 52:
+        raise AssertionError("evaluation fixture count must be 52")
+    results = report.get("results")
+    if not isinstance(results, list) or len(results) != 52 * 5:
+        raise AssertionError("evaluation must contain every fixture for every policy")
+    comparison = report.get("comparison")
+    if not isinstance(comparison, dict) or comparison.get("all_gates_passed") is not True:
+        raise AssertionError("evaluation acceptance gates did not pass")
+    print("  -> Fresh evaluation report is complete and all acceptance gates passed.")
 
 
 def main() -> int:
