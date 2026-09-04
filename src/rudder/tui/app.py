@@ -10,9 +10,10 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Footer, Header, Static, TabbedContent, TabPane
 
 from rudder import __version__
-from rudder.agents.lead import LeadControls
+from rudder.agents.lead import DelegationMode, LeadControls
 from rudder.domain.events import EventEnvelope, UserPayload
 from rudder.domain.ids import SessionId, new_event_id, new_run_id, new_session_id
+from rudder.domain.routing import RoutingMode
 from rudder.runtime.interrupts import QuestionStore
 from rudder.runtime.run_controller import RunController
 from rudder.sessions.journal import SessionSnapshot
@@ -89,6 +90,8 @@ class RudderApp(App[int]):
         approval_store: ApprovalStore | None = None,
         question_store: QuestionStore | None = None,
         initial_prompt: str | None = None,
+        max_children: int = 3,
+        delegation: DelegationMode = "auto",
     ) -> None:
         super().__init__()
         self.projection = projection or TuiProjection()
@@ -99,6 +102,8 @@ class RudderApp(App[int]):
         self.approval_store = approval_store
         self.question_store = question_store
         self.initial_prompt = initial_prompt
+        self.max_children = max_children
+        self.delegation = delegation
         self.simulated: bool = False
         self._active_worker: Any = None
 
@@ -194,8 +199,9 @@ class RudderApp(App[int]):
             model=self.projection.footer_data.lead_model
             if self.projection.footer_data.lead_model != "auto"
             else None,
-            max_children=3,
-            delegation="auto",
+            max_children=self.max_children,
+            delegation=self.delegation,
+            routing_mode=RoutingMode(self.projection.footer_data.routing_mode),
         )
         try:
             result = await self.controller.run_instruction(text, controls=controls)

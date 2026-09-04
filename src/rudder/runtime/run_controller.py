@@ -111,7 +111,8 @@ class RunController:
         redaction: RedactionRegistry | None = None,
         redactor: SecretRedactor | None = None,
         checkpoints: CheckpointStore | None = None,
-        budget_limit_usd: Decimal = Decimal("10.00"),
+        budget_limit_usd: Decimal | None = None,
+        budget_warning_percent: int = 80,
         child_assigner: AssignChildAttempt | None = None,
         profile_models: Mapping[str, str] | None = None,
         ledger: BudgetLedger | None = None,
@@ -162,7 +163,10 @@ class RunController:
         if providers:
             self.providers.update(providers)
 
-        self.ledger = ledger or BudgetLedger(self.journal)
+        self.ledger = ledger or BudgetLedger(
+            self.journal,
+            warning_percent=Decimal(budget_warning_percent) / Decimal("100"),
+        )
         self.assignment_service = assignment_service or AssignmentService(
             self.journal, self.ledger, event_observer=self.event_observer
         )
@@ -187,7 +191,11 @@ class RunController:
             return bool(row and row[0] > 0)
 
     def _get_candidates(
-        self, *, for_lead: bool = False, target_lead_model: str | None = None
+        self,
+        *,
+        for_lead: bool = False,
+        target_lead_model: str | None = None,
+        routing_mode: RoutingMode = RoutingMode.AUTO,
     ) -> RoutingSnapshot:
         if self.candidates_fn is not None:
             return self.candidates_fn()
@@ -287,7 +295,7 @@ class RunController:
 
         return RoutingSnapshot(
             catalog_revision=self.catalog_revision,
-            config_revision=config_revision(DEFAULT_CONFIG_SNAPSHOT),
+            config_revision=config_revision({"routing": {"mode": routing_mode.value}}),
             health_revision="health-v1",
             candidates=tuple(candidates),
         )
@@ -465,7 +473,11 @@ class RunController:
         )
         assigned_lead = self.assignment_service.assign(
             lead_request,
-            lambda: self._get_candidates(for_lead=True, target_lead_model=lead_model_name),
+            lambda: self._get_candidates(
+                for_lead=True,
+                target_lead_model=lead_model_name,
+                routing_mode=active_controls.routing_mode,
+            ),
         )
         if isinstance(assigned_lead, RouteFailure):
             budget_blocked = assigned_lead.binding_constraint == "budget_unaffordable"
@@ -842,6 +854,7 @@ class RunController:
                 lambda: self._get_candidates(
                     for_lead=False,
                     target_lead_model=controls.model or self.default_lead_model,
+                    routing_mode=controls.routing_mode,
                 ),
             )
             if isinstance(assignment, RouteFailure):

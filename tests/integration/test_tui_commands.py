@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from rudder.domain.ids import SessionId, new_session_id
+from rudder.domain.routing import RoutingMode
 from rudder.providers.fake import DeterministicFakeChatModel
 from rudder.runtime.interrupts import QuestionStore
 from rudder.runtime.run_controller import RunController
@@ -179,9 +180,13 @@ async def test_tui_prompt_submission_executes_controller(tmp_path: Path) -> None
         controller=controller,
         session_service=session_service,
         session_id=sid,
+        max_children=1,
+        delegation="off",
     )
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
+
+        app.projection.footer_data.routing_mode = "quality"
         # Submit a prompt
         app.on_prompt_composer_prompt_submitted(
             PromptComposer.PromptSubmitted("Build a small feature")
@@ -195,6 +200,8 @@ async def test_tui_prompt_submission_executes_controller(tmp_path: Path) -> None
         assert "user" in roles
         assert "lead" in roles
         assert any("Hello from Rudder lead!" in i.content for i in app.projection.transcript_items)
+        snapshot = journal.get_session_snapshot(str(sid))
+        assert snapshot.assignments[0].payload["routing_mode"] == RoutingMode.QUALITY.value
 
 
 @pytest.mark.asyncio
@@ -271,4 +278,3 @@ async def test_tui_approval_store_and_question_store_integration(tmp_path: Path)
         assert app.projection.pending_interrupt is None
         answered = q_store.pending("lead")
         assert len(answered) == 0
-

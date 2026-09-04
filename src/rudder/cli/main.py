@@ -29,14 +29,19 @@ from rudder.cli.render import (
     render_print_stderr,
     render_print_stdout,
 )
+from rudder.config.loader import ConfigValidationError, load_config
+from rudder.config.models import RudderConfig
 from rudder.config.paths import (
     default_checkpoints_path,
     default_journal_path,
+    project_config_path,
     sessions_dir,
+    user_config_path,
     user_data_dir,
 )
 from rudder.config.trust import ProjectTrustStore
 from rudder.domain.ids import SessionId, new_run_id
+from rudder.domain.routing import RoutingMode
 from rudder.domain.security import ProjectTrustLevel, identify_workspace
 from rudder.domain.sessions import SessionRecord
 from rudder.providers.credentials import EnvironmentCredentialResolver
@@ -289,6 +294,35 @@ def _build_storage(
     )
 
 
+def _parse_agent_models(values: Sequence[str]) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for value in values:
+        if "=" not in value:
+            raise ValueError("--agent-model must use PROFILE=PROVIDER:MODEL")
+        profile, model = value.split("=", 1)
+        if not profile.strip() or ":" not in model or not all(model.split(":", 1)):
+            raise ValueError("--agent-model must use PROFILE=PROVIDER:MODEL")
+        parsed[profile.strip()] = model.strip()
+    return parsed
+
+
+def _apply_run_config(args: argparse.Namespace, config: RudderConfig) -> None:
+    args.provider_configs = config.providers
+    if args.routing_mode is None:
+        args.routing_mode = config.routing.mode
+    if args.lead_model is None and config.routing.lead_model != "auto":
+        args.lead_model = config.routing.lead_model
+    if args.budget is None:
+        args.budget = config.budget.run_usd
+    args.budget_warning_percent = config.budget.warning_percent
+    if args.max_agents is None:
+        args.max_agents = config.orchestration.max_agents
+    if args.delegation is None:
+        args.delegation = config.orchestration.delegation
+    if args.workspace_mode is None:
+        args.workspace_mode = config.orchestration.workspace_mode
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
 
@@ -341,6 +375,40 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_OK
 
     workspace = Path.cwd()
+
+    identity = identify_workspace(workspace)
+    trust_store = ProjectTrustStore(user_data_dir() / "trust.sqlite")
+    trusted = trust_store.assess(identity).level is ProjectTrustLevel.TRUSTED
+    cli_overrides: dict[str, Any] = {}
+    if args.routing_mode is not None:
+        cli_overrides["routing.mode"] = args.routing_mode
+    if args.lead_model is not None:
+        cli_overrides["routing.lead_model"] = args.lead_model
+    if args.budget is not None:
+        cli_overrides["budget.run_usd"] = args.budget
+    if args.max_agents is not None:
+        cli_overrides["orchestration.max_agents"] = args.max_agents
+    if args.delegation is not None:
+        cli_overrides["orchestration.delegation"] = args.delegation
+    if args.workspace_mode is not None:
+        cli_overrides["orchestration.workspace_mode"] = args.workspace_mode
+    try:
+        resolved_config = load_config(
+            user_path=user_config_path(),
+            project_path=project_config_path(workspace),
+            project_trusted=trusted,
+            cli_overrides=cli_overrides,
+        )
+        _apply_run_config(args, resolved_config.config)
+        profile_models = _parse_agent_models(args.agent_models)
+    except (ConfigValidationError, ValueError) as exc:
+        render_print_stderr(f"Configuration error: {exc}")
+        return EXIT_USAGE
+    if args.workspace_mode == "worktree":
+        render_print_stderr(
+            "Configuration error: worktree mode is not available in the stable foreground runtime."
+        )
+        return EXIT_USAGE
 
     # 4. Handle stateless subcommands before journal/checkpoint storage init
     if args.subcommand == "smoke":
@@ -424,7 +492,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         from rudder.runtime.run_controller import RunController
         from rudder.tui.app import RudderApp
 
-        budget_usd = Decimal(str(args.budget)) if args.budget else Decimal("10.00")
+        budget_usd = Decimal(str(args.budget)) if args.budget is not None else None
         controller = RunController(
             session_id=SessionId(session_record.session_id),
             workspace=workspace,
@@ -435,8 +503,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             default_lead_model=lead_model_name,
             default_child_model=child_model_name,
             budget_limit_usd=budget_usd,
+            budget_warning_percent=args.budget_warning_percent,
             approvals=approvals,
             question_store=question_store,
+            profile_models=profile_models,
         )
         app = RudderApp(
             controller=controller,
@@ -445,6 +515,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             approval_store=approvals,
             question_store=question_store,
             initial_prompt=prompt_text or None,
+            max_children=args.max_agents,
+            delegation=args.delegation,
         )
         return app.run() or EXIT_OK
 
@@ -496,28 +568,16 @@ def _build_runtime_models(
 
     cred_resolver = EnvironmentCredentialResolver(redaction)
     candidate_providers = ("llmgateway", "openai", "anthropic")
+    provider_configs = getattr(args, "provider_configs", {})
     resolved_cred = None
     selected_provider = None
+    selected_config = None
 
     if ":" in lead_model_name:
         p_name = lead_model_name.split(":", 1)[0]
-        env_var = (
-            "LLMGATEWAY_API_KEY"
-            if p_name == "llmgateway"
-            else "OPENAI_API_KEY"
-            if p_name == "openai"
-            else "ANTHROPIC_API_KEY"
-            if p_name == "anthropic"
-            else None
-        )
-        if env_var and os.environ.get(env_var):
-            try:
-                resolved_cred = cred_resolver.resolve(p_name, env_var)
-                selected_provider = p_name
-            except Exception:
-                pass
-    else:
-        for p_name in candidate_providers:
+        selected_config = provider_configs.get(p_name)
+        env_var = selected_config.api_key_env if selected_config is not None else None
+        if env_var is None:
             env_var = (
                 "LLMGATEWAY_API_KEY"
                 if p_name == "llmgateway"
@@ -527,10 +587,31 @@ def _build_runtime_models(
                 if p_name == "anthropic"
                 else None
             )
+        if env_var and os.environ.get(env_var):
+            try:
+                resolved_cred = cred_resolver.resolve(p_name, env_var)
+                selected_provider = p_name
+            except Exception:
+                pass
+    else:
+        for p_name in candidate_providers:
+            candidate_config = provider_configs.get(p_name)
+            env_var = candidate_config.api_key_env if candidate_config is not None else None
+            if env_var is None:
+                env_var = (
+                    "LLMGATEWAY_API_KEY"
+                    if p_name == "llmgateway"
+                    else "OPENAI_API_KEY"
+                    if p_name == "openai"
+                    else "ANTHROPIC_API_KEY"
+                    if p_name == "anthropic"
+                    else None
+                )
             if env_var and os.environ.get(env_var):
                 try:
                     resolved_cred = cred_resolver.resolve(p_name, env_var)
                     selected_provider = p_name
+                    selected_config = candidate_config
                     break
                 except Exception:
                     pass
@@ -553,10 +634,8 @@ def _build_runtime_models(
         actual_model = (
             lead_model_name.split(":")[-1] if ":" in lead_model_name else "gpt-4o"
         )
-        cfg = ProviderConfig(
-            type="openai_compatible",
-            base_url=LLMGATEWAY_BASE_URL,
-            models=(actual_model,),
+        cfg = selected_config or ProviderConfig(
+            type="openai_compatible", base_url=LLMGATEWAY_BASE_URL, models=(actual_model,)
         )
         adapter = LLMGatewayAdapter(cfg, api_key=resolved_cred.reveal())
         profile = ModelProfile(
@@ -605,6 +684,11 @@ def _build_runtime_models(
         models_dict[actual_model] = chat_model
         models_dict[child_model_name] = chat_model
 
+    if args.default_model is None:
+        child_model_name = f"{selected_provider}:{actual_model}"
+        lead_model_name = f"{selected_provider}:{actual_model}"
+        models_dict[lead_model_name] = chat_model
+
     return models_dict, lead_model_name, child_model_name
 
 
@@ -631,11 +715,12 @@ async def _execute_instruction(
         render_print_stderr(f"Provider configuration error: {exc}")
         return EXIT_FAILURE
 
-    budget_usd = Decimal(str(args.budget)) if args.budget else Decimal("10.00")
+    budget_usd = Decimal(str(args.budget)) if args.budget is not None else None
     controls = LeadControls(
         model=args.lead_model or args.default_model,
         max_children=args.max_agents or 3,
         delegation=args.delegation or "auto",
+        routing_mode=RoutingMode(getattr(args, "routing_mode", None) or "auto"),
     )
 
     run_id = new_run_id()
@@ -649,8 +734,10 @@ async def _execute_instruction(
         default_lead_model=lead_model_name,
         default_child_model=child_model_name,
         budget_limit_usd=budget_usd,
+        budget_warning_percent=getattr(args, "budget_warning_percent", 80),
         approvals=approvals,
         question_store=question_store,
+        profile_models=_parse_agent_models(getattr(args, "agent_models", [])),
         event_observer=render_jsonl_event if args.json_mode else None,
     )
 
