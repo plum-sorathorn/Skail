@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import Any, Literal
 
 from rudder.domain.events import EventEnvelope, SecretRedactor
 from rudder.domain.tasks import AttemptStatus, TaskStatus
@@ -424,6 +424,15 @@ class JournalTransaction:
             ) from exc
 
 
+class ClosingConnection(sqlite3.Connection):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> Literal[False]:
+        try:
+            super().__exit__(exc_type, exc_val, exc_tb)
+            return False
+        finally:
+            self.close()
+
+
 class Journal:
     def __init__(
         self,
@@ -441,7 +450,10 @@ class Journal:
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(
-            self.path, timeout=self.busy_timeout_ms / 1_000, isolation_level=None
+            self.path,
+            timeout=self.busy_timeout_ms / 1_000,
+            isolation_level=None,
+            factory=ClosingConnection,
         )
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")

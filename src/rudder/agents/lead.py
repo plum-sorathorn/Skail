@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from deepagents.middleware.subagents import CompiledSubAgent
+from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import Runnable
 
@@ -41,6 +42,7 @@ def build_production_lead(
     subagents: Sequence[CompiledSubAgent] = (),
     delegation_approved: bool = False,
     leases: WorkspaceLeaseManager,
+    extra_middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
 ) -> Runnable[object, object]:
     allow_children = controls.delegation in ("auto", "ask")
     registry = _lead_registry(
@@ -56,6 +58,7 @@ def build_production_lead(
             subagents=list(subagents) if allow_children else [],
             registry=registry,
             lease_manager=leases,
+            extra_middleware=extra_middleware,
         ),
     )
 

@@ -157,6 +157,7 @@ def build_default_agent(
     registry: ToolRegistry | None = None,
     extension_tools: Sequence[Any] = (),
     lease_manager: WorkspaceLeaseManager | None = None,
+    extra_middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
 ) -> Any:
     """Assemble pinned DeepAgents tools behind Rudder's workspace and shell policy."""
 
@@ -245,6 +246,6 @@ def build_default_agent(
         ),
         skills=skills,
         memory=memory,
-        middleware=[ProfileToolVisibilityMiddleware(visible_names)],
+        middleware=[ProfileToolVisibilityMiddleware(visible_names), *extra_middleware],
         checkpointer=checkpointer,
     )

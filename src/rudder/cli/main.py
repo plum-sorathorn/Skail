@@ -439,7 +439,7 @@ async def _execute_instruction(
 
     budget_usd = Decimal(str(args.budget)) if args.budget else Decimal("10.00")
     controls = LeadControls(
-        model=args.lead_model,
+        model=args.lead_model or args.default_model,
         max_children=args.max_agents or 3,
         delegation=args.delegation or "auto",
     )

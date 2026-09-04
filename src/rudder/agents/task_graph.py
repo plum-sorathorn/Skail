@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, NotRequired, TypedDict, cast
@@ -20,12 +21,15 @@ from rudder.domain.tasks import (
     TaskRequest,
     TaskResult,
     TaskSpec,
+    TaskStatus,
 )
 from rudder.routing.selector import RouteFailure
 from rudder.runtime.deepagents_adapter import ChildRunGate
 from rudder.runtime.escalation import bounded_handoff, escalation_floor
 from rudder.runtime.leases import WorkspaceLeaseManager
-from rudder.runtime.task_validation import TaskValidator
+from rudder.runtime.scheduler import ChildScheduler
+from rudder.runtime.task_registry import TaskRegistry
+from rudder.runtime.task_validation import TaskValidationError, TaskValidator
 
 
 @dataclass(frozen=True)
@@ -57,6 +61,7 @@ class TaskGraphState(TypedDict):
 class ProfileTaskState(DeepAgentState):
     spec: NotRequired[TaskSpec]
     result: NotRequired[TaskResult]
+    validation_error: NotRequired[str]
 
 
 def build_task_graph(
@@ -70,6 +75,8 @@ def build_task_graph(
     exhaust_fingerprint: Callable[[TaskSpec], None] | None = None,
     gate: ChildRunGate,
     leases: WorkspaceLeaseManager,
+    scheduler: ChildScheduler | None = None,
+    task_registry: TaskRegistry | None = None,
 ) -> Any:
     assembler = context_assembler or ContextAssembler()
 
@@ -98,6 +105,16 @@ def build_task_graph(
                     status="blocked",
                     summary=binding.binding_constraint or "no eligible route",
                 )
+            if task_registry is not None:
+                try:
+                    task_registry.transition(
+                        spec.task_id,
+                        expected=TaskStatus.QUEUED,
+                        target=TaskStatus.BLOCKED,
+                        attempt_number=number,
+                    )
+                except Exception:
+                    pass
             return {
                 "result": result
             }
@@ -154,6 +171,17 @@ def build_task_graph(
         spec = state["spec"]
         assignment = state["assignment"]
         packet = state["context_packet"]
+        number = state.get("attempt_number", 1)
+        if task_registry is not None:
+            try:
+                task_registry.transition(
+                    spec.task_id,
+                    expected=TaskStatus.QUEUED,
+                    target=TaskStatus.RUNNING,
+                    attempt_number=number,
+                )
+            except Exception:
+                pass
 
         async def invoke() -> TaskResult:
             if profile.write_capable:
@@ -162,18 +190,55 @@ def build_task_graph(
             return await execute(spec, assignment, packet)
 
         try:
-            result = await gate.run(str(spec.task_id), invoke)
+            if scheduler is not None:
+                task_id_str = str(spec.task_id)
+                if task_id_str not in scheduler._children:
+                    scheduler.submit(
+                        task_id_str,
+                        priority=0,
+                        depends_on=tuple(str(d) for d in spec.request.depends_on),
+                    )
+                if task_id_str in scheduler.blocked:
+                    result = TaskResult(
+                        task_id=spec.task_id,
+                        status="blocked",
+                        summary=f"dependency unsuccessful: {scheduler.blocked[task_id_str]}",
+                    )
+                else:
+                    while (
+                        task_id_str not in scheduler.ready()
+                        and task_id_str not in scheduler.blocked
+                    ):
+                        await asyncio.sleep(0.01)
+                    if task_id_str in scheduler.blocked:
+                        result = TaskResult(
+                            task_id=spec.task_id,
+                            status="blocked",
+                            summary=f"dependency unsuccessful: {scheduler.blocked[task_id_str]}",
+                        )
+                    else:
+                        result = await scheduler.gate.run(task_id_str, invoke)
+                        if result.status == "succeeded" or number == 2:
+                            scheduler.finish(task_id_str, succeeded=(result.status == "succeeded"))
+            else:
+                result = await gate.run(str(spec.task_id), invoke)
         except Exception as exc:
             result = TaskResult(
                 task_id=spec.task_id,
                 status="failed",
                 summary=f"attempt execution failed: {exc}",
             )
+            if scheduler is not None and str(spec.task_id) in scheduler._children and number == 2:
+                try:
+                    scheduler.finish(str(spec.task_id), succeeded=False)
+                except Exception:
+                    pass
         if result.task_id != spec.task_id:
             raise ValueError("task result identity mismatch")
         return {"result": evaluate_result(result, required_criteria=spec.request.success_criteria)}
 
     def evaluate(state: TaskGraphState) -> dict[str, Any]:
+        spec = state["spec"]
         result = state["result"]
         assert result is not None
         number = state["attempt_number"]
@@ -195,6 +260,24 @@ def build_task_graph(
         binding = AttemptBinding(state["attempt_id"], state["assignment"])
         if settle_attempt is not None:
             settle_attempt(binding, result)
+        if task_registry is not None:
+            target_task_status = {
+                "succeeded": TaskStatus.SUCCEEDED,
+                "failed": TaskStatus.RETURNED_TO_LEAD if number == 2 else TaskStatus.FAILED,
+                "cancelled": TaskStatus.CANCELLED,
+                "blocked": TaskStatus.BLOCKED,
+                "budget_blocked": TaskStatus.BUDGET_BLOCKED,
+                "returned_to_lead": TaskStatus.RETURNED_TO_LEAD,
+            }.get(result.status, TaskStatus.FAILED)
+            try:
+                task_registry.transition(
+                    spec.task_id,
+                    expected=TaskStatus.RUNNING,
+                    target=target_task_status,
+                    attempt_number=number,
+                )
+            except Exception:
+                pass
         if result.status != "failed" or number == 2:
             if result.status == "failed":
                 result = result.model_copy(
@@ -206,6 +289,16 @@ def build_task_graph(
                 result = result.model_copy(update={"attempts": attempts})
             return {"result": result, "attempts": attempts}
         assignment = state["assignment"]
+        if task_registry is not None:
+            try:
+                task_registry.transition(
+                    spec.task_id,
+                    expected=TaskStatus.FAILED,
+                    target=TaskStatus.QUEUED,
+                    attempt_number=1,
+                )
+            except Exception:
+                pass
         return {
             "attempt_number": 2,
             "excluded_models": ((assignment.provider, assignment.model),),
@@ -247,6 +340,8 @@ def build_compiled_profile_subagent(
     execute: ExecuteAttempt,
     gate: ChildRunGate,
     leases: WorkspaceLeaseManager,
+    scheduler: ChildScheduler | None = None,
+    task_registry: TaskRegistry | None = None,
     persist_context: Callable[[ContextPacket], None] | None = None,
     settle_attempt: Callable[[AttemptBinding, TaskResult], None] | None = None,
     exhaust_fingerprint: Callable[[TaskSpec], None] | None = None,
@@ -260,6 +355,8 @@ def build_compiled_profile_subagent(
         exhaust_fingerprint=exhaust_fingerprint,
         gate=gate,
         leases=leases,
+        scheduler=scheduler,
+        task_registry=task_registry,
     )
 
     def validate(state: ProfileTaskState) -> dict[str, Any]:
@@ -274,9 +371,27 @@ def build_compiled_profile_subagent(
             parent_depth=0,
             workspace_revision=workspace_revision,
         )
+        if task_registry is not None:
+            try:
+                task_registry.register(spec)
+                task_registry.transition(
+                    spec.task_id,
+                    expected=TaskStatus.PROPOSED,
+                    target=TaskStatus.QUEUED,
+                    attempt_number=1,
+                )
+            except TaskValidationError as exc:
+                return {"spec": spec, "validation_error": exc.code}
         return {"spec": spec}
 
     async def execute_lifecycle(state: ProfileTaskState) -> dict[str, Any]:
+        if "validation_error" in state:
+            result = TaskResult(
+                task_id=state["spec"].task_id,
+                status="blocked",
+                summary=f"Task validation rejected: {state['validation_error']}",
+            )
+            return {"result": result, "messages": [AIMessage(content=result.model_dump_json())]}
         output = await lifecycle.ainvoke({"spec": state["spec"]})
         result = output["result"]
         assert isinstance(result, TaskResult)

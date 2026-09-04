@@ -23,24 +23,39 @@ from rudder.agents.task_graph import (
 )
 from rudder.domain.events import SecretRedactor
 from rudder.domain.ids import (
-    ReservationId,
     RunId,
     SessionId,
-    new_assignment_id,
     new_attempt_id,
     new_run_id,
     new_task_id,
 )
 from rudder.domain.routing import RoutingMode, TaskAssignment
 from rudder.domain.tasks import AttemptStatus, TaskResult, TaskSpec, TaskStatus
-from rudder.routing.selector import RouteFailure
+from rudder.providers.base import ProviderAdapter
+from rudder.providers.fake import FakeProviderAdapter
+from rudder.providers.fallback import FallbackBinding
+from rudder.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
+from rudder.routing.assignment import (
+    AssignmentRequest,
+    AssignmentService,
+    AssignmentUsageSettler,
+    PersistedAssignmentRegistry,
+    RoutingSnapshot,
+    config_revision,
+)
+from rudder.routing.budget import BudgetLedger
+from rudder.routing.requirements import ROLE_FLOORS, RequirementBuilder, TaskRisk
+from rudder.routing.selector import RouteCandidate, RouteFailure
 from rudder.runtime.deepagents_adapter import ChildRunGate
 from rudder.runtime.leases import WorkspaceLeaseManager
+from rudder.runtime.model_middleware import TaskBoundModelMiddleware
 from rudder.runtime.scheduler import ChildScheduler
 from rudder.runtime.task_registry import TaskRegistry
 from rudder.runtime.task_validation import TaskValidator
 from rudder.sessions.journal import Journal
 from rudder.tools.assembly import build_default_agent
+
+DEFAULT_CONFIG_SNAPSHOT: dict[str, Any] = {"routing": {"mode": "auto"}}
 
 
 @dataclass(frozen=True)
@@ -77,6 +92,13 @@ class RunController:
         budget_limit_usd: Decimal = Decimal("10.00"),
         child_assigner: AssignChildAttempt | None = None,
         profile_models: Mapping[str, str] | None = None,
+        ledger: BudgetLedger | None = None,
+        assignment_service: AssignmentService | None = None,
+        persisted_registry: PersistedAssignmentRegistry | None = None,
+        usage_settler: AssignmentUsageSettler | None = None,
+        providers: Mapping[str, ProviderAdapter] | None = None,
+        candidates_fn: Callable[[], RoutingSnapshot] | None = None,
+        catalog_revision: str = "catalog-v1",
     ) -> None:
         self.session_id = session_id
         self.workspace = workspace
@@ -97,6 +119,148 @@ class RunController:
         self.budget_limit_usd = budget_limit_usd
         self.child_assigner = child_assigner
         self.delegation_approval_check: Callable[[TaskSpec, AgentProfile], bool] | None = None
+
+        self._all_models: dict[str, BaseChatModel] = {}
+        for key, chat_model in self.models.items():
+            self._all_models[key] = chat_model
+            if ":" not in key:
+                self._all_models[f"fake:{key}"] = chat_model
+            else:
+                self._all_models[key.split(":", 1)[1]] = chat_model
+
+        self.providers: dict[str, ProviderAdapter] = {"fake": FakeProviderAdapter()}
+        if providers:
+            self.providers.update(providers)
+
+        self.ledger = ledger or BudgetLedger(self.journal)
+        self.assignment_service = assignment_service or AssignmentService(
+            self.journal, self.ledger
+        )
+        self.persisted_registry = persisted_registry or PersistedAssignmentRegistry(self.journal)
+        self.usage_settler = usage_settler or AssignmentUsageSettler(
+            self.journal, self.ledger, self.providers
+        )
+        self.candidates_fn = candidates_fn
+        self.catalog_revision = catalog_revision
+
+    def _record_model_usage(
+        self, assignment_id: str, response: object, call_id: str = ""
+    ) -> None:
+        self.usage_settler.record_call(assignment_id, response, call_id=call_id)
+
+    def _has_calls(self, assignment_id: str) -> bool:
+        with self.journal._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM assignment_call_usage WHERE assignment_id=?",
+                (assignment_id,),
+            ).fetchone()
+            return bool(row and row[0] > 0)
+
+    def _get_candidates(
+        self, *, for_lead: bool = False, target_lead_model: str | None = None
+    ) -> RoutingSnapshot:
+        if self.candidates_fn is not None:
+            return self.candidates_fn()
+
+        effective_lead_model = target_lead_model or self.default_lead_model
+        clean_lead_model = (
+            effective_lead_model.split(":", 1)[1]
+            if ":" in effective_lead_model
+            else effective_lead_model
+        )
+        clean_child_model = (
+            self.default_child_model.split(":", 1)[1]
+            if ":" in self.default_child_model
+            else self.default_child_model
+        )
+        candidates: list[RouteCandidate] = []
+        for key in self.models:
+            provider = "fake"
+            model_name = key
+            if ":" in key:
+                provider, model_name = key.split(":", 1)
+            is_lead = model_name == clean_lead_model
+            if for_lead and not is_lead and len(self.models) > 1:
+                continue
+            if not for_lead and is_lead and (
+                len(self.models) > 1 or clean_child_model != clean_lead_model
+            ):
+                continue
+            profile = ModelProfile(
+                provider=provider,
+                model=model_name,
+                support_level=ProviderSupportLevel.NATIVE,
+                input_usd_per_million=Decimal("1.00"),
+                output_usd_per_million=Decimal("2.00"),
+                context_tokens=128_000,
+                max_output_tokens=8_192,
+                supports_tools=True,
+                supports_structured_output=True,
+                capability=CapabilityVector(
+                    coding=0.90,
+                    reasoning=0.90,
+                    tool_reliability=0.90,
+                    latency=0.1,
+                ),
+                auto_eligible=True,
+                manual_selectable=True,
+            )
+            candidates.append(
+                RouteCandidate(
+                    profile=profile,
+                    estimated_cost_usd=Decimal("0.01") if is_lead else Decimal("0.02"),
+                    estimate_assumptions=("expected_calls=2",),
+                    configured=True,
+                    healthy=True,
+                    enabled=True,
+                )
+            )
+
+        if not for_lead:
+            if (
+                self.default_child_model not in self.models
+                and f"fake:{self.default_child_model}" not in self.models
+            ):
+                provider = "fake"
+                model_name = self.default_child_model
+                if ":" in self.default_child_model:
+                    provider, model_name = self.default_child_model.split(":", 1)
+                profile = ModelProfile(
+                    provider=provider,
+                    model=model_name,
+                    support_level=ProviderSupportLevel.NATIVE,
+                    input_usd_per_million=Decimal("1.00"),
+                    output_usd_per_million=Decimal("2.00"),
+                    context_tokens=128_000,
+                    max_output_tokens=8_192,
+                    supports_tools=True,
+                    supports_structured_output=True,
+                    capability=CapabilityVector(
+                        coding=0.55,
+                        reasoning=0.55,
+                        tool_reliability=0.55,
+                        latency=0.1,
+                    ),
+                    auto_eligible=True,
+                    manual_selectable=True,
+                )
+                candidates.append(
+                    RouteCandidate(
+                        profile=profile,
+                        estimated_cost_usd=Decimal("0.02"),
+                        estimate_assumptions=("expected_calls=2",),
+                        configured=True,
+                        healthy=True,
+                        enabled=True,
+                    )
+                )
+
+        return RoutingSnapshot(
+            catalog_revision=self.catalog_revision,
+            config_revision=config_revision(DEFAULT_CONFIG_SNAPSHOT),
+            health_revision="health-v1",
+            candidates=tuple(candidates),
+        )
 
     async def run_instruction(
         self,
@@ -126,23 +290,10 @@ class RunController:
             created_at=now,
         )
 
-        # 2. Persist lead task, attempt, and assignment BEFORE first model call
+        # 2. Persist lead task and attempt BEFORE assignment
         lead_model_name = active_controls.model or self.default_lead_model
         lead_task_id = new_task_id()
         lead_attempt_id = new_attempt_id()
-        lead_assignment = TaskAssignment(
-            assignment_id=new_assignment_id(),
-            task_id=lead_task_id,
-            attempt_number=1,
-            provider="fake",
-            model=lead_model_name,
-            routing_mode=RoutingMode.MANUAL if active_controls.model else RoutingMode.AUTO,
-            capability_floor=0.70,
-            estimated_attempt_cost_usd=Decimal("0.02"),
-            reservation_id=ReservationId("00000000-0000-4000-8000-000000000001"),
-            explanation=("lead-assigned-before-model-call",),
-            catalog_revision="run-init",
-        )
 
         self.journal.create_task(
             task_id=str(lead_task_id),
@@ -161,17 +312,45 @@ class RunController:
             idempotency_key=f"attempt:{lead_attempt_id}",
             created_at=now,
         )
-        self.journal.create_assignment(
-            assignment_id=str(lead_assignment.assignment_id),
-            attempt_id=str(lead_attempt_id),
-            provider=lead_assignment.provider,
-            model=lead_assignment.model,
-            estimated_cost_usd=lead_assignment.estimated_attempt_cost_usd,
-            created_at=now,
-            payload=lead_assignment.model_dump(mode="json"),
-        )
 
-        # 3. Assemble and persist lead context packet BEFORE first model call
+        # 3. Route lead model through AssignmentService and BudgetLedger
+        lead_provider = "fake"
+        lead_model = lead_model_name
+        if ":" in lead_model_name:
+            lead_provider, lead_model = lead_model_name.split(":", 1)
+
+        lead_mode = RoutingMode.MANUAL if active_controls.model else RoutingMode.AUTO
+        lead_reqs = RequirementBuilder().build(
+            role="lead",
+            risk=TaskRisk.ROUTINE,
+            mode=lead_mode,
+        )
+        lead_request = AssignmentRequest(
+            session_id=self.session_id,
+            run_id=run_id,
+            task_id=lead_task_id,
+            attempt_id=lead_attempt_id,
+            attempt_number=1,
+            catalog_revision=self.catalog_revision,
+            requirements=lead_reqs,
+            config_snapshot=DEFAULT_CONFIG_SNAPSHOT,
+            manual_model=(lead_provider, lead_model) if lead_mode is RoutingMode.MANUAL else None,
+        )
+        assigned_lead = self.assignment_service.assign(
+            lead_request,
+            lambda: self._get_candidates(for_lead=True, target_lead_model=lead_model_name),
+        )
+        if isinstance(assigned_lead, RouteFailure):
+            self.journal.update_attempt_status(
+                attempt_id=str(lead_attempt_id), status=AttemptStatus.FAILED
+            )
+            self.journal.update_task_status(task_id=str(lead_task_id), status=TaskStatus.FAILED)
+            self.journal.update_run_status(run_id=str(run_id), status="failed")
+            self.journal.update_session_status(session_id=str(self.session_id), status="idle")
+            raise RuntimeError(f"Failed to route lead model: {assigned_lead.binding_constraint}")
+        lead_assignment = assigned_lead
+
+        # 4. Assemble and persist lead context packet BEFORE first model call
         lead_context_packet = self.assembler.assemble(
             task_id=str(run_id),
             objective=instruction,
@@ -187,7 +366,7 @@ class RunController:
 
         recorded_child_results: list[TaskResult] = []
 
-        # 4. Build subagents if delegation is allowed
+        # 5. Build subagents if delegation is allowed
         allow_delegation = active_controls.delegation in ("auto", "ask")
         subagents: list[CompiledSubAgent] = []
 
@@ -209,10 +388,23 @@ class RunController:
                     )
                 )
 
-        # 5. Build and execute lead agent
-        lead_chat_model = self.models.get(lead_model_name)
+        # 6. Build and execute lead agent bound by PersistedAssignmentRegistry
+        # and TaskBoundModelMiddleware
+        lead_chat_model = self._all_models.get(lead_assignment.model)
         if lead_chat_model is None:
-            raise ValueError(f"model {lead_model_name} is not available in registered models")
+            raise ValueError(
+                f"model {lead_assignment.model} is not available in registered models"
+            )
+
+        assignments, active = self.persisted_registry.runtime_bindings()
+        lead_middleware = TaskBoundModelMiddleware(
+            self._all_models,
+            assignments=assignments,
+            allow_delegation=allow_delegation,
+            providers=self.providers,
+            usage_callback=self._record_model_usage,
+            active_assignments=active,
+        )
 
         lead_agent = build_production_lead(
             lead_chat_model,
@@ -221,12 +413,19 @@ class RunController:
             subagents=subagents,
             delegation_approved=delegation_approved,
             leases=leases,
+            extra_middleware=[lead_middleware],
         )
 
         input_message = HumanMessage(content=instruction)
         try:
             result_state = cast(
-                dict[str, Any], await lead_agent.ainvoke({"messages": [input_message]})
+                dict[str, Any],
+                await lead_agent.ainvoke(
+                    {
+                        "messages": [input_message],
+                        "attempt_id": str(lead_attempt_id),
+                    }
+                ),
             )
         except BaseException:
             self.journal.update_attempt_status(
@@ -235,7 +434,19 @@ class RunController:
             self.journal.update_task_status(task_id=str(lead_task_id), status=TaskStatus.FAILED)
             self.journal.update_run_status(run_id=str(run_id), status="failed")
             self.journal.update_session_status(session_id=str(self.session_id), status="idle")
+            lead_aid = str(lead_assignment.assignment_id)
+            if self._has_calls(lead_aid):
+                try:
+                    self.usage_settler.settle_attempt(lead_aid)
+                except Exception:
+                    pass
+            else:
+                try:
+                    self.ledger.release(str(lead_assignment.reservation_id))
+                except Exception:
+                    pass
             raise
+
         messages = cast(list[BaseMessage], result_state.get("messages", []))
 
         output_text = ""
@@ -252,6 +463,18 @@ class RunController:
         self.journal.update_task_status(task_id=str(lead_task_id), status=TaskStatus.SUCCEEDED)
         self.journal.update_run_status(run_id=str(run_id), status="completed")
         self.journal.update_session_status(session_id=str(self.session_id), status="idle")
+
+        lead_aid = str(lead_assignment.assignment_id)
+        if self._has_calls(lead_aid):
+            try:
+                self.usage_settler.settle_attempt(lead_aid)
+            except Exception:
+                pass
+        else:
+            try:
+                self.ledger.release(str(lead_assignment.reservation_id))
+            except Exception:
+                pass
 
         return RunResult(
             run_id=run_id,
@@ -312,14 +535,10 @@ class RunController:
             spec: TaskSpec, number: int, excluded: tuple[tuple[str, str], ...]
         ) -> AttemptBinding | RouteFailure:
             if self.child_assigner is not None:
-                return self.child_assigner(spec, number, excluded)
-
-            model_name = self.profile_models.get(profile.name, self.default_child_model)
-            if any(p == "fake" and m == model_name for p, m in excluded):
-                return RouteFailure(
-                    binding_constraint="no_eligible_model",
-                    excluded_counts={"excluded": len(excluded)},
-                )
+                binding = self.child_assigner(spec, number, excluded)
+                if isinstance(binding, AttemptBinding):
+                    attempt_ids[str(spec.task_id)] = str(binding.attempt_id)
+                return binding
 
             attempt_id = new_attempt_id()
             now = datetime.now(UTC)
@@ -345,29 +564,69 @@ class RunController:
                 created_at=now,
             )
 
-            assignment = TaskAssignment(
-                assignment_id=new_assignment_id(),
-                task_id=spec.task_id,
-                attempt_number=cast(Literal[1, 2], number),
-                provider="fake",
-                model=model_name,
-                routing_mode=RoutingMode.AUTO,
-                capability_floor=0.50 + 0.15 * (number - 1),
-                estimated_attempt_cost_usd=Decimal("0.02"),
-                reservation_id=ReservationId("00000000-0000-4000-8000-000000000002"),
-                explanation=("subagent-attempt-assigned",),
-                catalog_revision="run-subagent",
+            configured_model = self.profile_models.get(
+                profile.name, self.default_child_model if number == 1 else None
             )
 
-            self.journal.create_assignment(
-                assignment_id=str(assignment.assignment_id),
-                attempt_id=str(attempt_id),
-                provider=assignment.provider,
-                model=assignment.model,
-                estimated_cost_usd=assignment.estimated_attempt_cost_usd,
-                created_at=now,
-                payload=assignment.model_dump(mode="json"),
+            if configured_model and any(
+                (p == "fake" or p == configured_model.split(":")[0])
+                and (m == configured_model or m == configured_model.split(":")[-1])
+                for p, m in excluded
+            ):
+                return RouteFailure(
+                    binding_constraint="model_excluded",
+                    excluded_counts={"excluded": len(excluded)},
+                )
+
+            role_name = spec.request.profile
+            if role_name not in ROLE_FLOORS:
+                role_name = "general-purpose"
+
+            escalated = number == 2
+            req_mode = (
+                RoutingMode.MANUAL if (configured_model and not escalated) else RoutingMode.AUTO
             )
+            reqs = RequirementBuilder().build(
+                role=role_name,
+                risk=TaskRisk.ROUTINE,
+                mode=req_mode,
+                escalated=escalated,
+                excluded_models=frozenset(excluded),
+            )
+
+            manual_pin = None
+            if req_mode is RoutingMode.MANUAL and configured_model:
+                prov = "fake"
+                m_name = configured_model
+                if ":" in configured_model:
+                    prov, m_name = configured_model.split(":", 1)
+                manual_pin = (prov, m_name)
+
+            request = AssignmentRequest(
+                session_id=self.session_id,
+                run_id=run_id,
+                task_id=spec.task_id,
+                attempt_id=attempt_id,
+                attempt_number=cast(Literal[1, 2], number),
+                catalog_revision=self.catalog_revision,
+                requirements=reqs,
+                config_snapshot=DEFAULT_CONFIG_SNAPSHOT,
+                manual_model=manual_pin,
+            )
+
+            assignment = self.assignment_service.assign(
+                request,
+                lambda: self._get_candidates(
+                    for_lead=False,
+                    target_lead_model=controls.model or self.default_lead_model,
+                ),
+            )
+            if isinstance(assignment, RouteFailure):
+                self.journal.update_attempt_status(
+                    attempt_id=str(attempt_id), status=AttemptStatus.FAILED
+                )
+                return assignment
+
             attempt_ids[str(spec.task_id)] = str(attempt_id)
             return AttemptBinding(attempt_id, assignment)
 
@@ -387,7 +646,7 @@ class RunController:
                         follow_up="user approval required",
                     )
 
-            child_chat_model = self.models.get(assignment.model)
+            child_chat_model = self._all_models.get(assignment.model)
             if child_chat_model is None:
                 return TaskResult(
                     task_id=spec.task_id,
@@ -395,21 +654,49 @@ class RunController:
                     summary=f"child model {assignment.model} not found",
                 )
 
+            curr_attempt_id = attempt_ids.get(str(spec.task_id))
+            assignments, active = self.persisted_registry.runtime_bindings()
+
+            if curr_attempt_id and curr_attempt_id not in active:
+                model_key = f"{assignment.provider}:{assignment.model}"
+                assignments[str(assignment.assignment_id)] = model_key
+                active[curr_attempt_id] = FallbackBinding(
+                    assignment_id=str(assignment.assignment_id),
+                    provider=assignment.provider,
+                    model=assignment.model,
+                    model_key=model_key,
+                    reservation_id=str(assignment.reservation_id),
+                )
+
+            child_middleware = TaskBoundModelMiddleware(
+                self._all_models,
+                assignments=assignments,
+                allow_delegation=False,
+                providers=self.providers,
+                usage_callback=self._record_model_usage,
+                active_assignments=active,
+            )
+
             inner_agent = build_default_agent(
                 child_chat_model,
                 workspace=self.workspace,
                 profile=profile.name,
                 lease_manager=leases,
                 task_id=str(spec.task_id),
+                extra_middleware=[child_middleware],
             )
 
             formatted_prompt = _format_context_packet(packet)
 
+            invoke_state: dict[str, Any] = {
+                "messages": [HumanMessage(content=formatted_prompt)],
+            }
+            if curr_attempt_id:
+                invoke_state["attempt_id"] = curr_attempt_id
+
             result_state = cast(
                 dict[str, Any],
-                await inner_agent.ainvoke(
-                    {"messages": [HumanMessage(content=formatted_prompt)]}
-                ),
+                await inner_agent.ainvoke(invoke_state),
             )
             inner_messages = cast(list[BaseMessage], result_state.get("messages", []))
 
@@ -451,6 +738,20 @@ class RunController:
             )
             self.journal.update_task_status(task_id=str(result.task_id), status=task_status)
 
+            aid = str(binding.assignment.assignment_id)
+            if result.status in ("cancelled", "budget_blocked", "blocked") and not self._has_calls(
+                aid
+            ):
+                try:
+                    self.ledger.release(str(binding.assignment.reservation_id))
+                except Exception:
+                    pass
+            else:
+                try:
+                    self.usage_settler.settle_attempt(aid)
+                except Exception:
+                    pass
+
         def exhaust_fp(spec: TaskSpec) -> None:
             self.registry._failed_fingerprint_attempts[spec.fingerprint] = 2
 
@@ -463,6 +764,8 @@ class RunController:
             workspace_revision=workspace_revision,
             gate=gate,
             leases=leases,
+            scheduler=scheduler,
+            task_registry=self.registry,
             persist_context=lambda packet: self._persist_context_packet(
                 packet,
                 run_id=run_id,
