@@ -22,17 +22,23 @@ the requirement that `legacy/autoconduck/` remain inert.
 - [x] Persist child context packets, translate child execution exceptions into structured failures,
   and remove fabricated required-verification evidence.
   - Implemented in `823518c`.
-- [ ] Route every lead and child assignment through `AssignmentService` and `BudgetLedger`.
-- [ ] Require a reservation before every provider call; settle actual usage or reclaim reservations
+- [x] Route every lead and child assignment through `AssignmentService` and `BudgetLedger`.
+  - Implemented in `f66ff52`.
+- [x] Require a reservation before every provider call; settle actual usage or reclaim reservations
   on failure, cancellation, and recovery.
-- [ ] Bind every healthy attempt through `PersistedAssignmentRegistry` and
+  - Implemented in `f66ff52`.
+- [x] Bind every healthy attempt through `PersistedAssignmentRegistry` and
   `TaskBoundModelMiddleware` before its first call.
-- [ ] Register live delegated tasks with `TaskRegistry` and dispatch through `ChildScheduler` so
+  - Implemented in `f66ff52`.
+- [x] Register live delegated tasks with `TaskRegistry` and dispatch through `ChildScheduler` so
   dependency order, cycle rejection, priority, the three-child limit, and writer leases apply to
   model `task` calls.
-- [ ] Implement production escalation using a distinct eligible model, failed-model exclusion, and
+  - Implemented in `f66ff52`.
+- [x] Implement production escalation using a distinct eligible model, failed-model exclusion, and
   the +0.15 floor; the second failure must return once to the lead.
-- [ ] Replace all remaining success inference with evidence-bearing verification results.
+  - Implemented in `f66ff52`.
+- [x] Replace all remaining success inference with evidence-bearing verification results.
+  - Implemented in `f66ff52`.
 
 ## 2. Context, secrets, recovery, and projection
 
@@ -41,13 +47,17 @@ the requirement that `legacy/autoconduck/` remain inert.
   - Implemented in `0c56a8c`.
 - [x] Make `TuiProjection.apply_snapshot()` reconstruct state idempotently.
   - Implemented in `403da8c`.
-- [ ] Inject one run-scoped redaction registry into credentials, controller, journal, tool output,
+- [x] Inject one run-scoped redaction registry into credentials, controller, journal, tool output,
   exception handling, context packets, checkpoints, and exports.
-- [ ] Add resolved-credential canary tests proving no secret reaches those persisted or displayed
+  - Implemented in `1abe230`.
+- [x] Add resolved-credential canary tests proving no secret reaches those persisted or displayed
   surfaces.
-- [ ] Write real checkpoint metadata at resumable lifecycle boundaries and make normal session
+  - Implemented in `1abe230`.
+- [x] Write real checkpoint metadata at resumable lifecycle boundaries and make normal session
   resume restore terminal, interrupted, and approval-waiting runs.
-- [ ] Persist task/attempt transitions transactionally with assignment and budget changes.
+  - Implemented in `1abe230`.
+- [x] Persist task/attempt transitions transactionally with assignment and budget changes.
+  - Implemented in `1abe230`.
 
 ## 3. CLI and TUI integration
 
@@ -111,3 +121,5 @@ the requirement that `legacy/autoconduck/` remain inert.
 | `403da8c` | Idempotent TUI projection reconstruction |
 | `2d5b389` | Runtime-tool-backed fixture execution and honest timing |
 | `db29f1e` | Fresh evaluation validation in the release gate |
+| `f66ff52` | Authoritative runtime lifecycle, task graph scheduling, and model bound execution |
+| `1abe230` | Run-scoped redaction registry, transactional status updates, and checkpoint recovery |
