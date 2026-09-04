@@ -28,7 +28,10 @@ from rudder.domain.events import (
     EventEnvelope,
     EventPayload,
     LifecyclePayload,
+    ModelPayload,
     SecretRedactor,
+    TaskPayload,
+    ToolPayload,
     UserPayload,
 )
 from rudder.domain.ids import (
@@ -397,6 +400,8 @@ class RunController:
         scheduler: ChildScheduler,
         saver: Any,
         lead_assignment: TaskAssignment,
+        lead_task_id: TaskId,
+        lead_attempt_id: AttemptId,
     ) -> Any:
         delegation_approved = delegation_approved or controls.delegation == "auto"
         allow_delegation = controls.delegation in ("auto", "ask")
@@ -444,7 +449,37 @@ class RunController:
             checkpointer=saver,
             approvals=self.approvals,
             question_store=self.question_store,
+            runtime_event=self._activity_emitter(
+                run_id=run_id,
+                task_id=lead_task_id,
+                attempt_id=lead_attempt_id,
+            ),
+            runtime_model_name=lead_assignment.model,
         )
+
+    def _activity_emitter(
+        self,
+        *,
+        run_id: RunId,
+        task_id: TaskId,
+        attempt_id: AttemptId,
+    ) -> Callable[[str, str], None]:
+        def emit(event_type: str, subject: str) -> None:
+            suffix = event_type.split(".", 1)[1]
+            payload: EventPayload
+            if event_type.startswith("model."):
+                payload = ModelPayload(model=subject)
+            else:
+                payload = ToolPayload(tool=subject, status=suffix)
+            self._emit_event(
+                run_id=run_id,
+                type=event_type,
+                payload=payload,
+                task_id=task_id,
+                attempt_id=attempt_id,
+            )
+
+        return emit
 
     async def _run_instruction_impl(
         self,
@@ -635,6 +670,8 @@ class RunController:
             scheduler=scheduler,
             saver=saver,
             lead_assignment=lead_assignment,
+            lead_task_id=lead_task_id,
+            lead_attempt_id=lead_attempt_id,
         )
 
         input_message = HumanMessage(content=instruction)
@@ -913,6 +950,8 @@ class RunController:
                 scheduler=scheduler,
                 saver=saver,
                 lead_assignment=pending.lead_assignment,
+                lead_task_id=pending.lead_task_id,
+                lead_attempt_id=pending.lead_attempt_id,
             )
             result_state = cast(
                 dict[str, Any],
@@ -1111,8 +1150,10 @@ class RunController:
                 created_at=now,
             )
 
-            configured_model = self.profile_models.get(
-                profile.name, self.default_child_model if number == 1 else None
+            configured_model = (
+                self.profile_models.get(profile.name, self.default_child_model)
+                if number == 1
+                else None
             )
 
             if configured_model and any(
@@ -1236,6 +1277,14 @@ class RunController:
                 task_id=str(spec.task_id),
                 extra_middleware=[child_middleware],
                 redactor=self.redaction,
+                runtime_event=self._activity_emitter(
+                    run_id=run_id,
+                    task_id=spec.task_id,
+                    attempt_id=AttemptId(curr_attempt_id),
+                )
+                if curr_attempt_id
+                else None,
+                runtime_model_name=assignment.model,
             )
 
             formatted_prompt = _format_context_packet(packet)
@@ -1308,6 +1357,15 @@ class RunController:
         def exhaust_fp(spec: TaskSpec) -> None:
             self.registry._failed_fingerprint_attempts[spec.fingerprint] = 2
 
+        def emit_task(spec: TaskSpec, status: str, attempt_id: str | None) -> None:
+            self._emit_event(
+                run_id=run_id,
+                type=f"task.{status}",
+                payload=TaskPayload(status=status, profile=profile.name),
+                task_id=spec.task_id,
+                attempt_id=AttemptId(attempt_id) if attempt_id else None,
+            )
+
         return build_compiled_profile_subagent(
             name=profile.name,
             description=profile.description,
@@ -1329,6 +1387,7 @@ class RunController:
             execute=execute_child,
             settle_attempt=record_settle,
             exhaust_fingerprint=exhaust_fp,
+            task_event=emit_task,
         )
 
 

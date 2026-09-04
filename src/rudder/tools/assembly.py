@@ -18,6 +18,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import interrupt
 
 from rudder.runtime.deepagents_adapter import build_lead_agent
+from rudder.runtime.failure_monitor import FailureMonitor
 from rudder.runtime.interrupts import QuestionStore
 from rudder.runtime.leases import WorkspaceLeaseManager
 from rudder.runtime.redaction import RedactionRegistry
@@ -102,6 +103,104 @@ def _tool_name(value: Any) -> str | None:
     return None
 
 
+class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
+    def __init__(
+        self,
+        *,
+        model_name: str,
+        emit: Callable[[str, str], None],
+        redactor: Any,
+    ) -> None:
+        self.model_name = model_name
+        self.emit = emit
+        self.monitor = FailureMonitor(redactor.redactor())
+
+    def wrap_model_call(
+        self,
+        request: ModelRequest[Any],
+        handler: Callable[[ModelRequest[Any]], ModelResponse[Any]],
+    ) -> ModelResponse[Any]:
+        self.emit("model.started", self.model_name)
+        try:
+            response = handler(request)
+        except Exception:
+            self.emit("model.failed", self.model_name)
+            raise
+        self.emit("model.completed", self.model_name)
+        return response
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest[Any],
+        handler: Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]],
+    ) -> ModelResponse[Any]:
+        self.emit("model.started", self.model_name)
+        try:
+            response = await handler(request)
+        except Exception:
+            self.emit("model.failed", self.model_name)
+            raise
+        self.emit("model.completed", self.model_name)
+        return response
+
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Any],
+    ) -> ToolMessage | Any:
+        return self._run_tool(request, handler)
+
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Any]],
+    ) -> ToolMessage | Any:
+        name = request.tool_call["name"]
+        signal = self.monitor.observe_call(name, request.tool_call.get("args", {}))
+        if signal is not None:
+            raise RuntimeError(signal)
+        self.emit("tool.started", name)
+        try:
+            result = await handler(request)
+        except Exception as exc:
+            self.emit("tool.failed", name)
+            self.monitor.observe_error(exc)
+            raise
+        if getattr(result, "status", None) == "error":
+            self.emit("tool.failed", name)
+            signal = self.monitor.observe_error(getattr(result, "content", "tool error"))
+            if signal is not None:
+                raise RuntimeError(signal)
+        else:
+            self.emit("tool.completed", name)
+        return result
+
+    def _run_tool(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Any],
+    ) -> ToolMessage | Any:
+        name = request.tool_call["name"]
+        signal = self.monitor.observe_call(name, request.tool_call.get("args", {}))
+        if signal is not None:
+            raise RuntimeError(signal)
+        self.emit("tool.started", name)
+        try:
+            result = handler(request)
+        except Exception as exc:
+            self.emit("tool.failed", name)
+            self.monitor.observe_error(exc)
+            raise
+        if getattr(result, "status", None) == "error":
+            self.emit("tool.failed", name)
+            signal = self.monitor.observe_error(getattr(result, "content", "tool error"))
+            if signal is not None:
+                raise RuntimeError(signal)
+        else:
+            self.emit("tool.completed", name)
+        return result
+
+
 def default_registry(*, version: str = "0.7.13") -> ToolRegistry:
     read_profiles = frozenset(
         {"lead", "general-purpose", "explorer", "implementer", "tester", "reviewer", "researcher"}
@@ -158,6 +257,8 @@ def build_default_agent(
     extension_tools: Sequence[Any] = (),
     lease_manager: WorkspaceLeaseManager | None = None,
     extra_middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
+    runtime_event: Callable[[str, str], None] | None = None,
+    runtime_model_name: str | None = None,
 ) -> Any:
     """Assemble pinned DeepAgents tools behind Rudder's workspace and shell policy."""
 
@@ -254,6 +355,17 @@ def build_default_agent(
         custom_tools.append(execute)
     if "ask_user" in visible_names:
         custom_tools.append(ask_user)
+    activity_middleware: list[AgentMiddleware[Any, Any, Any]] = []
+    if runtime_event is not None:
+        activity_middleware.append(
+            RuntimeActivityMiddleware(
+                model_name=str(
+                    runtime_model_name or getattr(model, "model_name", "unknown")
+                ),
+                emit=runtime_event,
+                redactor=redaction,
+            )
+        )
     return build_lead_agent(
         model,
         tools=custom_tools,
@@ -263,6 +375,10 @@ def build_default_agent(
         ),
         skills=skills,
         memory=memory,
-        middleware=[ProfileToolVisibilityMiddleware(visible_names), *extra_middleware],
+        middleware=[
+            ProfileToolVisibilityMiddleware(visible_names),
+            *activity_middleware,
+            *extra_middleware,
+        ],
         checkpointer=checkpointer,
     )

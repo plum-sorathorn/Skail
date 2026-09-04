@@ -166,6 +166,12 @@ async def test_headless_core_three_subagent_delegated_path(tmp_path: Path) -> No
     # All 3 subagent tasks succeeded
     assert len(result.child_results) == 3
     assert all(r.status == "succeeded" for r in result.child_results)
+    event_types = [event.type for event in journal.get_session_snapshot(str(session_id)).events]
+    assert "task.proposed" in event_types
+    assert "task.started" in event_types
+    assert "task.succeeded" in event_types
+    assert "tool.started" in event_types
+    assert "tool.completed" in event_types
 
 
 @pytest.mark.asyncio
@@ -207,3 +213,82 @@ async def test_headless_core_escalates_once_and_returns_to_lead(tmp_path: Path) 
     assert "Lead synthesized" in result.output
     # Exactly one task delegation call made, then final synthesis without looping
     assert len(lead_model.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_live_child_failure_monitor_escalates_repeated_tool_calls(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "input.txt").write_text("input", encoding="utf-8")
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id),
+        title="Failure monitor",
+        created_at=datetime.now(UTC),
+    )
+    repeated = tool_call_message(
+        "read_file",
+        {"file_path": "input.txt"},
+        call_id="read-1",
+    )
+    first_child = ScriptedChatModel(
+        model_name="child-one",
+        responses=[
+            repeated,
+            repeated.model_copy(
+                update={"tool_calls": [{**repeated.tool_calls[0], "id": "read-2"}]}
+            ),
+            repeated.model_copy(
+                update={"tool_calls": [{**repeated.tool_calls[0], "id": "read-3"}]}
+            ),
+        ],
+    )
+    second_child = ScriptedChatModel(
+        model_name="child-two",
+        responses=[
+            AIMessage(
+                content=(
+                    '{"status":"succeeded","summary":"Recovered",'
+                    '"verification":[{"criterion":"Provide evidence for the completed task",'
+                    '"passed":true,"evidence":"input.txt inspected once"}]}'
+                )
+            )
+        ],
+    )
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message(
+                "task",
+                {"description": "Inspect input", "subagent_type": "implementer"},
+                call_id="task-monitor",
+            ),
+            AIMessage(content="Recovered child result synthesized."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={
+            "lead-model": lead,
+            "child-one": first_child,
+            "child-two": second_child,
+        },
+        default_lead_model="lead-model",
+        default_child_model="child-one",
+        profile_models={"implementer": "child-one"},
+    )
+
+    result = await controller.run_instruction("Delegate inspection")
+    snapshot = journal.get_session_snapshot(str(session_id))
+
+    assert result.child_results and result.child_results[-1].status == "succeeded", (
+        snapshot.attempts,
+        snapshot.assignments,
+    )
+    child_attempts = [attempt for attempt in snapshot.attempts if attempt.number in (1, 2)][1:]
+    assert [attempt.number for attempt in child_attempts] == [1, 2]
+    assert child_attempts[0].status.value == "failed"
+    assert child_attempts[1].status.value == "succeeded"

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -51,6 +51,8 @@ def build_production_lead(
     checkpointer: Any = None,
     approvals: Any = None,
     question_store: Any = None,
+    runtime_event: Callable[[str, str], None] | None = None,
+    runtime_model_name: str | None = None,
 ) -> Runnable[object, object]:
     allow_children = controls.delegation in ("auto", "ask")
     registry = _lead_registry(
@@ -71,6 +73,8 @@ def build_production_lead(
             checkpointer=checkpointer,
             approvals=approvals,
             question_store=question_store,
+            runtime_event=runtime_event,
+            runtime_model_name=runtime_model_name,
         ),
     )
 

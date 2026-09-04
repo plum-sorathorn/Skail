@@ -98,6 +98,7 @@ def build_task_graph(
     leases: WorkspaceLeaseManager,
     scheduler: ChildScheduler | None = None,
     task_registry: TaskRegistry | None = None,
+    task_event: Callable[[TaskSpec, str, str | None], None] | None = None,
 ) -> Any:
     assembler = context_assembler or ContextAssembler()
 
@@ -136,6 +137,8 @@ def build_task_graph(
                     )
                 except Exception:
                     pass
+            if task_event is not None:
+                task_event(spec, result.status, None)
             return {
                 "result": result
             }
@@ -203,6 +206,8 @@ def build_task_graph(
                 )
             except Exception:
                 pass
+        if task_event is not None:
+            task_event(spec, "started", state.get("attempt_id"))
 
         async def invoke() -> TaskResult:
             if profile.write_capable:
@@ -299,6 +304,8 @@ def build_task_graph(
                 )
             except Exception:
                 pass
+        if task_event is not None:
+            task_event(spec, result.status, state.get("attempt_id"))
         if result.status != "failed" or number == 2:
             if result.status == "failed":
                 result = result.model_copy(
@@ -363,6 +370,7 @@ def build_compiled_profile_subagent(
     leases: WorkspaceLeaseManager,
     scheduler: ChildScheduler | None = None,
     task_registry: TaskRegistry | None = None,
+    task_event: Callable[[TaskSpec, str, str | None], None] | None = None,
     persist_context: Callable[[ContextPacket], None] | None = None,
     settle_attempt: Callable[[AttemptBinding, TaskResult], None] | None = None,
     exhaust_fingerprint: Callable[[TaskSpec], None] | None = None,
@@ -378,6 +386,7 @@ def build_compiled_profile_subagent(
         leases=leases,
         scheduler=scheduler,
         task_registry=task_registry,
+        task_event=task_event,
     )
 
     def validate(state: ProfileTaskState) -> dict[str, Any]:
@@ -401,6 +410,9 @@ def build_compiled_profile_subagent(
                     target=TaskStatus.QUEUED,
                     attempt_number=1,
                 )
+                if task_event is not None:
+                    task_event(spec, "proposed", None)
+                    task_event(spec, "queued", None)
             except TaskValidationError as exc:
                 return {"spec": spec, "validation_error": exc.code}
         return {"spec": spec}

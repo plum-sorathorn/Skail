@@ -146,6 +146,8 @@ def test_cli_jsonl_primary_flag_emits_valid_versioned_events() -> None:
         EventEnvelope.model_validate(json.loads(line)) for line in lines
     ]
     assert parsed_events[0].type == "run.started"
+    assert "model.started" in [event.type for event in parsed_events]
+    assert "model.completed" in [event.type for event in parsed_events]
     assert parsed_events[-1].type == "run.completed"
 
 
