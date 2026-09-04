@@ -151,6 +151,33 @@ async def test_lead_assignment_persists_before_first_model_call(tmp_path: Path) 
 
 
 @pytest.mark.asyncio
+async def test_lead_completion_persists_terminal_lifecycle_and_context_packet(
+    tmp_path: Path,
+) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Terminal lifecycle", created_at=datetime.now(UTC)
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": ScriptedChatModel(responses=[AIMessage(content="Done.")])},
+    )
+
+    result = await controller.run_instruction("Finish work")
+
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert snapshot.runs[0].run_id == str(result.run_id)
+    assert snapshot.runs[0].status == "completed"
+    assert snapshot.tasks[0].status == "succeeded"
+    assert snapshot.attempts[0].status == "succeeded"
+    assert snapshot.context_packets[0].run_id == str(result.run_id)
+    assert snapshot.context_packets[0].payload["objective"] == "Finish work"
+
+
+@pytest.mark.asyncio
 async def test_explicit_instruction_constraints_apply_only_to_current_run(tmp_path: Path) -> None:
     journal = _journal(tmp_path)
     session_id = new_session_id()

@@ -180,6 +180,13 @@ class JournalTransaction:
             ),
         )
 
+    def update_run_status(self, run_id: str, status: str) -> None:
+        cursor = self.connection.execute(
+            "UPDATE runs SET status=? WHERE run_id=?", (status, run_id)
+        )
+        if cursor.rowcount == 0:
+            raise KeyError(run_id)
+
     def create_task(
         self,
         task_id: str,
@@ -201,6 +208,14 @@ class JournalTransaction:
             insert_values=(*values, now, now),
         )
 
+    def update_task_status(self, task_id: str, status: TaskStatus) -> None:
+        cursor = self.connection.execute(
+            "UPDATE tasks SET status=?,updated_at=? WHERE task_id=?",
+            (status.value, _now(), task_id),
+        )
+        if cursor.rowcount == 0:
+            raise KeyError(task_id)
+
     def create_attempt(
         self,
         attempt_id: str,
@@ -219,6 +234,14 @@ class JournalTransaction:
             values=values,
             insert_values=(*values, _now(created_at)),
         )
+
+    def update_attempt_status(self, attempt_id: str, status: AttemptStatus) -> None:
+        cursor = self.connection.execute(
+            "UPDATE attempts SET status=?,updated_at=? WHERE attempt_id=?",
+            (status.value, _now(), attempt_id),
+        )
+        if cursor.rowcount == 0:
+            raise KeyError(attempt_id)
 
     def create_assignment(
         self,
@@ -550,6 +573,9 @@ class Journal:
             idempotency_key=idempotency_key,
         )
 
+    def update_run_status(self, *, run_id: str, status: str) -> None:
+        self._write("update_run_status", run_id=run_id, status=status)
+
     def create_task(
         self,
         *,
@@ -563,6 +589,9 @@ class Journal:
     ) -> None:
         self._write("create_task", **locals_without_self(locals()))
 
+    def update_task_status(self, *, task_id: str, status: TaskStatus) -> None:
+        self._write("update_task_status", task_id=task_id, status=status)
+
     def create_attempt(
         self,
         *,
@@ -574,6 +603,9 @@ class Journal:
         created_at: datetime,
     ) -> None:
         self._write("create_attempt", **locals_without_self(locals()))
+
+    def update_attempt_status(self, *, attempt_id: str, status: AttemptStatus) -> None:
+        self._write("update_attempt_status", attempt_id=attempt_id, status=status)
 
     def create_assignment(
         self,

@@ -32,7 +32,7 @@ from rudder.domain.ids import (
     new_task_id,
 )
 from rudder.domain.routing import RoutingMode, TaskAssignment
-from rudder.domain.tasks import TaskResult, TaskSpec, VerificationResult
+from rudder.domain.tasks import AttemptStatus, TaskResult, TaskSpec, TaskStatus, VerificationResult
 from rudder.routing.selector import RouteFailure
 from rudder.runtime.deepagents_adapter import ChildRunGate
 from rudder.runtime.leases import WorkspaceLeaseManager
@@ -178,6 +178,12 @@ class RunController:
             constraints=(),
             state=f"run_id={run_id}; assignment={lead_assignment.assignment_id}",
         )
+        self._persist_context_packet(
+            lead_context_packet,
+            run_id=run_id,
+            task_id=str(lead_task_id),
+            attempt_id=str(lead_attempt_id),
+        )
 
         recorded_child_results: list[TaskResult] = []
 
@@ -218,9 +224,18 @@ class RunController:
         )
 
         input_message = HumanMessage(content=instruction)
-        result_state = cast(
-            dict[str, Any], await lead_agent.ainvoke({"messages": [input_message]})
-        )
+        try:
+            result_state = cast(
+                dict[str, Any], await lead_agent.ainvoke({"messages": [input_message]})
+            )
+        except BaseException:
+            self.journal.update_attempt_status(
+                attempt_id=str(lead_attempt_id), status=AttemptStatus.FAILED
+            )
+            self.journal.update_task_status(task_id=str(lead_task_id), status=TaskStatus.FAILED)
+            self.journal.update_run_status(run_id=str(run_id), status="failed")
+            self.journal.update_session_status(session_id=str(self.session_id), status="idle")
+            raise
         messages = cast(list[BaseMessage], result_state.get("messages", []))
 
         output_text = ""
@@ -231,6 +246,13 @@ class RunController:
                 )
                 break
 
+        self.journal.update_attempt_status(
+            attempt_id=str(lead_attempt_id), status=AttemptStatus.SUCCEEDED
+        )
+        self.journal.update_task_status(task_id=str(lead_task_id), status=TaskStatus.SUCCEEDED)
+        self.journal.update_run_status(run_id=str(run_id), status="completed")
+        self.journal.update_session_status(session_id=str(self.session_id), status="idle")
+
         return RunResult(
             run_id=run_id,
             lead_assignment=lead_assignment,
@@ -238,6 +260,37 @@ class RunController:
             output=output_text,
             messages=messages,
             child_results=recorded_child_results,
+        )
+
+    def _persist_context_packet(
+        self,
+        packet: ContextPacket,
+        *,
+        run_id: RunId,
+        task_id: str | None,
+        attempt_id: str | None,
+    ) -> None:
+        self.journal.create_context_packet(
+            packet_id=packet.revision,
+            run_id=str(run_id),
+            task_id=task_id,
+            attempt_id=attempt_id,
+            payload={
+                "version": packet.version,
+                "objective": next(
+                    (
+                        component.content
+                        for component in packet.components
+                        if component.label == "objective"
+                    ),
+                    "",
+                ),
+                "estimated_tokens": packet.estimated_tokens,
+                "omissions": list(packet.omissions),
+                "components": [component.__dict__ for component in packet.components],
+            },
+            idempotency_key=f"context:{run_id}:{task_id or 'lead'}:{attempt_id or 'lead'}",
+            created_at=datetime.now(UTC),
         )
 
     def _build_profile_subagent(
