@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from deepagents.middleware.subagents import CompiledSubAgent
+from langchain.agents.middleware import ModelResponse
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
@@ -23,6 +25,7 @@ from rudder.agents.result_evaluator import parse_child_result
 from rudder.agents.task_graph import (
     AttemptBinding,
     build_compiled_profile_subagent,
+    decode_task_request,
 )
 from rudder.domain.events import (
     EventEnvelope,
@@ -68,7 +71,7 @@ from rudder.runtime.model_middleware import TaskBoundModelMiddleware
 from rudder.runtime.redaction import RedactionRegistry
 from rudder.runtime.scheduler import ChildScheduler
 from rudder.runtime.task_registry import TaskRegistry
-from rudder.runtime.task_validation import TaskValidator
+from rudder.runtime.task_validation import TaskValidationError, TaskValidator
 from rudder.sessions.checkpoints import CheckpointStore
 from rudder.sessions.journal import Journal
 from rudder.tools.approvals import ApprovalStore
@@ -196,6 +199,9 @@ class RunController:
         self.catalog_revision = catalog_revision
         self._pending_run: _PendingRun | None = None
         self._pending_interrupt_payload: dict[str, Any] | None = None
+        self._planned_specs: dict[tuple[str, str], deque[TaskSpec]] = {}
+        self._planned_assignments: dict[str, AttemptBinding | RouteFailure] = {}
+        self._lead_allowance_ids: list[str] = []
 
     @property
     def pending_interrupt(self) -> dict[str, Any] | None:
@@ -213,6 +219,14 @@ class RunController:
                 (assignment_id,),
             ).fetchone()
             return bool(row and row[0] > 0)
+
+    def _release_lead_allowances(self) -> None:
+        for reservation_id in self._lead_allowance_ids:
+            try:
+                self.ledger.release(reservation_id)
+            except Exception:
+                pass
+        self._lead_allowance_ids.clear()
 
     def _get_candidates(
         self,
@@ -455,7 +469,157 @@ class RunController:
                 attempt_id=lead_attempt_id,
             ),
             runtime_model_name=lead_assignment.model,
+            model_response_observer=lambda response: self._plan_task_batch(
+                response,
+                run_id=run_id,
+                controls=controls,
+                workspace_revision=workspace_revision,
+                lead_assignment=lead_assignment,
+            ),
         )
+
+    def _resolve_planned_spec(self, description: str, profile: str) -> TaskSpec | None:
+        queue = self._planned_specs.get((profile, description))
+        if not queue:
+            return None
+        return queue.popleft()
+
+    def _plan_task_batch(
+        self,
+        response: ModelResponse[Any],
+        *,
+        run_id: RunId,
+        controls: LeadControls,
+        workspace_revision: str,
+        lead_assignment: TaskAssignment,
+    ) -> None:
+        calls = [
+            call
+            for message in response.result
+            if isinstance(message, AIMessage)
+            for call in message.tool_calls
+            if call.get("name") == "task"
+        ]
+        if not calls:
+            return
+        planned: list[tuple[TaskSpec, str, AgentProfile, AttemptId]] = []
+        for call in calls:
+            args = call.get("args", {})
+            if not isinstance(args, Mapping):
+                continue
+            description = str(args.get("description", ""))
+            profile_name = str(args.get("subagent_type", "general-purpose"))
+            profile = builtin_profiles().get(profile_name)
+            if profile is None:
+                continue
+            try:
+                request = decode_task_request(description, profile=profile_name)
+                spec = self.validator.create_spec(
+                    request,
+                    run_id=run_id,
+                    parent_task_id=None,
+                    parent_depth=0,
+                    workspace_revision=workspace_revision,
+                    risk=controls.risk,
+                )
+            except TaskValidationError:
+                continue
+            planned.append((spec, description, profile, new_attempt_id()))
+        if not planned:
+            return
+        try:
+            self.registry.register_many(tuple(item[0] for item in planned))
+        except TaskValidationError:
+            return
+
+        now = datetime.now(UTC)
+        requests: list[AssignmentRequest] = []
+        for spec, description, profile, attempt_id in planned:
+            self.registry.transition(
+                spec.task_id,
+                expected=TaskStatus.PROPOSED,
+                target=TaskStatus.QUEUED,
+                attempt_number=1,
+            )
+            self.journal.create_task(
+                task_id=str(spec.task_id),
+                run_id=str(run_id),
+                description=spec.request.description,
+                status="queued",
+                idempotency_key=f"task:{spec.task_id}",
+                created_at=now,
+                fingerprint=spec.fingerprint,
+            )
+            self.journal.create_attempt(
+                attempt_id=str(attempt_id),
+                task_id=str(spec.task_id),
+                number=1,
+                status="assigned",
+                idempotency_key=f"attempt:{attempt_id}",
+                created_at=now,
+            )
+            configured_model = self.profile_models.get(
+                profile.name, self.default_child_model
+            )
+            mode = RoutingMode.MANUAL if configured_model else controls.routing_mode
+            provider, model = "fake", configured_model
+            if configured_model and ":" in configured_model:
+                provider, model = configured_model.split(":", 1)
+            requirements = RequirementBuilder().build(
+                role=profile.role if profile.role in ROLE_FLOORS else "general-purpose",
+                risk=controls.risk,
+                mode=mode,
+            )
+            requests.append(
+                AssignmentRequest(
+                    session_id=self.session_id,
+                    run_id=run_id,
+                    task_id=spec.task_id,
+                    attempt_id=attempt_id,
+                    attempt_number=1,
+                    catalog_revision=self.catalog_revision,
+                    requirements=requirements,
+                    config_snapshot={"routing": {"mode": controls.routing_mode.value}},
+                    manual_model=(provider, model) if configured_model else None,
+                    task_limit_usd=spec.request.budget_usd,
+                )
+            )
+            self._planned_specs.setdefault((profile.name, description), deque()).append(spec)
+            self._emit_event(
+                run_id=run_id,
+                type="task.proposed",
+                payload=TaskPayload(status="proposed", profile=profile.name),
+                task_id=spec.task_id,
+            )
+            self._emit_event(
+                run_id=run_id,
+                type="task.queued",
+                payload=TaskPayload(status="queued", profile=profile.name),
+                task_id=spec.task_id,
+            )
+
+        result = self.assignment_service.assign_batch(
+            tuple(requests),
+            lambda request: self._get_candidates(
+                for_lead=False,
+                target_lead_model=controls.model or self.default_lead_model,
+                routing_mode=controls.routing_mode,
+            ),
+            lead_allowance_usd=lead_assignment.estimated_attempt_cost_usd,
+        )
+        if result.lead_reservation_id:
+            self._lead_allowance_ids.append(result.lead_reservation_id)
+        bindings = {str(item.task_id): item for item in result.assignments}
+        for spec, _, _, attempt_id in planned:
+            assignment = bindings.get(str(spec.task_id))
+            self._planned_assignments[str(spec.task_id)] = (
+                AttemptBinding(str(attempt_id), assignment)
+                if assignment is not None
+                else RouteFailure(
+                    excluded_counts={"budget_unaffordable": 1},
+                    binding_constraint="budget_unaffordable",
+                )
+            )
 
     def _activity_emitter(
         self,
@@ -492,6 +656,9 @@ class RunController:
         saver: Any = None,
     ) -> RunResult:
         active_controls = controls or LeadControls()
+        self._planned_specs.clear()
+        self._planned_assignments.clear()
+        self._lead_allowance_ids.clear()
         max_children = min(max(active_controls.max_children, 1), 3)
 
         # Run-scoped locks and gates shared across lead and all children
@@ -720,6 +887,7 @@ class RunController:
                     self.ledger.release(str(lead_assignment.reservation_id))
                 except Exception:
                     pass
+            self._release_lead_allowances()
             raise
 
         messages = cast(list[BaseMessage], result_state.get("messages", []))
@@ -799,6 +967,7 @@ class RunController:
                 self.ledger.release(str(lead_assignment.reservation_id))
             except Exception:
                 pass
+        self._release_lead_allowances()
 
         await _save_checkpoint("terminal", status="committed")
         self._emit_event(
@@ -1017,6 +1186,7 @@ class RunController:
             tx.update_run_status(run_id=str(pending.run_id), status="completed")
             tx.update_session_status(session_id=str(self.session_id), status="idle")
         self.usage_settler.settle_attempt(str(pending.lead_assignment.assignment_id))
+        self._release_lead_allowances()
         self._emit_event(
             run_id=pending.run_id,
             type="run.completed",
@@ -1055,6 +1225,7 @@ class RunController:
             self.usage_settler.settle_attempt(assignment_id)
         else:
             self.ledger.release(str(pending.lead_assignment.reservation_id))
+        self._release_lead_allowances()
         self._emit_event(
             run_id=pending.run_id,
             type="user.cancellation",
@@ -1120,6 +1291,12 @@ class RunController:
         def default_assign(
             spec: TaskSpec, number: int, excluded: tuple[tuple[str, str], ...]
         ) -> AttemptBinding | RouteFailure:
+            if number == 1:
+                planned = self._planned_assignments.pop(str(spec.task_id), None)
+                if planned is not None:
+                    if isinstance(planned, AttemptBinding):
+                        attempt_ids[str(spec.task_id)] = str(planned.attempt_id)
+                    return planned
             if self.child_assigner is not None:
                 binding = self.child_assigner(spec, number, excluded)
                 if isinstance(binding, AttemptBinding):
@@ -1388,6 +1565,7 @@ class RunController:
             settle_attempt=record_settle,
             exhaust_fingerprint=exhaust_fp,
             task_event=emit_task,
+            resolve_spec=self._resolve_planned_spec,
         )
 
 

@@ -110,10 +110,12 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         model_name: str,
         emit: Callable[[str, str], None],
         redactor: Any,
+        model_response_observer: Callable[[ModelResponse[Any]], None] | None = None,
     ) -> None:
         self.model_name = model_name
         self.emit = emit
         self.monitor = FailureMonitor(redactor.redactor())
+        self.model_response_observer = model_response_observer
 
     def wrap_model_call(
         self,
@@ -127,6 +129,8 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             self.emit("model.failed", self.model_name)
             raise
         self.emit("model.completed", self.model_name)
+        if self.model_response_observer is not None:
+            self.model_response_observer(response)
         return response
 
     async def awrap_model_call(
@@ -141,6 +145,8 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             self.emit("model.failed", self.model_name)
             raise
         self.emit("model.completed", self.model_name)
+        if self.model_response_observer is not None:
+            self.model_response_observer(response)
         return response
 
     def wrap_tool_call(
@@ -259,6 +265,7 @@ def build_default_agent(
     extra_middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
     runtime_event: Callable[[str, str], None] | None = None,
     runtime_model_name: str | None = None,
+    model_response_observer: Callable[[ModelResponse[Any]], None] | None = None,
 ) -> Any:
     """Assemble pinned DeepAgents tools behind Rudder's workspace and shell policy."""
 
@@ -364,6 +371,7 @@ def build_default_agent(
                 ),
                 emit=runtime_event,
                 redactor=redaction,
+                model_response_observer=model_response_observer,
             )
         )
     return build_lead_agent(

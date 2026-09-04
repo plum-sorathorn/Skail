@@ -99,6 +99,7 @@ def build_task_graph(
     scheduler: ChildScheduler | None = None,
     task_registry: TaskRegistry | None = None,
     task_event: Callable[[TaskSpec, str, str | None], None] | None = None,
+    resolve_spec: Callable[[str, str], TaskSpec | None] | None = None,
 ) -> Any:
     assembler = context_assembler or ContextAssembler()
 
@@ -371,6 +372,7 @@ def build_compiled_profile_subagent(
     scheduler: ChildScheduler | None = None,
     task_registry: TaskRegistry | None = None,
     task_event: Callable[[TaskSpec, str, str | None], None] | None = None,
+    resolve_spec: Callable[[str, str], TaskSpec | None] | None = None,
     persist_context: Callable[[ContextPacket], None] | None = None,
     settle_attempt: Callable[[AttemptBinding, TaskResult], None] | None = None,
     exhaust_fingerprint: Callable[[TaskSpec], None] | None = None,
@@ -387,21 +389,23 @@ def build_compiled_profile_subagent(
         scheduler=scheduler,
         task_registry=task_registry,
         task_event=task_event,
+        resolve_spec=resolve_spec,
     )
 
     def validate(state: ProfileTaskState) -> dict[str, Any]:
-        request = decode_task_request(
-            _last_message_text(state.get("messages", [])),
-            profile=profile.name,
-        )
-        spec = validator.create_spec(
-            request,
-            run_id=run_id,
-            parent_task_id=None,
-            parent_depth=0,
-            workspace_revision=workspace_revision,
-        )
-        if task_registry is not None:
+        description = _last_message_text(state.get("messages", []))
+        spec = resolve_spec(description, profile.name) if resolve_spec is not None else None
+        preplanned = spec is not None
+        if spec is None:
+            request = decode_task_request(description, profile=profile.name)
+            spec = validator.create_spec(
+                request,
+                run_id=run_id,
+                parent_task_id=None,
+                parent_depth=0,
+                workspace_revision=workspace_revision,
+            )
+        if task_registry is not None and not preplanned:
             try:
                 task_registry.register(spec)
                 task_registry.transition(

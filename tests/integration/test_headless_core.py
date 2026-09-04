@@ -172,6 +172,20 @@ async def test_headless_core_three_subagent_delegated_path(tmp_path: Path) -> No
     assert "task.succeeded" in event_types
     assert "tool.started" in event_types
     assert "tool.completed" in event_types
+    snapshot = journal.get_session_snapshot(str(session_id))
+    lead_allowances = [
+        reservation
+        for reservation in snapshot.budget_reservations
+        if reservation.task_id is None
+    ]
+    assert len(lead_allowances) == 3
+    assert all(reservation.status == "released" for reservation in lead_allowances)
+    assignment_attempts = {assignment.attempt_id for assignment in snapshot.assignments}
+    assert all(
+        event.attempt_id is None or str(event.attempt_id) in assignment_attempts
+        for event in snapshot.events
+        if event.type == "model.started"
+    )
 
 
 @pytest.mark.asyncio
