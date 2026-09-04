@@ -107,10 +107,18 @@ class SecretRedactor:
                 self.scrub(key) if isinstance(key, str) else key: self.scrub(item)
                 for key, item in value.items()
             }
-        if isinstance(value, (list, tuple)):
+        if isinstance(value, tuple):
+            return tuple(self.scrub(item) for item in value)
+        if isinstance(value, list):
             return [self.scrub(item) for item in value]
         if isinstance(value, (set, frozenset)):
             return [self.scrub(item) for item in sorted(value, key=repr)]
+        if isinstance(value, BaseModel):
+            try:
+                data = {k: self.scrub(v) for k, v in value.__dict__.items()}
+                return value.model_copy(update=data)
+            except Exception:
+                return value
         return value
 
 

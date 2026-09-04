@@ -132,7 +132,7 @@ class SessionSnapshot:
 
 
 class JournalTransaction:
-    def __init__(self, connection: sqlite3.Connection, redactor: SecretRedactor) -> None:
+    def __init__(self, connection: sqlite3.Connection, redactor: Any) -> None:
         self.connection = connection
         self.redactor = redactor
         self.after_commit_callbacks: list[Callable[[], None]] = []
@@ -199,7 +199,12 @@ class JournalTransaction:
     ) -> None:
         now = _now(created_at)
         task_status = TaskStatus(status).value
-        values = (task_id, run_id, description, task_status, fingerprint, idempotency_key)
+        scrubbed_desc = (
+            self.redactor.scrub_text(description)
+            if hasattr(self.redactor, "scrub_text")
+            else str(self.redactor.scrub(description))
+        )
+        values = (task_id, run_id, scrubbed_desc, task_status, fingerprint, idempotency_key)
         self._insert_idempotent(
             table="tasks",
             key=idempotency_key,
@@ -341,7 +346,12 @@ class JournalTransaction:
         idempotency_key: str,
         created_at: datetime,
     ) -> None:
-        values = (approval_id, run_id, task_id, status, question, idempotency_key)
+        scrubbed_q = (
+            self.redactor.scrub_text(question)
+            if hasattr(self.redactor, "scrub_text")
+            else str(self.redactor.scrub(question))
+        )
+        values = (approval_id, run_id, task_id, status, scrubbed_q, idempotency_key)
         self._insert_idempotent(
             table="approvals",
             key=idempotency_key,
@@ -440,7 +450,7 @@ class Journal:
         *,
         busy_timeout_ms: int = 5_000,
         max_retries: int = 5,
-        redactor: SecretRedactor | None = None,
+        redactor: Any = None,
     ) -> None:
         self.path = path
         self.busy_timeout_ms = busy_timeout_ms

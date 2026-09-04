@@ -12,6 +12,7 @@ from typing import Any, Literal, cast
 from deepagents.middleware.subagents import CompiledSubAgent
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 
 from rudder.agents.context import ContextAssembler, ContextPacket
 from rudder.agents.lead import LeadControls, build_production_lead
@@ -49,9 +50,11 @@ from rudder.routing.selector import RouteCandidate, RouteFailure
 from rudder.runtime.deepagents_adapter import ChildRunGate
 from rudder.runtime.leases import WorkspaceLeaseManager
 from rudder.runtime.model_middleware import TaskBoundModelMiddleware
+from rudder.runtime.redaction import RedactionRegistry
 from rudder.runtime.scheduler import ChildScheduler
 from rudder.runtime.task_registry import TaskRegistry
 from rudder.runtime.task_validation import TaskValidator
+from rudder.sessions.checkpoints import CheckpointStore
 from rudder.sessions.journal import Journal
 from rudder.tools.assembly import build_default_agent
 
@@ -88,7 +91,9 @@ class RunController:
         task_validator: TaskValidator | None = None,
         task_registry: TaskRegistry | None = None,
         context_assembler: ContextAssembler | None = None,
+        redaction: RedactionRegistry | None = None,
         redactor: SecretRedactor | None = None,
+        checkpoints: CheckpointStore | None = None,
         budget_limit_usd: Decimal = Decimal("10.00"),
         child_assigner: AssignChildAttempt | None = None,
         profile_models: Mapping[str, str] | None = None,
@@ -107,7 +112,9 @@ class RunController:
         self.default_lead_model = default_lead_model
         self.default_child_model = default_child_model
         self.profile_models = dict(profile_models or {})
-        self.redactor = redactor or SecretRedactor()
+        self.redaction = redaction or RedactionRegistry()
+        self.redactor = redactor or self.redaction.redactor()
+        self.checkpoints = checkpoints
         self.validator = task_validator or TaskValidator(
             profiles=builtin_profiles(),
             workspace_root=workspace,
@@ -266,9 +273,41 @@ class RunController:
         self,
         instruction: str,
         *,
+        run_id: RunId | None = None,
         controls: LeadControls | None = None,
         workspace_revision: str = "git:head",
         delegation_approved: bool = False,
+    ) -> RunResult:
+        if self.checkpoints is not None:
+            self.checkpoints.initialize()
+            async with self.checkpoints.saver(str(self.session_id)) as saver:
+                await saver.setup()
+                return await self._run_instruction_impl(
+                    instruction,
+                    run_id=run_id,
+                    controls=controls,
+                    workspace_revision=workspace_revision,
+                    delegation_approved=delegation_approved,
+                    saver=saver,
+                )
+        return await self._run_instruction_impl(
+            instruction,
+            run_id=run_id,
+            controls=controls,
+            workspace_revision=workspace_revision,
+            delegation_approved=delegation_approved,
+            saver=None,
+        )
+
+    async def _run_instruction_impl(
+        self,
+        instruction: str,
+        *,
+        run_id: RunId | None = None,
+        controls: LeadControls | None = None,
+        workspace_revision: str = "git:head",
+        delegation_approved: bool = False,
+        saver: Any = None,
     ) -> RunResult:
         active_controls = controls or LeadControls()
         max_children = min(max(active_controls.max_children, 1), 3)
@@ -278,8 +317,32 @@ class RunController:
         gate = ChildRunGate(max_children)
         scheduler = ChildScheduler(max_children=max_children)
 
-        run_id = new_run_id()
+        run_id = run_id or new_run_id()
         now = datetime.now(UTC)
+
+        async def _save_checkpoint(boundary: str, status: str = "committed") -> None:
+            if self.checkpoints is None or saver is None:
+                return
+            try:
+                t = await saver.aget_tuple({"configurable": {"thread_id": str(self.session_id)}})
+                if t and t.config and "configurable" in t.config:
+                    cid = t.config["configurable"].get("checkpoint_id")
+                    if cid:
+                        self.checkpoints.record(
+                            session_id=str(self.session_id),
+                            checkpoint_id=cid,
+                            idempotency_key=f"run:{run_id}:{boundary}",
+                            status=status,
+                            payload={
+                                "run_id": str(run_id),
+                                "boundary": boundary,
+                                "status": status,
+                            },
+                            created_at=datetime.now(UTC),
+                            live_idempotency_keys=(f"run:{run_id}:{boundary}",),
+                        )
+            except Exception:
+                pass
 
         # 1. Create run record in journal
         self.journal.create_run(
@@ -414,9 +477,12 @@ class RunController:
             delegation_approved=delegation_approved,
             leases=leases,
             extra_middleware=[lead_middleware],
+            redactor=self.redaction,
+            checkpointer=saver,
         )
 
         input_message = HumanMessage(content=instruction)
+        invoke_config: RunnableConfig = {"configurable": {"thread_id": str(self.session_id)}}
         try:
             result_state = cast(
                 dict[str, Any],
@@ -424,16 +490,19 @@ class RunController:
                     {
                         "messages": [input_message],
                         "attempt_id": str(lead_attempt_id),
-                    }
+                    },
+                    config=invoke_config,
                 ),
             )
         except BaseException:
-            self.journal.update_attempt_status(
-                attempt_id=str(lead_attempt_id), status=AttemptStatus.FAILED
-            )
-            self.journal.update_task_status(task_id=str(lead_task_id), status=TaskStatus.FAILED)
-            self.journal.update_run_status(run_id=str(run_id), status="failed")
-            self.journal.update_session_status(session_id=str(self.session_id), status="idle")
+            await _save_checkpoint("terminal_failed", status="committed")
+            with self.journal.transaction() as tx:
+                tx.update_attempt_status(
+                    attempt_id=str(lead_attempt_id), status=AttemptStatus.FAILED
+                )
+                tx.update_task_status(task_id=str(lead_task_id), status=TaskStatus.FAILED)
+                tx.update_run_status(run_id=str(run_id), status="failed")
+                tx.update_session_status(session_id=str(self.session_id), status="idle")
             lead_aid = str(lead_assignment.assignment_id)
             if self._has_calls(lead_aid):
                 try:
@@ -457,12 +526,13 @@ class RunController:
                 )
                 break
 
-        self.journal.update_attempt_status(
-            attempt_id=str(lead_attempt_id), status=AttemptStatus.SUCCEEDED
-        )
-        self.journal.update_task_status(task_id=str(lead_task_id), status=TaskStatus.SUCCEEDED)
-        self.journal.update_run_status(run_id=str(run_id), status="completed")
-        self.journal.update_session_status(session_id=str(self.session_id), status="idle")
+        with self.journal.transaction() as tx:
+            tx.update_attempt_status(
+                attempt_id=str(lead_attempt_id), status=AttemptStatus.SUCCEEDED
+            )
+            tx.update_task_status(task_id=str(lead_task_id), status=TaskStatus.SUCCEEDED)
+            tx.update_run_status(run_id=str(run_id), status="completed")
+            tx.update_session_status(session_id=str(self.session_id), status="idle")
 
         lead_aid = str(lead_assignment.assignment_id)
         if self._has_calls(lead_aid):
@@ -475,6 +545,8 @@ class RunController:
                 self.ledger.release(str(lead_assignment.reservation_id))
             except Exception:
                 pass
+
+        await _save_checkpoint("terminal", status="committed")
 
         return RunResult(
             run_id=run_id,
@@ -684,6 +756,7 @@ class RunController:
                 lease_manager=leases,
                 task_id=str(spec.task_id),
                 extra_middleware=[child_middleware],
+                redactor=self.redaction,
             )
 
             formatted_prompt = _format_context_packet(packet)
@@ -733,10 +806,11 @@ class RunController:
                 "cancelled": TaskStatus.CANCELLED,
                 "returned_to_lead": TaskStatus.RETURNED_TO_LEAD,
             }[result.status]
-            self.journal.update_attempt_status(
-                attempt_id=str(binding.attempt_id), status=attempt_status
-            )
-            self.journal.update_task_status(task_id=str(result.task_id), status=task_status)
+            with self.journal.transaction() as tx:
+                tx.update_attempt_status(
+                    attempt_id=str(binding.attempt_id), status=attempt_status
+                )
+                tx.update_task_status(task_id=str(result.task_id), status=task_status)
 
             aid = str(binding.assignment.assignment_id)
             if result.status in ("cancelled", "budget_blocked", "blocked") and not self._has_calls(

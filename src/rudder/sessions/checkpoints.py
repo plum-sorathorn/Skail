@@ -2,19 +2,39 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+import aiosqlite
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from rudder.runtime.errors import FrameworkContractError
 from rudder.sessions.locking import process_file_lock
+
+
+class RedactingSerializer:
+    def __init__(self, serde: Any, redactor: Any = None) -> None:
+        self._serde = serde
+        self._redactor = redactor
+
+    def dumps_typed(self, obj: Any) -> tuple[str, bytes]:
+        if self._redactor is not None:
+            obj = self._redactor.scrub(obj)
+        return cast(tuple[str, bytes], self._serde.dumps_typed(obj))
+
+    def loads_typed(self, data: tuple[str, bytes]) -> Any:
+        return self._serde.loads_typed(data)
+
+
+_LOCAL_CHECKPOINT_LOCKS = threading.local()
 
 
 class CheckpointUnavailableError(RuntimeError):
@@ -40,12 +60,14 @@ class CheckpointRecord:
 class CheckpointStore:
     """Rudder correlation metadata stored beside, but separate from, the journal."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, redactor: Any = None) -> None:
         self.path = path
+        self.redactor = redactor
 
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.path) as connection:
+        connection = sqlite3.connect(self.path)
+        try:
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS rudder_checkpoint_refs ("
                 "session_id TEXT NOT NULL, checkpoint_id TEXT PRIMARY KEY, "
@@ -53,25 +75,57 @@ class CheckpointStore:
                 "payload_json TEXT NOT NULL, live_keys_json TEXT NOT NULL, "
                 "created_at TEXT NOT NULL)"
             )
+        finally:
+            connection.close()
 
     @asynccontextmanager
     async def saver(self, session_id: str) -> AsyncIterator[AsyncSqliteSaver]:
         with self.locked(session_id):
-            async with AsyncSqliteSaver.from_conn_string(str(self.path)) as saver:
-                yield saver
+            serde = (
+                RedactingSerializer(JsonPlusSerializer(), self.redactor)
+                if self.redactor
+                else None
+            )
+            async with aiosqlite.connect(str(self.path)) as conn:
+                saver_instance = AsyncSqliteSaver(conn, serde=serde)
+                await saver_instance.setup()
+                yield saver_instance
 
     @contextmanager
     def sync_saver(self, session_id: str) -> Iterator[SqliteSaver]:
         with self.locked(session_id):
-            with SqliteSaver.from_conn_string(str(self.path)) as saver:
-                yield saver
+            serde = (
+                RedactingSerializer(JsonPlusSerializer(), self.redactor)
+                if self.redactor
+                else None
+            )
+            conn = sqlite3.connect(str(self.path), check_same_thread=False)
+            try:
+                saver_instance = SqliteSaver(conn, serde=serde)
+                saver_instance.setup()
+                yield saver_instance
+            finally:
+                conn.close()
 
     @contextmanager
     def locked(self, session_id: str) -> Iterator[None]:
+        held: set[str] | None = getattr(_LOCAL_CHECKPOINT_LOCKS, "held", None)
+        if held is None:
+            held = set()
+            _LOCAL_CHECKPOINT_LOCKS.held = held
+
+        if session_id in held:
+            yield
+            return
+
         digest = sha256(session_id.encode("utf-8")).hexdigest()[:24]
         lock_path = self.path.parent / f".rudder-session-{digest}.lock"
         with process_file_lock(lock_path):
-            yield
+            held.add(session_id)
+            try:
+                yield
+            finally:
+                held.discard(session_id)
 
     def record(
         self,
@@ -84,7 +138,10 @@ class CheckpointStore:
         created_at: datetime,
         live_idempotency_keys: tuple[str, ...] | None = None,
     ) -> None:
-        payload_json = json.dumps(payload, sort_keys=True)
+        payload_data = (
+            self.redactor.scrub(payload) if self.redactor is not None else payload
+        )
+        payload_json = json.dumps(payload_data, sort_keys=True)
         live_keys = tuple(sorted(set(live_idempotency_keys or (idempotency_key,))))
         live_keys_json = json.dumps(live_keys)
         values = (
@@ -96,12 +153,14 @@ class CheckpointStore:
             live_keys_json,
         )
         with self.locked(session_id):
-            with sqlite3.connect(self.path) as connection:
+            connection = sqlite3.connect(self.path)
+            try:
                 try:
                     connection.execute(
                         "INSERT INTO rudder_checkpoint_refs VALUES (?,?,?,?,?,?,?)",
                         (*values, created_at.isoformat()),
                     )
+                    connection.commit()
                 except sqlite3.IntegrityError as exc:
                     row = connection.execute(
                         "SELECT session_id,checkpoint_id,idempotency_key,status,payload_json,"
@@ -115,12 +174,15 @@ class CheckpointStore:
                         "checkpoint replay conflicts with persisted content",
                         idempotency_key=idempotency_key,
                     ) from exc
+            finally:
+                connection.close()
 
     def latest_valid(self, session_id: str) -> CheckpointRecord | None:
         if not self.path.exists():
             raise CheckpointUnavailableError("checkpoint store does not exist")
         try:
-            with sqlite3.connect(self.path) as connection:
+            connection = sqlite3.connect(self.path)
+            try:
                 row = connection.execute(
                     "SELECT session_id,checkpoint_id,idempotency_key,status,"
                     "payload_json,live_keys_json,created_at "
@@ -128,6 +190,8 @@ class CheckpointStore:
                     "ORDER BY created_at DESC LIMIT 1",
                     (session_id,),
                 ).fetchone()
+            finally:
+                connection.close()
         except sqlite3.DatabaseError as exc:
             raise CheckpointCorruptError("checkpoint store is corrupt") from exc
         if row is None:
