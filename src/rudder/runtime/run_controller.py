@@ -32,7 +32,7 @@ from rudder.domain.ids import (
     new_task_id,
 )
 from rudder.domain.routing import RoutingMode, TaskAssignment
-from rudder.domain.tasks import AttemptStatus, TaskResult, TaskSpec, TaskStatus, VerificationResult
+from rudder.domain.tasks import AttemptStatus, TaskResult, TaskSpec, TaskStatus
 from rudder.routing.selector import RouteFailure
 from rudder.runtime.deepagents_adapter import ChildRunGate
 from rudder.runtime.leases import WorkspaceLeaseManager
@@ -306,6 +306,8 @@ class RunController:
         delegation_approved: bool,
         recorded_child_results: list[TaskResult],
     ) -> CompiledSubAgent:
+        attempt_ids: dict[str, str] = {}
+
         def default_assign(
             spec: TaskSpec, number: int, excluded: tuple[tuple[str, str], ...]
         ) -> AttemptBinding | RouteFailure:
@@ -366,6 +368,7 @@ class RunController:
                 created_at=now,
                 payload=assignment.model_dump(mode="json"),
             )
+            attempt_ids[str(spec.task_id)] = str(attempt_id)
             return AttemptBinding(attempt_id, assignment)
 
         async def execute_child(
@@ -400,12 +403,7 @@ class RunController:
                 task_id=str(spec.task_id),
             )
 
-            # Child receives bounded context packet in model prompt
-            formatted_prompt = (
-                f"<context_packet revision='{packet.revision}'>\n"
-                f"objective: {spec.request.description}\n"
-                f"</context_packet>"
-            )
+            formatted_prompt = _format_context_packet(packet)
 
             result_state = cast(
                 dict[str, Any],
@@ -423,22 +421,35 @@ class RunController:
                     )
                     break
 
-            verification_list = [
-                VerificationResult(criterion=c, passed=True, evidence="automated pass")
-                for c in spec.request.success_criteria
-            ]
-
             result = TaskResult(
                 task_id=spec.task_id,
                 status="succeeded",
                 summary=child_output or "child execution completed",
-                verification=tuple(verification_list),
             )
             recorded_child_results.append(result)
             return result
 
         def record_settle(binding: AttemptBinding, result: TaskResult) -> None:
-            pass
+            attempt_status = {
+                "succeeded": AttemptStatus.SUCCEEDED,
+                "failed": AttemptStatus.FAILED,
+                "blocked": AttemptStatus.BLOCKED,
+                "budget_blocked": AttemptStatus.BLOCKED,
+                "cancelled": AttemptStatus.CANCELLED,
+                "returned_to_lead": AttemptStatus.FAILED,
+            }[result.status]
+            task_status = {
+                "succeeded": TaskStatus.SUCCEEDED,
+                "failed": TaskStatus.FAILED,
+                "blocked": TaskStatus.BLOCKED,
+                "budget_blocked": TaskStatus.BUDGET_BLOCKED,
+                "cancelled": TaskStatus.CANCELLED,
+                "returned_to_lead": TaskStatus.RETURNED_TO_LEAD,
+            }[result.status]
+            self.journal.update_attempt_status(
+                attempt_id=str(binding.attempt_id), status=attempt_status
+            )
+            self.journal.update_task_status(task_id=str(result.task_id), status=task_status)
 
         def exhaust_fp(spec: TaskSpec) -> None:
             self.registry._failed_fingerprint_attempts[spec.fingerprint] = 2
@@ -452,8 +463,27 @@ class RunController:
             workspace_revision=workspace_revision,
             gate=gate,
             leases=leases,
+            persist_context=lambda packet: self._persist_context_packet(
+                packet,
+                run_id=run_id,
+                task_id=packet.task_id,
+                attempt_id=attempt_ids.get(packet.task_id),
+            ),
             assign=default_assign,
             execute=execute_child,
             settle_attempt=record_settle,
             exhaust_fingerprint=exhaust_fp,
         )
+
+
+def _format_context_packet(packet: ContextPacket) -> str:
+    component_text = "\n".join(
+        f"{component.label}: {component.content}" for component in packet.components
+    )
+    omissions = ", ".join(packet.omissions) or "none"
+    return (
+        f"<context_packet revision='{packet.revision}' tokens='{packet.estimated_tokens}'>\n"
+        f"{component_text}\n"
+        f"omissions: {omissions}\n"
+        "</context_packet>"
+    )

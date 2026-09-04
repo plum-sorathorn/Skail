@@ -161,7 +161,14 @@ def build_task_graph(
                     return await execute(spec, assignment, packet)
             return await execute(spec, assignment, packet)
 
-        result = await gate.run(str(spec.task_id), invoke)
+        try:
+            result = await gate.run(str(spec.task_id), invoke)
+        except Exception as exc:
+            result = TaskResult(
+                task_id=spec.task_id,
+                status="failed",
+                summary=f"attempt execution failed: {exc}",
+            )
         if result.task_id != spec.task_id:
             raise ValueError("task result identity mismatch")
         return {"result": evaluate_result(result, required_criteria=spec.request.success_criteria)}

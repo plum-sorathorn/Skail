@@ -111,6 +111,33 @@ async def test_task_graph_keeps_budget_block_distinct_and_never_executes(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_task_graph_converts_execution_error_to_bounded_escalation(tmp_path) -> None:
+    spec = _spec(tmp_path)
+    assignments = [_assignment(spec, 1, "economy"), _assignment(spec, 2, "quality")]
+    assigned: list[int] = []
+
+    def assign(task, number, excluded):
+        assigned.append(number)
+        return AttemptBinding(new_attempt_id(), assignments[number - 1])
+
+    async def execute(*args):
+        raise RuntimeError("provider unavailable")
+
+    graph = build_task_graph(
+        profile=builtin_profiles()["implementer"],
+        assign=assign,
+        execute=execute,
+        gate=ChildRunGate(3),
+        leases=WorkspaceLeaseManager(),
+    )
+
+    state = await graph.ainvoke({"spec": spec})
+    assert assigned == [1, 2]
+    assert state["result"].status == "returned_to_lead"
+    assert "provider unavailable" in state["result"].summary
+
+
+@pytest.mark.asyncio
 async def test_standard_task_surface_creates_distinct_task_and_assignment_identity(
     tmp_path,
 ) -> None:
