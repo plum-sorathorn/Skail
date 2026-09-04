@@ -4,7 +4,8 @@ import argparse
 import asyncio
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,7 @@ from rudder.domain.ids import SessionId, new_run_id
 from rudder.domain.routing import RoutingMode
 from rudder.domain.security import ProjectTrustLevel, identify_workspace
 from rudder.domain.sessions import SessionRecord
+from rudder.providers.base import ProviderAdapter
 from rudder.providers.credentials import EnvironmentCredentialResolver
 from rudder.providers.errors import ProviderConfigurationError
 from rudder.runtime.interrupts import QuestionStore
@@ -56,6 +58,19 @@ from rudder.tools.approvals import ApprovalStore
 REMOVED_ALIASES = frozenset(
     {"proxy", "serve", "oma", "daemon", "plugin", "slm", "--proxy", "--port", "--host"}
 )
+
+
+@dataclass(frozen=True)
+class RuntimeModelSet:
+    models: dict[str, Any]
+    lead_model: str
+    child_model: str
+    providers: dict[str, ProviderAdapter]
+
+    def __iter__(self) -> Iterator[Any]:
+        yield self.models
+        yield self.lead_model
+        yield self.child_model
 
 
 KNOWN_SUBCOMMANDS = frozenset({"auth", "models", "sessions", "config", "smoke"})
@@ -483,9 +498,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # 8. Interactive TUI execution
     if not args.print_mode and not args.json_mode and sys.stdin.isatty():
         try:
-            models, lead_model_name, child_model_name = _build_runtime_models(
+            runtime_models = _build_runtime_models(
                 args, redaction, prompt_text
             )
+            models, lead_model_name, child_model_name = runtime_models
         except ProviderConfigurationError as exc:
             render_print_stderr(f"Provider configuration error: {exc}")
             return EXIT_FAILURE
@@ -507,6 +523,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             approvals=approvals,
             question_store=question_store,
             profile_models=profile_models,
+            providers=runtime_models.providers,
         )
         app = RudderApp(
             controller=controller,
@@ -540,7 +557,7 @@ def _build_runtime_models(
     args: argparse.Namespace,
     redaction: RedactionRegistry,
     prompt: str = "",
-) -> tuple[dict[str, Any], str, str]:
+) -> RuntimeModelSet:
     from rudder.providers.fake import DeterministicFakeChatModel
 
     lead_model_name = args.lead_model or args.default_model or "lead-model"
@@ -564,7 +581,14 @@ def _build_runtime_models(
             "fake:fast-model": lead_fake,
             "fake:smart-model": lead_fake,
         }
-        return models, lead_model_name, child_model_name
+        from rudder.providers.fake import FakeProviderAdapter
+
+        return RuntimeModelSet(
+            models,
+            lead_model_name,
+            child_model_name,
+            {"fake": FakeProviderAdapter(lead_fake)},
+        )
 
     cred_resolver = EnvironmentCredentialResolver(redaction)
     candidate_providers = ("llmgateway", "openai", "anthropic")
@@ -625,6 +649,7 @@ def _build_runtime_models(
         )
 
     models_dict: dict[str, Any] = {}
+    provider_adapters: dict[str, ProviderAdapter] = {}
     if selected_provider == "llmgateway":
         from rudder.config.models import ProviderConfig
         from rudder.providers.base import ModelOptions
@@ -638,6 +663,7 @@ def _build_runtime_models(
             type="openai_compatible", base_url=LLMGATEWAY_BASE_URL, models=(actual_model,)
         )
         adapter = LLMGatewayAdapter(cfg, api_key=resolved_cred.reveal())
+        provider_adapters[selected_provider] = adapter
         profile = ModelProfile(
             provider="llmgateway",
             model=actual_model,
@@ -650,7 +676,7 @@ def _build_runtime_models(
         models_dict[actual_model] = chat_model
         models_dict[child_model_name] = chat_model
     else:
-        from rudder.providers.langchain import LangChainModelFactory
+        from rudder.providers.langchain import LangChainModelFactory, LangChainUsageAdapter
         from rudder.providers.registry import LangChainProviderRegistry, ProviderRegistration
 
         actual_model = (
@@ -680,6 +706,7 @@ def _build_runtime_models(
             model=actual_model,
             options={"api_key": resolved_cred.reveal()},
         )
+        provider_adapters[selected_provider] = LangChainUsageAdapter(selected_provider)
         models_dict[lead_model_name] = chat_model
         models_dict[actual_model] = chat_model
         models_dict[child_model_name] = chat_model
@@ -689,7 +716,12 @@ def _build_runtime_models(
         lead_model_name = f"{selected_provider}:{actual_model}"
         models_dict[lead_model_name] = chat_model
 
-    return models_dict, lead_model_name, child_model_name
+    return RuntimeModelSet(
+        models_dict,
+        lead_model_name,
+        child_model_name,
+        provider_adapters,
+    )
 
 
 async def _execute_instruction(
@@ -708,9 +740,10 @@ async def _execute_instruction(
     from rudder.runtime.run_controller import RunController
 
     try:
-        models, lead_model_name, child_model_name = _build_runtime_models(
+        runtime_models = _build_runtime_models(
             args, redaction, prompt
         )
+        models, lead_model_name, child_model_name = runtime_models
     except ProviderConfigurationError as exc:
         render_print_stderr(f"Provider configuration error: {exc}")
         return EXIT_FAILURE
@@ -738,6 +771,7 @@ async def _execute_instruction(
         approvals=approvals,
         question_store=question_store,
         profile_models=_parse_agent_models(getattr(args, "agent_models", [])),
+        providers=runtime_models.providers,
         event_observer=render_jsonl_event if args.json_mode else None,
     )
 

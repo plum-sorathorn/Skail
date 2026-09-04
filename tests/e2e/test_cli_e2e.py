@@ -209,7 +209,8 @@ def test_cli_returns_blocked_exit_code_on_interrupted_run(tmp_path: Path) -> Non
     import asyncio
 
     import rudder.cli.main as cli_main
-    from rudder.cli.main import _execute_instruction
+    from rudder.cli.main import RuntimeModelSet, _execute_instruction
+    from rudder.providers.fake import FakeProviderAdapter
     from rudder.runtime.interrupts import QuestionStore
     from rudder.runtime.redaction import RedactionRegistry
     from rudder.sessions.checkpoints import CheckpointStore
@@ -252,10 +253,11 @@ def test_cli_returns_blocked_exit_code_on_interrupted_run(tmp_path: Path) -> Non
 
     orig_builder = cli_main._build_runtime_models
     try:
-        cli_main._build_runtime_models = lambda a, r, p="": (  # type: ignore[assignment]
+        cli_main._build_runtime_models = lambda a, r, p="": RuntimeModelSet(  # type: ignore[assignment]
             {"lead-model": model, "implementer-model": model},
             "lead-model",
             "lead-model",
+            {"fake": FakeProviderAdapter(model)},
         )
         code = asyncio.run(
             _execute_instruction(

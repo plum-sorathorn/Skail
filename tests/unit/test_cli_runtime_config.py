@@ -76,11 +76,13 @@ def test_runtime_model_construction_uses_configured_provider_and_credential_refe
     _apply_run_config(args, config)
     monkeypatch.setenv("CUSTOM_GATEWAY_TOKEN", "configured-canary-token")
 
-    models, lead_model, child_model = _build_runtime_models(
+    runtime_models = _build_runtime_models(
         args,
         RedactionRegistry(),
     )
+    models, lead_model, child_model = runtime_models
 
     assert lead_model == "llmgateway:test/model"
     assert child_model == "llmgateway:test/model"
     assert "llmgateway:test/model" in models
+    assert runtime_models.providers["llmgateway"].name == "llmgateway"
