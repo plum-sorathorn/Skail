@@ -61,11 +61,6 @@ def main() -> int:
         ),
     )
     parser.add_argument(
-        "--live",
-        action="store_true",
-        help="Run live-provider evaluation (opt-in)",
-    )
-    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -100,7 +95,6 @@ def main() -> int:
     runner = EvaluationRunner(
         fixtures=fixtures,
         policies=policies,
-        live=args.live,
         seed=args.seed,
     )
 

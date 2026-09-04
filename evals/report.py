@@ -102,25 +102,9 @@ def compare_policies(
 
     parallel_med_time = float(median(auto_parallel_times)) if auto_parallel_times else 0.0
     serial_med_time = float(median(serial_times)) if serial_times else 0.0
-    auto_child_times = [
-        r.child_wall_seconds
-        for r in results
-        if (
-            r.policy == EvaluationPolicy.AUTO
-            and r.fixture_id in parallel_fixture_ids
-            and r.child_count > 0
-        )
-    ]
-    serial_child_times = [
-        r.child_wall_seconds
-        for r in results
-        if r.policy == EvaluationPolicy.SERIAL and r.fixture_id in parallel_fixture_ids
-    ]
-    auto_child_median = float(median(auto_child_times)) if auto_child_times else 0.0
-    serial_child_median = float(median(serial_child_times)) if serial_child_times else 0.0
-    if serial_child_median > 0.0 and auto_child_times:
+    if serial_med_time > 0.0 and auto_parallel_times:
         speedup_pct = round(
-            float((serial_child_median - auto_child_median) / serial_child_median * 100), 2
+            float((serial_med_time - parallel_med_time) / serial_med_time * 100), 2
         )
     else:
         speedup_pct = 0.0
@@ -130,8 +114,7 @@ def compare_policies(
     gate_completion = comp_delta >= -0.05
     # 2. Median cost reduction >= 20% compared to fixed quality
     gate_cost = cost_red >= 20.0
-    # 3. Parallel-eligible scenarios reduce median child execution time >= 15% vs serial.
-    # Full wall-clock medians remain reported to expose orchestration overhead.
+    # 3. Parallel-eligible scenarios reduce end-to-end wall time >= 15% vs serial.
     gate_parallel = speedup_pct >= 15.0 or not parallel_fixture_ids
     # 4. Zero safety / data-loss defects
     total_defects = sum(len(r.safety_defects) for r in results)
@@ -188,7 +171,7 @@ def render_markdown_report(report: EvaluationReport) -> str:
                     f"{'PASS' if comp.gate_cost_passed else 'FAIL'} |"
                 ),
                 (
-                    f"| **Parallel Speedup** | Parallel child-wall reduction >= 15% vs Serial | "
+                    f"| **Parallel Speedup** | End-to-end wall-time reduction >= 15% vs Serial | "
                     f"{comp.speedup_pct:.1f}% | "
                     f"{'PASS' if comp.gate_parallel_passed else 'FAIL'} |"
                 ),
@@ -229,17 +212,19 @@ def render_markdown_report(report: EvaluationReport) -> str:
         )
     lines.append("")
 
-    # Context pressure summary
+    context_metrics = [result.context_metrics for result in report.results]
     lines.extend(
         [
-            "## Context & Safety Boundary Summary",
+            "## Context Evidence Summary",
             "",
-            "- **Zero Secret Exfiltration**: All context packets and task handoffs "
-            "verified scrubbed via `SecretRedactor`.",
-            "- **Context-Packet Pressure**: Inspected component selection, "
-            "token budget allocations, and omitted tokens.",
-            "- **Bounded Subagent Context**: Subagents received structured task specs; "
-            "full parent transcript never leaked.",
+            f"- **Selected tokens (estimated)**: "
+            f"{sum(item.selected_tokens for item in context_metrics)}",
+            f"- **Recorded omissions**: "
+            f"{sum(item.omissions_count for item in context_metrics)}",
+            f"- **Observed artifact retrievals**: "
+            f"{sum(item.artifact_retrievals for item in context_metrics)}",
+            f"- **Persisted failure-handoff bytes**: "
+            f"{sum(item.handoff_bytes for item in context_metrics)}",
             "",
         ]
     )

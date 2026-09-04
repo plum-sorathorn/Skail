@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from pathlib import Path
 
-from evals.report import render_markdown_report
+from evals.report import compare_policies, generate_policy_summary, render_markdown_report
 from evals.runner import (
     EvaluationRunner,
     _default_eval_candidates,
@@ -154,7 +154,11 @@ def test_evaluation_runner_runs_deterministic_fake_suite() -> None:
     assert report.fixture_count == 2
     assert len(report.results) == 10  # 2 fixtures * 5 policies
     assert report.policy_summaries[EvaluationPolicy.AUTO.value].completion_rate == 1.0
-    assert report.policy_summaries[EvaluationPolicy.QUALITY.value].completion_rate == 1.0
+    assert report.policy_summaries[EvaluationPolicy.QUALITY.value].completion_rate == 1.0, [
+        (result.error, result.safety_defects)
+        for result in report.results
+        if result.policy is EvaluationPolicy.QUALITY
+    ]
     assert report.comparison is not None
     # The fixture executor uses real Rudder tools.  This small suite does not
     # create a genuine parallel workload, so it must not manufacture a speedup.
@@ -221,3 +225,68 @@ def test_default_candidates_include_manual_child_pin() -> None:
     selection = select_model(candidates, reqs, manual_model=("fake", "explorer"))
     assert selection.candidate.profile.model == "explorer"
     assert not selection.candidate.profile.auto_eligible
+
+
+def test_parallel_gate_uses_end_to_end_wall_time_not_child_only_timing() -> None:
+    fixture = EvaluationFixture(
+        id="parallel-wall",
+        title="Parallel wall time",
+        category="parallel",
+        role="implementer",
+        prompt="Run parallel work",
+        parallel_eligible=True,
+        oracle=OracleSpec(type=OracleType.FILE_EXISTS, target="done.txt"),
+    )
+    common = {
+        "fixture_id": fixture.id,
+        "completed": True,
+        "passed_oracle": True,
+        "total_cost_usd": Decimal("1.00"),
+        "models_used": ("model",),
+        "assignments_count": 1,
+        "escalations_count": 0,
+        "interrupts_count": 0,
+        "child_count": 3,
+    }
+    results = [
+        TaskEvalResult(
+            policy=EvaluationPolicy.AUTO,
+            wall_time_seconds=1.0,
+            child_wall_seconds=0.2,
+            **common,
+        ),
+        TaskEvalResult(
+            policy=EvaluationPolicy.SERIAL,
+            wall_time_seconds=0.9,
+            child_wall_seconds=0.6,
+            **common,
+        ),
+    ]
+    summaries = {
+        policy.value: generate_policy_summary(results, policy)
+        for policy in (EvaluationPolicy.AUTO, EvaluationPolicy.SERIAL)
+    }
+
+    comparison = compare_policies(summaries, results, [fixture])
+
+    assert comparison.speedup_pct < 0
+    assert not comparison.gate_parallel_passed
+
+
+def test_evaluator_reports_only_runtime_observed_escalations() -> None:
+    fixture = EvaluationFixture(
+        id="complex-no-failure",
+        title="Complex successful task",
+        category="complex",
+        role="implementer",
+        risk=TaskRisk.COMPLEX,
+        prompt="Write result.txt",
+        oracle=OracleSpec(type=OracleType.FILE_EXISTS, target="result.txt"),
+    )
+
+    report = EvaluationRunner(
+        fixtures=[fixture],
+        policies=[EvaluationPolicy.ECONOMY],
+    ).run()
+
+    assert report.results[0].escalations_count == 0
