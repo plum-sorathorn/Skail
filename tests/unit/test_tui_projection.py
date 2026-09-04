@@ -157,6 +157,12 @@ def test_projection_apply_snapshot() -> None:
     assert proj.pending_interrupt.approval_id == 'app-1'
     assert proj.pending_interrupt.question == 'Allow rm -rf?'
 
+    proj.apply_snapshot(snapshot)
+
+    assert len(proj.transcript_items) == 1
+    assert len(proj.agent_rail_items) == 1
+    assert proj.pending_interrupt is not None
+
 
 def test_collapsible_and_uncollapsible_invariants() -> None:
     proj = TuiProjection()

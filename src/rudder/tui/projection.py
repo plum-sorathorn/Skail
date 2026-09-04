@@ -98,6 +98,12 @@ class TuiProjection:
         self.focused_agent_id: str | None = None
 
     def apply_snapshot(self, snapshot: SessionSnapshot) -> None:
+        self.transcript_items = []
+        self.agent_rail_items = []
+        self.route_items = {}
+        self.budget_item = BudgetViewItem()
+        self.pending_interrupt = None
+        self.footer_data = FooterData()
         self.session_id = snapshot.session_id
         self.session_title = snapshot.title
         self.session_status = snapshot.status
