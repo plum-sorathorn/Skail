@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import subprocess
 import time
 from collections.abc import Sequence
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -28,9 +30,18 @@ from evals.schema import (
 from rudder.agents.context import ContextAssembler, ContextComponent
 from rudder.agents.lead import LeadControls
 from rudder.domain.events import SecretRedactor
-from rudder.domain.ids import new_assignment_id, new_reservation_id, new_session_id, new_task_id
-from rudder.domain.routing import TaskAssignment
+from rudder.domain.ids import (
+    ReservationId,
+    TaskId,
+    new_assignment_id,
+    new_reservation_id,
+    new_session_id,
+    new_task_id,
+)
+from rudder.domain.routing import RoutingMode, TaskAssignment
+from rudder.providers.fake import FakeProviderAdapter
 from rudder.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
+from rudder.routing.assignment import RoutingSnapshot, config_revision
 from rudder.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
 from rudder.routing.requirements import ROLE_FLOORS, RequirementBuilder, TaskRisk
 from rudder.routing.selector import RouteCandidate, select_model
@@ -42,7 +53,9 @@ class _FixtureChatModel(BaseChatModel):
     """Offline fixture behavior that exercises Rudder's actual tool boundary."""
 
     model_name: str = "eval-model"
-    tool_calls: tuple[dict[str, Any], ...] = ()
+    turns: tuple[list[dict[str, Any]], ...] = ()
+    is_child: bool = False
+    child_delay: float = 0.0
     _cursor: int = 0
 
     def _generate(
@@ -53,13 +66,40 @@ class _FixtureChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         del messages, stop, run_manager, kwargs
-        if self._cursor < len(self.tool_calls):
-            call = self.tool_calls[self._cursor]
+        if self.is_child and self.child_delay > 0:
+            time.sleep(self.child_delay)
+            return ChatResult(
+                generations=[
+                    ChatGeneration(
+                        message=AIMessage(content="Exploration and verification complete.")
+                    )
+                ]
+            )
+        if self._cursor < len(self.turns):
+            calls = self.turns[self._cursor]
             self._cursor += 1
-            message = AIMessage(content="", tool_calls=[call])
+            message = AIMessage(content="", tool_calls=calls)
         else:
             message = AIMessage(content="Fixture work completed through Rudder tools.")
         return ChatResult(generations=[ChatGeneration(message=message)])
+
+    async def _agenerate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        if self.is_child and self.child_delay > 0:
+            await asyncio.sleep(self.child_delay)
+            return ChatResult(
+                generations=[
+                    ChatGeneration(
+                        message=AIMessage(content="Exploration and verification complete.")
+                    )
+                ]
+            )
+        return self._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
     @property
     def _llm_type(self) -> str:
@@ -70,7 +110,11 @@ class _FixtureChatModel(BaseChatModel):
         return self
 
 
-def _fixture_tool_calls(oracle: OracleSpec) -> tuple[dict[str, Any], ...]:
+def _build_fixture_turns(
+    fixture: EvaluationFixture,
+    *,
+    allow_delegation: bool,
+) -> tuple[list[dict[str, Any]], ...]:
     def write_call(target: str, content: str, index: int) -> dict[str, Any]:
         return {
             "name": "write_file",
@@ -78,16 +122,14 @@ def _fixture_tool_calls(oracle: OracleSpec) -> tuple[dict[str, Any], ...]:
             "id": f"eval-write-{index}",
         }
 
+    oracle = fixture.oracle
     if oracle.type in {OracleType.FILE_EXISTS, OracleType.FILE_CONTAINS, OracleType.FILE_CONTENT}:
-        return (write_call(oracle.target, oracle.expected or "ok\n", 1),)
+        return ([write_call(oracle.target, oracle.expected or "ok\n", 1)],)
+
     if oracle.type is OracleType.MULTI_ASSERT:
-        return tuple(
-            write_call(
-                str(assertion["target"]),
-                str(assertion.get("expected", "ok\n")),
-                index,
-            )
-            for index, assertion in enumerate(oracle.assertions, start=1)
+        targets = [
+            (str(assertion["target"]), str(assertion.get("expected", "ok\n")))
+            for assertion in oracle.assertions
             if assertion.get("type", "file_exists")
             in {
                 OracleType.FILE_EXISTS.value,
@@ -95,7 +137,34 @@ def _fixture_tool_calls(oracle: OracleSpec) -> tuple[dict[str, Any], ...]:
                 OracleType.FILE_CONTENT.value,
             }
             and assertion.get("target")
+        ]
+        if not targets:
+            return ()
+
+        # Genuine parallel workload: delegate to concurrent explorers in turn 1, then write sequentially
+        if fixture.parallel_eligible and allow_delegation and len(targets) >= 2:
+            task_calls = [
+                {
+                    "name": "task",
+                    "args": {
+                        "subagent_type": "explorer",
+                        "description": f"Analyze and verify requirements for {target}",
+                    },
+                    "id": f"eval-task-{i}",
+                }
+                for i, (target, _) in enumerate(targets, start=1)
+            ]
+            write_turns = [
+                [write_call(target, content, i)]
+                for i, (target, content) in enumerate(targets, start=1)
+            ]
+            return (task_calls, *write_turns)
+
+        return tuple(
+            [write_call(target, content, i)]
+            for i, (target, content) in enumerate(targets, start=1)
         )
+
     return ()
 
 
@@ -153,6 +222,24 @@ def _default_eval_candidates() -> tuple[RouteCandidate, ...]:
                 reasoning=0.94,
                 tool_reliability=0.98,
                 latency=0.80,
+            ),
+        ),
+        ModelProfile(
+            provider="fake",
+            model="explorer",
+            support_level=ProviderSupportLevel.NATIVE,
+            input_usd_per_million=Decimal("1.25"),
+            output_usd_per_million=Decimal("5.00"),
+            context_tokens=131072,
+            max_output_tokens=8192,
+            supports_tools=True,
+            supports_structured_output=True,
+            auto_eligible=False,
+            capability=CapabilityVector(
+                coding=0.68,
+                reasoning=0.70,
+                tool_reliability=0.88,
+                latency=0.45,
             ),
         ),
     ]
@@ -303,6 +390,8 @@ class EvaluationRunner:
         self.base_workspace = base_workspace
         self.live = live
         self.seed = seed
+        if self.seed is not None:
+            random.seed(self.seed)
         self.redactor = SecretRedactor()
         self.assembler = ContextAssembler(redactor=self.redactor)
         self.req_builder = RequirementBuilder()
@@ -346,9 +435,17 @@ class EvaluationRunner:
     ) -> TaskEvalResult:
         import tempfile
         start_time = time.perf_counter()
+        exec_start_time = start_time  # refined to just before asyncio.run when controller runs
 
-        with tempfile.TemporaryDirectory(prefix=f"rudder-eval-{fixture.id}-") as tmp_dir_str:
-            workspace = Path(tmp_dir_str)
+        if self.base_workspace is not None:
+            ws_path = self.base_workspace / f"rudder-eval-{fixture.id}-{policy.value}"
+            ws_path.mkdir(parents=True, exist_ok=True)
+            workspace_ctx: Any = nullcontext(ws_path)
+        else:
+            workspace_ctx = tempfile.TemporaryDirectory(prefix=f"rudder-eval-{fixture.id}-")
+
+        with workspace_ctx as tmp_dir_raw:
+            workspace = Path(tmp_dir_raw)
             # 1. Populate initial files
             for rel_path, content in fixture.initial_files.items():
                 target_file = workspace / rel_path
@@ -482,30 +579,150 @@ class EvaluationRunner:
                     title=fixture.title,
                     created_at=datetime.now(UTC),
                 )
-                fixture_model = _FixtureChatModel(
-                    model_name=selected_model_name,
-                    tool_calls=_fixture_tool_calls(fixture.oracle),
+                allow_delegation = policy != EvaluationPolicy.NO_DELEGATION
+                turns = _build_fixture_turns(fixture, allow_delegation=allow_delegation)
+
+                child_model = _FixtureChatModel(
+                    model_name="explorer",
+                    is_child=True,
+                    child_delay=0.18,
                 )
+                runtime_models: dict[str, BaseChatModel] = {
+                    "explorer": child_model,
+                    "fake:explorer": child_model,
+                    "implementer": child_model,
+                    "fake:implementer": child_model,
+                    "implementer-model": child_model,
+                    "fake:implementer-model": child_model,
+                }
+                for c in self.candidates:
+                    m = _FixtureChatModel(
+                        model_name=c.profile.model,
+                        turns=turns,
+                    )
+                    runtime_models[c.profile.model] = m
+                    runtime_models[f"{c.profile.provider}:{c.profile.model}"] = m
+                    runtime_models[f"fake:{c.profile.model}"] = m
+
+                # The fake:explorer manual-pin candidate must not clobber the delayed
+                # child instance: children are pinned to ("fake", "explorer"), so the
+                # pin-resolved names must map to the is_child model with the latency.
+                runtime_models["explorer"] = child_model
+                runtime_models["fake:explorer"] = child_model
+
+                sel_model = _FixtureChatModel(
+                    model_name=selected_model_name,
+                    turns=turns,
+                )
+                runtime_models[selected_model_name] = sel_model
+                runtime_models[f"fake:{selected_model_name}"] = sel_model
+                if chosen_candidate is not None:
+                    runtime_models[
+                        f"{chosen_candidate.profile.provider}:{selected_model_name}"
+                    ] = sel_model
+
+                # Pre-select child routing so child_model is registered under the model
+                # name that execute_child() will look up from assignment.model.
+                # Explorer profile uses a lower capability floor than the lead, so
+                # children will typically route to a different (cheaper) candidate.
+                child_reqs = self.req_builder.build(
+                    role="explorer",
+                    risk=fixture.risk,
+                    mode=routing_mode,
+                )
+                child_selection = select_model(self.candidates, child_reqs)
+                if isinstance(child_selection, RouteCandidate):
+                    child_assigned_name = child_selection.profile.model
+                    child_assigned_provider = child_selection.profile.provider
+                elif hasattr(child_selection, "candidate"):
+                    child_assigned_name = child_selection.candidate.profile.model
+                    child_assigned_provider = child_selection.candidate.profile.provider
+                else:
+                    child_assigned_name = None
+                    child_assigned_provider = None
+
+                if child_assigned_name and child_assigned_name != selected_model_name:
+                    # Override the candidate-registered entry so children get the
+                    # delayed model, not the lead's turns-based model.
+                    runtime_models[child_assigned_name] = child_model
+                    if child_assigned_provider:
+                        runtime_models[f"{child_assigned_provider}:{child_assigned_name}"] = child_model
+                    runtime_models[f"fake:{child_assigned_name}"] = child_model
+
                 controls = LeadControls(
                     delegation="off" if policy is EvaluationPolicy.NO_DELEGATION else "auto",
                     max_children=1 if policy is EvaluationPolicy.SERIAL else 3,
+                    routing_mode=routing_mode,
+                    risk=fixture.risk,
                 )
+                exec_start_time = time.perf_counter()
                 try:
                     run_result = asyncio.run(
                         RunController(
                             session_id=session_id,
                             workspace=workspace,
                             journal=journal,
-                            models={selected_model_name: fixture_model},
+                            models=runtime_models,
                             default_lead_model=selected_model_name,
+                            default_child_model="explorer",
                             budget_limit_usd=Decimal("10.00"),
+                            catalog_revision=catalog_revision,
+                            providers={
+                                "eval-provider": FakeProviderAdapter(),
+                                "fake": FakeProviderAdapter(),
+                            },
+                            candidates_fn=lambda: RoutingSnapshot(
+                                catalog_revision=catalog_revision,
+                                config_revision=config_revision(
+                                    {"routing": {"mode": routing_mode.value}}
+                                ),
+                                health_revision="eval-health-v1",
+                                candidates=self.candidates,
+                            ),
                         ).run_instruction(fixture.prompt, controls=controls)
                     )
                 except Exception as exc:
                     completed = False
                     error_msg = f"runtime execution failed: {exc}"
                 else:
-                    assignments = [run_result.lead_assignment]
+                    snapshot = journal.get_session_snapshot(str(session_id))
+                    journal_assignments = [
+                        TaskAssignment(
+                            assignment_id=a.assignment_id,
+                            task_id=TaskId(a.payload.get("task_id", str(run_result.run_id))),
+                            attempt_number=a.payload.get("attempt_number", 1),
+                            provider=a.provider,
+                            model=a.model,
+                            routing_mode=RoutingMode(
+                                a.payload.get("routing_mode", routing_mode.value)
+                            ),
+                            capability_floor=a.payload.get("capability_floor"),
+                            estimated_attempt_cost_usd=a.estimated_cost_usd,
+                            reservation_id=ReservationId(a.payload.get("reservation_id", "")),
+                            catalog_revision=catalog_revision,
+                            explanation=tuple(a.payload.get("explanation", ())),
+                        )
+                        for a in snapshot.assignments
+                    ]
+                    if journal_assignments:
+                        assignments = journal_assignments
+                    else:
+                        assignments = [run_result.lead_assignment]
+
+                    journal_cost = sum(
+                        (a.estimated_cost_usd for a in snapshot.assignments),
+                        Decimal("0.00"),
+                    )
+                    if journal_cost > Decimal("0.00"):
+                        cost = journal_cost
+
+                    journal_models = tuple(dict.fromkeys(a.model for a in snapshot.assignments))
+                    if journal_models:
+                        models_used = list(journal_models)
+
+                    escalations = max(
+                        escalations, sum(1 for a in snapshot.attempts if a.number > 1)
+                    )
 
             # 6. Evaluate oracle against filesystem / environment
             passed_oracle, oracle_err = evaluate_oracle(workspace, fixture.oracle)
@@ -516,7 +733,7 @@ class EvaluationRunner:
             # 7. Check route invariants
             safety_defects = check_route_invariants(fixture, assignments, cost, policy=policy)
 
-            elapsed = time.perf_counter() - start_time
+            elapsed = time.perf_counter() - exec_start_time
 
             selected_tokens = sum(c.estimated_tokens for c in lead_packet.components)
             dropped_tokens = len(lead_packet.omissions) * 100
@@ -546,4 +763,7 @@ class EvaluationRunner:
                 error=error_msg,
                 catalog_revision=catalog_revision,
                 provider_mode="live" if self.live else "fake",
+                child_wall_seconds=run_result.child_wall_seconds,
+                child_peak_active=run_result.child_peak_active,
+                child_count=run_result.child_count,
             )

@@ -248,6 +248,8 @@ def build_default_agent(
 
     custom_tools: list[Any] = list(extension_tools)
     visible_names = frozenset(item.name for item in registry.visible_to(profile))
+    if subagents:
+        visible_names |= {"task"}
     if "execute" in visible_names:
         custom_tools.append(execute)
     if "ask_user" in visible_names:

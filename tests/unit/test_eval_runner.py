@@ -4,17 +4,24 @@ from decimal import Decimal
 from pathlib import Path
 
 from evals.report import render_markdown_report
-from evals.runner import EvaluationRunner, check_route_invariants, evaluate_oracle
+from evals.runner import (
+    EvaluationRunner,
+    _default_eval_candidates,
+    check_route_invariants,
+    evaluate_oracle,
+)
 from evals.schema import (
     EvaluationFixture,
     EvaluationPolicy,
     OracleSpec,
     OracleType,
     RouteInvariants,
+    TaskEvalResult,
 )
 from rudder.domain.ids import new_assignment_id, new_reservation_id, new_task_id
 from rudder.domain.routing import RoutingMode, TaskAssignment
-from rudder.routing.requirements import TaskRisk
+from rudder.routing.requirements import RequirementBuilder, TaskRisk
+from rudder.routing.selector import select_model
 
 
 def test_oracle_evaluation_file_exists_and_content(tmp_path: Path) -> None:
@@ -163,3 +170,54 @@ def test_evaluation_runner_runs_deterministic_fake_suite() -> None:
     assert "Rudder Routing & Orchestration Evaluation Report" in md
     assert "SPEC.md Section 21 Acceptance Gates" in md
     assert "GATES FAILED" in md
+def test_child_run_gate_records_concurrent_timing() -> None:
+    import asyncio
+
+    from rudder.runtime.deepagents_adapter import ChildRunGate
+
+    async def scenario() -> ChildRunGate:
+        gate = ChildRunGate(max_children=3)
+
+        async def op() -> str:
+            await asyncio.sleep(0.05)
+            return "ok"
+
+        await asyncio.gather(*(gate.run(f"t{i}", op) for i in range(3)))
+        return gate
+
+    gate = asyncio.run(scenario())
+    assert gate.peak_active == 3
+    assert gate.child_wall_seconds < 0.15
+    assert gate.child_total_seconds >= 0.15
+    assert len(gate.completed) == 3
+
+
+def test_task_eval_result_child_metric_defaults() -> None:
+    result = TaskEvalResult(
+        fixture_id="par-01",
+        policy=EvaluationPolicy.AUTO,
+        completed=True,
+        passed_oracle=True,
+        wall_time_seconds=0.5,
+        total_cost_usd=Decimal("0.00"),
+        models_used=("fake",),
+        assignments_count=1,
+        escalations_count=0,
+        interrupts_count=0,
+    )
+    assert result.child_wall_seconds == 0.0
+    assert result.child_peak_active == 0
+    assert result.child_count == 0
+
+
+def test_default_candidates_include_manual_child_pin() -> None:
+    candidates = _default_eval_candidates()
+    pins = {(c.profile.provider, c.profile.model) for c in candidates}
+    assert ("fake", "explorer") in pins
+
+    reqs = RequirementBuilder().build(
+        role="explorer", risk=TaskRisk.ROUTINE, mode=RoutingMode.MANUAL
+    )
+    selection = select_model(candidates, reqs, manual_model=("fake", "explorer"))
+    assert selection.candidate.profile.model == "explorer"
+    assert not selection.candidate.profile.auto_eligible

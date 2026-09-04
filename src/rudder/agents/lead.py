@@ -10,6 +10,8 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import Runnable
 
+from rudder.domain.routing import RoutingMode
+from rudder.routing.requirements import TaskRisk
 from rudder.runtime.leases import WorkspaceLeaseManager
 from rudder.tools.assembly import build_default_agent, default_registry
 from rudder.tools.registry import SideEffect, ToolMetadata, ToolRegistry
@@ -24,6 +26,8 @@ class LeadControls:
     profile: str | None = None
     write_allowed: bool | None = None
     max_children: int = 3
+    routing_mode: RoutingMode = RoutingMode.AUTO
+    risk: TaskRisk = TaskRisk.ROUTINE
 
 
 def delegation_allowed(controls: LeadControls, *, requested: bool) -> bool:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
@@ -129,12 +130,25 @@ class ChildRunGate:
         self.peak_active = 0
         self.completed: dict[str, Any] = {}
         self._completion_changed = asyncio.Event()
+        self.child_first_start: float | None = None
+        self.child_last_end: float | None = None
+        self.child_total_seconds: float = 0.0
 
     @property
     def active(self) -> int:
         return self._active
 
+    @property
+    def child_wall_seconds(self) -> float:
+        """Wall-clock span from first gate entry to last gate exit."""
+        if self.child_first_start is None or self.child_last_end is None:
+            return 0.0
+        return self.child_last_end - self.child_first_start
+
     async def run[T](self, task_id: str, operation: Callable[[], Awaitable[T]]) -> T:
+        queued_at = time.perf_counter()
+        if self.child_first_start is None:
+            self.child_first_start = queued_at
         async with self._semaphore:
             self._active += 1
             self.peak_active = max(self.peak_active, self._active)
@@ -144,6 +158,9 @@ class ChildRunGate:
                 self._completion_changed.set()
                 return value
             finally:
+                end = time.perf_counter()
+                self.child_last_end = end
+                self.child_total_seconds += end - queued_at
                 self._active -= 1
 
     async def wait_for_completed(self, count: int) -> None:

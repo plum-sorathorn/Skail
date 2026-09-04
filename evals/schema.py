@@ -117,6 +117,9 @@ class TaskEvalResult(BaseModel):
     error: str | None = None
     catalog_revision: str = "default"
     provider_mode: str = "fake"
+    child_wall_seconds: float = 0.0
+    child_peak_active: int = 0
+    child_count: int = 0
 
 
 class PolicySummary(BaseModel):

@@ -82,6 +82,9 @@ class RunResult:
     child_results: list[TaskResult] = field(default_factory=list)
     status: str = "completed"
     interrupted: bool = False
+    child_wall_seconds: float = 0.0
+    child_peak_active: int = 0
+    child_count: int = 0
 
 
 AssignChildAttempt = Callable[
@@ -439,12 +442,15 @@ class RunController:
         if ":" in lead_model_name:
             lead_provider, lead_model = lead_model_name.split(":", 1)
 
-        lead_mode = RoutingMode.MANUAL if active_controls.model else RoutingMode.AUTO
+        lead_mode = (
+            RoutingMode.MANUAL if active_controls.model else active_controls.routing_mode
+        )
         lead_reqs = RequirementBuilder().build(
             role="lead",
-            risk=TaskRisk.ROUTINE,
+            risk=active_controls.risk,
             mode=lead_mode,
         )
+        lead_config_snapshot = {"routing": {"mode": active_controls.routing_mode.value}}
         lead_request = AssignmentRequest(
             session_id=self.session_id,
             run_id=run_id,
@@ -453,7 +459,7 @@ class RunController:
             attempt_number=1,
             catalog_revision=self.catalog_revision,
             requirements=lead_reqs,
-            config_snapshot=DEFAULT_CONFIG_SNAPSHOT,
+            config_snapshot=lead_config_snapshot,
             manual_model=(lead_provider, lead_model) if lead_mode is RoutingMode.MANUAL else None,
         )
         assigned_lead = self.assignment_service.assign(
@@ -623,6 +629,9 @@ class RunController:
                 child_results=recorded_child_results,
                 status="blocked",
                 interrupted=True,
+                child_wall_seconds=scheduler.gate.child_wall_seconds,
+                child_peak_active=scheduler.gate.peak_active,
+                child_count=len(scheduler.gate.completed),
             )
 
         with self.journal.transaction() as tx:
@@ -661,6 +670,9 @@ class RunController:
             child_results=recorded_child_results,
             status="completed",
             interrupted=False,
+            child_wall_seconds=scheduler.gate.child_wall_seconds,
+            child_peak_active=scheduler.gate.peak_active,
+            child_count=len(scheduler.gate.completed),
         )
 
     def _persist_context_packet(
@@ -762,11 +774,13 @@ class RunController:
 
             escalated = number == 2
             req_mode = (
-                RoutingMode.MANUAL if (configured_model and not escalated) else RoutingMode.AUTO
+                RoutingMode.MANUAL
+                if (configured_model and not escalated)
+                else controls.routing_mode
             )
             reqs = RequirementBuilder().build(
                 role=role_name,
-                risk=TaskRisk.ROUTINE,
+                risk=controls.risk,
                 mode=req_mode,
                 escalated=escalated,
                 excluded_models=frozenset(excluded),
@@ -780,6 +794,7 @@ class RunController:
                     prov, m_name = configured_model.split(":", 1)
                 manual_pin = (prov, m_name)
 
+            child_config_snapshot = {"routing": {"mode": controls.routing_mode.value}}
             request = AssignmentRequest(
                 session_id=self.session_id,
                 run_id=run_id,
@@ -788,7 +803,7 @@ class RunController:
                 attempt_number=cast(Literal[1, 2], number),
                 catalog_revision=self.catalog_revision,
                 requirements=reqs,
-                config_snapshot=DEFAULT_CONFIG_SNAPSHOT,
+                config_snapshot=child_config_snapshot,
                 manual_model=manual_pin,
             )
 
