@@ -1,0 +1,154 @@
+[
+  {
+    "id": "triv-01",
+    "title": "Create version file",
+    "category": "trivial",
+    "role": "implementer",
+    "risk": "trivial",
+    "prompt": "Create a VERSION file containing 1.0.0",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_content",
+      "target": "VERSION",
+      "expected": "1.0.0"
+    },
+    "route_invariants": {
+      "min_floor": 0.25,
+      "allow_delegation": true
+    },
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "triv-02",
+    "title": "Add constants module",
+    "category": "trivial",
+    "role": "implementer",
+    "risk": "trivial",
+    "prompt": "Create constants.py with DEFAULT_TIMEOUT = 30",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "constants.py",
+      "expected": "DEFAULT_TIMEOUT = 30"
+    },
+    "route_invariants": {
+      "min_floor": 0.25
+    },
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "triv-03",
+    "title": "Update README title",
+    "category": "trivial",
+    "role": "implementer",
+    "risk": "trivial",
+    "prompt": "Update README.md to have the header '# My App'",
+    "initial_files": {"README.md": "# Old App\nWelcome."},
+    "allowed_tools": ["edit_file", "write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "README.md",
+      "expected": "# My App"
+    },
+    "route_invariants": {
+      "min_floor": 0.25
+    },
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "triv-04",
+    "title": "Add package init docstring",
+    "category": "trivial",
+    "role": "general-purpose",
+    "risk": "trivial",
+    "prompt": "Create __init__.py with a module docstring",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_exists",
+      "target": "__init__.py"
+    },
+    "route_invariants": {
+      "min_floor": 0.25
+    },
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "triv-05",
+    "title": "Configure gitignore entry",
+    "category": "trivial",
+    "role": "implementer",
+    "risk": "trivial",
+    "prompt": "Add .env to .gitignore",
+    "initial_files": {".gitignore": "*.pyc\n__pycache__/\n"},
+    "allowed_tools": ["edit_file", "write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": ".gitignore",
+      "expected": ".env"
+    },
+    "route_invariants": {
+      "min_floor": 0.25
+    },
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "triv-06",
+    "title": "Fix boolean flag",
+    "category": "trivial",
+    "role": "implementer",
+    "risk": "trivial",
+    "prompt": "Set DEBUG = False in settings.py",
+    "initial_files": {"settings.py": "DEBUG = True\nPORT = 8080\n"},
+    "allowed_tools": ["edit_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "settings.py",
+      "expected": "DEBUG = False"
+    },
+    "route_invariants": {
+      "min_floor": 0.25
+    },
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "triv-07",
+    "title": "Write empty JSON manifest",
+    "category": "trivial",
+    "role": "general-purpose",
+    "risk": "trivial",
+    "prompt": "Create manifest.json with {}",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_content",
+      "target": "manifest.json",
+      "expected": "{}"
+    },
+    "route_invariants": {
+      "min_floor": 0.25
+    },
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "triv-08",
+    "title": "Add license header to file",
+    "category": "trivial",
+    "role": "reviewer",
+    "risk": "trivial",
+    "prompt": "Ensure main.py starts with '# MIT License'",
+    "initial_files": {"main.py": "print('hello')\n"},
+    "allowed_tools": ["edit_file", "write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "main.py",
+      "expected": "# MIT License"
+    },
+    "route_invariants": {
+      "min_floor": 0.25
+    },
+    "metadata": {"platform": "any"}
+  }
+]

@@ -1,0 +1,24 @@
+[manifest]
+version = "1.0.0"
+date = "2026-09-02"
+fixture_count = 52
+categories = [
+  "trivial",
+  "routine",
+  "bounded",
+  "complex",
+  "high_risk",
+  "parallel",
+  "failure"
+]
+
+[sources]
+files = [
+  "evals/fixtures/trivial.json",
+  "evals/fixtures/routine.json",
+  "evals/fixtures/bounded.json",
+  "evals/fixtures/complex.json",
+  "evals/fixtures/high_risk.json",
+  "evals/fixtures/parallel.json",
+  "evals/fixtures/failure.json"
+]

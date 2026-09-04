@@ -1,0 +1,138 @@
+[
+  {
+    "id": "comp-01",
+    "title": "Dependency graph topological sort with cycle detection",
+    "category": "complex",
+    "role": "implementer",
+    "risk": "complex",
+    "prompt": "Implement topological_sort(graph) in toposort.py detecting cycles and raising CycleError",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "toposort.py",
+      "expected": "def topological_sort"
+    },
+    "route_invariants": {"min_floor": 0.60},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "comp-02",
+    "title": "Token bucket rate limiter with burst capability",
+    "category": "complex",
+    "role": "implementer",
+    "risk": "complex",
+    "prompt": "Implement TokenBucket in ratelimit.py with capacity, refill_rate, and acquire(tokens) method",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "ratelimit.py",
+      "expected": "class TokenBucket"
+    },
+    "route_invariants": {"min_floor": 0.60},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "comp-03",
+    "title": "Event emitter with wildcard and once listeners",
+    "category": "complex",
+    "role": "implementer",
+    "risk": "complex",
+    "prompt": "Implement EventEmitter in emitter.py supporting on(pattern), once(pattern), emit(event, *args)",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "emitter.py",
+      "expected": "class EventEmitter"
+    },
+    "route_invariants": {"min_floor": 0.60},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "comp-04",
+    "title": "Unified diff parser into structured patch objects",
+    "category": "complex",
+    "role": "implementer",
+    "risk": "complex",
+    "prompt": "Implement parse_diff in patch_parser.py parsing hunks, line numbers, and file headers",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "patch_parser.py",
+      "expected": "def parse_diff"
+    },
+    "route_invariants": {"min_floor": 0.60},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "comp-05",
+    "title": "Multipart stream chunker and boundary assembler",
+    "category": "complex",
+    "role": "implementer",
+    "risk": "complex",
+    "prompt": "Implement MultipartStream in multipart.py chunking data into boundary-delimited payloads",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "multipart.py",
+      "expected": "class MultipartStream"
+    },
+    "route_invariants": {"min_floor": 0.60},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "comp-06",
+    "title": "State machine transition engine with guards",
+    "category": "complex",
+    "role": "implementer",
+    "risk": "complex",
+    "prompt": "Implement StateMachine in fsm.py with states, transitions, guard conditions, and event dispatch",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "fsm.py",
+      "expected": "class StateMachine"
+    },
+    "route_invariants": {"min_floor": 0.60},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "comp-07",
+    "title": "Markdown parser with AST token emission",
+    "category": "complex",
+    "role": "researcher",
+    "risk": "complex",
+    "prompt": "Implement tokenize_markdown in md_ast.py returning tokens for headers, links, code blocks",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "md_ast.py",
+      "expected": "def tokenize_markdown"
+    },
+    "route_invariants": {"min_floor": 0.60},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "comp-08",
+    "title": "Recursive directory scanner with symlink and loop detection",
+    "category": "complex",
+    "role": "explorer",
+    "risk": "complex",
+    "prompt": "Implement safe_walk in tree.py tracking visited real paths to prevent symlink loops",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "tree.py",
+      "expected": "def safe_walk"
+    },
+    "route_invariants": {"min_floor": 0.60},
+    "metadata": {"platform": "any"}
+  }
+]

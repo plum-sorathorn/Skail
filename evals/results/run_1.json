@@ -1,0 +1,7133 @@
+{
+  "run_id": "eval-30a415b8",
+  "timestamp": "2026-09-04T00:40:23.021287Z",
+  "catalog_revision": "eval-v1",
+  "provider_mode": "fake",
+  "fixture_count": 52,
+  "policy_summaries": {
+    "auto": {
+      "policy": "auto",
+      "total_runs": 52,
+      "completed_count": 52,
+      "completion_rate": 1.0,
+      "oracle_pass_rate": 1.0,
+      "total_cost_usd": "74.595534",
+      "median_cost_usd": "1.0445",
+      "mean_cost_usd": "1.4345",
+      "median_wall_time_seconds": 0.0014,
+      "total_escalations": 0,
+      "total_interrupts": 0,
+      "safety_defect_count": 0
+    },
+    "economy": {
+      "policy": "economy",
+      "total_runs": 52,
+      "completed_count": 52,
+      "completion_rate": 1.0,
+      "oracle_pass_rate": 1.0,
+      "total_cost_usd": "105.035378",
+      "median_cost_usd": "0.0885",
+      "mean_cost_usd": "2.0199",
+      "median_wall_time_seconds": 0.0014,
+      "total_escalations": 16,
+      "total_interrupts": 0,
+      "safety_defect_count": 0
+    },
+    "quality": {
+      "policy": "quality",
+      "total_runs": 52,
+      "completed_count": 52,
+      "completion_rate": 1.0,
+      "oracle_pass_rate": 1.0,
+      "total_cost_usd": "254.951424",
+      "median_cost_usd": "4.9029",
+      "mean_cost_usd": "4.9029",
+      "median_wall_time_seconds": 0.0014,
+      "total_escalations": 0,
+      "total_interrupts": 0,
+      "safety_defect_count": 0
+    },
+    "serial": {
+      "policy": "serial",
+      "total_runs": 52,
+      "completed_count": 52,
+      "completion_rate": 1.0,
+      "oracle_pass_rate": 1.0,
+      "total_cost_usd": "74.595534",
+      "median_cost_usd": "1.0445",
+      "mean_cost_usd": "1.4345",
+      "median_wall_time_seconds": 0.0014,
+      "total_escalations": 0,
+      "total_interrupts": 0,
+      "safety_defect_count": 0
+    },
+    "no_delegation": {
+      "policy": "no_delegation",
+      "total_runs": 52,
+      "completed_count": 52,
+      "completion_rate": 1.0,
+      "oracle_pass_rate": 1.0,
+      "total_cost_usd": "74.595534",
+      "median_cost_usd": "1.0445",
+      "mean_cost_usd": "1.4345",
+      "median_wall_time_seconds": 0.0015,
+      "total_escalations": 0,
+      "total_interrupts": 0,
+      "safety_defect_count": 0
+    }
+  },
+  "comparison": {
+    "auto_completion_rate": 1.0,
+    "quality_completion_rate": 1.0,
+    "completion_delta": 0.0,
+    "auto_median_cost_usd": "1.0445",
+    "quality_median_cost_usd": "4.9029",
+    "cost_reduction_pct": 78.7,
+    "parallel_median_wall_time": 0.005,
+    "serial_median_wall_time": 0.015,
+    "speedup_pct": 66.67,
+    "gate_completion_passed": true,
+    "gate_cost_passed": true,
+    "gate_parallel_passed": true,
+    "gate_safety_passed": true,
+    "all_gates_passed": true
+  },
+  "results": [
+    {
+      "fixture_id": "triv-01",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0051,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 17,
+        "selected_tokens": 17,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 38
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-01",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 17,
+        "selected_tokens": 17,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 38
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-01",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 17,
+        "selected_tokens": 17,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 38
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-01",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 17,
+        "selected_tokens": 17,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 38
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-01",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 17,
+        "selected_tokens": 17,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 38
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-02",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 19,
+        "selected_tokens": 19,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 45
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-02",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 19,
+        "selected_tokens": 19,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 45
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-02",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0017,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 19,
+        "selected_tokens": 19,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 45
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-02",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0018,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 19,
+        "selected_tokens": 19,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 45
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-02",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0019,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 19,
+        "selected_tokens": 19,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 45
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-03",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0026,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 27,
+        "selected_tokens": 27,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 46
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-03",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0021,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 27,
+        "selected_tokens": 27,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 46
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-03",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0027,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 27,
+        "selected_tokens": 27,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 46
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-03",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0025,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 27,
+        "selected_tokens": 27,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 46
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-03",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0044,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 27,
+        "selected_tokens": 27,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 46
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-04",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0007,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 18,
+        "selected_tokens": 18,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 42
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-04",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0006,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 18,
+        "selected_tokens": 18,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 42
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-04",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0006,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 18,
+        "selected_tokens": 18,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 42
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-04",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 18,
+        "selected_tokens": 18,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 42
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-04",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 18,
+        "selected_tokens": 18,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 42
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-05",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0019,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 22,
+        "selected_tokens": 22,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 22
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-05",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0019,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 22,
+        "selected_tokens": 22,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 22
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-05",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0027,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 22,
+        "selected_tokens": 22,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 22
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-05",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0029,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 22,
+        "selected_tokens": 22,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 22
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-05",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.002,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 22,
+        "selected_tokens": 22,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 22
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-06",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0018,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 32
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-06",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0019,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 32
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-06",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0018,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 32
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-06",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0018,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 32
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-06",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0019,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 32
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-07",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0007,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 14,
+        "selected_tokens": 14,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 28
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-07",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0006,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 14,
+        "selected_tokens": 14,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 28
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-07",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0006,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 14,
+        "selected_tokens": 14,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 28
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-07",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0006,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 14,
+        "selected_tokens": 14,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 28
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-07",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0006,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 14,
+        "selected_tokens": 14,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 28
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-08",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0021,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 42
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-08",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0021,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 42
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-08",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.002,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 42
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-08",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0019,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 42
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "triv-08",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0026,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 42
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-01",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.006,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 20,
+        "selected_tokens": 20,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 50
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-01",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0029,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 20,
+        "selected_tokens": 20,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 50
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-01",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0016,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 20,
+        "selected_tokens": 20,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 50
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-01",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 20,
+        "selected_tokens": 20,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 50
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-01",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0021,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 20,
+        "selected_tokens": 20,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 50
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-02",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0021,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 34,
+        "selected_tokens": 34,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 56
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-02",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0016,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 34,
+        "selected_tokens": 34,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 56
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-02",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0017,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 34,
+        "selected_tokens": 34,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 56
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-02",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0016,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 34,
+        "selected_tokens": 34,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 56
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-02",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0017,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 34,
+        "selected_tokens": 34,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 56
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-03",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 66
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-03",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 66
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-03",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 66
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-03",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 66
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-03",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 66
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-04",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 74
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-04",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 74
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-04",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 74
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-04",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 74
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-04",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 74
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-05",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0017,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 85
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-05",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 85
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-05",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 85
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-05",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 85
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-05",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0019,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 85
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-06",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0025,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 44,
+        "selected_tokens": 44,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 69
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-06",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0019,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 44,
+        "selected_tokens": 44,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 69
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-06",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.002,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 44,
+        "selected_tokens": 44,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 69
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-06",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0024,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 44,
+        "selected_tokens": 44,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 69
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-06",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0024,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 44,
+        "selected_tokens": 44,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 69
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-07",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 76
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-07",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 76
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-07",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 76
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-07",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 76
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-07",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 26,
+        "selected_tokens": 26,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 76
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-08",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 67
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-08",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 67
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-08",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 67
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-08",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 67
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-08",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 67
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-09",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 27,
+        "selected_tokens": 27,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 77
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-09",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 27,
+        "selected_tokens": 27,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 77
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-09",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 27,
+        "selected_tokens": 27,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 77
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-09",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 27,
+        "selected_tokens": 27,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 77
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-09",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 27,
+        "selected_tokens": 27,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 77
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-10",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 23,
+        "selected_tokens": 23,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 64
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-10",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 23,
+        "selected_tokens": 23,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 64
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-10",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 23,
+        "selected_tokens": 23,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 64
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-10",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 23,
+        "selected_tokens": 23,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 64
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "rout-10",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 23,
+        "selected_tokens": 23,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 64
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-01",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 81
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-01",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 81
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-01",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 81
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-01",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 81
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-01",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 81
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-02",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-02",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-02",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-02",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0021,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-02",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0021,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-03",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 96
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-03",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0018,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 96
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-03",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 96
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-03",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 96
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-03",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 96
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-04",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 32,
+        "selected_tokens": 32,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 98
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-04",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 32,
+        "selected_tokens": 32,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 98
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-04",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 32,
+        "selected_tokens": 32,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 98
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-04",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0019,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 32,
+        "selected_tokens": 32,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 98
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-04",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 32,
+        "selected_tokens": 32,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 98
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-05",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-05",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-05",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-05",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-05",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-06",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.002,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 44,
+        "selected_tokens": 44,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 59
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-06",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0024,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 44,
+        "selected_tokens": 44,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 59
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-06",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0035,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 44,
+        "selected_tokens": 44,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 59
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-06",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0026,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 44,
+        "selected_tokens": 44,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 59
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-06",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0031,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 44,
+        "selected_tokens": 44,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 59
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-07",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0017,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 94
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-07",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 94
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-07",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0019,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 94
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-07",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0121,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 94
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-07",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 94
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-08",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-08",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-08",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-08",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "bound-08",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-01",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-01",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-01",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-01",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-01",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-02",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 92
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-02",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 92
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-02",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 92
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-02",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 92
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-02",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 92
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-03",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 94
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-03",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 94
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-03",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 94
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-03",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 94
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-03",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 94
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-04",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 85
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-04",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 85
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-04",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 85
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-04",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 85
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-04",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0019,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 85
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-05",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-05",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-05",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-05",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-05",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-06",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 95
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-06",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 95
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-06",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 95
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-06",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 95
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-06",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 95
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-07",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 89
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-07",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 89
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-07",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 89
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-07",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 89
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-07",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 89
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-08",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-08",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0024,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-08",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-08",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0024,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "comp-08",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0023,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 83
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-01",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 90
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-01",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 90
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-01",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 90
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-01",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 90
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-01",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 30,
+        "selected_tokens": 30,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 90
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-02",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 86
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-02",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 86
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-02",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0018,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 86
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-02",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 86
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-02",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 86
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-03",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 33,
+        "selected_tokens": 33,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 101
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-03",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 33,
+        "selected_tokens": 33,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 101
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-03",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 33,
+        "selected_tokens": 33,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 101
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-03",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 33,
+        "selected_tokens": 33,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 101
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-03",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 33,
+        "selected_tokens": 33,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 101
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-04",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 96
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-04",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 96
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-04",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 96
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-04",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 96
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-04",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 31,
+        "selected_tokens": 31,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 96
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-05",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 34,
+        "selected_tokens": 34,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 108
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-05",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 34,
+        "selected_tokens": 34,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 108
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-05",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 34,
+        "selected_tokens": 34,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 108
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-05",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0019,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 34,
+        "selected_tokens": 34,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 108
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-05",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0018,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 34,
+        "selected_tokens": 34,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 108
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-06",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 32,
+        "selected_tokens": 32,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 97
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-06",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 32,
+        "selected_tokens": 32,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 97
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-06",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 32,
+        "selected_tokens": 32,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 97
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-06",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 32,
+        "selected_tokens": 32,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 97
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "risk-06",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 32,
+        "selected_tokens": 32,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 97
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-01",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 72
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-01",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 72
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-01",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 72
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-01",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.015,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 72
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-01",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 72
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-02",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 71
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-02",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 71
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-02",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 71
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-02",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.015,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 71
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-02",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 25,
+        "selected_tokens": 25,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 71
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-03",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 67
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-03",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 67
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-03",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 67
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-03",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.015,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 67
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-03",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 24,
+        "selected_tokens": 24,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 67
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-04",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 21,
+        "selected_tokens": 21,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 56
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-04",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 21,
+        "selected_tokens": 21,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 56
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-04",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 21,
+        "selected_tokens": 21,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 56
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-04",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.015,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 21,
+        "selected_tokens": 21,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 56
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-04",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 21,
+        "selected_tokens": 21,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 56
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-05",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 22,
+        "selected_tokens": 22,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 58
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-05",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 22,
+        "selected_tokens": 22,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 58
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-05",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 22,
+        "selected_tokens": 22,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 58
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-05",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.015,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 22,
+        "selected_tokens": 22,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 58
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-05",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 22,
+        "selected_tokens": 22,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 58
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-06",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 23,
+        "selected_tokens": 23,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 64
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-06",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 23,
+        "selected_tokens": 23,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 64
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-06",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 23,
+        "selected_tokens": 23,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 64
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-06",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.015,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 23,
+        "selected_tokens": 23,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 64
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "par-06",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.005,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 23,
+        "selected_tokens": 23,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 64
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-01",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0028,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 38,
+        "selected_tokens": 38,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 69
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-01",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0021,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 38,
+        "selected_tokens": 38,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 69
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-01",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.002,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 38,
+        "selected_tokens": 38,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 69
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-01",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0019,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 38,
+        "selected_tokens": 38,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 69
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-01",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.002,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 38,
+        "selected_tokens": 38,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 69
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-02",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0037,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 37,
+        "selected_tokens": 37,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 60
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-02",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0024,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 37,
+        "selected_tokens": 37,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 60
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-02",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0022,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 37,
+        "selected_tokens": 37,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 60
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-02",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0021,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 37,
+        "selected_tokens": 37,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 60
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-02",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0021,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 37,
+        "selected_tokens": 37,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 60
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-03",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.002,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 39,
+        "selected_tokens": 39,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 66
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-03",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0023,
+      "total_cost_usd": "5.947392",
+      "models_used": [
+        "eval-standard",
+        "eval-flagship"
+      ],
+      "assignments_count": 2,
+      "escalations_count": 1,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 39,
+        "selected_tokens": 39,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 66
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-03",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 39,
+        "selected_tokens": 39,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 66
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-03",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 39,
+        "selected_tokens": 39,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 66
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-03",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 39,
+        "selected_tokens": 39,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 66
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-04",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 33,
+        "selected_tokens": 33,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 101
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-04",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 33,
+        "selected_tokens": 33,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 101
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-04",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0014,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 33,
+        "selected_tokens": 33,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 101
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-04",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0018,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 33,
+        "selected_tokens": 33,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 101
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-04",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0019,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 33,
+        "selected_tokens": 33,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 101
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-05",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0015,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 84
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-05",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 84
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-05",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0013,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 84
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-05",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 84
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-05",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 28,
+        "selected_tokens": 28,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 84
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-06",
+      "policy": "auto",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-06",
+      "policy": "economy",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "0.088474",
+      "models_used": [
+        "eval-mini"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-06",
+      "policy": "quality",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0012,
+      "total_cost_usd": "4.902912",
+      "models_used": [
+        "eval-flagship"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-06",
+      "policy": "serial",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0011,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    },
+    {
+      "fixture_id": "fail-06",
+      "policy": "no_delegation",
+      "completed": true,
+      "passed_oracle": true,
+      "wall_time_seconds": 0.0018,
+      "total_cost_usd": "1.044480",
+      "models_used": [
+        "eval-standard"
+      ],
+      "assignments_count": 1,
+      "escalations_count": 0,
+      "interrupts_count": 0,
+      "safety_defects": [],
+      "context_metrics": {
+        "estimated_tokens": 29,
+        "selected_tokens": 29,
+        "compressed_tokens": 0,
+        "dropped_tokens": 0,
+        "omissions_count": 0,
+        "artifact_retrievals": 1,
+        "handoff_bytes": 88
+      },
+      "error": null,
+      "catalog_revision": "eval-v1",
+      "provider_mode": "fake"
+    }
+  ]
+}

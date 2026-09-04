@@ -1,0 +1,172 @@
+[
+  {
+    "id": "rout-01",
+    "title": "Implement addition helper",
+    "category": "routine",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Implement add(a, b) in math_lib.py returning a + b",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "math_lib.py",
+      "expected": "def add(a, b):"
+    },
+    "route_invariants": {"min_floor": 0.35},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "rout-02",
+    "title": "Add test case for addition",
+    "category": "routine",
+    "role": "tester",
+    "risk": "routine",
+    "prompt": "Write test_add() in test_math.py checking add(2, 3) == 5",
+    "initial_files": {"math_lib.py": "def add(a, b):\n    return a + b\n"},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "test_math.py",
+      "expected": "test_add"
+    },
+    "route_invariants": {"min_floor": 0.35},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "rout-03",
+    "title": "Windows path joiner helper",
+    "category": "routine",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Implement win_join in paths.py using os.path.join with backslashes",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "paths.py",
+      "expected": "def win_join"
+    },
+    "route_invariants": {"min_floor": 0.35},
+    "metadata": {"platform": "windows"}
+  },
+  {
+    "id": "rout-04",
+    "title": "POSIX path normalizer helper",
+    "category": "routine",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Implement posix_norm in paths.py converting backslashes to forward slashes",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "paths.py",
+      "expected": "def posix_norm"
+    },
+    "route_invariants": {"min_floor": 0.35},
+    "metadata": {"platform": "posix"}
+  },
+  {
+    "id": "rout-05",
+    "title": "String slugifier function",
+    "category": "routine",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Implement slugify(text) in text_utils.py lowercasing and replacing spaces with dashes",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "text_utils.py",
+      "expected": "def slugify(text):"
+    },
+    "route_invariants": {"min_floor": 0.35},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "rout-06",
+    "title": "Fix off-by-one error in range loop",
+    "category": "routine",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Fix loop in paginate.py to include the end page range(start, end + 1)",
+    "initial_files": {"paginate.py": "def pages(start, end):\n    return list(range(start, end))\n"},
+    "allowed_tools": ["edit_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "paginate.py",
+      "expected": "end + 1"
+    },
+    "route_invariants": {"min_floor": 0.35},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "rout-07",
+    "title": "JSON config reader with fallback",
+    "category": "routine",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Implement load_config(path) in cfg.py returning empty dict if file not found",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "cfg.py",
+      "expected": "def load_config(path):"
+    },
+    "route_invariants": {"min_floor": 0.35},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "rout-08",
+    "title": "Validate email regex helper",
+    "category": "routine",
+    "role": "tester",
+    "risk": "routine",
+    "prompt": "Implement is_valid_email in validator.py using standard email regex",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "validator.py",
+      "expected": "def is_valid_email"
+    },
+    "route_invariants": {"min_floor": 0.35},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "rout-09",
+    "title": "CSV header extractor",
+    "category": "routine",
+    "role": "explorer",
+    "risk": "routine",
+    "prompt": "Write read_headers(filepath) in csv_tool.py reading first row with csv.reader",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "csv_tool.py",
+      "expected": "def read_headers"
+    },
+    "route_invariants": {"min_floor": 0.35},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "rout-10",
+    "title": "Timestamp parser helper",
+    "category": "routine",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Implement parse_iso8601 in dates.py using datetime.fromisoformat",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "dates.py",
+      "expected": "fromisoformat"
+    },
+    "route_invariants": {"min_floor": 0.35},
+    "metadata": {"platform": "any"}
+  }
+]

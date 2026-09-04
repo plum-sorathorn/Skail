@@ -1,0 +1,104 @@
+[
+  {
+    "id": "fail-01",
+    "title": "Fix broken syntax in module",
+    "category": "failure",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Fix the syntax error in broken.py by closing the unclosed parenthesis",
+    "initial_files": {"broken.py": "def test_func(\n    print('broken')\n"},
+    "allowed_tools": ["edit_file", "write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "broken.py",
+      "expected": "def test_func():"
+    },
+    "route_invariants": {"min_floor": 0.35},
+    "metadata": {"failure_mode": "syntax_error_recovery"}
+  },
+  {
+    "id": "fail-02",
+    "title": "Handle missing dictionary key gracefully",
+    "category": "failure",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Fix KeyError in fetcher.py by using dict.get('key', default)",
+    "initial_files": {"fetcher.py": "def fetch_val(d):\n    return d['missing']\n"},
+    "allowed_tools": ["edit_file", "write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "fetcher.py",
+      "expected": "d.get("
+    },
+    "route_invariants": {"min_floor": 0.35},
+    "metadata": {"failure_mode": "keyerror_handling"}
+  },
+  {
+    "id": "fail-03",
+    "title": "Escalate on difficult refactor failure",
+    "category": "failure",
+    "role": "implementer",
+    "risk": "complex",
+    "prompt": "Refactor legacy spaghetti algorithm into clean functional pipeline",
+    "initial_files": {"spaghetti.py": "# complex spaghetti code\ndef run(): pass\n"},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "spaghetti.py",
+      "expected": "def run():"
+    },
+    "route_invariants": {"min_floor": 0.60},
+    "metadata": {"failure_mode": "escalation_on_complex"}
+  },
+  {
+    "id": "fail-04",
+    "title": "Handle network timeout with retry limit",
+    "category": "failure",
+    "role": "implementer",
+    "risk": "bounded",
+    "prompt": "Implement resilient_fetch in client.py catching httpx.TimeoutException and raising ServiceUnavailable",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "client.py",
+      "expected": "def resilient_fetch"
+    },
+    "route_invariants": {"min_floor": 0.45},
+    "metadata": {"failure_mode": "network_timeout"}
+  },
+  {
+    "id": "fail-05",
+    "title": "Permission error handling when writing read-only directory",
+    "category": "failure",
+    "role": "implementer",
+    "risk": "bounded",
+    "prompt": "Implement safe_dir_create in io_tool.py catching PermissionError and returning False",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "io_tool.py",
+      "expected": "def safe_dir_create"
+    },
+    "route_invariants": {"min_floor": 0.45},
+    "metadata": {"failure_mode": "permission_denied"}
+  },
+  {
+    "id": "fail-06",
+    "title": "Malformed response JSON recovery",
+    "category": "failure",
+    "role": "implementer",
+    "risk": "bounded",
+    "prompt": "Implement safe_json_parse in parser.py returning fallback object on json.JSONDecodeError",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "parser.py",
+      "expected": "def safe_json_parse"
+    },
+    "route_invariants": {"min_floor": 0.45},
+    "metadata": {"failure_mode": "malformed_json"}
+  }
+]

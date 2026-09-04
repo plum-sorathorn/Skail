@@ -1,0 +1,138 @@
+[
+  {
+    "id": "bound-01",
+    "title": "Data class with Pydantic field validation",
+    "category": "bounded",
+    "role": "implementer",
+    "risk": "bounded",
+    "prompt": "Create UserProfile model in user.py with username, email, and age >= 0 validation",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "user.py",
+      "expected": "class UserProfile(BaseModel):"
+    },
+    "route_invariants": {"min_floor": 0.45},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "bound-02",
+    "title": "LRU caching decorator with maxsize",
+    "category": "bounded",
+    "role": "implementer",
+    "risk": "bounded",
+    "prompt": "Implement timed_lru_cache in cache.py combining functools.lru_cache with ttl expiry",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "cache.py",
+      "expected": "def timed_lru_cache"
+    },
+    "route_invariants": {"min_floor": 0.45},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "bound-03",
+    "title": "Retry decorator with exponential backoff",
+    "category": "bounded",
+    "role": "implementer",
+    "risk": "bounded",
+    "prompt": "Implement with_retry in retries.py catching specified exceptions and retrying up to max_attempts",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "retries.py",
+      "expected": "def with_retry"
+    },
+    "route_invariants": {"min_floor": 0.45},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "bound-04",
+    "title": "Recursive directory walker with glob ignore",
+    "category": "bounded",
+    "role": "explorer",
+    "risk": "bounded",
+    "prompt": "Implement walk_directory in walker.py yielding relative paths ignoring patterns in ignore_patterns",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "walker.py",
+      "expected": "def walk_directory"
+    },
+    "route_invariants": {"min_floor": 0.45},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "bound-05",
+    "title": "Thread-safe in-memory key-value store",
+    "category": "bounded",
+    "role": "implementer",
+    "risk": "bounded",
+    "prompt": "Implement ThreadSafeKV in kv.py using threading.RLock for get/set/delete operations",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "kv.py",
+      "expected": "class ThreadSafeKV"
+    },
+    "route_invariants": {"min_floor": 0.45},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "bound-06",
+    "title": "Type annotations and docstring overhaul",
+    "category": "bounded",
+    "role": "reviewer",
+    "risk": "bounded",
+    "prompt": "Add full type hints and PEP 257 docstrings to calculator.py",
+    "initial_files": {"calculator.py": "def calc(op, a, b):\n    if op == '+': return a + b\n    return a - b\n"},
+    "allowed_tools": ["edit_file", "write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "calculator.py",
+      "expected": "-> float:"
+    },
+    "route_invariants": {"min_floor": 0.45},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "bound-07",
+    "title": "Pagination helper with total items and pages",
+    "category": "bounded",
+    "role": "implementer",
+    "risk": "bounded",
+    "prompt": "Implement Paginator in paginate.py calculating total_pages, has_next, has_prev, and page_items",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "paginate.py",
+      "expected": "class Paginator"
+    },
+    "route_invariants": {"min_floor": 0.45},
+    "metadata": {"platform": "any"}
+  },
+  {
+    "id": "bound-08",
+    "title": "HTTP query string builder with escaping",
+    "category": "bounded",
+    "role": "implementer",
+    "risk": "bounded",
+    "prompt": "Implement build_query_string in url.py escaping keys and values using urllib.parse.quote",
+    "initial_files": {},
+    "allowed_tools": ["write_file"],
+    "oracle": {
+      "type": "file_contains",
+      "target": "url.py",
+      "expected": "def build_query_string"
+    },
+    "route_invariants": {"min_floor": 0.45},
+    "metadata": {"platform": "any"}
+  }
+]

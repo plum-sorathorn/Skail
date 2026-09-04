@@ -1,0 +1,124 @@
+[
+  {
+    "id": "par-01",
+    "title": "Parallel math operations implementation",
+    "category": "parallel",
+    "role": "lead",
+    "risk": "routine",
+    "prompt": "Implement vector_math.py, matrix_math.py, and tensor_math.py in parallel",
+    "initial_files": {},
+    "allowed_tools": ["task", "write_file"],
+    "parallel_eligible": true,
+    "oracle": {
+      "type": "multi_assert",
+      "assertions": [
+        {"type": "file_exists", "target": "vector_math.py"},
+        {"type": "file_exists", "target": "matrix_math.py"},
+        {"type": "file_exists", "target": "tensor_math.py"}
+      ]
+    },
+    "route_invariants": {"parallel_eligible": true},
+    "metadata": {"concurrency": 3}
+  },
+  {
+    "id": "par-02",
+    "title": "Parallel multi-format serializer",
+    "category": "parallel",
+    "role": "lead",
+    "risk": "bounded",
+    "prompt": "Implement json_export.py and csv_export.py concurrently for data models",
+    "initial_files": {},
+    "allowed_tools": ["task", "write_file"],
+    "parallel_eligible": true,
+    "oracle": {
+      "type": "multi_assert",
+      "assertions": [
+        {"type": "file_exists", "target": "json_export.py"},
+        {"type": "file_exists", "target": "csv_export.py"}
+      ]
+    },
+    "route_invariants": {"parallel_eligible": true},
+    "metadata": {"concurrency": 2}
+  },
+  {
+    "id": "par-03",
+    "title": "Independent API endpoint modules",
+    "category": "parallel",
+    "role": "lead",
+    "risk": "bounded",
+    "prompt": "Build users_api.py and orders_api.py as independent service routers",
+    "initial_files": {},
+    "allowed_tools": ["task", "write_file"],
+    "parallel_eligible": true,
+    "oracle": {
+      "type": "multi_assert",
+      "assertions": [
+        {"type": "file_exists", "target": "users_api.py"},
+        {"type": "file_exists", "target": "orders_api.py"}
+      ]
+    },
+    "route_invariants": {"parallel_eligible": true},
+    "metadata": {"concurrency": 2}
+  },
+  {
+    "id": "par-04",
+    "title": "Parallel unit and integration test writers",
+    "category": "parallel",
+    "role": "lead",
+    "risk": "routine",
+    "prompt": "Create test_unit.py and test_integration.py concurrently",
+    "initial_files": {},
+    "allowed_tools": ["task", "write_file"],
+    "parallel_eligible": true,
+    "oracle": {
+      "type": "multi_assert",
+      "assertions": [
+        {"type": "file_exists", "target": "test_unit.py"},
+        {"type": "file_exists", "target": "test_integration.py"}
+      ]
+    },
+    "route_invariants": {"parallel_eligible": true},
+    "metadata": {"concurrency": 2}
+  },
+  {
+    "id": "par-05",
+    "title": "Dual platform adapter implementation",
+    "category": "parallel",
+    "role": "lead",
+    "risk": "bounded",
+    "prompt": "Implement posix_shell.py and windows_shell.py concurrently",
+    "initial_files": {},
+    "allowed_tools": ["task", "write_file"],
+    "parallel_eligible": true,
+    "oracle": {
+      "type": "multi_assert",
+      "assertions": [
+        {"type": "file_exists", "target": "posix_shell.py"},
+        {"type": "file_exists", "target": "windows_shell.py"}
+      ]
+    },
+    "route_invariants": {"parallel_eligible": true},
+    "metadata": {"concurrency": 2}
+  },
+  {
+    "id": "par-06",
+    "title": "Three-way document converter",
+    "category": "parallel",
+    "role": "lead",
+    "risk": "complex",
+    "prompt": "Implement html_conv.py, md_conv.py, and rst_conv.py concurrently",
+    "initial_files": {},
+    "allowed_tools": ["task", "write_file"],
+    "parallel_eligible": true,
+    "oracle": {
+      "type": "multi_assert",
+      "assertions": [
+        {"type": "file_exists", "target": "html_conv.py"},
+        {"type": "file_exists", "target": "md_conv.py"},
+        {"type": "file_exists", "target": "rst_conv.py"}
+      ]
+    },
+    "route_invariants": {"parallel_eligible": true},
+    "metadata": {"concurrency": 3}
+  }
+]

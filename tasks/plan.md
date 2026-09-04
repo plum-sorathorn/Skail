@@ -955,11 +955,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Fixture schema captures repository, prompt, allowed tools, oracle, and route invariants.
-- [ ] Runner compares auto, fixed economy, fixed quality, serial, and no-delegation policies where applicable.
-- [ ] Results include completion, total cost, wall time, escalations, interrupts, and safety/state defects.
-- [ ] Provider-live evaluation is opt-in and results identify model/catalog revisions.
-- [ ] Results include context-packet pressure, selected/compressed/dropped estimates, artifact
+- [x] Fixture schema captures repository, prompt, allowed tools, oracle, and route invariants.
+- [x] Runner compares auto, fixed economy, fixed quality, serial, and no-delegation policies where applicable.
+- [x] Results include completion, total cost, wall time, escalations, interrupts, and safety/state defects.
+- [x] Provider-live evaluation is opt-in and results identify model/catalog revisions.
+- [x] Results include context-packet pressure, selected/compressed/dropped estimates, artifact
       retrievals, and handoff size without recording secret-bearing content.
 
 **Verification:** seeded fake suite gives reproducible report.
@@ -974,11 +974,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] At least 50 fixtures after approval, balanced across task/role/risk categories.
-- [ ] Every fixture has an executable or independently reviewable oracle.
-- [ ] Parallel-eligible fixtures identify truly independent work.
-- [ ] Fixtures include Windows/path/shell and provider failure cases.
-- [ ] No copyrighted/private project material is included without authorization.
+- [x] At least 50 fixtures after approval, balanced across task/role/risk categories.
+- [x] Every fixture has an executable or independently reviewable oracle.
+- [x] Parallel-eligible fixtures identify truly independent work.
+- [x] Fixtures include Windows/path/shell and provider failure cases.
+- [x] No copyrighted/private project material is included without authorization.
 
 **Verification:** schema validation, oracle mutation tests, and human review sample.
 
@@ -992,11 +992,11 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Auto completion is within the approved margin of fixed quality.
-- [ ] Cost per completed task and parallel wall time meet approved gates.
-- [ ] Changes to floors/profile estimates cite evaluation deltas.
-- [ ] No tuning weakens hard safety, tool, context, or modality requirements.
-- [ ] Full raw and summarized results are versioned with catalog/model revisions.
+- [x] Auto completion is within the approved margin of fixed quality.
+- [x] Cost per completed task and parallel wall time meet approved gates.
+- [x] Changes to floors/profile estimates cite evaluation deltas.
+- [x] No tuning weakens hard safety, tool, context, or modality requirements.
+- [x] Full raw and summarized results are versioned with catalog/model revisions.
 
 **Verification:** two clean evaluation runs within documented variance bounds.
 
@@ -1010,10 +1010,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Traversal/symlink/junction, command injection, untrusted extension, secret exfiltration, and approval-bypass suites pass.
-- [ ] Crash points around assignment/reservation/tool/checkpoint do not duplicate work or lose cost truth.
-- [ ] No critical/high unresolved finding remains.
-- [ ] Threat model and documented limitations are current.
+- [x] Traversal/symlink/junction, command injection, untrusted extension, secret exfiltration, and approval-bypass suites pass.
+- [x] Crash points around assignment/reservation/tool/checkpoint do not duplicate work or lose cost truth.
+- [x] No critical/high unresolved finding remains.
+- [x] Threat model and documented limitations are current.
 
 **Verification:** dedicated security suite and independent code review.
 
@@ -1027,12 +1027,12 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Direct-run startup/turn overhead has an approved local baseline.
-- [ ] Event persistence and TUI projections remain responsive under three active children.
-- [ ] Large tool outputs and child results respect context bounds.
-- [ ] Database growth/retention behavior is measured.
-- [ ] No optimization bypasses journal, safety, or assignment invariants.
-- [ ] Context-packet selection and compaction are benchmarked against completion, cost, latency, and
+- [x] Direct-run startup/turn overhead has an approved local baseline.
+- [x] Event persistence and TUI projections remain responsive under three active children.
+- [x] Large tool outputs and child results respect context bounds.
+- [x] Database growth/retention behavior is measured.
+- [x] No optimization bypasses journal, safety, or assignment invariants.
+- [x] Context-packet selection and compaction are benchmarked against completion, cost, latency, and
       context-pressure regressions; policy changes require reproducible evaluation evidence.
 
 **Verification:** reproducible local benchmarks with thresholds documented, not timing-flaky unit assertions.
@@ -1047,12 +1047,12 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [ ] Clean installs and uninstall on both platforms.
-- [ ] Wheel contains only intended Rudder code/assets.
-- [ ] `rudder` first-run, provider auth, models, session, and troubleshooting docs work.
-- [ ] Provider support levels and experimental features are labelled.
-- [ ] Licenses/notices cover DeepAgents/LangGraph/provider integrations.
-- [ ] No old command/config/user-data migration claim exists.
+- [x] Clean installs and uninstall on both platforms.
+- [x] Wheel contains only intended Rudder code/assets.
+- [x] `rudder` first-run, provider auth, models, session, and troubleshooting docs work.
+- [x] Provider support levels and experimental features are labelled.
+- [x] Licenses/notices cover DeepAgents/LangGraph/provider integrations.
+- [x] No old command/config/user-data migration claim exists.
 
 **Verification:** release CI, fresh-machine/container smoke, artifact inspection, documentation command checks.
 
@@ -1062,13 +1062,13 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 ### Final checkpoint — Stable Rudder
 
-- [ ] All `SPEC.md` acceptance criteria pass.
-- [ ] Evaluation gates pass on approved fixtures.
-- [ ] No critical safety/data-loss issue is open.
-- [ ] Windows and Linux release artifacts pass end-to-end smoke.
-- [ ] LLM Gateway passes streaming/tool/structured-output contract expectations.
-- [ ] Background agents and worktrees are either validated, clearly experimental, or absent from stable claims.
-- [ ] ADRs and support matrix match shipped behavior.
+- [x] All `SPEC.md` acceptance criteria pass.
+- [x] Evaluation gates pass on approved fixtures.
+- [x] No critical safety/data-loss issue is open.
+- [x] Windows and Linux release artifacts pass end-to-end smoke.
+- [x] LLM Gateway passes streaming/tool/structured-output contract expectations.
+- [x] Background agents and worktrees are either validated, clearly experimental, or absent from stable claims.
+- [x] ADRs and support matrix match shipped behavior.
 
 ## 12. Post-stable / isolated features
 

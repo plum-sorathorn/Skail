@@ -81,13 +81,13 @@ Status: Active; implementation is in progress on the `rudder` branch.
 
 ## Validation and release
 
-- [ ] 8.1 Build deterministic evaluation runner including context-policy metrics.
-- [ ] 8.2 Curate at least 50 approved oracle-backed fixtures.
-- [ ] 8.3 Validate and tune completion, cost, and parallel-time gates.
-- [ ] 8.4 Complete security/recovery hardening.
-- [ ] 8.5 Complete performance/context hardening and context-policy benchmarking.
-- [ ] 8.6 Complete packaging, docs, installation, and release candidate.
-- [ ] Final checkpoint: all stable-release criteria pass.
+- [x] 8.1 Build deterministic evaluation runner including context-policy metrics.
+- [x] 8.2 Curate at least 50 approved oracle-backed fixtures.
+- [x] 8.3 Validate and tune completion, cost, and parallel-time gates.
+- [x] 8.4 Complete security/recovery hardening.
+- [x] 8.5 Complete performance/context hardening and context-policy benchmarking.
+- [x] 8.6 Complete packaging, docs, installation, and release candidate.
+- [x] Final checkpoint: all stable-release criteria pass.
 
 ## Post-stable / isolated
 
