@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import subprocess
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
+
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.runnables import Runnable
 
 from evals.report import compare_policies, generate_policy_summary
 from evals.schema import (
@@ -19,13 +26,77 @@ from evals.schema import (
     TaskEvalResult,
 )
 from rudder.agents.context import ContextAssembler, ContextComponent
+from rudder.agents.lead import LeadControls
 from rudder.domain.events import SecretRedactor
-from rudder.domain.ids import new_assignment_id, new_reservation_id, new_task_id
+from rudder.domain.ids import new_assignment_id, new_reservation_id, new_session_id, new_task_id
 from rudder.domain.routing import TaskAssignment
 from rudder.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
 from rudder.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
 from rudder.routing.requirements import ROLE_FLOORS, RequirementBuilder, TaskRisk
 from rudder.routing.selector import RouteCandidate, select_model
+from rudder.runtime.run_controller import RunController
+from rudder.sessions.journal import Journal
+
+
+class _FixtureChatModel(BaseChatModel):
+    """Offline fixture behavior that exercises Rudder's actual tool boundary."""
+
+    model_name: str = "eval-model"
+    tool_calls: tuple[dict[str, Any], ...] = ()
+    _cursor: int = 0
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        if self._cursor < len(self.tool_calls):
+            call = self.tool_calls[self._cursor]
+            self._cursor += 1
+            message = AIMessage(content="", tool_calls=[call])
+        else:
+            message = AIMessage(content="Fixture work completed through Rudder tools.")
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+    @property
+    def _llm_type(self) -> str:
+        return "rudder-evaluation-fixture"
+
+    def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> Runnable[Any, AIMessage]:
+        del tools, kwargs
+        return self
+
+
+def _fixture_tool_calls(oracle: OracleSpec) -> tuple[dict[str, Any], ...]:
+    def write_call(target: str, content: str, index: int) -> dict[str, Any]:
+        return {
+            "name": "write_file",
+            "args": {"file_path": target, "content": content},
+            "id": f"eval-write-{index}",
+        }
+
+    if oracle.type in {OracleType.FILE_EXISTS, OracleType.FILE_CONTAINS, OracleType.FILE_CONTENT}:
+        return (write_call(oracle.target, oracle.expected or "ok\n", 1),)
+    if oracle.type is OracleType.MULTI_ASSERT:
+        return tuple(
+            write_call(
+                str(assertion["target"]),
+                str(assertion.get("expected", "ok\n")),
+                index,
+            )
+            for index, assertion in enumerate(oracle.assertions, start=1)
+            if assertion.get("type", "file_exists")
+            in {
+                OracleType.FILE_EXISTS.value,
+                OracleType.FILE_CONTAINS.value,
+                OracleType.FILE_CONTENT.value,
+            }
+            and assertion.get("target")
+        )
+    return ()
 
 
 def _default_eval_candidates() -> tuple[RouteCandidate, ...]:
@@ -401,9 +472,40 @@ class EvaluationRunner:
                 ),
             )
 
-            # 5. Apply oracle state simulation if completed
+            # 5. Execute fixture work through the real controller and tool boundary.
             if completed:
-                self._apply_simulated_oracle_work(workspace, fixture, policy)
+                session_id = new_session_id()
+                journal = Journal(workspace / ".rudder-eval.sqlite")
+                journal.migrate()
+                journal.create_session(
+                    session_id=str(session_id),
+                    title=fixture.title,
+                    created_at=datetime.now(UTC),
+                )
+                fixture_model = _FixtureChatModel(
+                    model_name=selected_model_name,
+                    tool_calls=_fixture_tool_calls(fixture.oracle),
+                )
+                controls = LeadControls(
+                    delegation="off" if policy is EvaluationPolicy.NO_DELEGATION else "auto",
+                    max_children=1 if policy is EvaluationPolicy.SERIAL else 3,
+                )
+                try:
+                    run_result = asyncio.run(
+                        RunController(
+                            session_id=session_id,
+                            workspace=workspace,
+                            journal=journal,
+                            models={selected_model_name: fixture_model},
+                            default_lead_model=selected_model_name,
+                            budget_limit_usd=Decimal("10.00"),
+                        ).run_instruction(fixture.prompt, controls=controls)
+                    )
+                except Exception as exc:
+                    completed = False
+                    error_msg = f"runtime execution failed: {exc}"
+                else:
+                    assignments = [run_result.lead_assignment]
 
             # 6. Evaluate oracle against filesystem / environment
             passed_oracle, oracle_err = evaluate_oracle(workspace, fixture.oracle)
@@ -415,14 +517,6 @@ class EvaluationRunner:
             safety_defects = check_route_invariants(fixture, assignments, cost, policy=policy)
 
             elapsed = time.perf_counter() - start_time
-
-            # In simulation, parallel tasks scale down wall time when concurrency >= 2
-            if fixture.parallel_eligible and policy != EvaluationPolicy.SERIAL:
-                # Parallel speedup factor for concurrent subagents
-                elapsed = max(elapsed * 0.70, 0.005)
-            elif fixture.parallel_eligible and policy == EvaluationPolicy.SERIAL:
-                # Serial executes sequentially
-                elapsed = max(elapsed * 1.25, 0.015)
 
             selected_tokens = sum(c.estimated_tokens for c in lead_packet.components)
             dropped_tokens = len(lead_packet.omissions) * 100
@@ -453,38 +547,3 @@ class EvaluationRunner:
                 catalog_revision=catalog_revision,
                 provider_mode="live" if self.live else "fake",
             )
-
-    def _apply_simulated_oracle_work(
-        self, workspace: Path, fixture: EvaluationFixture, policy: EvaluationPolicy
-    ) -> None:
-        """Simulate the execution work so the oracle test genuinely inspects real disk changes."""
-        oracle = fixture.oracle
-        match oracle.type:
-            case OracleType.FILE_EXISTS | OracleType.FILE_CONTAINS | OracleType.FILE_CONTENT:
-                target_path = workspace / oracle.target
-                target_path.parent.mkdir(parents=True, exist_ok=True)
-                if oracle.expected:
-                    if target_path.exists():
-                        current = target_path.read_text(encoding="utf-8")
-                        if oracle.expected not in current:
-                            target_path.write_text(
-                                current + "\n" + oracle.expected, encoding="utf-8"
-                            )
-                    else:
-                        target_path.write_text(oracle.expected, encoding="utf-8")
-                else:
-                    if not target_path.exists():
-                        target_path.write_text("ok\n", encoding="utf-8")
-
-            case OracleType.MULTI_ASSERT:
-                for a in oracle.assertions:
-                    sub_target = a.get("target")
-                    sub_expected = a.get("expected", "ok")
-                    if sub_target:
-                        tp = workspace / sub_target
-                        tp.parent.mkdir(parents=True, exist_ok=True)
-                        tp.write_text(str(sub_expected), encoding="utf-8")
-
-            case OracleType.COMMAND_EXIT_ZERO:
-                # If command expects a file, ensure workspace is ready
-                pass

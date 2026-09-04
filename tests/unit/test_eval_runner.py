@@ -149,7 +149,9 @@ def test_evaluation_runner_runs_deterministic_fake_suite() -> None:
     assert report.policy_summaries[EvaluationPolicy.AUTO.value].completion_rate == 1.0
     assert report.policy_summaries[EvaluationPolicy.QUALITY.value].completion_rate == 1.0
     assert report.comparison is not None
-    assert report.comparison.all_gates_passed
+    # The fixture executor uses real Rudder tools.  This small suite does not
+    # create a genuine parallel workload, so it must not manufacture a speedup.
+    assert not report.comparison.all_gates_passed
 
     # Auto cost should be substantially lower than quality cost
     auto_cost = report.policy_summaries[EvaluationPolicy.AUTO.value].median_cost_usd
@@ -160,4 +162,4 @@ def test_evaluation_runner_runs_deterministic_fake_suite() -> None:
     md = render_markdown_report(report)
     assert "Rudder Routing & Orchestration Evaluation Report" in md
     assert "SPEC.md Section 21 Acceptance Gates" in md
-    assert "ALL GATES PASSED" in md
+    assert "GATES FAILED" in md
