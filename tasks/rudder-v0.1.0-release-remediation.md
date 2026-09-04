@@ -61,16 +61,16 @@ the requirement that `legacy/autoconduck/` remain inert.
 
 ## 3. CLI and TUI integration
 
-- [ ] Resolve configured provider/catalog models in normal CLI execution; retain fake models only
+- [x] Resolve configured provider/catalog models in normal CLI execution; retain fake models only
   for explicit test, smoke, and evaluation modes.
-- [ ] Use one real run ID across CLI, journal, checkpoints, `RunResult`, print output, and JSONL.
-- [ ] Stream redacted persisted runtime events in JSONL, followed by one correlated terminal event.
-- [ ] Derive documented success, failed, blocked/approval-required, cancelled, and usage exit codes
+- [x] Use one real run ID across CLI, journal, checkpoints, `RunResult`, print output, and JSONL.
+- [x] Stream redacted persisted runtime events in JSONL, followed by one correlated terminal event.
+- [x] Derive documented success, failed, blocked/approval-required, cancelled, and usage exit codes
   from terminal runtime state.
-- [ ] Make non-interactive approval requirements fail fast.
-- [ ] Bind TUI submit, approval/rejection, cancellation, resume, compaction, and supported
+- [x] Make non-interactive approval requirements fail fast.
+- [x] Bind TUI submit, approval/rejection, cancellation, resume, compaction, and supported
   foreground steering to `RunController`, `SessionService`, and `ApprovalStore`.
-- [ ] Standardize the streaming CLI flag as `--jsonl`; retain `--json` only as a documented
+- [x] Standardize the streaming CLI flag as `--jsonl`; retain `--json` only as a documented
   compatibility alias if needed.
 
 ## 4. Evaluation and release evidence

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+from typing import Any
+
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -7,9 +10,14 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Footer, Header, Static, TabbedContent, TabPane
 
 from rudder import __version__
+from rudder.agents.lead import LeadControls
 from rudder.domain.events import EventEnvelope, UserPayload
-from rudder.domain.ids import new_event_id, new_run_id, new_session_id
+from rudder.domain.ids import SessionId, new_event_id, new_run_id, new_session_id
+from rudder.runtime.interrupts import QuestionStore
+from rudder.runtime.run_controller import RunController
 from rudder.sessions.journal import SessionSnapshot
+from rudder.sessions.service import SessionService
+from rudder.tools.approvals import ApprovalStore
 from rudder.tui.commands import dispatch_slash_command
 from rudder.tui.projection import TranscriptItem, TuiProjection
 from rudder.tui.widgets.agents import AgentRail
@@ -75,11 +83,24 @@ class RudderApp(App[int]):
         self,
         projection: TuiProjection | None = None,
         background_supported: bool = False,
+        controller: RunController | None = None,
+        session_service: SessionService | None = None,
+        session_id: SessionId | None = None,
+        approval_store: ApprovalStore | None = None,
+        question_store: QuestionStore | None = None,
+        initial_prompt: str | None = None,
     ) -> None:
         super().__init__()
         self.projection = projection or TuiProjection()
         self.background_supported = background_supported
+        self.controller = controller
+        self.session_service = session_service
+        self.session_id = session_id
+        self.approval_store = approval_store
+        self.question_store = question_store
+        self.initial_prompt = initial_prompt
         self.simulated: bool = False
+        self._active_worker: Any = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -100,8 +121,14 @@ class RudderApp(App[int]):
         yield Footer()
 
     def on_mount(self) -> None:
+        if self.controller is not None:
+            self.controller.event_observer = self.apply_event
         self.update_views()
         self._check_screen_width()
+        if self.initial_prompt:
+            self.on_prompt_composer_prompt_submitted(
+                PromptComposer.PromptSubmitted(self.initial_prompt)
+            )
 
     def on_resize(self) -> None:
         self._check_screen_width()
@@ -160,6 +187,48 @@ class RudderApp(App[int]):
         self.projection.apply_event(event)
         self.update_views()
 
+    async def _execute_prompt(self, text: str) -> None:
+        if self.controller is None:
+            return
+        controls = LeadControls(
+            model=self.projection.footer_data.lead_model
+            if self.projection.footer_data.lead_model != "auto"
+            else None,
+            max_children=3,
+            delegation="auto",
+        )
+        try:
+            result = await self.controller.run_instruction(text, controls=controls)
+            if result.output:
+                self.projection.transcript_items.append(
+                    TranscriptItem(
+                        id=f"lead-{len(self.projection.transcript_items)}",
+                        role="lead",
+                        title="Rudder Response",
+                        content=result.output,
+                    )
+                )
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            self.projection.transcript_items.append(
+                TranscriptItem(
+                    id=f"cancel-{len(self.projection.transcript_items)}",
+                    role="system",
+                    title="Cancelled",
+                    content="Execution cancelled.",
+                )
+            )
+        except Exception as exc:
+            self.projection.transcript_items.append(
+                TranscriptItem(
+                    id=f"err-{len(self.projection.transcript_items)}",
+                    role="error",
+                    title="Execution Error",
+                    content=str(exc),
+                )
+            )
+        finally:
+            self.update_views()
+
     # User input handling
     def on_prompt_composer_prompt_submitted(
         self, event: PromptComposer.PromptSubmitted
@@ -179,6 +248,46 @@ class RudderApp(App[int]):
                 tab_id = f"tab-{result.target_view}"
                 if tab_id in ("tab-agents", "tab-route", "tab-budget"):
                     tabs.active = tab_id
+            elif result.action == "cancel":
+                if self._active_worker is not None:
+                    self._active_worker.cancel()
+                    self._active_worker = None
+            elif (
+                result.action == "resume"
+                and self.session_service is not None
+                and self.session_id is not None
+            ):
+                resume_res = self.session_service.resume_session(str(self.session_id))
+                if resume_res.ok and resume_res.session is not None:
+                    snapshot = self.session_service.journal.get_session_snapshot(
+                        str(self.session_id)
+                    )
+                    self.apply_snapshot(snapshot)
+            elif (
+                result.action == "compact"
+                and self.session_service is not None
+                and self.session_id is not None
+            ):
+                from rudder.sessions.compaction import (
+                    CompactionService,
+                    SessionCompactionInput,
+                )
+
+                snapshot = self.session_service.journal.get_session_snapshot(
+                    str(self.session_id)
+                )
+                compactor = CompactionService(journal=self.session_service.journal)
+                compactor.compact(
+                    SessionCompactionInput(
+                        session_id=str(self.session_id),
+                        objective=snapshot.title,
+                    )
+                )
+                refreshed = self.session_service.journal.get_session_snapshot(
+                    str(self.session_id)
+                )
+                self.apply_snapshot(refreshed)
+
             if result.output_message:
                 self.projection.transcript_items.append(
                     TranscriptItem(
@@ -201,12 +310,22 @@ class RudderApp(App[int]):
             )
         )
         self.update_views()
+        if self.controller is not None:
+            self._active_worker = self.run_worker(self._execute_prompt(text), exclusive=True)
 
     # Interrupt handling
     def on_interrupt_widget_approved(self, event: InterruptWidget.Approved) -> None:
+        if self.question_store is not None:
+            try:
+                self.question_store.answer(
+                    event.approval_id, event.response, graph_id="lead"
+                )
+            except Exception:
+                pass
+        sid = self.session_id or new_session_id()
         answer_ev = EventEnvelope(
             event_id=new_event_id(),
-            session_id=new_session_id(),
+            session_id=sid,
             run_id=new_run_id(),
             sequence=len(self.projection.transcript_items) + 1,
             type="user.answer",

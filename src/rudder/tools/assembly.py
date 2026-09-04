@@ -181,6 +181,21 @@ def build_default_agent(
                 interactive=False,
                 approvals=approvals,
             )
+        if result.status == "approval_required":
+            interrupt(
+                {
+                    "type": "command_approval",
+                    "command": command,
+                    "arguments": arguments,
+                    "cwd": str(workspace),
+                }
+            )
+            with lease:
+                result = policy.run(
+                    CommandRequest(command, arguments, workspace),
+                    interactive=False,
+                    approvals=approvals,
+                )
         captured = artifacts.capture(
             "execute", {"stdout": result.stdout, "stderr": result.stderr}
         )

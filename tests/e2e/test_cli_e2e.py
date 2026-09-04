@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from rudder.cli.exit_codes import EXIT_OK, EXIT_USAGE
+from rudder.cli.exit_codes import EXIT_BLOCKED, EXIT_FAILURE, EXIT_OK, EXIT_USAGE
 from rudder.domain.events import EventEnvelope
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -130,3 +130,133 @@ def test_cli_jsonl_mode_emits_valid_versioned_events_and_terminal() -> None:
         "run.blocked",
         "run.cancelled",
     )
+
+
+def test_cli_jsonl_primary_flag_emits_valid_versioned_events() -> None:
+    result = run_cli(
+        "--jsonl", "analyze the code",
+        "--model", "fake:fast-model",
+        "--fake-provider",
+    )
+    assert result.returncode == EXIT_OK
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    assert len(lines) >= 1
+
+    parsed_events: list[EventEnvelope] = [
+        EventEnvelope.model_validate(json.loads(line)) for line in lines
+    ]
+    assert parsed_events[0].type == "run.started"
+    assert parsed_events[-1].type == "run.completed"
+
+
+def test_cli_single_run_id_across_streamed_events() -> None:
+    result = run_cli(
+        "--jsonl", "run inspection",
+        "--model", "fake:fast-model",
+        "--fake-provider",
+    )
+    assert result.returncode == EXIT_OK
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    parsed_events = [EventEnvelope.model_validate(json.loads(line)) for line in lines]
+    assert len(parsed_events) >= 2
+
+    # Every event must share the exact same run_id
+    first_run_id = parsed_events[0].run_id
+    assert all(event.run_id == first_run_id for event in parsed_events)
+
+    # Sequences must be strictly increasing
+    sequences = [event.sequence for event in parsed_events]
+    assert sequences == sorted(sequences)
+    assert len(set(sequences)) == len(sequences)
+
+
+def test_cli_normal_mode_without_fake_provider_fails_when_no_credentials() -> None:
+    import os
+
+    clean_env = {
+        "PATH": os.environ.get("PATH", ""),
+        "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+        "USERPROFILE": os.environ.get("USERPROFILE", ""),
+        "APPDATA": os.environ.get("APPDATA", ""),
+        "LOCALAPPDATA": os.environ.get("LOCALAPPDATA", ""),
+    }
+    result = run_cli(
+        "-p", "say hello without fake provider",
+        env=clean_env,
+    )
+    assert result.returncode == EXIT_FAILURE
+    assert (
+        "credentials" in result.stderr.lower()
+        or "provider" in result.stderr.lower()
+    )
+
+
+def test_cli_returns_blocked_exit_code_on_interrupted_run(tmp_path: Path) -> None:
+    import argparse
+    import asyncio
+
+    import rudder.cli.main as cli_main
+    from rudder.cli.main import _execute_instruction
+    from rudder.runtime.interrupts import QuestionStore
+    from rudder.runtime.redaction import RedactionRegistry
+    from rudder.sessions.checkpoints import CheckpointStore
+    from rudder.sessions.journal import Journal
+    from rudder.sessions.service import SessionService
+    from rudder.tools.approvals import ApprovalStore
+    from tests.fakes.models import ScriptedChatModel, tool_call_message
+
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.migrate()
+    checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
+    checkpoints.initialize()
+    redaction = RedactionRegistry()
+    approvals = ApprovalStore(tmp_path / "approvals.sqlite")
+    question_store = QuestionStore(tmp_path / "questions.sqlite")
+
+    session_service = SessionService(
+        journal=journal,
+        checkpoints=checkpoints,
+        sessions_dir=tmp_path / "sessions",
+    )
+    session = session_service.create_session(title="Blocked Test")
+    args = argparse.Namespace(
+        prompt=["call ask user"],
+        print_mode=True,
+        json_mode=False,
+        lead_model="lead-model",
+        default_model="lead-model",
+        budget="10.00",
+        max_agents=1,
+        delegation="auto",
+        fake_provider=True,
+    )
+    tool_msg = tool_call_message(
+        "ask_user",
+        {"prompt": "Need approval?", "reason": "confirmation"},
+        call_id="call-1",
+    )
+    model = ScriptedChatModel(responses=[tool_msg])
+
+    orig_builder = cli_main._build_runtime_models
+    try:
+        cli_main._build_runtime_models = lambda a, r, p="": (  # type: ignore[assignment]
+            {"lead-model": model, "implementer-model": model},
+            "lead-model",
+            "lead-model",
+        )
+        code = asyncio.run(
+            _execute_instruction(
+                prompt="call ask user",
+                session=session,
+                journal=journal,
+                checkpoints=checkpoints,
+                redaction=redaction,
+                approvals=approvals,
+                question_store=question_store,
+                workspace=tmp_path,
+                args=args,
+            )
+        )
+        assert code == EXIT_BLOCKED
+    finally:
+        cli_main._build_runtime_models = orig_builder

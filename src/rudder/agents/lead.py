@@ -45,6 +45,8 @@ def build_production_lead(
     extra_middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
     redactor: Any = None,
     checkpointer: Any = None,
+    approvals: Any = None,
+    question_store: Any = None,
 ) -> Runnable[object, object]:
     allow_children = controls.delegation in ("auto", "ask")
     registry = _lead_registry(
@@ -63,6 +65,8 @@ def build_production_lead(
             extra_middleware=extra_middleware,
             redactor=redactor,
             checkpointer=checkpointer,
+            approvals=approvals,
+            question_store=question_store,
         ),
     )
 

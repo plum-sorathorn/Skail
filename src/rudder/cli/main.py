@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 from rudder import __version__
 from rudder.cli.commands import (
@@ -16,6 +18,8 @@ from rudder.cli.commands import (
     handle_smoke,
 )
 from rudder.cli.exit_codes import (
+    EXIT_BLOCKED,
+    EXIT_CANCELLED,
     EXIT_FAILURE,
     EXIT_OK,
     EXIT_USAGE,
@@ -32,13 +36,17 @@ from rudder.config.paths import (
     user_data_dir,
 )
 from rudder.config.trust import ProjectTrustStore
-from rudder.domain.events import EventEnvelope, LifecyclePayload
-from rudder.domain.ids import SessionId, new_event_id, new_run_id
+from rudder.domain.ids import SessionId, new_run_id
 from rudder.domain.security import ProjectTrustLevel, identify_workspace
 from rudder.domain.sessions import SessionRecord
+from rudder.providers.credentials import EnvironmentCredentialResolver
+from rudder.providers.errors import ProviderConfigurationError
+from rudder.runtime.interrupts import QuestionStore
+from rudder.runtime.redaction import RedactionRegistry
 from rudder.sessions.checkpoints import CheckpointStore
 from rudder.sessions.journal import Journal
 from rudder.sessions.service import SessionService
+from rudder.tools.approvals import ApprovalStore
 
 REMOVED_ALIASES = frozenset(
     {"proxy", "serve", "oma", "daemon", "plugin", "slm", "--proxy", "--port", "--host"}
@@ -91,6 +99,7 @@ def _add_common_options(parser: argparse.ArgumentParser) -> None:
         help="non-interactive print mode: emit final response to stdout, diagnostics to stderr",
     )
     parser.add_argument(
+        "--jsonl",
         "--json",
         dest="json_mode",
         action="store_true",
@@ -321,6 +330,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # 5. Storage and session initialization
     if args.no_session:
         import tempfile
+
         temp_dir = Path(tempfile.mkdtemp(prefix="rudder-ephemeral-"))
         journal = Journal(temp_dir / "journal.sqlite")
         checkpoints = CheckpointStore(temp_dir / "checkpoints.sqlite")
@@ -341,37 +351,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.subcommand == "sessions":
         return handle_sessions(args, session_service, journal)
 
-    # 6. Check prompt or session resumption
+    # 6. Resolve active session
     prompt_text = " ".join(args.prompt).strip()
-    if not prompt_text and not args.continue_session and args.resume_session is None:
-        if args.print_mode or args.json_mode:
-            render_print_stderr("Error: prompt required in non-interactive print or JSONL mode.")
-            return EXIT_USAGE
-        if sys.stdin.isatty():
-            from rudder.tui.app import RudderApp
-            app = RudderApp()
-            return app.run() or EXIT_OK
-        # Non-interactive without prompt
-        render_print_stdout(f"Rudder {__version__} interactive harness ready.")
-        render_print_stdout("Use 'rudder [PROMPT]' or slash commands. Type '/quit' to exit.")
-        return EXIT_OK
-
-    if not args.print_mode and not args.json_mode and sys.stdin.isatty():
-        from rudder.tui.app import RudderApp
-        from rudder.tui.projection import TranscriptItem
-        app = RudderApp()
-        if prompt_text:
-            app.projection.transcript_items.append(
-                TranscriptItem(
-                    id=f"user-{len(app.projection.transcript_items)}",
-                    role="user",
-                    title="User Prompt",
-                    content=prompt_text,
-                )
-            )
-        return app.run() or EXIT_OK
-
-    # Resolve active session
     if args.resume_session is not None:
         target_sid = args.resume_session
         if not target_sid:
@@ -386,6 +367,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"Error resuming session {target_sid}: {resume_result.recovery_error}"
             )
             return EXIT_FAILURE
+        assert resume_result.session is not None
         session_record = resume_result.session
     elif args.continue_session:
         sessions = session_service.list_sessions()
@@ -398,16 +380,214 @@ def main(argv: Sequence[str] | None = None) -> int:
             title=prompt_text[:50] or "New Session",
         )
 
-    # 7. Execute instruction
+    # 7. Check non-interactive prompt requirements
+    if not prompt_text and not args.continue_session and args.resume_session is None:
+        if args.print_mode or args.json_mode:
+            render_print_stderr("Error: prompt required in non-interactive print or JSONL mode.")
+            return EXIT_USAGE
+        if not sys.stdin.isatty():
+            render_print_stdout(f"Rudder {__version__} interactive harness ready.")
+            render_print_stdout("Use 'rudder [PROMPT]' or slash commands. Type '/quit' to exit.")
+            return EXIT_OK
+
+    redaction = RedactionRegistry()
+    approvals = ApprovalStore(workspace / ".rudder" / "approvals.sqlite")
+    question_store = QuestionStore(workspace / ".rudder" / "questions.sqlite")
+
+    # 8. Interactive TUI execution
+    if not args.print_mode and not args.json_mode and sys.stdin.isatty():
+        try:
+            models, lead_model_name, child_model_name = _build_runtime_models(
+                args, redaction, prompt_text
+            )
+        except ProviderConfigurationError as exc:
+            render_print_stderr(f"Provider configuration error: {exc}")
+            return EXIT_FAILURE
+        from rudder.runtime.run_controller import RunController
+        from rudder.tui.app import RudderApp
+
+        budget_usd = Decimal(str(args.budget)) if args.budget else Decimal("10.00")
+        controller = RunController(
+            session_id=SessionId(session_record.session_id),
+            workspace=workspace,
+            journal=journal,
+            checkpoints=checkpoints,
+            redaction=redaction,
+            models=models,
+            default_lead_model=lead_model_name,
+            default_child_model=child_model_name,
+            budget_limit_usd=budget_usd,
+            approvals=approvals,
+            question_store=question_store,
+        )
+        app = RudderApp(
+            controller=controller,
+            session_service=session_service,
+            session_id=SessionId(session_record.session_id),
+            approval_store=approvals,
+            question_store=question_store,
+            initial_prompt=prompt_text or None,
+        )
+        return app.run() or EXIT_OK
+
+    # 9. Non-interactive execution
     return asyncio.run(
         _execute_instruction(
             prompt=prompt_text,
             session=session_record,
             journal=journal,
+            checkpoints=checkpoints,
+            redaction=redaction,
+            approvals=approvals,
+            question_store=question_store,
             workspace=workspace,
             args=args,
         )
     )
+
+
+def _build_runtime_models(
+    args: argparse.Namespace,
+    redaction: RedactionRegistry,
+    prompt: str = "",
+) -> tuple[dict[str, Any], str, str]:
+    from rudder.providers.fake import DeterministicFakeChatModel
+
+    lead_model_name = args.lead_model or args.default_model or "lead-model"
+    child_model_name = args.default_model or "implementer-model"
+
+    if getattr(args, "fake_provider", False):
+        resp = (
+            f"Rudder completed task: {prompt}"
+            if prompt
+            else "Rudder completed task."
+        )
+        lead_fake = DeterministicFakeChatModel(
+            model_name=lead_model_name,
+            response_text=resp,
+        )
+        models = {
+            lead_model_name: lead_fake,
+            child_model_name: lead_fake,
+            "lead-model": lead_fake,
+            "implementer-model": lead_fake,
+            "fake:fast-model": lead_fake,
+            "fake:smart-model": lead_fake,
+        }
+        return models, lead_model_name, child_model_name
+
+    cred_resolver = EnvironmentCredentialResolver(redaction)
+    candidate_providers = ("llmgateway", "openai", "anthropic")
+    resolved_cred = None
+    selected_provider = None
+
+    if ":" in lead_model_name:
+        p_name = lead_model_name.split(":", 1)[0]
+        env_var = (
+            "LLMGATEWAY_API_KEY"
+            if p_name == "llmgateway"
+            else "OPENAI_API_KEY"
+            if p_name == "openai"
+            else "ANTHROPIC_API_KEY"
+            if p_name == "anthropic"
+            else None
+        )
+        if env_var and os.environ.get(env_var):
+            try:
+                resolved_cred = cred_resolver.resolve(p_name, env_var)
+                selected_provider = p_name
+            except Exception:
+                pass
+    else:
+        for p_name in candidate_providers:
+            env_var = (
+                "LLMGATEWAY_API_KEY"
+                if p_name == "llmgateway"
+                else "OPENAI_API_KEY"
+                if p_name == "openai"
+                else "ANTHROPIC_API_KEY"
+                if p_name == "anthropic"
+                else None
+            )
+            if env_var and os.environ.get(env_var):
+                try:
+                    resolved_cred = cred_resolver.resolve(p_name, env_var)
+                    selected_provider = p_name
+                    break
+                except Exception:
+                    pass
+
+    if resolved_cred is None or selected_provider is None:
+        raise ProviderConfigurationError(
+            "default",
+            "No provider credentials configured in environment. "
+            "Set LLMGATEWAY_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY, "
+            "or pass --fake-provider for deterministic offline execution.",
+        )
+
+    models_dict: dict[str, Any] = {}
+    if selected_provider == "llmgateway":
+        from rudder.config.models import ProviderConfig
+        from rudder.providers.base import ModelOptions
+        from rudder.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
+        from rudder.providers.models import ModelProfile
+
+        actual_model = (
+            lead_model_name.split(":")[-1] if ":" in lead_model_name else "gpt-4o"
+        )
+        cfg = ProviderConfig(
+            type="openai_compatible",
+            base_url=LLMGATEWAY_BASE_URL,
+            models=(actual_model,),
+        )
+        adapter = LLMGatewayAdapter(cfg, api_key=resolved_cred.reveal())
+        profile = ModelProfile(
+            provider="llmgateway",
+            model=actual_model,
+            context_tokens=128000,
+            input_usd_per_million=Decimal("0.15"),
+            output_usd_per_million=Decimal("0.60"),
+        )
+        chat_model = adapter.create_model(profile, ModelOptions())
+        models_dict[lead_model_name] = chat_model
+        models_dict[actual_model] = chat_model
+        models_dict[child_model_name] = chat_model
+    else:
+        from rudder.providers.langchain import LangChainModelFactory
+        from rudder.providers.registry import LangChainProviderRegistry, ProviderRegistration
+
+        actual_model = (
+            lead_model_name.split(":")[-1]
+            if ":" in lead_model_name
+            else ("gpt-4o-mini" if selected_provider == "openai" else "claude-3-5-sonnet-latest")
+        )
+        reg = LangChainProviderRegistry(
+            registrations=(
+                ProviderRegistration(
+                    name=selected_provider,
+                    module=f"langchain_{selected_provider}",
+                    package=f"langchain-{selected_provider}",
+                    extra=selected_provider,
+                    contract_tested=True,
+                    auto_routing_eligible=True,
+                    maintained_ci=True,
+                    allowed_options=frozenset(
+                        {"api_key", "temperature", "max_tokens", "timeout"}
+                    ),
+                ),
+            )
+        )
+        factory = LangChainModelFactory(reg)
+        chat_model = factory.create(
+            provider=selected_provider,
+            model=actual_model,
+            options={"api_key": resolved_cred.reveal()},
+        )
+        models_dict[lead_model_name] = chat_model
+        models_dict[actual_model] = chat_model
+        models_dict[child_model_name] = chat_model
+
+    return models_dict, lead_model_name, child_model_name
 
 
 async def _execute_instruction(
@@ -415,27 +595,23 @@ async def _execute_instruction(
     prompt: str,
     session: SessionRecord,
     journal: Journal,
+    checkpoints: CheckpointStore,
+    redaction: RedactionRegistry,
+    approvals: ApprovalStore,
+    question_store: QuestionStore,
     workspace: Path,
     args: argparse.Namespace,
 ) -> int:
     from rudder.agents.lead import LeadControls
-    from rudder.providers.fake import DeterministicFakeChatModel
     from rudder.runtime.run_controller import RunController
 
-    lead_model_name = args.lead_model or args.default_model or "lead-model"
-    child_model_name = args.default_model or "implementer-model"
-
-    lead_fake = DeterministicFakeChatModel(
-        model_name=lead_model_name,
-        response_text=f"Rudder completed task: {prompt}",
-    )
-    models = {
-        lead_model_name: lead_fake,
-        "lead-model": lead_fake,
-        "implementer-model": lead_fake,
-        "fake:fast-model": lead_fake,
-        "fake:smart-model": lead_fake,
-    }
+    try:
+        models, lead_model_name, child_model_name = _build_runtime_models(
+            args, redaction, prompt
+        )
+    except ProviderConfigurationError as exc:
+        render_print_stderr(f"Provider configuration error: {exc}")
+        return EXIT_FAILURE
 
     budget_usd = Decimal(str(args.budget)) if args.budget else Decimal("10.00")
     controls = LeadControls(
@@ -449,57 +625,47 @@ async def _execute_instruction(
         session_id=SessionId(session.session_id),
         workspace=workspace,
         journal=journal,
+        checkpoints=checkpoints,
+        redaction=redaction,
         models=models,
         default_lead_model=lead_model_name,
         default_child_model=child_model_name,
         budget_limit_usd=budget_usd,
+        approvals=approvals,
+        question_store=question_store,
+        event_observer=render_jsonl_event if args.json_mode else None,
     )
 
-    session_id_val = SessionId(session.session_id)
-
-    if args.json_mode:
-        start_event = EventEnvelope(
-            event_id=new_event_id(),
-            session_id=session_id_val,
-            run_id=run_id,
-            sequence=1,
-            type="run.started",
-            payload=LifecyclePayload(status="started"),
-        )
-        render_jsonl_event(start_event)
-
     try:
-        result = await controller.run_instruction(prompt, controls=controls)
+        result = await controller.run_instruction(prompt, controls=controls, run_id=run_id)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        render_print_stderr(f"Execution cancelled on run {run_id}.")
+        return EXIT_CANCELLED
     except Exception as exc:
-        if args.json_mode:
-            fail_event = EventEnvelope(
-                event_id=new_event_id(),
-                session_id=session_id_val,
-                run_id=run_id,
-                sequence=2,
-                type="run.failed",
-                payload=LifecyclePayload(status="failed"),
-            )
-            render_jsonl_event(fail_event)
         render_print_stderr(f"Execution failed: {exc}")
         return EXIT_FAILURE
 
-    # Output rendering
-    if args.json_mode:
-        # Emit terminal event
-        terminal_event = EventEnvelope(
-            event_id=new_event_id(),
-            session_id=session_id_val,
-            run_id=run_id,
-            sequence=2,
-            type="run.completed",
-            payload=LifecyclePayload(status="completed"),
-        )
-        render_jsonl_event(terminal_event)
-    elif args.print_mode:
+    if result.status == "blocked":
+        if args.print_mode:
+            render_print_stderr(
+                f"Execution blocked on run {result.run_id}: approval or user interaction "
+                "required in non-interactive mode."
+            )
+        return EXIT_BLOCKED
+    if result.status == "cancelled":
+        if args.print_mode:
+            render_print_stderr(f"Execution cancelled on run {result.run_id}.")
+        return EXIT_CANCELLED
+    if result.status == "failed":
+        if args.print_mode:
+            render_print_stderr(f"Execution failed on run {result.run_id}.")
+        return EXIT_FAILURE
+
+    # Output rendering for completed status
+    if args.print_mode:
         render_print_stderr(f"[INFO] Run {result.run_id} completed successfully.")
         render_print_stdout(result.output)
-    else:
+    elif not args.json_mode:
         render_print_stdout(result.output)
 
     return EXIT_OK

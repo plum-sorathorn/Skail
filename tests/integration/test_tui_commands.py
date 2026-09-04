@@ -1,10 +1,20 @@
-from __future__ import annotations
+from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
+from rudder.domain.ids import SessionId, new_session_id
+from rudder.providers.fake import DeterministicFakeChatModel
+from rudder.runtime.interrupts import QuestionStore
+from rudder.runtime.run_controller import RunController
+from rudder.sessions.checkpoints import CheckpointStore
+from rudder.sessions.journal import Journal
+from rudder.sessions.service import SessionService
+from rudder.tools.approvals import ApprovalStore
 from rudder.tui.app import RudderApp
 from rudder.tui.commands import dispatch_slash_command, parse_slash_command
 from rudder.tui.projection import InterruptItem, TuiProjection
+from rudder.tui.widgets.composer import PromptComposer
 from rudder.tui.widgets.interrupts import InterruptWidget
 
 
@@ -134,3 +144,131 @@ async def test_interactive_approval_flow_in_app() -> None:
             i.role == "user" and "yes" in i.content
             for i in app.projection.transcript_items
         )
+
+
+@pytest.mark.asyncio
+async def test_tui_prompt_submission_executes_controller(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.migrate()
+    checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
+    checkpoints.initialize()
+    session_service = SessionService(
+        journal=journal,
+        checkpoints=checkpoints,
+        sessions_dir=tmp_path / "sessions",
+    )
+    session = session_service.create_session(title="Test TUI Session")
+    sid = SessionId(session.session_id)
+
+    fake_model = DeterministicFakeChatModel(
+        model_name="lead-model",
+        response_text="Hello from Rudder lead!",
+    )
+    controller = RunController(
+        session_id=sid,
+        workspace=tmp_path,
+        journal=journal,
+        checkpoints=checkpoints,
+        models={"lead-model": fake_model, "implementer-model": fake_model},
+        default_lead_model="lead-model",
+        default_child_model="implementer-model",
+        budget_limit_usd=Decimal("10.00"),
+    )
+
+    app = RudderApp(
+        controller=controller,
+        session_service=session_service,
+        session_id=sid,
+    )
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        # Submit a prompt
+        app.on_prompt_composer_prompt_submitted(
+            PromptComposer.PromptSubmitted("Build a small feature")
+        )
+        # Wait for worker to finish
+        if app._active_worker is not None:
+            await app._active_worker.wait()
+        await pilot.pause()
+
+        roles = [i.role for i in app.projection.transcript_items]
+        assert "user" in roles
+        assert "lead" in roles
+        assert any("Hello from Rudder lead!" in i.content for i in app.projection.transcript_items)
+
+
+@pytest.mark.asyncio
+async def test_tui_slash_commands_integration(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.migrate()
+    checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
+    checkpoints.initialize()
+    session_service = SessionService(
+        journal=journal,
+        checkpoints=checkpoints,
+        sessions_dir=tmp_path / "sessions",
+    )
+    session = session_service.create_session(title="TUI Slash Session")
+    sid = SessionId(session.session_id)
+
+    app = RudderApp(
+        session_service=session_service,
+        session_id=sid,
+    )
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+
+        # Test /resume
+        app.on_prompt_composer_prompt_submitted(PromptComposer.PromptSubmitted("/resume"))
+        await pilot.pause()
+        assert any("resume" in i.title.lower() for i in app.projection.transcript_items)
+
+        # Test /compact
+        app.on_prompt_composer_prompt_submitted(PromptComposer.PromptSubmitted("/compact"))
+        await pilot.pause()
+        assert any("compact" in i.title.lower() for i in app.projection.transcript_items)
+
+
+@pytest.mark.asyncio
+async def test_tui_approval_store_and_question_store_integration(tmp_path: Path) -> None:
+    q_store = QuestionStore(tmp_path / "questions.sqlite")
+    app_store = ApprovalStore(tmp_path / "approvals.sqlite")
+    sid = new_session_id()
+
+    # Ask a question in store
+    q = q_store.ask(
+        graph_id="lead",
+        task_id=None,
+        prompt="Confirm database migration?",
+        reason="destructive",
+        blocking_scope="task",
+        idempotency_key="q-test-1",
+    )
+
+    proj = TuiProjection()
+    proj.pending_interrupt = InterruptItem(
+        approval_id=q.question_id,
+        task_id=None,
+        question="Confirm database migration?",
+        status="pending",
+    )
+
+    app = RudderApp(
+        projection=proj,
+        question_store=q_store,
+        approval_store=app_store,
+        session_id=sid,
+    )
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert app.query_one(InterruptWidget) is not None
+
+        # Click approve
+        await pilot.click("#btn-approve")
+        await pilot.pause()
+
+        # Verify question answered in QuestionStore
+        assert app.projection.pending_interrupt is None
+        answered = q_store.pending("lead")
+        assert len(answered) == 0
+

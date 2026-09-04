@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -22,11 +23,19 @@ from rudder.agents.task_graph import (
     AttemptBinding,
     build_compiled_profile_subagent,
 )
-from rudder.domain.events import SecretRedactor
+from rudder.domain.events import (
+    EventEnvelope,
+    EventPayload,
+    LifecyclePayload,
+    SecretRedactor,
+)
 from rudder.domain.ids import (
+    AttemptId,
     RunId,
     SessionId,
+    TaskId,
     new_attempt_id,
+    new_event_id,
     new_run_id,
     new_task_id,
 )
@@ -48,6 +57,7 @@ from rudder.routing.budget import BudgetLedger
 from rudder.routing.requirements import ROLE_FLOORS, RequirementBuilder, TaskRisk
 from rudder.routing.selector import RouteCandidate, RouteFailure
 from rudder.runtime.deepagents_adapter import ChildRunGate
+from rudder.runtime.interrupts import QuestionStore
 from rudder.runtime.leases import WorkspaceLeaseManager
 from rudder.runtime.model_middleware import TaskBoundModelMiddleware
 from rudder.runtime.redaction import RedactionRegistry
@@ -56,6 +66,7 @@ from rudder.runtime.task_registry import TaskRegistry
 from rudder.runtime.task_validation import TaskValidator
 from rudder.sessions.checkpoints import CheckpointStore
 from rudder.sessions.journal import Journal
+from rudder.tools.approvals import ApprovalStore
 from rudder.tools.assembly import build_default_agent
 
 DEFAULT_CONFIG_SNAPSHOT: dict[str, Any] = {"routing": {"mode": "auto"}}
@@ -69,6 +80,8 @@ class RunResult:
     output: str
     messages: Sequence[BaseMessage]
     child_results: list[TaskResult] = field(default_factory=list)
+    status: str = "completed"
+    interrupted: bool = False
 
 
 AssignChildAttempt = Callable[
@@ -104,6 +117,9 @@ class RunController:
         providers: Mapping[str, ProviderAdapter] | None = None,
         candidates_fn: Callable[[], RoutingSnapshot] | None = None,
         catalog_revision: str = "catalog-v1",
+        event_observer: Callable[[EventEnvelope], None] | None = None,
+        approvals: ApprovalStore | None = None,
+        question_store: QuestionStore | None = None,
     ) -> None:
         self.session_id = session_id
         self.workspace = workspace
@@ -115,6 +131,9 @@ class RunController:
         self.redaction = redaction or RedactionRegistry()
         self.redactor = redactor or self.redaction.redactor()
         self.checkpoints = checkpoints
+        self.event_observer = event_observer
+        self.approvals = approvals
+        self.question_store = question_store
         self.validator = task_validator or TaskValidator(
             profiles=builtin_profiles(),
             workspace_root=workspace,
@@ -141,7 +160,7 @@ class RunController:
 
         self.ledger = ledger or BudgetLedger(self.journal)
         self.assignment_service = assignment_service or AssignmentService(
-            self.journal, self.ledger
+            self.journal, self.ledger, event_observer=self.event_observer
         )
         self.persisted_registry = persisted_registry or PersistedAssignmentRegistry(self.journal)
         self.usage_settler = usage_settler or AssignmentUsageSettler(
@@ -299,6 +318,39 @@ class RunController:
             saver=None,
         )
 
+    def _emit_event(
+        self,
+        *,
+        run_id: RunId,
+        type: str,
+        payload: EventPayload,
+        task_id: TaskId | None = None,
+        attempt_id: AttemptId | None = None,
+    ) -> EventEnvelope:
+        with self.journal.transaction() as tx:
+            persisted = tx.connection.execute(
+                "SELECT COALESCE(MAX(sequence), 0) FROM events WHERE run_id=?",
+                (str(run_id),),
+            ).fetchone()[0]
+            seq = int(persisted) + 1
+            event = EventEnvelope(
+                event_id=new_event_id(),
+                session_id=self.session_id,
+                run_id=run_id,
+                task_id=task_id,
+                attempt_id=attempt_id,
+                sequence=seq,
+                occurred_at=datetime.now(UTC),
+                type=type,
+                payload=payload,
+            )
+            if self.redactor:
+                event = self.redactor.scrub(event)
+            tx.append_event(event)
+        if self.event_observer is not None:
+            self.event_observer(event)
+        return event
+
     async def _run_instruction_impl(
         self,
         instruction: str,
@@ -351,6 +403,11 @@ class RunController:
             status="running",
             budget_limit_usd=self.budget_limit_usd,
             created_at=now,
+        )
+        self._emit_event(
+            run_id=run_id,
+            type="run.started",
+            payload=LifecyclePayload(status="started"),
         )
 
         # 2. Persist lead task and attempt BEFORE assignment
@@ -430,6 +487,7 @@ class RunController:
         recorded_child_results: list[TaskResult] = []
 
         # 5. Build subagents if delegation is allowed
+        delegation_approved = delegation_approved or (active_controls.delegation == "auto")
         allow_delegation = active_controls.delegation in ("auto", "ask")
         subagents: list[CompiledSubAgent] = []
 
@@ -479,6 +537,8 @@ class RunController:
             extra_middleware=[lead_middleware],
             redactor=self.redaction,
             checkpointer=saver,
+            approvals=self.approvals,
+            question_store=self.question_store,
         )
 
         input_message = HumanMessage(content=instruction)
@@ -494,14 +554,27 @@ class RunController:
                     config=invoke_config,
                 ),
             )
-        except BaseException:
-            await _save_checkpoint("terminal_failed", status="committed")
+        except BaseException as exc:
+            is_cancelled = isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError))
+            run_status = "cancelled" if is_cancelled else "failed"
+            attempt_status = AttemptStatus.INTERRUPTED if is_cancelled else AttemptStatus.FAILED
+            task_status = TaskStatus.RETURNED_TO_LEAD if is_cancelled else TaskStatus.FAILED
+            terminal_type = "run.cancelled" if is_cancelled else "run.failed"
+            self._emit_event(
+                run_id=run_id,
+                type=terminal_type,
+                payload=LifecyclePayload(status=run_status),
+            )
+            await _save_checkpoint(
+                "terminal_cancelled" if is_cancelled else "terminal_failed",
+                status="committed",
+            )
             with self.journal.transaction() as tx:
                 tx.update_attempt_status(
-                    attempt_id=str(lead_attempt_id), status=AttemptStatus.FAILED
+                    attempt_id=str(lead_attempt_id), status=attempt_status
                 )
-                tx.update_task_status(task_id=str(lead_task_id), status=TaskStatus.FAILED)
-                tx.update_run_status(run_id=str(run_id), status="failed")
+                tx.update_task_status(task_id=str(lead_task_id), status=task_status)
+                tx.update_run_status(run_id=str(run_id), status=run_status)
                 tx.update_session_status(session_id=str(self.session_id), status="idle")
             lead_aid = str(lead_assignment.assignment_id)
             if self._has_calls(lead_aid):
@@ -526,6 +599,32 @@ class RunController:
                 )
                 break
 
+        is_interrupted = bool(result_state.get("__interrupt__"))
+        if is_interrupted:
+            with self.journal.transaction() as tx:
+                tx.update_attempt_status(
+                    attempt_id=str(lead_attempt_id), status=AttemptStatus.RUNNING
+                )
+                tx.update_task_status(task_id=str(lead_task_id), status=TaskStatus.RUNNING)
+                tx.update_run_status(run_id=str(run_id), status="blocked")
+                tx.update_session_status(session_id=str(self.session_id), status="interrupted")
+            await _save_checkpoint("interrupted", status="interrupted")
+            self._emit_event(
+                run_id=run_id,
+                type="run.blocked",
+                payload=LifecyclePayload(status="blocked"),
+            )
+            return RunResult(
+                run_id=run_id,
+                lead_assignment=lead_assignment,
+                lead_context_packet=lead_context_packet,
+                output="",
+                messages=messages,
+                child_results=recorded_child_results,
+                status="blocked",
+                interrupted=True,
+            )
+
         with self.journal.transaction() as tx:
             tx.update_attempt_status(
                 attempt_id=str(lead_attempt_id), status=AttemptStatus.SUCCEEDED
@@ -547,6 +646,11 @@ class RunController:
                 pass
 
         await _save_checkpoint("terminal", status="committed")
+        self._emit_event(
+            run_id=run_id,
+            type="run.completed",
+            payload=LifecyclePayload(status="completed"),
+        )
 
         return RunResult(
             run_id=run_id,
@@ -555,6 +659,8 @@ class RunController:
             output=output_text,
             messages=messages,
             child_results=recorded_child_results,
+            status="completed",
+            interrupted=False,
         )
 
     def _persist_context_packet(
