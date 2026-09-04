@@ -8,10 +8,16 @@ from threading import Event
 from typing import TypedDict
 
 import pytest
+from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
 
+from rudder.domain.ids import new_session_id
+from rudder.domain.tasks import AttemptStatus
 from rudder.runtime.errors import FrameworkContractError
+from rudder.runtime.interrupts import QuestionStore
+from rudder.runtime.run_controller import RunController
 from rudder.sessions import CheckpointStore, Journal, RecoveryResult, recover_session
+from tests.fakes.models import ScriptedChatModel, tool_call_message
 
 NOW = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
 
@@ -497,3 +503,70 @@ def test_one_checkpoint_can_preserve_multiple_live_child_attempts(tmp_path: Path
     assert result.snapshot is not None
     assert {task.status for task in result.snapshot.tasks} == {"running"}
     assert {attempt.status for attempt in result.snapshot.attempts} == {"running"}
+
+
+@pytest.mark.asyncio
+async def test_controller_interrupt_checkpoint_preserves_live_attempt_on_recovery(
+    tmp_path: Path,
+) -> None:
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.migrate()
+    checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
+    checkpoints.initialize()
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id),
+        title="controller interrupt",
+        created_at=datetime.now(UTC),
+    )
+    questions = QuestionStore(tmp_path / "questions.sqlite")
+    model = ScriptedChatModel(
+        responses=[
+            tool_call_message(
+                "ask_user",
+                {"prompt": "Proceed?", "reason": "confirmation"},
+                call_id="recover-ask",
+            )
+        ]
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        checkpoints=checkpoints,
+        models={"lead-model": model, "implementer-model": model},
+        question_store=questions,
+    )
+
+    result = await controller.run_instruction("Ask before continuing")
+    assert result.status == "blocked"
+    recovered = recover_session(
+        journal=journal,
+        checkpoints=checkpoints,
+        session_id=str(session_id),
+    )
+
+    assert recovered.ok
+    assert recovered.interrupted_call_keys == ()
+    assert recovered.released_reservation_ids == ()
+    assert recovered.snapshot is not None
+    assert recovered.snapshot.attempts[-1].status is AttemptStatus.RUNNING
+
+    resumed_model = ScriptedChatModel(
+        responses=[AIMessage(content="Recovered execution completed.")]
+    )
+    resumed_controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        checkpoints=checkpoints,
+        models={"lead-model": resumed_model, "implementer-model": resumed_model},
+        question_store=questions,
+    )
+    assert resumed_controller.restore_interrupted()
+
+    resumed = await resumed_controller.resume_interrupted("yes")
+
+    assert resumed.status == "completed"
+    assert resumed.output == "Recovered execution completed."
+    assert questions.pending("lead") == ()

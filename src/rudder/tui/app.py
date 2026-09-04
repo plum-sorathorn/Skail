@@ -94,6 +94,7 @@ class RudderApp(App[int]):
         initial_prompt: str | None = None,
         max_children: int = 3,
         delegation: DelegationMode = "auto",
+        initial_snapshot: SessionSnapshot | None = None,
     ) -> None:
         super().__init__()
         self.projection = projection or TuiProjection()
@@ -106,6 +107,7 @@ class RudderApp(App[int]):
         self.initial_prompt = initial_prompt
         self.max_children = max_children
         self.delegation = delegation
+        self.initial_snapshot = initial_snapshot
         self.simulated: bool = False
         self._active_worker: Any = None
 
@@ -130,6 +132,15 @@ class RudderApp(App[int]):
     def on_mount(self) -> None:
         if self.controller is not None:
             self.controller.event_observer = self.apply_event
+        if self.initial_snapshot is not None:
+            self.projection.apply_snapshot(self.initial_snapshot)
+        if self.controller is not None and self.controller.pending_interrupt is not None:
+            self._set_interrupt(
+                self.controller.pending_interrupt,
+                run_id=str(self.initial_snapshot.runs[-1].run_id)
+                if self.initial_snapshot and self.initial_snapshot.runs
+                else "restored",
+            )
         self.update_views()
         self._check_screen_width()
         if self.initial_prompt:
@@ -249,22 +260,7 @@ class RudderApp(App[int]):
 
     def _apply_run_result(self, result: Any) -> None:
         if result.pending_interrupt:
-            payload = result.pending_interrupt
-            approval_id = str(
-                payload.get("question_id") or f"command:{result.run_id}"
-            )
-            question = str(
-                payload.get("prompt")
-                or " ".join(
-                    [str(payload.get("command", "command")), *payload.get("arguments", ())]
-                )
-            )
-            self.projection.pending_interrupt = InterruptItem(
-                approval_id=approval_id,
-                task_id=payload.get("task_id"),
-                question=question,
-                payload=payload,
-            )
+            self._set_interrupt(result.pending_interrupt, run_id=str(result.run_id))
         else:
             self.projection.pending_interrupt = None
         if result.output:
@@ -276,6 +272,21 @@ class RudderApp(App[int]):
                     content=result.output,
                 )
             )
+
+    def _set_interrupt(self, payload: dict[str, Any], *, run_id: str) -> None:
+        approval_id = str(payload.get("question_id") or f"command:{run_id}")
+        question = str(
+            payload.get("prompt")
+            or " ".join(
+                [str(payload.get("command", "command")), *payload.get("arguments", ())]
+            )
+        )
+        self.projection.pending_interrupt = InterruptItem(
+            approval_id=approval_id,
+            task_id=payload.get("task_id"),
+            question=question,
+            payload=payload,
+        )
 
     # User input handling
     def on_prompt_composer_prompt_submitted(

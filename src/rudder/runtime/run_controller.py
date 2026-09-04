@@ -15,7 +15,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 
-from rudder.agents.context import ContextAssembler, ContextPacket
+from rudder.agents.context import ContextAssembler, ContextComponent, ContextPacket
 from rudder.agents.lead import LeadControls, build_production_lead
 from rudder.agents.profile_loader import AgentProfile
 from rudder.agents.profiles import builtin_profiles
@@ -192,6 +192,11 @@ class RunController:
         self.candidates_fn = candidates_fn
         self.catalog_revision = catalog_revision
         self._pending_run: _PendingRun | None = None
+        self._pending_interrupt_payload: dict[str, Any] | None = None
+
+    @property
+    def pending_interrupt(self) -> dict[str, Any] | None:
+        return self._pending_interrupt_payload
 
     def _record_model_usage(
         self, assignment_id: str, response: object, call_id: str = ""
@@ -462,7 +467,12 @@ class RunController:
         run_id = run_id or new_run_id()
         now = datetime.now(UTC)
 
-        async def _save_checkpoint(boundary: str, status: str = "committed") -> None:
+        async def _save_checkpoint(
+            boundary: str,
+            status: str = "committed",
+            live_idempotency_keys: tuple[str, ...] | None = None,
+            extra_payload: Mapping[str, Any] | None = None,
+        ) -> None:
             if self.checkpoints is None or saver is None:
                 return
             try:
@@ -479,9 +489,10 @@ class RunController:
                                 "run_id": str(run_id),
                                 "boundary": boundary,
                                 "status": status,
+                                **dict(extra_payload or {}),
                             },
                             created_at=datetime.now(UTC),
-                            live_idempotency_keys=(f"run:{run_id}:{boundary}",),
+                            live_idempotency_keys=live_idempotency_keys,
                         )
             except Exception:
                 pass
@@ -687,6 +698,7 @@ class RunController:
         is_interrupted = bool(result_state.get("__interrupt__"))
         if is_interrupted:
             pending_interrupt = _first_interrupt_payload(result_state)
+            self._pending_interrupt_payload = pending_interrupt
             self._pending_run = _PendingRun(
                 run_id=run_id,
                 instruction=instruction,
@@ -705,7 +717,12 @@ class RunController:
                 tx.update_task_status(task_id=str(lead_task_id), status=TaskStatus.RUNNING)
                 tx.update_run_status(run_id=str(run_id), status="blocked")
                 tx.update_session_status(session_id=str(self.session_id), status="interrupted")
-            await _save_checkpoint("interrupted", status="interrupted")
+            await _save_checkpoint(
+                "interrupted",
+                status="interrupted",
+                live_idempotency_keys=(f"attempt:{lead_attempt_id}",),
+                extra_payload={"interrupt": pending_interrupt},
+            )
             self._emit_event(
                 run_id=run_id,
                 type="run.blocked",
@@ -766,6 +783,102 @@ class RunController:
             child_peak_active=scheduler.gate.peak_active,
             child_count=len(scheduler.gate.completed),
         )
+
+    def restore_interrupted(self) -> bool:
+        snapshot = self.journal.get_session_snapshot(str(self.session_id))
+        blocked_runs = [run for run in snapshot.runs if run.status == "blocked"]
+        if not blocked_runs:
+            return False
+        run = blocked_runs[-1]
+        run_tasks = [task for task in snapshot.tasks if task.run_id == run.run_id]
+        for task in run_tasks:
+            attempt = next(
+                (
+                    item
+                    for item in reversed(snapshot.attempts)
+                    if item.task_id == task.task_id and item.status is AttemptStatus.RUNNING
+                ),
+                None,
+            )
+            if attempt is None:
+                continue
+            assignment = next(
+                (
+                    item
+                    for item in reversed(snapshot.assignments)
+                    if item.attempt_id == attempt.attempt_id
+                ),
+                None,
+            )
+            if assignment is None:
+                continue
+            persisted_assignment = TaskAssignment.model_validate(assignment.payload)
+            packet_snapshot = next(
+                (
+                    item
+                    for item in reversed(snapshot.context_packets)
+                    if item.run_id == run.run_id and item.task_id == task.task_id
+                ),
+                None,
+            )
+            if packet_snapshot is None:
+                packet = self.assembler.assemble(
+                    task_id=run.run_id,
+                    objective=task.description,
+                    constraints=(),
+                    state=f"run_id={run.run_id}; restored=true",
+                )
+            else:
+                payload = packet_snapshot.payload
+                packet = ContextPacket(
+                    version=int(payload["version"]),
+                    task_id=run.run_id,
+                    components=tuple(
+                        ContextComponent(**component)
+                        for component in payload.get("components", ())
+                    ),
+                    estimated_tokens=int(payload.get("estimated_tokens", 0)),
+                    omissions=tuple(payload.get("omissions", ())),
+                )
+            controls = LeadControls(
+                model=(
+                    f"{persisted_assignment.provider}:{persisted_assignment.model}"
+                    if persisted_assignment.routing_mode is RoutingMode.MANUAL
+                    else None
+                ),
+                routing_mode=persisted_assignment.routing_mode,
+            )
+            self._pending_run = _PendingRun(
+                run_id=RunId(run.run_id),
+                instruction=task.description,
+                controls=controls,
+                workspace_revision="git:head",
+                delegation_approved=False,
+                lead_task_id=TaskId(task.task_id),
+                lead_attempt_id=AttemptId(attempt.attempt_id),
+                lead_assignment=persisted_assignment,
+                lead_context_packet=packet,
+            )
+            if self.checkpoints is not None:
+                checkpoint = self.checkpoints.latest_valid(str(self.session_id))
+                interrupt = None if checkpoint is None else checkpoint.payload.get("interrupt")
+                self._pending_interrupt_payload = (
+                    dict(interrupt) if isinstance(interrupt, Mapping) else None
+                )
+            if self._pending_interrupt_payload is None and self.question_store is not None:
+                questions = self.question_store.pending("lead")
+                if questions:
+                    question = questions[-1]
+                    self._pending_interrupt_payload = {
+                        "question_id": question.question_id,
+                        "prompt": question.prompt,
+                        "options": question.options,
+                        "reason": question.reason,
+                        "task_id": question.task_id,
+                        "blocking_scope": question.blocking_scope,
+                    }
+            return True
+        return False
 
     async def resume_interrupted(self, answer: str) -> RunResult:
         pending = self._pending_run
@@ -829,6 +942,7 @@ class RunController:
 
         messages = cast(list[BaseMessage], result_state.get("messages", []))
         if result_state.get("__interrupt__"):
+            self._pending_interrupt_payload = _first_interrupt_payload(result_state)
             self.journal.update_session_status(
                 session_id=str(self.session_id), status="interrupted"
             )
@@ -870,6 +984,7 @@ class RunController:
             payload=LifecyclePayload(status="completed"),
         )
         self._pending_run = None
+        self._pending_interrupt_payload = None
         return RunResult(
             run_id=pending.run_id,
             lead_assignment=pending.lead_assignment,
@@ -907,6 +1022,7 @@ class RunController:
             payload=UserPayload(action="cancellation", content="interrupt rejected"),
         )
         self._pending_run = None
+        self._pending_interrupt_payload = None
         return RunResult(
             run_id=pending.run_id,
             lead_assignment=pending.lead_assignment,

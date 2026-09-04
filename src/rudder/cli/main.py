@@ -525,6 +525,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             profile_models=profile_models,
             providers=runtime_models.providers,
         )
+        initial_snapshot = None
+        if args.resume_session is not None:
+            controller.restore_interrupted()
+            initial_snapshot = journal.get_session_snapshot(session_record.session_id)
         app = RudderApp(
             controller=controller,
             session_service=session_service,
@@ -534,6 +538,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             initial_prompt=prompt_text or None,
             max_children=args.max_agents,
             delegation=args.delegation,
+            initial_snapshot=initial_snapshot,
         )
         return app.run() or EXIT_OK
 
@@ -776,7 +781,13 @@ async def _execute_instruction(
     )
 
     try:
-        result = await controller.run_instruction(prompt, controls=controls, run_id=run_id)
+        if getattr(args, "resume_session", None) is not None and controller.restore_interrupted():
+            if not prompt:
+                render_print_stderr("Execution remains blocked: a resume answer is required.")
+                return EXIT_BLOCKED
+            result = await controller.resume_interrupted(prompt)
+        else:
+            result = await controller.run_instruction(prompt, controls=controls, run_id=run_id)
     except (KeyboardInterrupt, asyncio.CancelledError):
         render_print_stderr(f"Execution cancelled on run {run_id}.")
         return EXIT_CANCELLED
