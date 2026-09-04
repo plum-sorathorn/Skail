@@ -177,3 +177,23 @@ def test_compaction_never_rewrites_usage_records(tmp_path: Path) -> None:
     assert len(usage_after) == 1
     assert usage_after[0].amount_usd == Decimal("0.42")
     assert usage_after[0].usage_id == usage_before[0].usage_id
+
+
+def test_compaction_bounds_packet_and_persists_selected_context(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "journal.sqlite")
+    _seed_compaction_journal(journal, "session-c3")
+    service = CompactionService(journal=journal, max_context_tokens=25)
+
+    result = service.compact(
+        SessionCompactionInput(
+            session_id="session-c3",
+            objective="Keep this objective while dropping verbose detail " * 10,
+            verbose_events=({"event_id": "ev-1", "type": "tool.completed"},),
+        )
+    )
+
+    assert result.context_packet.estimated_tokens <= 25
+    assert result.context_packet.omissions
+    snapshot = journal.get_session_snapshot("session-c3")
+    assert len(snapshot.context_packets) == 1
+    assert snapshot.context_packets[0].payload["estimated_tokens"] <= 25

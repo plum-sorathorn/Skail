@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -175,14 +176,57 @@ class CompactionService:
             for c in components
         )
 
-        total_tokens = sum(c.estimated_tokens for c in scrubbed)
+        selected: list[ContextComponent] = []
+        omissions: list[str] = []
+        remaining = self.max_context_tokens
+        for component in scrubbed:
+            if remaining <= 0:
+                omissions.append(f"{component.label}:token_budget")
+                continue
+            if component.estimated_tokens <= remaining:
+                selected.append(component)
+                remaining -= component.estimated_tokens
+                continue
+            truncated = component.content[: remaining * 4]
+            if truncated:
+                selected.append(
+                    ContextComponent(
+                        component.label,
+                        component.revision,
+                        truncated,
+                        component.rationale,
+                        _tokens(truncated),
+                        "truncated",
+                    )
+                )
+            omissions.append(f"{component.label}:token_budget")
+            remaining = 0
+
+        total_tokens = sum(c.estimated_tokens for c in selected)
         packet = ContextPacket(
             version=CONTEXT_PACKET_VERSION,
             task_id=input.session_id,
-            components=scrubbed,
+            components=tuple(selected),
             estimated_tokens=total_tokens,
-            omissions=(),
+            omissions=tuple(omissions),
         )
+
+        if snapshot.runs:
+            self.journal.create_context_packet(
+                packet_id=packet.revision,
+                run_id=snapshot.runs[-1].run_id,
+                task_id=None,
+                attempt_id=None,
+                payload={
+                    "kind": "compaction",
+                    "version": packet.version,
+                    "estimated_tokens": packet.estimated_tokens,
+                    "omissions": list(packet.omissions),
+                    "components": [asdict(component) for component in packet.components],
+                },
+                idempotency_key=f"compaction:{input.session_id}:{packet.revision}",
+                created_at=datetime.now(UTC),
+            )
 
         source_coverage = SourceCoverage(
             covered_event_ids=tuple(covered_event_ids),
