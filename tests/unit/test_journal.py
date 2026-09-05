@@ -32,6 +32,7 @@ EXPECTED_TABLES = {
     "context_packets",
     "provider_calls",
     "accounting_reconciliation_failures",
+    "task_results",
 }
 
 

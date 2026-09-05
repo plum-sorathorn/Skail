@@ -44,6 +44,28 @@ def test_registry_rejects_missing_dependencies_and_cycles_deterministically(tmp_
         registry.register_many((cyclic_first, dependent))
 
 
+def test_registry_rejects_duplicate_normalized_fingerprints_in_one_batch(tmp_path) -> None:
+    validator = _validator(tmp_path)
+    run_id = new_run_id()
+    first = validator.create_spec(
+        TaskRequest(description="Inspect   routing", profile="explorer"),
+        run_id=run_id,
+        parent_task_id=None,
+        parent_depth=0,
+        workspace_revision="git:abc123",
+    )
+    duplicate = validator.create_spec(
+        TaskRequest(description=" Inspect routing ", profile="explorer"),
+        run_id=run_id,
+        parent_task_id=None,
+        parent_depth=0,
+        workspace_revision="git:abc123",
+    )
+
+    with pytest.raises(TaskValidationError, match="^task.fingerprint_duplicate$"):
+        TaskRegistry().register_many((first, duplicate))
+
+
 def test_registry_tracks_dependencies_and_compare_and_set_task_state(tmp_path) -> None:
     validator = _validator(tmp_path)
     registry = TaskRegistry()
@@ -196,4 +218,3 @@ def test_task_registry_loads_failed_fingerprints_from_journal(tmp_path) -> None:
 
     with pytest.raises(TaskValidationError, match="^task.fingerprint_exhausted$"):
         new_registry.register(spec)
-

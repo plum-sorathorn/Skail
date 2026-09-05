@@ -60,6 +60,7 @@ def build_lead_agent(
     memory: list[str] | None = None,
     permissions: list[FilesystemPermission] | None = None,
     name: str = "rudder-lead",
+    system_prompt: str | None = None,
 ) -> Runnable[Any, Any]:
     """Build a DeepAgent while keeping its concrete type behind this adapter."""
 
@@ -75,6 +76,7 @@ def build_lead_agent(
         memory=memory,
         permissions=permissions,
         name=name,
+        system_prompt=system_prompt,
     )
 
 

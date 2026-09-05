@@ -266,6 +266,9 @@ def build_default_agent(
     runtime_event: Callable[[str, str], None] | None = None,
     runtime_model_name: str | None = None,
     model_response_observer: Callable[[ModelResponse[Any]], None] | None = None,
+    allowed_write_paths: tuple[str, ...] = (),
+    execute_allowed: bool = True,
+    system_prompt: str | None = None,
 ) -> Any:
     """Assemble pinned DeepAgents tools behind Rudder's workspace and shell policy."""
 
@@ -279,6 +282,14 @@ def build_default_agent(
     @tool("execute")
     def execute(command: str, arguments: tuple[str, ...] = ()) -> dict[str, Any]:
         """Execute a structured command under Rudder policy."""
+
+        if not execute_allowed:
+            return {
+                "status": "rejected",
+                "returncode": None,
+                "output": "execute is outside the delegated task permission or path scope",
+                "artifact": None,
+            }
 
         from contextlib import nullcontext
 
@@ -379,7 +390,11 @@ def build_default_agent(
         tools=custom_tools,
         subagents=subagents,
         backend=PolicyFilesystemBackend(
-            workspace, redactor=redaction, task_id=task_id, lease_manager=lease_manager
+            workspace,
+            redactor=redaction,
+            task_id=task_id,
+            lease_manager=lease_manager,
+            allowed_write_paths=allowed_write_paths,
         ),
         skills=skills,
         memory=memory,
@@ -389,4 +404,5 @@ def build_default_agent(
             *extra_middleware,
         ],
         checkpointer=checkpointer,
+        system_prompt=system_prompt,
     )

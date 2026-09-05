@@ -100,3 +100,42 @@ async def test_scheduler_priority_and_creation_ordering_with_barrier() -> None:
     barrier.release("third-high")
     barrier.release("first-low")
     await running
+
+
+@pytest.mark.asyncio
+async def test_direct_compiled_dispatch_uses_ordered_scheduler_queue() -> None:
+    barrier = AsyncStartBarrier()
+    scheduler = ChildScheduler(max_children=1)
+    scheduler.submit("low", priority=1)
+    scheduler.submit("high", priority=10)
+
+    high = asyncio.create_task(scheduler.execute("high", lambda: barrier.worker("high")))
+    low = asyncio.create_task(scheduler.execute("low", lambda: barrier.worker("low")))
+    await barrier.wait_for_started(1)
+    assert barrier.started == ["high"]
+    barrier.release("high")
+    await barrier.wait_for_started(2)
+    assert barrier.started == ["high", "low"]
+    barrier.release("low")
+
+    assert await high == "result:high"
+    assert await low == "result:low"
+
+
+@pytest.mark.asyncio
+async def test_direct_dispatch_wakes_when_approval_arrives() -> None:
+    scheduler = ChildScheduler(max_children=1)
+    scheduler.submit("waiting", priority=1, awaiting_approval=True)
+    started = asyncio.Event()
+
+    async def operation() -> str:
+        started.set()
+        return "approved"
+
+    running = asyncio.create_task(scheduler.execute("waiting", operation))
+    await asyncio.sleep(0)
+    assert not started.is_set()
+    scheduler.approve("waiting")
+
+    assert await running == "approved"
+    assert started.is_set()

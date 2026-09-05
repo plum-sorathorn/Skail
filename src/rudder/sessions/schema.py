@@ -189,4 +189,14 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
         """,
     ),
+    (
+        8,
+        """
+        CREATE TABLE task_results (
+            task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+            payload_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """,
+    ),
 )

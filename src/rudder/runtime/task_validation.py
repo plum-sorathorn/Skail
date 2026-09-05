@@ -63,7 +63,14 @@ class TaskValidator:
         except ValueError as error:
             raise TaskValidationError("task.profile_invalid") from error
         normalized = normalized.model_copy(
-            update={"budget_usd": budget_usd, "model_policy": model_policy}
+            update={
+                "budget_usd": (
+                    normalized.budget_usd if budget_usd is None else budget_usd
+                ),
+                "model_policy": (
+                    normalized.model_policy if model_policy is None else model_policy
+                ),
+            }
         )
         return TaskSpec(
             task_id=new_task_id(),

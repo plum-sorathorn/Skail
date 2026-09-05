@@ -30,6 +30,8 @@ class ChildScheduler:
         self._children: dict[str, ScheduledChild] = {}
         self._completed: set[str] = set()
         self._failed: set[str] = set()
+        self._running: set[str] = set()
+        self._condition = asyncio.Condition()
         self.blocked: dict[str, str] = {}
 
     def submit(
@@ -47,27 +49,49 @@ class ChildScheduler:
         self._children[task_id] = ScheduledChild(
             task_id, priority, len(self._children), depends_on, awaiting_approval
         )
+        self._wake_waiters()
 
     def finish(self, task_id: str, *, succeeded: bool) -> None:
         if task_id not in self._children:
             raise ValueError("scheduler task is unknown")
         if succeeded:
             self._completed.add(task_id)
+            self._wake_waiters()
             return
         self._failed.add(task_id)
         self._block_dependents(task_id)
+        self._wake_waiters()
 
     def cancel(self, task_id: str) -> None:
         if task_id not in self._children:
             raise ValueError("scheduler task is unknown")
         self._failed.add(task_id)
         self._block_dependents(task_id, reason="dependency_cancelled")
+        self._wake_waiters()
 
     def approve(self, task_id: str) -> None:
         child = self._children[task_id]
         self._children[task_id] = ScheduledChild(
             child.task_id, child.priority, child.creation_order, child.depends_on, False
         )
+        self._wake_waiters()
+
+    def retry(self, task_id: str) -> None:
+        if task_id not in self._children:
+            raise ValueError("scheduler task is unknown")
+        self._failed.discard(task_id)
+        self._wake_waiters()
+
+    def _wake_waiters(self) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(self._notify_waiters())
+
+    async def _notify_waiters(self) -> None:
+        async with self._condition:
+            self._condition.notify_all()
 
     def ready(self) -> tuple[str, ...]:
         candidates = (
@@ -76,6 +100,7 @@ class ChildScheduler:
             if not child.awaiting_approval
             and child.task_id not in self._completed
             and child.task_id not in self._failed
+            and child.task_id not in self._running
             and child.task_id not in self.blocked
             and all(dependency in self._completed for dependency in child.depends_on)
         )
@@ -86,6 +111,43 @@ class ChildScheduler:
                 key=lambda child: (-child.priority, child.creation_order),
             )
         )
+
+    async def execute(
+        self,
+        task_id: str,
+        operation: Callable[[], Awaitable[Any]],
+        *,
+        final_failure: bool = True,
+    ) -> Any:
+        if task_id not in self._children:
+            raise ValueError("scheduler task is unknown")
+        async with self._condition:
+            await self._condition.wait_for(
+                lambda: task_id in self.blocked
+                or (
+                    task_id in self.ready()
+                    and self.ready().index(task_id)
+                    < self.max_children - len(self._running)
+                )
+            )
+            if task_id in self.blocked:
+                return self._make_blocked_result(task_id, self.blocked[task_id])
+            self._running.add(task_id)
+        try:
+            result = await self.gate.run(task_id, operation)
+            succeeded = not isinstance(result, TaskResult) or result.status == "succeeded"
+            if succeeded:
+                self.finish(task_id, succeeded=True)
+            elif final_failure or result.status != "failed":
+                self.finish(task_id, succeeded=False)
+            return result
+        except BaseException:
+            self.finish(task_id, succeeded=False)
+            raise
+        finally:
+            async with self._condition:
+                self._running.discard(task_id)
+                self._condition.notify_all()
 
     async def run(
         self,
@@ -112,6 +174,7 @@ class ChildScheduler:
                     name=f"rudder-scheduled-{task_id}",
                 )
                 running[task] = task_id
+                self._running.add(task_id)
                 pending.remove(task_id)
                 capacity -= 1
             if not running:
@@ -124,6 +187,7 @@ class ChildScheduler:
             done, _ = await asyncio.wait(running, return_when=asyncio.FIRST_COMPLETED)
             for task in done:
                 task_id = running.pop(task)
+                self._running.discard(task_id)
                 try:
                     res = task.result()
                     results[task_id] = res

@@ -34,11 +34,15 @@ class PolicyFilesystemBackend(FilesystemBackend):
         redactor: RedactionRegistry,
         task_id: str,
         lease_manager: WorkspaceLeaseManager | None = None,
+        allowed_write_paths: tuple[str, ...] = (),
     ) -> None:
         super().__init__(root_dir=root_dir, virtual_mode=True)
         self.boundary = FilesystemBoundary(root_dir, redactor=redactor)
         self.task_id = task_id
         self.lease_manager = lease_manager
+        self.allowed_write_paths = tuple(
+            (root_dir / path).resolve(strict=False) for path in allowed_write_paths
+        )
         self._call_number = 0
 
     @staticmethod
@@ -106,6 +110,7 @@ class PolicyFilesystemBackend(FilesystemBackend):
     def write(self, file_path: str, content: str) -> WriteResult:
         relative = self._relative(file_path)
         try:
+            self._assert_write_scope(relative)
             with self._lease():
                 self.boundary.write_text(
                     relative, content, task_id=self.task_id, tool_call_id=self._next_call()
@@ -123,6 +128,7 @@ class PolicyFilesystemBackend(FilesystemBackend):
     ) -> EditResult:
         relative = self._relative(file_path)
         try:
+            self._assert_write_scope(relative)
             path = self.boundary.resolve(relative)
             self.boundary._assert_not_sensitive(path)
             content = path.read_text(encoding="utf-8")
@@ -159,6 +165,18 @@ class PolicyFilesystemBackend(FilesystemBackend):
         except (PermissionError, OSError):
             return False
         return True
+
+    def _assert_write_scope(self, relative: str) -> None:
+        if not self.allowed_write_paths:
+            return
+        candidate = self.boundary.resolve(relative, for_write=True)
+        for allowed in self.allowed_write_paths:
+            try:
+                candidate.relative_to(allowed)
+                return
+            except ValueError:
+                continue
+        raise PathBoundaryError("write is outside the delegated task scope")
 
     def _lease(self) -> AbstractContextManager[None]:
         if self.lease_manager is None:

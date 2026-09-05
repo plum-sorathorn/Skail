@@ -156,3 +156,19 @@ def test_write_capable_side_effects() -> None:
     assert write_capable((SideEffect.WORKSPACE_WRITE,)) is True
     assert write_capable((SideEffect.EXTERNAL_WRITE,)) is True
     assert write_capable((SideEffect.UNKNOWN,)) is True
+
+
+def test_delegated_write_scope_is_enforced_by_filesystem_backend(tmp_path: Path) -> None:
+    backend = PolicyFilesystemBackend(
+        tmp_path,
+        redactor=SecretRedactor(),
+        task_id="scoped-task",
+        allowed_write_paths=("src/allowed",),
+    )
+
+    allowed = backend.write("src/allowed/result.txt", "ok")
+    denied = backend.write("src/outside.txt", "no")
+
+    assert allowed.error is None
+    assert denied.error == "write is outside the delegated task scope"
+    assert not (tmp_path / "src" / "outside.txt").exists()

@@ -47,6 +47,26 @@ def test_validator_generates_task_identity_and_requirements(tmp_path) -> None:
     assert spec.permission_set.network is False
 
 
+def test_create_spec_preserves_request_budget_and_model_policy(tmp_path) -> None:
+    request = TaskRequest(
+        description="Implement the bounded change",
+        profile="implementer",
+        budget_usd=Decimal("0.75"),
+        model_policy=ModelConstraint(provider="fixture", model="code-model"),
+    )
+
+    spec = _validator(tmp_path).create_spec(
+        request,
+        run_id=new_run_id(),
+        parent_task_id=None,
+        parent_depth=0,
+        workspace_revision="git:abc123",
+    )
+
+    assert spec.request.budget_usd == Decimal("0.75")
+    assert spec.request.model_policy == request.model_policy
+
+
 @pytest.mark.parametrize(
     ("task_request", "parent_depth", "code"),
     [

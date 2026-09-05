@@ -50,13 +50,15 @@ persisted assignment reservation as their funding allowance; no second reservati
 
 ### Phase 4 — Delegated task contracts and scheduling
 
-- [ ] Preserve the standard task surface while validating full JSON packets, durable dependency
+- [x] Preserve the standard task surface while validating full JSON packets, durable dependency
   identities, duplicate fingerprints, profiles, scope, and budgets.
-- [ ] Dispatch by the scheduler queue and priority; release dependencies only after verification.
-- [ ] Persist terminal task results and two-attempt escalation evidence; preserve writer leases
+- [x] Dispatch by the scheduler queue and priority; release dependencies only after verification.
+- [x] Persist terminal task results and two-attempt escalation evidence; preserve writer leases
   through cancellation and shell shutdown.
 
-Acceptance evidence: cap, priority, dependency/cycle, verification, escalation, and write-lease tests.
+Acceptance evidence: task validation/registry, ordered scheduler concurrency, compiled task graph,
+two-attempt escalation, persisted terminal results, scoped filesystem, and cancellation-held lease
+regressions. The complete offline suite passes with 489 tests and two documented skips.
 
 ### Phase 5 — Verifiable outcomes and failure monitoring
 

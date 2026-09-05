@@ -18,6 +18,11 @@ from rudder.tools.registry import SideEffect, ToolMetadata, ToolRegistry
 
 DelegationMode = Literal["auto", "ask", "off"]
 
+TASK_PACKET_GUIDANCE = """When delegating, call task(description, subagent_type). The description
+may be plain text or one JSON object with: description, success_criteria, depends_on (persisted task
+IDs), priority, write_scope, model_policy, budget_usd, and background. Preserve the user's criteria,
+dependencies, scope, model constraints, and budget. Never invent dependency IDs."""
+
 
 @dataclass(frozen=True)
 class LeadControls:
@@ -77,6 +82,7 @@ def build_production_lead(
             runtime_event=runtime_event,
             runtime_model_name=runtime_model_name,
             model_response_observer=model_response_observer,
+            system_prompt=TASK_PACKET_GUIDANCE,
         ),
     )
 

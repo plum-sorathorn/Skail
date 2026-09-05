@@ -49,7 +49,13 @@ from rudder.domain.ids import (
     new_task_id,
 )
 from rudder.domain.routing import RoutingMode, TaskAssignment
-from rudder.domain.tasks import AttemptStatus, TaskResult, TaskSpec, TaskStatus
+from rudder.domain.tasks import (
+    TERMINAL_TASK_STATUSES,
+    AttemptStatus,
+    TaskResult,
+    TaskSpec,
+    TaskStatus,
+)
 from rudder.providers.base import ProviderAdapter
 from rudder.providers.fake import FakeProviderAdapter
 from rudder.providers.fallback import FallbackBinding
@@ -499,6 +505,7 @@ class RunController:
                 controls=controls,
                 workspace_revision=workspace_revision,
                 lead_assignment=lead_assignment,
+                scheduler=scheduler,
             ),
         )
 
@@ -516,6 +523,7 @@ class RunController:
         controls: LeadControls,
         workspace_revision: str,
         lead_assignment: TaskAssignment,
+        scheduler: ChildScheduler,
     ) -> None:
         calls = [
             call
@@ -556,6 +564,22 @@ class RunController:
         except TaskValidationError:
             return
 
+        for spec, _, _, _ in planned:
+            for dependency in spec.request.depends_on:
+                dependency_key = str(dependency)
+                if dependency_key not in scheduler._children:
+                    registered = self.registry.get(dependency)
+                    scheduler.submit(dependency_key, priority=registered.spec.request.priority)
+                    if registered.status is TaskStatus.SUCCEEDED:
+                        scheduler.finish(dependency_key, succeeded=True)
+                    elif registered.status in TERMINAL_TASK_STATUSES:
+                        scheduler.finish(dependency_key, succeeded=False)
+            scheduler.submit(
+                str(spec.task_id),
+                priority=spec.request.priority,
+                depends_on=tuple(str(item) for item in spec.request.depends_on),
+            )
+
         now = datetime.now(UTC)
         requests: list[AssignmentRequest] = []
         for spec, description, profile, attempt_id in planned:
@@ -582,17 +606,28 @@ class RunController:
                 idempotency_key=f"attempt:{attempt_id}",
                 created_at=now,
             )
-            configured_model = self.profile_models.get(
-                profile.name, self.default_child_model
-            )
+            model_policy = spec.request.model_policy
+            configured_model = self.profile_models.get(profile.name)
+            if model_policy is not None and model_policy.model is not None:
+                configured_model = (
+                    f"{model_policy.provider}:{model_policy.model}"
+                    if model_policy.provider
+                    else model_policy.model
+                )
             mode = RoutingMode.MANUAL if configured_model else controls.routing_mode
-            provider, model = "fake", configured_model
-            if configured_model and ":" in configured_model:
-                provider, model = configured_model.split(":", 1)
+            manual_model: tuple[str, str] | None = None
+            if configured_model:
+                provider, model = "fake", configured_model
+                if ":" in configured_model:
+                    provider, model = configured_model.split(":", 1)
+                manual_model = (provider, model)
             requirements = RequirementBuilder().build(
                 role=profile.role if profile.role in ROLE_FLOORS else "general-purpose",
                 risk=controls.risk,
                 mode=mode,
+                hinted_floor=(
+                    None if model_policy is None else model_policy.minimum_capability
+                ),
             )
             requests.append(
                 AssignmentRequest(
@@ -604,7 +639,7 @@ class RunController:
                     catalog_revision=self.catalog_revision,
                     requirements=requirements,
                     config_snapshot=self._routing_config_snapshot(controls.routing_mode),
-                    manual_model=(provider, model) if configured_model else None,
+                    manual_model=manual_model,
                     task_limit_usd=spec.request.budget_usd,
                 )
             )
@@ -622,13 +657,30 @@ class RunController:
                 task_id=spec.task_id,
             )
 
-        result = self.assignment_service.assign_batch(
-            tuple(requests),
-            lambda request: self._get_candidates(
+        specs_by_id = {str(item[0].task_id): item[0] for item in planned}
+
+        def batch_candidates(request: AssignmentRequest) -> RoutingSnapshot:
+            snapshot = self._get_candidates(
                 for_lead=False,
                 target_lead_model=controls.model or self.default_lead_model,
                 routing_mode=controls.routing_mode,
-            ),
+            )
+            policy = specs_by_id[str(request.task_id)].request.model_policy
+            if policy is None or policy.provider is None:
+                return snapshot
+            return snapshot.model_copy(
+                update={
+                    "candidates": tuple(
+                        candidate
+                        for candidate in snapshot.candidates
+                        if candidate.profile.provider == policy.provider
+                    )
+                }
+            )
+
+        result = self.assignment_service.assign_batch(
+            tuple(requests),
+            batch_candidates,
             lead_allowance_usd=lead_assignment.estimated_attempt_cost_usd,
         )
         if result.lead_reservation_id:
@@ -1331,11 +1383,19 @@ class RunController:
                 created_at=now,
             )
 
-            configured_model = (
-                self.profile_models.get(profile.name, self.default_child_model)
-                if number == 1
-                else None
-            )
+            model_policy = spec.request.model_policy
+            configured_model = None
+            if number == 1:
+                if model_policy is not None and model_policy.model is not None:
+                    configured_model = (
+                        f"{model_policy.provider}:{model_policy.model}"
+                        if model_policy.provider
+                        else model_policy.model
+                    )
+                elif profile.name in self.profile_models:
+                    configured_model = self.profile_models[profile.name]
+                elif self.candidates_fn is None:
+                    configured_model = self.default_child_model
 
             if configured_model and any(
                 (p == "fake" or p == configured_model.split(":")[0])
@@ -1363,6 +1423,9 @@ class RunController:
                 mode=req_mode,
                 escalated=escalated,
                 excluded_models=frozenset(excluded),
+                hinted_floor=(
+                    None if model_policy is None else model_policy.minimum_capability
+                ),
             )
 
             manual_pin = None
@@ -1384,15 +1447,30 @@ class RunController:
                 requirements=reqs,
                 config_snapshot=child_config_snapshot,
                 manual_model=manual_pin,
+                task_limit_usd=spec.request.budget_usd,
             )
 
-            assignment = self.assignment_service.assign(
-                request,
-                lambda: self._get_candidates(
+            def child_candidates() -> RoutingSnapshot:
+                snapshot = self._get_candidates(
                     for_lead=False,
                     target_lead_model=controls.model or self.default_lead_model,
                     routing_mode=controls.routing_mode,
-                ),
+                )
+                if model_policy is None or model_policy.provider is None:
+                    return snapshot
+                return snapshot.model_copy(
+                    update={
+                        "candidates": tuple(
+                            candidate
+                            for candidate in snapshot.candidates
+                            if candidate.profile.provider == model_policy.provider
+                        )
+                    }
+                )
+
+            assignment = self.assignment_service.assign(
+                request,
+                child_candidates,
             )
             if isinstance(assignment, RouteFailure):
                 self.journal.update_attempt_status(
@@ -1469,6 +1547,11 @@ class RunController:
                 if curr_attempt_id
                 else None,
                 runtime_model_name=assignment.model,
+                allowed_write_paths=spec.permission_set.allowed_paths,
+                execute_allowed=(
+                    spec.permission_set.execute
+                    and not spec.permission_set.allowed_paths
+                ),
             )
 
             formatted_prompt = _format_context_packet(packet)
@@ -1558,6 +1641,10 @@ class RunController:
             assign=default_assign,
             execute=execute_child,
             settle_attempt=record_settle,
+            persist_result=lambda result: self.journal.record_task_result(
+                task_id=str(result.task_id),
+                payload=result.model_dump(mode="json"),
+            ),
             exhaust_fingerprint=exhaust_fp,
             task_event=emit_task,
             resolve_spec=self._resolve_planned_spec,

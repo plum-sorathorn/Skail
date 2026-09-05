@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -186,6 +187,15 @@ async def test_headless_core_three_subagent_delegated_path(tmp_path: Path) -> No
         for event in snapshot.events
         if event.type == "model.started"
     )
+    with journal._connect() as connection:
+        persisted_results = connection.execute(
+            "SELECT payload_json FROM task_results ORDER BY rowid"
+        ).fetchall()
+    assert len(persisted_results) == 3
+    terminal_results = [json.loads(row["payload_json"]) for row in persisted_results]
+    assert all(item["status"] == "succeeded" for item in terminal_results)
+    assert all(item["attempts"] for item in terminal_results)
+    assert all(item["verification"] for item in terminal_results)
 
 
 @pytest.mark.asyncio

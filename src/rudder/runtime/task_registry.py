@@ -40,6 +40,7 @@ class TaskRegistry:
                 task_id in self._tasks for task_id in task_ids
             ):
                 raise TaskValidationError("task.id_duplicate")
+            fingerprints = tuple(spec.fingerprint for spec in specs)
             if any(
                 self._failed_fingerprint_attempts.get(spec.fingerprint, 0) >= 2
                 for spec in specs
@@ -48,6 +49,8 @@ class TaskRegistry:
             combined = {task_id: task.spec for task_id, task in self._tasks.items()}
             combined.update({spec.task_id: spec for spec in specs})
             for spec in specs:
+                if spec.task_id in spec.request.depends_on:
+                    raise TaskValidationError("task.dependency_self")
                 if any(dependency not in combined for dependency in spec.request.depends_on):
                     raise TaskValidationError("task.dependency_missing")
                 if spec.parent_task_id is None and spec.depth != 1:
@@ -67,6 +70,14 @@ class TaskRegistry:
                     raise TaskValidationError("task.dependency_unsuccessful")
             if _has_dependency_cycle(combined):
                 raise TaskValidationError("task.dependency_cycle")
+            existing_fingerprints = {
+                registered.spec.fingerprint for registered in self._tasks.values()
+            }
+            if (
+                len(set(fingerprints)) != len(fingerprints)
+                or not set(fingerprints).isdisjoint(existing_fingerprints)
+            ):
+                raise TaskValidationError("task.fingerprint_duplicate")
             registered = tuple(RegisteredTask(spec) for spec in specs)
             self._tasks.update({task.spec.task_id: task for task in registered})
             return registered

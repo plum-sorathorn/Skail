@@ -221,6 +221,17 @@ class JournalTransaction:
         if cursor.rowcount == 0:
             raise KeyError(task_id)
 
+    def record_task_result(self, task_id: str, payload: dict[str, Any]) -> None:
+        payload_json = json.dumps(
+            self.redactor.scrub(payload), sort_keys=True, separators=(",", ":")
+        )
+        self.connection.execute(
+            "INSERT INTO task_results(task_id,payload_json,updated_at) VALUES (?,?,?) "
+            "ON CONFLICT(task_id) DO UPDATE SET payload_json=excluded.payload_json,"
+            "updated_at=excluded.updated_at",
+            (task_id, payload_json, _now()),
+        )
+
     def create_attempt(
         self,
         attempt_id: str,
@@ -613,6 +624,9 @@ class Journal:
 
     def update_task_status(self, *, task_id: str, status: TaskStatus) -> None:
         self._write("update_task_status", task_id=task_id, status=status)
+
+    def record_task_result(self, *, task_id: str, payload: dict[str, Any]) -> None:
+        self._write("record_task_result", task_id=task_id, payload=payload)
 
     def create_attempt(
         self,

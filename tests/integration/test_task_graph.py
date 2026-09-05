@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections import deque
 from decimal import Decimal
@@ -28,6 +29,7 @@ from rudder.domain.tasks import TaskRequest, TaskResult, VerificationResult
 from rudder.routing.selector import RouteFailure
 from rudder.runtime.deepagents_adapter import ChildRunGate, build_lead_agent
 from rudder.runtime.leases import WorkspaceLeaseManager
+from rudder.runtime.scheduler import ChildScheduler
 from rudder.runtime.task_validation import TaskValidator
 
 
@@ -219,3 +221,148 @@ async def test_standard_task_surface_creates_distinct_task_and_assignment_identi
     assert result["messages"][-1].content == "combined"
     assert len({task_id for task_id, _ in seen}) == 2
     assert len({assignment_id for _, assignment_id in seen}) == 2
+
+
+@pytest.mark.asyncio
+async def test_malformed_task_packet_returns_structured_failure_without_execution(
+    tmp_path,
+) -> None:
+    validator = TaskValidator(
+        profiles=builtin_profiles(),
+        workspace_root=tmp_path,
+        max_depth=1,
+        background_enabled=False,
+    )
+    assigned: list[object] = []
+
+    def assign(*args):
+        assigned.append(args)
+        raise AssertionError("malformed task must not be assigned")
+
+    async def execute(*args):
+        raise AssertionError("malformed task must not execute")
+
+    child = build_compiled_profile_subagent(
+        name="implementer",
+        description="Implement bounded work.",
+        profile=builtin_profiles()["implementer"],
+        validator=validator,
+        run_id=new_run_id(),
+        workspace_revision="git:abc",
+        assign=assign,
+        execute=execute,
+        gate=ChildRunGate(3),
+        leases=WorkspaceLeaseManager(),
+    )
+    state = await child["runnable"].ainvoke(
+        {"messages": [{"role": "user", "content": '{"description":'}]}
+    )
+    result = json.loads(state["messages"][-1].content)
+
+    assert result["status"] == "blocked"
+    assert "task.description_packet_invalid" in result["summary"]
+    assert assigned == []
+
+
+@pytest.mark.asyncio
+async def test_dependency_waits_for_verified_success_before_release(tmp_path) -> None:
+    validator = TaskValidator(
+        profiles=builtin_profiles(), workspace_root=tmp_path, max_depth=1,
+        background_enabled=False,
+    )
+    run_id = new_run_id()
+    parent = validator.create_spec(
+        TaskRequest(
+            description="Parent",
+            profile="implementer",
+            success_criteria=("recorded verification",),
+        ),
+        run_id=run_id, parent_task_id=None, parent_depth=0,
+        workspace_revision="git:abc",
+    )
+    child = validator.create_spec(
+        TaskRequest(
+            description="Child", profile="implementer", depends_on=(parent.task_id,)
+        ),
+        run_id=run_id, parent_task_id=None, parent_depth=0,
+        workspace_revision="git:abc",
+    )
+    scheduler = ChildScheduler(max_children=2)
+    scheduler.submit(str(parent.task_id), priority=1)
+    scheduler.submit(str(child.task_id), priority=1, depends_on=(str(parent.task_id),))
+    child_executed = False
+
+    def assign(spec, number, excluded):
+        return AttemptBinding(new_attempt_id(), _assignment(spec, number, f"model-{number}"))
+
+    async def parent_execute(spec, assignment, packet):
+        return TaskResult(task_id=spec.task_id, status="succeeded", summary="unsupported")
+
+    async def child_execute(spec, assignment, packet):
+        nonlocal child_executed
+        child_executed = True
+        return TaskResult(task_id=spec.task_id, status="succeeded", summary="ran")
+
+    parent_graph = build_task_graph(
+        profile=builtin_profiles()["implementer"], assign=assign,
+        execute=parent_execute, gate=scheduler.gate, leases=WorkspaceLeaseManager(),
+        scheduler=scheduler,
+    )
+    child_graph = build_task_graph(
+        profile=builtin_profiles()["implementer"], assign=assign,
+        execute=child_execute, gate=scheduler.gate, leases=WorkspaceLeaseManager(),
+        scheduler=scheduler,
+    )
+    parent_state, child_state = await asyncio.gather(
+        parent_graph.ainvoke({"spec": parent}), child_graph.ainvoke({"spec": child})
+    )
+
+    assert parent_state["result"].status == "returned_to_lead"
+    assert child_state["result"].status == "blocked"
+    assert child_executed is False
+
+
+@pytest.mark.asyncio
+async def test_cancelled_writer_keeps_lease_until_operation_stops(tmp_path) -> None:
+    spec = _spec(tmp_path)
+    leases = WorkspaceLeaseManager()
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    def assign(task, number, excluded):
+        return AttemptBinding(new_attempt_id(), _assignment(task, number, "model"))
+
+    async def execute(task, assignment, packet):
+        started.set()
+        await release.wait()
+        return TaskResult(
+            task_id=task.task_id,
+            status="succeeded",
+            summary="done",
+            verification=(
+                VerificationResult(
+                    criterion="Provide evidence for the completed task",
+                    passed=True,
+                    evidence="operation completed",
+                ),
+            ),
+        )
+
+    graph = build_task_graph(
+        profile=builtin_profiles()["implementer"],
+        assign=assign,
+        execute=execute,
+        gate=ChildRunGate(1),
+        leases=leases,
+    )
+    running = asyncio.create_task(graph.ainvoke({"spec": spec}))
+    await started.wait()
+    running.cancel()
+    await asyncio.sleep(0)
+
+    assert leases.holder == str(spec.task_id)
+    assert not running.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    assert leases.holder is None
