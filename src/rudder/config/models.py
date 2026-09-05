@@ -6,6 +6,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from rudder.providers.catalog_sources import CatalogEntry
+
 
 class RoutingConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -59,12 +61,18 @@ class SafetyConfig(BaseModel):
     command_policy: Literal["ask-dangerous", "ask", "deny"] = "ask-dangerous"
 
 
+class CatalogConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    entries: tuple[CatalogEntry, ...] = ()
+
+
 class RudderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     routing: RoutingConfig = Field(default_factory=RoutingConfig)
     orchestration: OrchestrationConfig = Field(default_factory=OrchestrationConfig)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
+    catalog: CatalogConfig = Field(default_factory=CatalogConfig)
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
 
     @model_validator(mode="after")

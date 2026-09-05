@@ -31,7 +31,13 @@ def handle_smoke(args: Namespace) -> int:
     return EXIT_USAGE
 
 
-def handle_config(args: Namespace, workspace: Path) -> int:
+def handle_config(
+    args: Namespace,
+    workspace: Path,
+    *,
+    project_trusted: bool = False,
+    resolved_config: ResolvedConfig | None = None,
+) -> int:
     subaction = getattr(args, "config_action", "show") or "show"
     if subaction == "path":
         render_print_stdout(f"User config: {user_config_path()}")
@@ -42,10 +48,10 @@ def handle_config(args: Namespace, workspace: Path) -> int:
         return EXIT_OK
 
     if subaction == "show":
-        resolved: ResolvedConfig = load_config(
+        resolved = resolved_config or load_config(
             user_path=user_config_path(),
             project_path=project_config_path(workspace),
-            project_trusted=True,
+            project_trusted=project_trusted,
         )
         data = resolved.config.model_dump(mode="json")
         render_print_stdout(json.dumps(data, indent=2))

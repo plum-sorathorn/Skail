@@ -148,7 +148,7 @@ _SECTION_FIELDS = {
     if name != "providers" and hasattr(field.annotation, "model_fields")
 }
 _PROVIDER_FIELDS = frozenset({"type", "base_url", "api_key_env", "models"})
-_SECURITY_SECTIONS = frozenset({"providers", "safety", "tools", "mcp", "agents"})
+_SECURITY_SECTIONS = frozenset({"providers", "safety", "tools", "mcp", "agents", "catalog"})
 
 
 def _sanitize(value: dict[str, Any], *, project: bool, warnings: list[str]) -> dict[str, Any]:

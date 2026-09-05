@@ -1,8 +1,12 @@
 from argparse import Namespace
 from decimal import Decimal
+from pathlib import Path
 
+import rudder.cli.commands as commands
 from rudder.cli.main import _apply_run_config, _build_runtime_models, _parse_agent_models
+from rudder.config.loader import ResolvedConfig
 from rudder.config.models import ProviderConfig, RudderConfig
+from rudder.providers.catalog_sources import CatalogEntry, CatalogSource
 from rudder.runtime.redaction import RedactionRegistry
 
 
@@ -71,7 +75,28 @@ def test_runtime_model_construction_uses_configured_provider_and_credential_refe
                 api_key_env="CUSTOM_GATEWAY_TOKEN",
                 models=("test/model",),
             )
-        }
+        },
+        catalog={
+            "entries": [
+                {
+                    "provider": "llmgateway",
+                    "model": "test/model",
+                    "source": "user",
+                    "trusted": True,
+                    "as_of": "2026-09-04T00:00:00Z",
+                    "fields": {
+                        "input_usd_per_million": "1.25",
+                        "output_usd_per_million": "2.50",
+                        "capability": {
+                            "coding": 0.8,
+                            "reasoning": 0.8,
+                            "tool_reliability": 0.8,
+                            "latency": 0.8,
+                        },
+                    },
+                }
+            ]
+        },
     )
     _apply_run_config(args, config)
     monkeypatch.setenv("CUSTOM_GATEWAY_TOKEN", "configured-canary-token")
@@ -86,3 +111,69 @@ def test_runtime_model_construction_uses_configured_provider_and_credential_refe
     assert child_model == "llmgateway:test/model"
     assert "llmgateway:test/model" in models
     assert runtime_models.providers["llmgateway"].name == "llmgateway"
+
+
+def test_runtime_bootstrap_uses_configured_catalog_without_production_defaults(
+    monkeypatch,
+) -> None:
+    args = _args(lead_model="llmgateway:test/model")
+    args.fake_provider = False
+    catalog_entry = CatalogEntry(
+        provider="llmgateway",
+        model="test/model",
+        source=CatalogSource.USER,
+        trusted=True,
+        as_of="2026-09-04T00:00:00Z",
+        fields={
+            "input_usd_per_million": "1.25",
+            "output_usd_per_million": "2.50",
+            "context_tokens": 32768,
+            "supports_tools": True,
+            "capability": {
+                "coding": 0.8,
+                "reasoning": 0.8,
+                "tool_reliability": 0.8,
+                "latency": 0.8,
+            },
+        },
+    )
+    config = RudderConfig(
+        providers={
+            "llmgateway": ProviderConfig(
+                type="openai-compatible",
+                base_url="https://api.llmgateway.io/v1",
+                api_key_env="CUSTOM_GATEWAY_TOKEN",
+                models=("test/model",),
+            )
+        },
+        catalog={"entries": [catalog_entry]},
+    )
+    _apply_run_config(args, config)
+    monkeypatch.setenv("CUSTOM_GATEWAY_TOKEN", "configured-canary-token")
+
+    runtime_models = _build_runtime_models(args, RedactionRegistry())
+
+    profile = runtime_models.catalog.profile("llmgateway", "test/model")
+    assert profile.input_usd_per_million == Decimal("1.25")
+    assert profile.context_tokens == 32768
+    assert tuple(runtime_models.models) == ("llmgateway:test/model",)
+
+
+def test_config_inspection_uses_the_already_resolved_effective_config(monkeypatch) -> None:
+    resolved = ResolvedConfig(config=RudderConfig(), provenance={}, warnings=())
+    rendered: list[str] = []
+    def unexpected_load(**_: object) -> object:
+        raise AssertionError("config was resolved twice")
+
+    monkeypatch.setattr(commands, "load_config", unexpected_load)
+    monkeypatch.setattr(commands, "render_print_stdout", rendered.append)
+
+    assert (
+        commands.handle_config(
+            Namespace(config_action="show"),
+            Path("."),
+            resolved_config=resolved,
+        )
+        == 0
+    )
+    assert '"routing"' in rendered[0]

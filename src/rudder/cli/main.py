@@ -6,6 +6,7 @@ import os
 import sys
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,7 @@ from rudder.domain.routing import RoutingMode
 from rudder.domain.security import ProjectTrustLevel, identify_workspace
 from rudder.domain.sessions import SessionRecord
 from rudder.providers.base import ProviderAdapter
+from rudder.providers.catalog import ModelCatalog
 from rudder.providers.credentials import EnvironmentCredentialResolver
 from rudder.providers.errors import ProviderConfigurationError
 from rudder.runtime.interrupts import QuestionStore
@@ -66,6 +68,9 @@ class RuntimeModelSet:
     lead_model: str
     child_model: str
     providers: dict[str, ProviderAdapter]
+    catalog: ModelCatalog | None = None
+    config: RudderConfig | None = None
+    redaction: RedactionRegistry | None = None
 
     def __iter__(self) -> Iterator[Any]:
         yield self.models
@@ -323,6 +328,7 @@ def _parse_agent_models(values: Sequence[str]) -> dict[str, str]:
 
 def _apply_run_config(args: argparse.Namespace, config: RudderConfig) -> None:
     args.provider_configs = config.providers
+    args.effective_config = config
     if args.routing_mode is None:
         args.routing_mode = config.routing.mode
     if args.lead_model is None and config.routing.lead_model != "auto":
@@ -429,7 +435,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.subcommand == "smoke":
         return handle_smoke(args)
     if args.subcommand == "config":
-        return handle_config(args, workspace)
+        return handle_config(
+            args,
+            workspace,
+            project_trusted=trusted,
+            resolved_config=resolved_config,
+        )
     if args.subcommand == "auth":
         return handle_auth(args)
     if args.subcommand == "models":
@@ -565,7 +576,13 @@ def _build_runtime_models(
 ) -> RuntimeModelSet:
     from rudder.providers.fake import DeterministicFakeChatModel
 
-    lead_model_name = args.lead_model or args.default_model or "lead-model"
+    config = getattr(args, "effective_config", RudderConfig())
+    catalog = ModelCatalog.from_entries(
+        config.catalog.entries,
+        now=datetime.now(UTC),
+        price_max_age=timedelta(days=30),
+    )
+    lead_model_name = args.lead_model or args.default_model or "auto"
     child_model_name = args.default_model or "implementer-model"
 
     if getattr(args, "fake_provider", False):
@@ -578,26 +595,24 @@ def _build_runtime_models(
             model_name=lead_model_name,
             response_text=resp,
         )
-        models = {
-            lead_model_name: lead_fake,
-            child_model_name: lead_fake,
-            "lead-model": lead_fake,
-            "implementer-model": lead_fake,
-            "fake:fast-model": lead_fake,
-            "fake:smart-model": lead_fake,
-        }
+        lead_key = lead_model_name if ":" in lead_model_name else f"fake:{lead_model_name}"
+        child_key = child_model_name if ":" in child_model_name else f"fake:{child_model_name}"
+        models = {lead_key: lead_fake, child_key: lead_fake}
         from rudder.providers.fake import FakeProviderAdapter
 
         return RuntimeModelSet(
             models,
-            lead_model_name,
-            child_model_name,
+            lead_key,
+            child_key,
             {"fake": FakeProviderAdapter(lead_fake)},
+            catalog=catalog,
+            config=config,
+            redaction=redaction,
         )
 
     cred_resolver = EnvironmentCredentialResolver(redaction)
-    candidate_providers = ("llmgateway", "openai", "anthropic")
     provider_configs = getattr(args, "provider_configs", {})
+    candidate_providers = tuple(provider_configs)
     resolved_cred = None
     selected_provider = None
     selected_config = None
@@ -653,33 +668,51 @@ def _build_runtime_models(
             "or pass --fake-provider for deterministic offline execution.",
         )
 
+    if ":" not in lead_model_name:
+        eligible = [
+            profile
+            for (provider, _), profile in catalog.profiles.items()
+            if provider == selected_provider
+            and profile.model in provider_configs[selected_provider].models
+            and catalog.is_auto_eligible(profile, hard_budget=args.budget is not None)
+        ]
+        if not eligible:
+            raise ProviderConfigurationError(
+                selected_provider,
+                "no configured catalog model is eligible for automatic routing",
+            )
+        lead_model_name = f"{selected_provider}:{eligible[0].model}"
+    child_model_name = lead_model_name
+
     models_dict: dict[str, Any] = {}
     provider_adapters: dict[str, ProviderAdapter] = {}
-    if selected_provider == "llmgateway":
+    if selected_provider in {"llmgateway", "devpass"}:
         from rudder.config.models import ProviderConfig
         from rudder.providers.base import ModelOptions
         from rudder.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
-        from rudder.providers.models import ModelProfile
 
         actual_model = (
             lead_model_name.split(":")[-1] if ":" in lead_model_name else "gpt-4o"
         )
         cfg = selected_config or ProviderConfig(
-            type="openai_compatible", base_url=LLMGATEWAY_BASE_URL, models=(actual_model,)
+            type="openai-compatible", base_url=LLMGATEWAY_BASE_URL, models=(actual_model,)
         )
-        adapter = LLMGatewayAdapter(cfg, api_key=resolved_cred.reveal())
+        adapter: ProviderAdapter
+        if selected_provider == "devpass":
+            from rudder.providers.devpass import DevPassAdapter
+
+            adapter = DevPassAdapter(cfg, api_key=resolved_cred.reveal())
+        else:
+            adapter = LLMGatewayAdapter(cfg, api_key=resolved_cred.reveal())
         provider_adapters[selected_provider] = adapter
-        profile = ModelProfile(
-            provider="llmgateway",
-            model=actual_model,
-            context_tokens=128000,
-            input_usd_per_million=Decimal("0.15"),
-            output_usd_per_million=Decimal("0.60"),
-        )
+        try:
+            profile = catalog.profile(selected_provider, actual_model)
+        except KeyError as exc:
+            raise ProviderConfigurationError(
+                "llmgateway", "model is absent from the configured catalog"
+            ) from exc
         chat_model = adapter.create_model(profile, ModelOptions())
-        models_dict[lead_model_name] = chat_model
-        models_dict[actual_model] = chat_model
-        models_dict[child_model_name] = chat_model
+        models_dict[f"{selected_provider}:{actual_model}"] = chat_model
     else:
         from rudder.providers.langchain import LangChainModelFactory, LangChainUsageAdapter
         from rudder.providers.registry import LangChainProviderRegistry, ProviderRegistration
@@ -712,9 +745,13 @@ def _build_runtime_models(
             options={"api_key": resolved_cred.reveal()},
         )
         provider_adapters[selected_provider] = LangChainUsageAdapter(selected_provider)
-        models_dict[lead_model_name] = chat_model
-        models_dict[actual_model] = chat_model
-        models_dict[child_model_name] = chat_model
+        try:
+            profile = catalog.profile(selected_provider, actual_model)
+        except KeyError as exc:
+            raise ProviderConfigurationError(
+                selected_provider, "model is absent from the configured catalog"
+            ) from exc
+        models_dict[f"{selected_provider}:{actual_model}"] = chat_model
 
     if args.default_model is None:
         child_model_name = f"{selected_provider}:{actual_model}"
@@ -726,6 +763,9 @@ def _build_runtime_models(
         lead_model_name,
         child_model_name,
         provider_adapters,
+        catalog=catalog,
+        config=config,
+        redaction=redaction,
     )
 
 
