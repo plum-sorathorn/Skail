@@ -1,3 +1,4 @@
+import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -90,6 +91,8 @@ async def test_delegation_ask_blocks_when_unapproved(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_delegation_ask_executes_when_approved(tmp_path: Path) -> None:
+    (tmp_path / "approved.txt").write_text("approved evidence\n", encoding="utf-8")
+    approved_digest = hashlib.sha256((tmp_path / "approved.txt").read_bytes()).hexdigest()
     journal = _journal(tmp_path)
     session_id = new_session_id()
     journal.create_session(
@@ -98,7 +101,20 @@ async def test_delegation_ask_executes_when_approved(tmp_path: Path) -> None:
 
     child_model = ScriptedChatModel(
         model_name="implementer-model",
-        responses=[AIMessage(content="Approved child output.")],
+        responses=[
+            tool_call_message(
+                "read_file", {"file_path": "approved.txt"}, call_id="approved-read"
+            ),
+            AIMessage(
+                content=(
+                    '{"status":"succeeded","summary":"Approved child output",'
+                    '"verification":[{"criterion":"Provide evidence for the completed task",'
+                    '"passed":true,"evidence":"approved.txt digest",'
+                    '"evidence_ref":{"kind":"file","path":"approved.txt",'
+                    f'"digest":"{approved_digest}"}}}}]}}'
+                )
+            )
+        ],
     )
     lead_model = ScriptedChatModel(
         model_name="lead-model",
@@ -127,7 +143,11 @@ async def test_delegation_ask_executes_when_approved(tmp_path: Path) -> None:
 
     assert "Approved delegation completed" in result.output
     assert len(result.child_results) == 1
-    assert result.child_results[0].status == "succeeded"
+    assert result.child_results[0].verification[0].evidence_ref is not None
+    assert controller._validate_evidence_ref(
+        result.child_results[0].verification[0].evidence_ref
+    )
+    assert result.child_results[0].status == "succeeded", result.child_results[0]
 
 
 @pytest.mark.asyncio

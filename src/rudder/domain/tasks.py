@@ -208,6 +208,7 @@ class VerificationResult(BaseModel):
     criterion: str
     passed: bool
     evidence: str | None = None
+    evidence_ref: ArtifactRef | None = None
 
 
 class AttemptSummary(BaseModel):
@@ -236,6 +237,7 @@ class TaskResult(BaseModel):
     attempts: tuple[AttemptSummary, ...] = ()
     changed_paths: tuple[str, ...] = ()
     follow_up: str | None = None
+    verification_authority: Literal["runtime", "model-authored"] | None = None
 
     def model_post_init(self, context: object) -> None:
         del context

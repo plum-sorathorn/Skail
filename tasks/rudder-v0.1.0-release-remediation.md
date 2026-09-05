@@ -62,12 +62,16 @@ regressions. The complete offline suite passes with 489 tests and two documented
 
 ### Phase 5 — Verifiable outcomes and failure monitoring
 
-- [ ] Require recorded executable evidence or bounded source-referenced analysis reports; reject
+- [x] Require recorded executable evidence or bounded source-referenced analysis reports; reject
   malformed, empty, mismatched, and unsupported success results.
-- [ ] Preserve blocked/cancelled outcomes and correct repeated-error, progress, and configured-limit
+- [x] Preserve blocked/cancelled outcomes and correct repeated-error, progress, and configured-limit
   classification.
 
-Acceptance evidence: evidence-reference and deterministic monitoring regressions using honest fakes.
+Acceptance evidence: task-result contract tests validate runtime file digests, source-bounded
+model-authored analysis, malformed/empty/mismatched results, and unsupported evidence. Failure
+monitor tests cover three repeated calls, distinct consecutive errors, normalized repeated errors,
+successful progress, execution-status dictionaries, and configured call/time/budget limits. The
+complete offline suite passes with 497 tests and two documented skips.
 
 ### Phase 6 — Recovery, approvals, redaction, and controls
 

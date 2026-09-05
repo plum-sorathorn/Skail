@@ -1,6 +1,6 @@
 from rudder.agents.result_evaluator import evaluate_result, parse_child_result
 from rudder.domain.ids import new_task_id
-from rudder.domain.tasks import TaskResult, VerificationResult
+from rudder.domain.tasks import ArtifactRef, TaskResult, VerificationResult
 
 
 def test_success_requires_every_required_verification() -> None:
@@ -77,3 +77,71 @@ def test_child_output_must_be_structured_and_evidence_bearing() -> None:
     assert valid.task_id == task_id
     assert invalid.status == "failed"
     assert invalid.follow_up == "child must return a structured TaskResult"
+
+
+def test_supplied_wrong_task_identity_is_rejected_without_overwrite() -> None:
+    expected = new_task_id()
+    supplied = new_task_id()
+    result = parse_child_result(
+        f'{{"task_id":"{supplied}","status":"succeeded","summary":"done",'
+        '"verification":[{"criterion":"tests","passed":true,"evidence":"3 passed"}]}',
+        task_id=expected,
+        required_criteria=("tests",),
+    )
+
+    assert result.status == "failed"
+    assert result.task_id == expected
+    assert result.follow_up == "task result identity mismatch"
+
+
+def test_executable_success_requires_a_valid_runtime_evidence_reference() -> None:
+    task_id = new_task_id()
+    reference = ArtifactRef(kind="file", path="result.txt", digest="abc")
+    claimed = TaskResult(
+        task_id=task_id,
+        status="succeeded",
+        summary="done",
+        verification=(
+            VerificationResult(
+                criterion="tests", passed=True, evidence="looks good", evidence_ref=reference
+            ),
+        ),
+    )
+
+    rejected = evaluate_result(
+        claimed,
+        required_criteria=("tests",),
+        evidence_validator=lambda ref: False,
+    )
+    accepted = evaluate_result(
+        claimed,
+        required_criteria=("tests",),
+        evidence_validator=lambda ref: ref == reference,
+    )
+
+    assert rejected.status == "failed"
+    assert accepted.status == "succeeded"
+    assert accepted.verification_authority == "runtime"
+
+
+def test_analysis_success_requires_concrete_sources_and_is_model_authored() -> None:
+    result = TaskResult(
+        task_id=new_task_id(),
+        status="succeeded",
+        summary="Reviewed the scheduler behavior.",
+        verification=(
+            VerificationResult(
+                criterion="review", passed=True, evidence="src/rudder/runtime/scheduler.py:22"
+            ),
+        ),
+    )
+
+    evaluated = evaluate_result(
+        result,
+        required_criteria=("review",),
+        model_authored_analysis=True,
+        source_validator=lambda source: source == "src/rudder/runtime/scheduler.py:22",
+    )
+
+    assert evaluated.status == "succeeded"
+    assert evaluated.verification_authority == "model-authored"

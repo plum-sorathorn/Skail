@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -103,6 +104,30 @@ def _tool_name(value: Any) -> str | None:
     return None
 
 
+def _tool_result_status(result: object) -> str | None:
+    status = getattr(result, "status", None)
+    content = getattr(result, "content", result)
+    if status is None and isinstance(content, dict):
+        status = content.get("status")
+    if status is None and isinstance(content, str):
+        try:
+            decoded = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            decoded = None
+        if isinstance(decoded, dict):
+            status = decoded.get("status")
+    if not isinstance(status, str):
+        return None
+    normalized = status.lower()
+    if normalized in {"error", "failed", "failure"}:
+        return "error"
+    if normalized in {"blocked", "approval_required", "rejected", "denied"}:
+        return "blocked"
+    if normalized in {"completed", "succeeded", "success", "ok"}:
+        return "success"
+    return None
+
+
 class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
     def __init__(
         self,
@@ -170,15 +195,22 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             result = await handler(request)
         except Exception as exc:
             self.emit("tool.failed", name)
-            self.monitor.observe_error(exc)
+            signal = self.monitor.observe_error(exc)
+            if signal is not None:
+                raise RuntimeError(signal) from exc
             raise
-        if getattr(result, "status", None) == "error":
+        status = _tool_result_status(result)
+        if status == "error":
             self.emit("tool.failed", name)
             signal = self.monitor.observe_error(getattr(result, "content", "tool error"))
             if signal is not None:
                 raise RuntimeError(signal)
+        elif status == "blocked":
+            self.emit("tool.failed", name)
+            self.monitor.observe_error(getattr(result, "content", "tool blocked"), blocked=True)
         else:
             self.emit("tool.completed", name)
+            self.monitor.observe_progress()
         return result
 
     def _run_tool(
@@ -195,15 +227,22 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             result = handler(request)
         except Exception as exc:
             self.emit("tool.failed", name)
-            self.monitor.observe_error(exc)
+            signal = self.monitor.observe_error(exc)
+            if signal is not None:
+                raise RuntimeError(signal) from exc
             raise
-        if getattr(result, "status", None) == "error":
+        status = _tool_result_status(result)
+        if status == "error":
             self.emit("tool.failed", name)
             signal = self.monitor.observe_error(getattr(result, "content", "tool error"))
             if signal is not None:
                 raise RuntimeError(signal)
+        elif status == "blocked":
+            self.emit("tool.failed", name)
+            self.monitor.observe_error(getattr(result, "content", "tool blocked"), blocked=True)
         else:
             self.emit("tool.completed", name)
+            self.monitor.observe_progress()
         return result
 
 

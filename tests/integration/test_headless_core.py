@@ -1,4 +1,6 @@
+import hashlib
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -66,6 +68,10 @@ async def test_headless_core_three_subagent_delegated_path(tmp_path: Path) -> No
         title="Checkpoint G Delegated",
         created_at=datetime.now(UTC),
     )
+    (tmp_path / "brief.txt").write_text("requirements\n", encoding="utf-8")
+    code_digest = hashlib.sha256(
+        ("def run(): return 'ok'" + os.linesep).encode()
+    ).hexdigest()
 
     # Three child models: implementer, tester, reviewer
     implementer_model = ScriptedChatModel(
@@ -81,7 +87,8 @@ async def test_headless_core_three_subagent_delegated_path(tmp_path: Path) -> No
                     '{"status":"succeeded","summary":"Implemented code.py",'
                     '"changed_paths":["code.py"],"verification":[{'
                     '"criterion":"Provide evidence for the completed task",'
-                    '"passed":true,"evidence":"code.py was written through write_file"}]}'
+                    '"passed":true,"evidence":"code.py digest",'
+                    f'"evidence_ref":{{"kind":"file","path":"code.py","digest":"{code_digest}"}}}}]}}'
                 )
             ),
         ],
@@ -93,7 +100,7 @@ async def test_headless_core_three_subagent_delegated_path(tmp_path: Path) -> No
                 content=(
                     '{"status":"succeeded","summary":"Tests passed",'
                     '"verification":[{"criterion":"Provide evidence for the completed task",'
-                    '"passed":true,"evidence":"test execution reported success"}]}'
+                    '"passed":true,"evidence":"brief.txt:1"}]}'
                 )
             ),
         ],
@@ -105,7 +112,7 @@ async def test_headless_core_three_subagent_delegated_path(tmp_path: Path) -> No
                 content=(
                     '{"status":"succeeded","summary":"Review passed",'
                     '"verification":[{"criterion":"Provide evidence for the completed task",'
-                    '"passed":true,"evidence":"review completed with no findings"}]}'
+                    '"passed":true,"evidence":"brief.txt:1"}]}'
                 )
             ),
         ],
@@ -271,11 +278,16 @@ async def test_live_child_failure_monitor_escalates_repeated_tool_calls(
     second_child = ScriptedChatModel(
         model_name="child-two",
         responses=[
+            tool_call_message(
+                "read_file", {"file_path": "input.txt"}, call_id="read-recovery"
+            ),
             AIMessage(
                 content=(
                     '{"status":"succeeded","summary":"Recovered",'
                     '"verification":[{"criterion":"Provide evidence for the completed task",'
-                    '"passed":true,"evidence":"input.txt inspected once"}]}'
+                    '"passed":true,"evidence":"input.txt digest",'
+                    '"evidence_ref":{"kind":"file","path":"input.txt",'
+                    '"digest":"c96c6d5be8d08a12e7b5cdc1b207fa6b2430974c86803d8891675e76fd992c20"}}]}'
                 )
             )
         ],

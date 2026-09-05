@@ -1,3 +1,5 @@
+import hashlib
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -63,6 +65,7 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
     journal.create_session(
         session_id=str(session_id), title="Delegated coding", created_at=datetime.now(UTC)
     )
+    output_digest = hashlib.sha256(("hello from child" + os.linesep).encode()).hexdigest()
 
     # Scripted child model completes the work
     child_model = ScriptedChatModel(
@@ -78,7 +81,9 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
                     '{"status":"succeeded","summary":"Child finished writing",'
                     '"changed_paths":["child_output.txt"],"verification":[{'
                     '"criterion":"Provide evidence for the completed task",'
-                    '"passed":true,"evidence":"child_output.txt was written through write_file"}]}'
+                    '"passed":true,"evidence":"child_output.txt digest",'
+                    f'"evidence_ref":{{"kind":"file","path":"child_output.txt",'
+                    f'"digest":"{output_digest}"}}}}]}}'
                 )
             ),
         ],
@@ -114,7 +119,11 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
     assert (tmp_path / "child_output.txt").read_text(encoding="utf-8") == "hello from child\n"
     assert "Delegated task completed" in result.output
     assert len(result.child_results) == 1
-    assert result.child_results[0].status == "succeeded"
+    assert result.child_results[0].verification[0].evidence_ref is not None
+    assert controller._validate_evidence_ref(
+        result.child_results[0].verification[0].evidence_ref
+    )
+    assert result.child_results[0].status == "succeeded", result.child_results[0]
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
@@ -51,6 +52,7 @@ from rudder.domain.ids import (
 from rudder.domain.routing import RoutingMode, TaskAssignment
 from rudder.domain.tasks import (
     TERMINAL_TASK_STATUSES,
+    ArtifactRef,
     AttemptStatus,
     TaskResult,
     TaskSpec,
@@ -219,6 +221,37 @@ class RunController:
         self, assignment_id: str, response: object, call_id: str = ""
     ) -> None:
         self.usage_settler.record_call(assignment_id, response, call_id=call_id)
+
+    def _validate_evidence_ref(self, reference: ArtifactRef) -> bool:
+        if reference.kind not in {"file", "artifact"} or not reference.digest:
+            return False
+        candidate = (self.workspace / reference.path).resolve(strict=False)
+        try:
+            relative = candidate.relative_to(self.workspace.resolve())
+        except ValueError:
+            return False
+        if any(part in {".git", ".rudder"} or part == ".env" for part in relative.parts):
+            return False
+        if not candidate.is_file():
+            return False
+        digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+        return digest == reference.digest
+
+    def _validate_source_ref(self, reference: str) -> bool:
+        path_text, separator, line_text = reference.rpartition(":")
+        if not separator or not line_text.isdigit():
+            return False
+        candidate = (self.workspace / path_text).resolve(strict=False)
+        try:
+            relative = candidate.relative_to(self.workspace.resolve())
+        except ValueError:
+            return False
+        if any(part in {".git", ".rudder"} or part == ".env" for part in relative.parts):
+            return False
+        if not candidate.is_file():
+            return False
+        line_number = int(line_text)
+        return 1 <= line_number <= len(candidate.read_text(encoding="utf-8").splitlines())
 
     def _has_calls(self, assignment_id: str) -> bool:
         with self.journal._connect() as conn:
@@ -1580,6 +1613,9 @@ class RunController:
                 child_output,
                 task_id=spec.task_id,
                 required_criteria=spec.request.success_criteria,
+                evidence_validator=self._validate_evidence_ref,
+                model_authored_analysis=not profile.permissions.write,
+                source_validator=self._validate_source_ref,
             )
             recorded_child_results.append(result)
             return result
