@@ -6,6 +6,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -520,6 +521,10 @@ def config_revision(snapshot: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+class AccountingReconciliationRequired(RuntimeError):
+    pass
+
+
 class AssignmentUsageSettler:
     def __init__(
         self,
@@ -531,6 +536,142 @@ class AssignmentUsageSettler:
         self.ledger = ledger
         self.providers = dict(providers)
 
+    def begin_call(self, assignment_id: str, execution_key: str | None = None) -> str:
+        now = datetime.now(UTC).isoformat()
+        with self.journal.transaction() as transaction:
+            assignment = transaction.connection.execute(
+                "SELECT a.attempt_id,a.payload_json,t.run_id "
+                "FROM assignments a JOIN attempts p ON p.attempt_id=a.attempt_id "
+                "JOIN tasks t ON t.task_id=p.task_id WHERE a.assignment_id=?",
+                (assignment_id,),
+            ).fetchone()
+            if assignment is None:
+                raise KeyError(assignment_id)
+            execution_key = execution_key or f"new:{uuid4()}"
+            replay = transaction.connection.execute(
+                "SELECT call_id,status FROM provider_calls "
+                "WHERE assignment_id=? AND execution_key=?",
+                (assignment_id, execution_key),
+            ).fetchone()
+            if replay is not None:
+                raise AccountingReconciliationRequired(
+                    f"provider call replay is blocked ({replay['status']})"
+                )
+            uncertain = transaction.connection.execute(
+                "SELECT 1 FROM accounting_reconciliation_failures f "
+                "JOIN assignments a ON a.assignment_id=f.assignment_id "
+                "JOIN attempts p ON p.attempt_id=a.attempt_id "
+                "JOIN tasks t ON t.task_id=p.task_id "
+                "WHERE t.run_id=? AND f.status='open' LIMIT 1",
+                (assignment["run_id"],),
+            ).fetchone()
+            if uncertain is not None:
+                raise AccountingReconciliationRequired(
+                    "paid execution is blocked pending usage reconciliation"
+                )
+            budget = transaction.connection.execute(
+                "SELECT budget_limit_usd FROM runs WHERE run_id=?",
+                (assignment["run_id"],),
+            ).fetchone()
+            observed_rows = transaction.connection.execute(
+                "SELECT c.amount_usd FROM provider_calls c "
+                "JOIN assignments a ON a.assignment_id=c.assignment_id "
+                "JOIN attempts p ON p.attempt_id=a.attempt_id "
+                "JOIN tasks t ON t.task_id=p.task_id "
+                "WHERE t.run_id=? AND c.status='completed' AND c.amount_usd IS NOT NULL",
+                (assignment["run_id"],),
+            ).fetchall()
+            observed_cost = sum(
+                (Decimal(row["amount_usd"]) for row in observed_rows), Decimal("0")
+            )
+            if (
+                budget is not None
+                and budget["budget_limit_usd"] is not None
+                and observed_cost >= Decimal(budget["budget_limit_usd"])
+            ):
+                raise AccountingReconciliationRequired(
+                    "paid execution is blocked because observed cost exhausted the budget"
+                )
+            payload = json.loads(assignment["payload_json"])
+            reservation = transaction.connection.execute(
+                "SELECT status FROM budget_reservations WHERE reservation_id=?",
+                (payload["reservation_id"],),
+            ).fetchone()
+            if reservation is None or reservation["status"] != "reserved":
+                raise AccountingReconciliationRequired(
+                    "provider call has no active funded reservation"
+                )
+            ordinal = transaction.connection.execute(
+                "SELECT COALESCE(MAX(ordinal),0)+1 FROM provider_calls "
+                "WHERE assignment_id=?",
+                (assignment_id,),
+            ).fetchone()[0]
+            call_id = str(uuid4())
+            transaction.connection.execute(
+                "INSERT INTO provider_calls "
+                "(call_id,assignment_id,attempt_id,execution_key,ordinal,status,"
+                "created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    call_id,
+                    assignment_id,
+                    assignment["attempt_id"],
+                    execution_key,
+                    ordinal,
+                    "started",
+                    now,
+                    now,
+                ),
+            )
+        return call_id
+
+    def mark_ambiguous(self, call_id: str, error: Exception) -> None:
+        now = datetime.now(UTC).isoformat()
+        summary = str(error) or type(error).__name__
+        with self.journal.transaction() as transaction:
+            row = transaction.connection.execute(
+                "SELECT assignment_id,status FROM provider_calls WHERE call_id=?", (call_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(call_id)
+            if row["status"] == "completed":
+                return
+            transaction.connection.execute(
+                "UPDATE provider_calls SET status='ambiguous',error_summary=?,updated_at=? "
+                "WHERE call_id=?",
+                (summary, now, call_id),
+            )
+            transaction.connection.execute(
+                "INSERT OR IGNORE INTO accounting_reconciliation_failures "
+                "(failure_id,assignment_id,call_id,status,summary,created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (str(uuid4()), row["assignment_id"], call_id, "open", summary, now),
+            )
+
+    @staticmethod
+    def _normalize_response(
+        adapter: ProviderAdapter, response: object
+    ) -> NormalizedUsage | None:
+        messages = getattr(response, "result", None)
+        values = messages if isinstance(messages, list) else [response]
+        normalized = [adapter.normalize_usage(value) for value in values]
+        observed = [value for value in normalized if value is not None]
+        if not observed:
+            return None
+        return NormalizedUsage(
+            input_tokens=sum(value.input_tokens for value in observed),
+            output_tokens=sum(value.output_tokens for value in observed),
+            cost_usd=sum((value.cost_usd for value in observed), Decimal("0")),
+            authority=(
+                UsageAuthority.AUTHORITATIVE_ACTUAL
+                if len(observed) == len(values)
+                and all(
+                    value.authority is UsageAuthority.AUTHORITATIVE_ACTUAL
+                    for value in observed
+                )
+                else UsageAuthority.ESTIMATED_ACTUAL
+            ),
+        )
+
     def record_call(self, assignment_id: str, response: object, *, call_id: str) -> None:
         with self.journal._connect() as connection:
             row = connection.execute(
@@ -540,14 +681,17 @@ class AssignmentUsageSettler:
         if row is None:
             raise KeyError(assignment_id)
         adapter = self.providers[row["provider"]]
-        usage = adapter.normalize_usage(response)
+        usage = self._normalize_response(adapter, response)
         if usage is None:
+            usage_unknown = True
             usage = NormalizedUsage(
                 input_tokens=0,
                 output_tokens=0,
                 cost_usd=Decimal("0"),
                 authority=UsageAuthority.ESTIMATED_ACTUAL,
             )
+        else:
+            usage_unknown = False
         values = (
             assignment_id,
             call_id,
@@ -570,6 +714,23 @@ class AssignmentUsageSettler:
             transaction.connection.execute(
                 "INSERT INTO assignment_call_usage VALUES (?,?,?,?,?,?)", values
             )
+            now = datetime.now(UTC).isoformat()
+            call = transaction.connection.execute(
+                "SELECT status FROM provider_calls WHERE call_id=?", (call_id,)
+            ).fetchone()
+            if call is not None:
+                transaction.connection.execute(
+                    "UPDATE provider_calls SET status='completed',input_tokens=?,"
+                    "output_tokens=?,amount_usd=?,authority=?,updated_at=? WHERE call_id=?",
+                    (
+                        usage.input_tokens,
+                        usage.output_tokens,
+                        None if usage_unknown else format(usage.cost_usd, "f"),
+                        "unknown" if usage_unknown else usage.authority.value,
+                        now,
+                        call_id,
+                    ),
+                )
 
     def settle_attempt(self, assignment_id: str) -> None:
         with self.journal._connect() as connection:
@@ -598,12 +759,29 @@ class AssignmentUsageSettler:
                 else UsageAuthority.ESTIMATED_ACTUAL
             ),
         )
-        self.ledger.settle(
-            payload["reservation_id"],
-            usage_id=f"usage:{assignment_id}",
-            usage=usage,
-            idempotency_key=f"attempt-usage:{assignment_id}",
-        )
+        try:
+            self.ledger.settle(
+                payload["reservation_id"],
+                usage_id=f"usage:{assignment_id}",
+                usage=usage,
+                idempotency_key=f"attempt-usage:{assignment_id}",
+            )
+        except Exception as error:
+            with self.journal.transaction() as transaction:
+                transaction.connection.execute(
+                    "INSERT OR IGNORE INTO accounting_reconciliation_failures "
+                    "(failure_id,assignment_id,call_id,status,summary,created_at) "
+                    "VALUES (?,?,NULL,'open',?,?)",
+                    (
+                        str(uuid4()),
+                        assignment_id,
+                        str(error) or type(error).__name__,
+                        datetime.now(UTC).isoformat(),
+                    ),
+                )
+            raise AccountingReconciliationRequired(
+                "usage settlement failed; paid execution is blocked"
+            ) from error
 
 
 class PersistedAssignmentRegistry:

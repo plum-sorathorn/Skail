@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -54,6 +55,7 @@ from rudder.providers.fake import FakeProviderAdapter
 from rudder.providers.fallback import FallbackBinding
 from rudder.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
 from rudder.routing.assignment import (
+    AccountingReconciliationRequired,
     AssignmentRequest,
     AssignmentService,
     AssignmentUsageSettler,
@@ -143,6 +145,7 @@ class RunController:
         providers: Mapping[str, ProviderAdapter] | None = None,
         candidates_fn: Callable[[], RoutingSnapshot] | None = None,
         catalog_revision: str = "catalog-v1",
+        config_snapshot: Mapping[str, Any] | None = None,
         event_observer: Callable[[EventEnvelope], None] | None = None,
         approvals: ApprovalStore | None = None,
         question_store: QuestionStore | None = None,
@@ -177,8 +180,6 @@ class RunController:
             self._all_models[key] = chat_model
             if ":" not in key:
                 self._all_models[f"fake:{key}"] = chat_model
-            else:
-                self._all_models[key.split(":", 1)[1]] = chat_model
 
         self.providers: dict[str, ProviderAdapter] = {"fake": FakeProviderAdapter()}
         if providers:
@@ -197,6 +198,7 @@ class RunController:
         )
         self.candidates_fn = candidates_fn
         self.catalog_revision = catalog_revision
+        self.config_snapshot = dict(config_snapshot or {})
         self._pending_run: _PendingRun | None = None
         self._pending_interrupt_payload: dict[str, Any] | None = None
         self._planned_specs: dict[tuple[str, str], deque[TaskSpec]] = {}
@@ -220,13 +222,32 @@ class RunController:
             ).fetchone()
             return bool(row and row[0] > 0)
 
+    def _finalize_assignment_budget(self, assignment: TaskAssignment) -> None:
+        assignment_id = str(assignment.assignment_id)
+        with self.journal._connect() as connection:
+            uncertain = connection.execute(
+                "SELECT 1 FROM provider_calls WHERE assignment_id=? "
+                "AND status IN ('started','ambiguous') LIMIT 1",
+                (assignment_id,),
+            ).fetchone()
+        if uncertain is not None:
+            raise AccountingReconciliationRequired(
+                "provider usage is uncertain; reservation remains held"
+            )
+        if self._has_calls(assignment_id):
+            self.usage_settler.settle_attempt(assignment_id)
+        else:
+            self.ledger.release(str(assignment.reservation_id))
+
     def _release_lead_allowances(self) -> None:
         for reservation_id in self._lead_allowance_ids:
-            try:
-                self.ledger.release(reservation_id)
-            except Exception:
-                pass
+            self.ledger.release(reservation_id)
         self._lead_allowance_ids.clear()
+
+    def _routing_config_snapshot(self, mode: RoutingMode) -> dict[str, Any]:
+        snapshot = deepcopy(self.config_snapshot)
+        snapshot.setdefault("routing", {})["mode"] = mode.value
+        return snapshot
 
     def _get_candidates(
         self,
@@ -437,7 +458,8 @@ class RunController:
                         recorded_child_results=recorded_child_results,
                     )
                 )
-        lead_chat_model = self._all_models.get(lead_assignment.model)
+        lead_model_key = f"{lead_assignment.provider}:{lead_assignment.model}"
+        lead_chat_model = self._all_models.get(lead_model_key)
         if lead_chat_model is None:
             raise ValueError(
                 f"model {lead_assignment.model} is not available in registered models"
@@ -449,6 +471,8 @@ class RunController:
             allow_delegation=allow_delegation,
             providers=self.providers,
             usage_callback=self._record_model_usage,
+            call_begin=self.usage_settler.begin_call,
+            call_ambiguous=self.usage_settler.mark_ambiguous,
             active_assignments=active,
         )
         return build_production_lead(
@@ -579,7 +603,7 @@ class RunController:
                     attempt_number=1,
                     catalog_revision=self.catalog_revision,
                     requirements=requirements,
-                    config_snapshot={"routing": {"mode": controls.routing_mode.value}},
+                    config_snapshot=self._routing_config_snapshot(controls.routing_mode),
                     manual_model=(provider, model) if configured_model else None,
                     task_limit_usd=spec.request.budget_usd,
                 )
@@ -750,7 +774,7 @@ class RunController:
             risk=active_controls.risk,
             mode=lead_mode,
         )
-        lead_config_snapshot = {"routing": {"mode": active_controls.routing_mode.value}}
+        lead_config_snapshot = self._routing_config_snapshot(active_controls.routing_mode)
         lead_request = AssignmentRequest(
             session_id=self.session_id,
             run_id=run_id,
@@ -876,17 +900,7 @@ class RunController:
                 tx.update_task_status(task_id=str(lead_task_id), status=task_status)
                 tx.update_run_status(run_id=str(run_id), status=run_status)
                 tx.update_session_status(session_id=str(self.session_id), status="idle")
-            lead_aid = str(lead_assignment.assignment_id)
-            if self._has_calls(lead_aid):
-                try:
-                    self.usage_settler.settle_attempt(lead_aid)
-                except Exception:
-                    pass
-            else:
-                try:
-                    self.ledger.release(str(lead_assignment.reservation_id))
-                except Exception:
-                    pass
+            self._finalize_assignment_budget(lead_assignment)
             self._release_lead_allowances()
             raise
 
@@ -956,17 +970,7 @@ class RunController:
             tx.update_run_status(run_id=str(run_id), status="completed")
             tx.update_session_status(session_id=str(self.session_id), status="idle")
 
-        lead_aid = str(lead_assignment.assignment_id)
-        if self._has_calls(lead_aid):
-            try:
-                self.usage_settler.settle_attempt(lead_aid)
-            except Exception:
-                pass
-        else:
-            try:
-                self.ledger.release(str(lead_assignment.reservation_id))
-            except Exception:
-                pass
+        self._finalize_assignment_budget(lead_assignment)
         self._release_lead_allowances()
 
         await _save_checkpoint("terminal", status="committed")
@@ -1369,7 +1373,7 @@ class RunController:
                     prov, m_name = configured_model.split(":", 1)
                 manual_pin = (prov, m_name)
 
-            child_config_snapshot = {"routing": {"mode": controls.routing_mode.value}}
+            child_config_snapshot = self._routing_config_snapshot(controls.routing_mode)
             request = AssignmentRequest(
                 session_id=self.session_id,
                 run_id=run_id,
@@ -1415,7 +1419,8 @@ class RunController:
                         follow_up="user approval required",
                     )
 
-            child_chat_model = self._all_models.get(assignment.model)
+            child_model_key = f"{assignment.provider}:{assignment.model}"
+            child_chat_model = self._all_models.get(child_model_key)
             if child_chat_model is None:
                 return TaskResult(
                     task_id=spec.task_id,
@@ -1443,6 +1448,8 @@ class RunController:
                 allow_delegation=False,
                 providers=self.providers,
                 usage_callback=self._record_model_usage,
+                call_begin=self.usage_settler.begin_call,
+                call_ambiguous=self.usage_settler.mark_ambiguous,
                 active_assignments=active,
             )
 
@@ -1517,19 +1524,7 @@ class RunController:
                 )
                 tx.update_task_status(task_id=str(result.task_id), status=task_status)
 
-            aid = str(binding.assignment.assignment_id)
-            if result.status in ("cancelled", "budget_blocked", "blocked") and not self._has_calls(
-                aid
-            ):
-                try:
-                    self.ledger.release(str(binding.assignment.reservation_id))
-                except Exception:
-                    pass
-            else:
-                try:
-                    self.usage_settler.settle_attempt(aid)
-                except Exception:
-                    pass
+            self._finalize_assignment_budget(binding.assignment)
 
         def exhaust_fp(spec: TaskSpec) -> None:
             self.registry._failed_fingerprint_attempts[spec.fingerprint] = 2

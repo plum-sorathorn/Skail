@@ -108,6 +108,7 @@ Desktop.ini
 # Agent / knowledge graph outputs
 # ============================================================
 /graphify-out
+/out/
 /legacy/
 /.pi-subagents
 /.agents

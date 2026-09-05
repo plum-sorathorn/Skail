@@ -30,6 +30,8 @@ EXPECTED_TABLES = {
     "approvals",
     "events",
     "context_packets",
+    "provider_calls",
+    "accounting_reconciliation_failures",
 }
 
 
@@ -70,6 +72,25 @@ def test_migrations_create_the_complete_schema_and_are_idempotent(tmp_path: Path
     assert first_versions
     assert _migration_versions(database) == first_versions
     assert len(first_versions) == len(set(first_versions))
+
+
+def test_call_accounting_migration_preserves_existing_sessions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "rudder.sqlite"
+    original = journal_migrations.MIGRATIONS
+    monkeypatch.setattr(journal_migrations, "MIGRATIONS", original[:-1])
+    legacy = Journal(database)
+    legacy.migrate()
+    _seed_session(legacy)
+
+    monkeypatch.setattr(journal_migrations, "MIGRATIONS", original)
+    Journal(database).migrate()
+
+    assert Journal(database).get_session_record(SESSION_ID).title == "Journal contract"
+    assert {"provider_calls", "accounting_reconciliation_failures"} <= _table_names(
+        database
+    )
 
 
 def test_a_failed_migration_leaves_no_partial_schema_changes(

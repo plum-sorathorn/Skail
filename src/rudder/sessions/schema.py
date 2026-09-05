@@ -158,4 +158,35 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
         """,
     ),
+    (
+        7,
+        """
+        CREATE TABLE provider_calls (
+            call_id TEXT PRIMARY KEY,
+            assignment_id TEXT NOT NULL REFERENCES assignments(assignment_id),
+            attempt_id TEXT NOT NULL REFERENCES attempts(attempt_id),
+            execution_key TEXT NOT NULL,
+            ordinal INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            input_tokens INTEGER,
+            output_tokens INTEGER,
+            amount_usd TEXT,
+            authority TEXT,
+            error_summary TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(assignment_id, ordinal),
+            UNIQUE(assignment_id, execution_key)
+        );
+        CREATE TABLE accounting_reconciliation_failures (
+            failure_id TEXT PRIMARY KEY,
+            assignment_id TEXT NOT NULL REFERENCES assignments(assignment_id),
+            call_id TEXT REFERENCES provider_calls(call_id),
+            status TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(assignment_id, call_id)
+        );
+        """,
+    ),
 )

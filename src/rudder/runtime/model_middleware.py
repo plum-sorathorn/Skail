@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, NotRequired, cast
 
@@ -10,6 +12,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from rudder.providers.base import ProviderAdapter
 from rudder.providers.errors import ProviderError
 from rudder.providers.fallback import FallbackBinding, ProviderFallbackPolicy
+from rudder.routing.assignment import AccountingReconciliationRequired
 from rudder.runtime.errors import FrameworkContractError
 
 
@@ -40,6 +43,8 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         providers: Mapping[str, ProviderAdapter] | None = None,
         fallback_policy: ProviderFallbackPolicy | None = None,
         usage_callback: Callable[[str, object, str], None] | None = None,
+        call_begin: Callable[[str, str], str] | None = None,
+        call_ambiguous: Callable[[str, Exception], None] | None = None,
         active_assignments: Mapping[str, FallbackBinding] | None = None,
     ) -> None:
         self._models = dict(models)
@@ -48,6 +53,8 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         self._providers = dict(providers or {})
         self._fallback_policy = fallback_policy
         self._usage_callback = usage_callback
+        self._call_begin = call_begin
+        self._call_ambiguous = call_ambiguous
         self._active_assignments = dict(active_assignments or {})
         self._call_counts: dict[str, int] = {}
 
@@ -57,13 +64,21 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         handler: Callable[[ModelRequest[Any]], ModelResponse[Any]],
     ) -> ModelResponse[Any]:
         bound = self._bind(request)
+        call_id = self._begin_call(request)
         try:
             response = handler(bound)
         except Exception as error:
+            self._mark_ambiguous(call_id, error)
+            if call_id is not None:
+                raise AccountingReconciliationRequired(
+                    "provider outcome is ambiguous; paid execution is blocked"
+                ) from error
             response, assignment_id = self._fallback_sync(request, handler, error)
-            self._record_usage(request, response, assignment_id=assignment_id)
+            self._record_usage(
+                request, response, assignment_id=assignment_id, call_id=call_id
+            )
             return response
-        self._record_usage(request, response)
+        self._complete_call(request, response, call_id=call_id)
         return response
 
     async def awrap_model_call(
@@ -72,13 +87,21 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         handler: Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]],
     ) -> ModelResponse[Any]:
         bound = self._bind(request)
+        call_id = self._begin_call(request)
         try:
             response = await handler(bound)
         except Exception as error:
+            self._mark_ambiguous(call_id, error)
+            if call_id is not None:
+                raise AccountingReconciliationRequired(
+                    "provider outcome is ambiguous; paid execution is blocked"
+                ) from error
             response, assignment_id = await self._fallback_async(request, handler, error)
-            self._record_usage(request, response, assignment_id=assignment_id)
+            self._record_usage(
+                request, response, assignment_id=assignment_id, call_id=call_id
+            )
             return response
-        self._record_usage(request, response)
+        self._complete_call(request, response, call_id=call_id)
         return response
 
     def _provider_error(self, request: ModelRequest[Any], error: Exception) -> ProviderError | None:
@@ -160,17 +183,66 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         response: object,
         *,
         assignment_id: str | None = None,
+        call_id: str | None = None,
     ) -> None:
         if self._usage_callback is None:
             return
         selected_id = assignment_id or request.state.get("current_assignment_id")
         assert isinstance(selected_id, str)
-        self._call_counts[selected_id] = self._call_counts.get(selected_id, 0) + 1
+        if call_id is None:
+            self._call_counts[selected_id] = self._call_counts.get(selected_id, 0) + 1
+            call_id = f"call-{self._call_counts[selected_id]}"
         self._usage_callback(
             selected_id,
             response,
-            f"call-{self._call_counts[selected_id]}",
+            call_id,
         )
+
+    def _begin_call(self, request: ModelRequest[Any]) -> str | None:
+        if self._call_begin is None:
+            return None
+        assignment_id = request.state.get("current_assignment_id")
+        assert isinstance(assignment_id, str)
+        serialized = json.dumps(
+            [
+                message.model_dump(mode="json")
+                if hasattr(message, "model_dump")
+                else str(message)
+                for message in request.messages
+            ],
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        execution_key = hashlib.sha256(serialized.encode()).hexdigest()
+        return self._call_begin(assignment_id, execution_key)
+
+    def _mark_ambiguous(self, call_id: str | None, error: Exception) -> None:
+        if call_id is not None and self._call_ambiguous is not None:
+            self._call_ambiguous(call_id, error)
+
+    def _complete_call(
+        self,
+        request: ModelRequest[Any],
+        response: object,
+        *,
+        call_id: str | None,
+        assignment_id: str | None = None,
+    ) -> None:
+        try:
+            self._record_usage(
+                request,
+                response,
+                call_id=call_id,
+                assignment_id=assignment_id,
+            )
+        except Exception as error:
+            self._mark_ambiguous(call_id, error)
+            if call_id is not None:
+                raise AccountingReconciliationRequired(
+                    "provider response could not be reconciled; paid execution is blocked"
+                ) from error
+            raise
 
     def _bind(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
         attempt = request.state.get("attempt_id")

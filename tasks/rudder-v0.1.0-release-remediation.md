@@ -38,13 +38,15 @@ Acceptance evidence: configuration/provider contract regressions and CLI/TUI ins
 
 ### Phase 3 — Authoritative provider-call accounting
 
-- [ ] Persist call identities and reservations before every call; distinguish replay from new work.
-- [ ] Normalize framework usage, settle once, fund calls from batch allowances without double
+- [x] Persist call identities and reservations before every call; distinguish replay from new work.
+- [x] Normalize framework usage, settle once, fund calls from batch allowances without double
   reservation, and retain authoritative, estimated, and unknown charges separately.
-- [ ] Block paid execution on uncertain reconciliation and preserve existing journals through
+- [x] Block paid execution on uncertain reconciliation and preserve existing journals through
   migration coverage.
 
-Acceptance evidence: multi-call exhaustion, restart, missing/mixed usage, and duplicate-charge tests.
+Acceptance evidence: `tests/integration/test_assignment.py`, `tests/unit/test_journal.py`, the
+affected 78-test runtime/recovery matrix, and the complete offline suite. Provider calls use the
+persisted assignment reservation as their funding allowance; no second reservation is created.
 
 ### Phase 4 — Delegated task contracts and scheduling
 

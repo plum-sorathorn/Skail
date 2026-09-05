@@ -7,12 +7,15 @@ from pathlib import Path
 import pytest
 from fakes.models import ScriptedChatModel
 from fakes.provider import FakeProviderAdapter
+from langchain.agents.middleware import ModelResponse
 from langchain_core.messages import AIMessage
 
 from rudder.domain.events import EventEnvelope
 from rudder.domain.ids import AttemptId, RunId, SessionId, TaskId
+from rudder.domain.usage import NormalizedUsage, UsageAuthority
 from rudder.providers.models import CapabilityVector, ModelProfile
 from rudder.routing.assignment import (
+    AccountingReconciliationRequired,
     AssignmentRequest,
     AssignmentService,
     AssignmentUsageSettler,
@@ -339,6 +342,222 @@ def test_provider_usage_normalizes_and_settles_assignment_reservation_once(
     assert snapshot.usage_records[0].amount_usd == adapter.model.cost_usd * 2
     assert snapshot.usage_records[0].authoritative is True
     assert snapshot.budget_reservations[0].status == "settled"
+
+
+def test_provider_call_ids_are_durable_and_ambiguous_calls_block_replay(
+    tmp_path: Path,
+) -> None:
+    service, journal = _service(tmp_path)
+    assignment = service.assign(_request(), lambda: _snapshot(_candidate()))
+    assert not isinstance(assignment, RouteFailure)
+    settler = AssignmentUsageSettler(
+        journal,
+        service.ledger,
+        {"fake": FakeProviderAdapter()},
+    )
+
+    first = settler.begin_call(str(assignment.assignment_id))
+    settler.mark_ambiguous(first, RuntimeError("connection lost after send"))
+
+    with pytest.raises(AccountingReconciliationRequired):
+        settler.begin_call(str(assignment.assignment_id))
+
+    reconstructed = AssignmentUsageSettler(
+        Journal(tmp_path / "rudder.sqlite"),
+        service.ledger,
+        {"fake": FakeProviderAdapter()},
+    )
+    with pytest.raises(AccountingReconciliationRequired):
+        reconstructed.begin_call(str(assignment.assignment_id))
+
+    with journal._connect() as connection:
+        row = connection.execute(
+            "SELECT call_id,ordinal,status FROM provider_calls"
+        ).fetchone()
+    assert tuple(row) == (first, 1, "ambiguous")
+
+
+def test_framework_model_response_usage_is_aggregated_before_settlement(
+    tmp_path: Path,
+) -> None:
+    service, journal = _service(tmp_path)
+    assignment = service.assign(_request(), lambda: _snapshot(_candidate()))
+    assert not isinstance(assignment, RouteFailure)
+    adapter = FakeProviderAdapter()
+    settler = AssignmentUsageSettler(journal, service.ledger, {"fake": adapter})
+    call_id = settler.begin_call(str(assignment.assignment_id))
+    response = ModelResponse(
+        result=[adapter.model.invoke("first"), adapter.model.invoke("second")]
+    )
+
+    settler.record_call(str(assignment.assignment_id), response, call_id=call_id)
+    settler.settle_attempt(str(assignment.assignment_id))
+
+    snapshot = journal.get_session_snapshot(str(SESSION_ID))
+    assert snapshot.usage_records[0].amount_usd == adapter.model.cost_usd * 2
+    with journal._connect() as connection:
+        call = connection.execute(
+            "SELECT input_tokens,output_tokens,amount_usd,status FROM provider_calls"
+        ).fetchone()
+    assert tuple(call) == (
+        adapter.model.input_tokens * 2,
+        adapter.model.output_tokens * 2,
+        format(adapter.model.cost_usd * 2, "f"),
+        "completed",
+    )
+
+
+def test_mixed_usage_authority_settles_as_estimated_actual(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service, journal = _service(tmp_path)
+    assignment = service.assign(_request(), lambda: _snapshot(_candidate()))
+    assert not isinstance(assignment, RouteFailure)
+    adapter = FakeProviderAdapter()
+
+    def normalize(response: object) -> NormalizedUsage:
+        message = response
+        authority = (
+            UsageAuthority.AUTHORITATIVE_ACTUAL
+            if getattr(message, "content", "") == "authoritative"
+            else UsageAuthority.ESTIMATED_ACTUAL
+        )
+        return NormalizedUsage(
+            input_tokens=5,
+            output_tokens=3,
+            cost_usd=Decimal("0.02"),
+            authority=authority,
+        )
+
+    monkeypatch.setattr(adapter, "normalize_usage", normalize)
+    settler = AssignmentUsageSettler(journal, service.ledger, {"fake": adapter})
+    call_id = settler.begin_call(str(assignment.assignment_id))
+    settler.record_call(
+        str(assignment.assignment_id),
+        ModelResponse(
+            result=[
+                AIMessage(content="authoritative"),
+                AIMessage(content="estimated"),
+            ]
+        ),
+        call_id=call_id,
+    )
+    settler.settle_attempt(str(assignment.assignment_id))
+
+    usage = journal.get_session_snapshot(str(SESSION_ID)).usage_records[0]
+    assert usage.amount_usd == Decimal("0.20")
+    assert usage.authoritative is False
+
+
+def test_restart_allocates_next_call_without_collision(tmp_path: Path) -> None:
+    service, journal = _service(tmp_path)
+    assignment = service.assign(_request(), lambda: _snapshot(_candidate()))
+    assert not isinstance(assignment, RouteFailure)
+    adapter = FakeProviderAdapter()
+    first_settler = AssignmentUsageSettler(journal, service.ledger, {"fake": adapter})
+    first = first_settler.begin_call(str(assignment.assignment_id))
+    first_settler.record_call(
+        str(assignment.assignment_id), adapter.model.invoke("first"), call_id=first
+    )
+
+    restarted = AssignmentUsageSettler(
+        Journal(tmp_path / "rudder.sqlite"), service.ledger, {"fake": adapter}
+    )
+    second = restarted.begin_call(str(assignment.assignment_id))
+
+    assert second != first
+    with journal._connect() as connection:
+        rows = connection.execute(
+            "SELECT call_id,ordinal FROM provider_calls ORDER BY ordinal"
+        ).fetchall()
+    assert [tuple(row) for row in rows] == [(first, 1), (second, 2)]
+
+
+def test_completed_execution_identity_cannot_be_silently_replayed(tmp_path: Path) -> None:
+    service, journal = _service(tmp_path)
+    assignment = service.assign(_request(), lambda: _snapshot(_candidate()))
+    assert not isinstance(assignment, RouteFailure)
+    adapter = FakeProviderAdapter()
+    settler = AssignmentUsageSettler(journal, service.ledger, {"fake": adapter})
+    call_id = settler.begin_call(str(assignment.assignment_id), "graph-step-1")
+    settler.record_call(
+        str(assignment.assignment_id), adapter.model.invoke("done"), call_id=call_id
+    )
+
+    restarted = AssignmentUsageSettler(
+        Journal(tmp_path / "rudder.sqlite"), service.ledger, {"fake": adapter}
+    )
+    with pytest.raises(AccountingReconciliationRequired, match="replay"):
+        restarted.begin_call(str(assignment.assignment_id), "graph-step-1")
+
+
+def test_missing_usage_remains_unknown_while_settlement_uses_estimate(tmp_path: Path) -> None:
+    service, journal = _service(tmp_path)
+    assignment = service.assign(_request(), lambda: _snapshot(_candidate()))
+    assert not isinstance(assignment, RouteFailure)
+    settler = AssignmentUsageSettler(
+        journal, service.ledger, {"fake": FakeProviderAdapter()}
+    )
+    call_id = settler.begin_call(str(assignment.assignment_id))
+
+    settler.record_call(str(assignment.assignment_id), object(), call_id=call_id)
+    settler.settle_attempt(str(assignment.assignment_id))
+
+    with journal._connect() as connection:
+        call = connection.execute(
+            "SELECT amount_usd,authority,status FROM provider_calls"
+        ).fetchone()
+    assert tuple(call) == (None, "unknown", "completed")
+    usage = journal.get_session_snapshot(str(SESSION_ID)).usage_records[0]
+    assert usage.amount_usd == Decimal("0.20")
+    assert usage.authoritative is False
+
+
+def test_observed_overspend_blocks_the_next_provider_call(tmp_path: Path) -> None:
+    service, journal = _service(tmp_path, limit="0.00001")
+    assignment = service.assign(
+        _request(), lambda: _snapshot(_candidate(cost="0.00001"))
+    )
+    assert not isinstance(assignment, RouteFailure)
+    adapter = FakeProviderAdapter()
+    settler = AssignmentUsageSettler(journal, service.ledger, {"fake": adapter})
+    call_id = settler.begin_call(str(assignment.assignment_id))
+    settler.record_call(
+        str(assignment.assignment_id), adapter.model.invoke("costly"), call_id=call_id
+    )
+
+    with pytest.raises(AccountingReconciliationRequired, match="exhausted"):
+        settler.begin_call(str(assignment.assignment_id))
+
+
+def test_settlement_failure_is_persisted_and_blocks_paid_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service, journal = _service(tmp_path)
+    assignment = service.assign(_request(), lambda: _snapshot(_candidate()))
+    assert not isinstance(assignment, RouteFailure)
+    adapter = FakeProviderAdapter()
+    settler = AssignmentUsageSettler(journal, service.ledger, {"fake": adapter})
+    call_id = settler.begin_call(str(assignment.assignment_id))
+    settler.record_call(
+        str(assignment.assignment_id), adapter.model.invoke("done"), call_id=call_id
+    )
+    monkeypatch.setattr(
+        service.ledger,
+        "settle",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("ledger unavailable")),
+    )
+
+    with pytest.raises(AccountingReconciliationRequired, match="settlement failed"):
+        settler.settle_attempt(str(assignment.assignment_id))
+    with pytest.raises(AccountingReconciliationRequired, match="reconciliation"):
+        settler.begin_call(str(assignment.assignment_id))
+
+    with journal._connect() as connection:
+        failure = connection.execute(
+            "SELECT status,summary FROM accounting_reconciliation_failures"
+        ).fetchone()
+    assert tuple(failure) == ("open", "ledger unavailable")
 
 
 def test_compiled_runtime_rejects_assignment_not_loaded_from_journal(tmp_path: Path) -> None:

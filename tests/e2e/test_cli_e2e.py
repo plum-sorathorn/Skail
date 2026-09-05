@@ -209,9 +209,12 @@ def test_cli_budget_denial_returns_blocked_exit_code() -> None:
 def test_cli_returns_blocked_exit_code_on_interrupted_run(tmp_path: Path) -> None:
     import argparse
     import asyncio
+    from datetime import UTC, datetime, timedelta
 
     import rudder.cli.main as cli_main
     from rudder.cli.main import RuntimeModelSet, _execute_instruction
+    from rudder.config.models import RudderConfig
+    from rudder.providers.catalog import ModelCatalog
     from rudder.providers.fake import FakeProviderAdapter
     from rudder.runtime.interrupts import QuestionStore
     from rudder.runtime.redaction import RedactionRegistry
@@ -260,6 +263,11 @@ def test_cli_returns_blocked_exit_code_on_interrupted_run(tmp_path: Path) -> Non
             "lead-model",
             "lead-model",
             {"fake": FakeProviderAdapter(model)},
+            catalog=ModelCatalog.from_entries(
+                (), now=datetime.now(UTC), price_max_age=timedelta(days=30)
+            ),
+            config=RudderConfig(),
+            redaction=r,
         )
         code = asyncio.run(
             _execute_instruction(

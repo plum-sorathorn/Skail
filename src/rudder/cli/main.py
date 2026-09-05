@@ -50,6 +50,10 @@ from rudder.providers.base import ProviderAdapter
 from rudder.providers.catalog import ModelCatalog
 from rudder.providers.credentials import EnvironmentCredentialResolver
 from rudder.providers.errors import ProviderConfigurationError
+from rudder.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
+from rudder.routing.assignment import RoutingSnapshot, config_revision
+from rudder.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
+from rudder.routing.selector import RouteCandidate
 from rudder.runtime.interrupts import QuestionStore
 from rudder.runtime.redaction import RedactionRegistry
 from rudder.sessions.checkpoints import CheckpointStore
@@ -71,11 +75,43 @@ class RuntimeModelSet:
     catalog: ModelCatalog | None = None
     config: RudderConfig | None = None
     redaction: RedactionRegistry | None = None
+    candidates: tuple[RouteCandidate, ...] = ()
 
     def __iter__(self) -> Iterator[Any]:
         yield self.models
         yield self.lead_model
         yield self.child_model
+
+    def routing_snapshot(self) -> RoutingSnapshot:
+        assert self.catalog is not None
+        assert self.config is not None
+        return RoutingSnapshot(
+            catalog_revision=self.catalog.revision,
+            config_revision=config_revision(self.config.model_dump(mode="json")),
+            health_revision="bootstrap",
+            candidates=self.candidates,
+        )
+
+
+def _route_candidate(profile: ModelProfile, *, hard_budget: bool) -> RouteCandidate:
+    estimate = estimate_attempt_cost(
+        AttemptEstimateInput(
+            context_tokens=min(profile.context_tokens or 4096, 4096),
+            output_tokens=min(profile.max_output_tokens or 2048, 2048),
+            expected_calls=2,
+            input_usd_per_million=profile.input_usd_per_million,
+            output_usd_per_million=profile.output_usd_per_million,
+            cached_input_usd_per_million=profile.cached_input_usd_per_million,
+        )
+    )
+    return RouteCandidate(
+        profile=profile,
+        estimated_cost_usd=estimate.cost_usd,
+        estimate_assumptions=estimate.assumptions,
+        configured=True,
+        healthy=True,
+        enabled=(not hard_budget or estimate.cost_usd is not None),
+    )
 
 
 KNOWN_SUBCOMMANDS = frozenset({"auth", "models", "sessions", "config", "smoke"})
@@ -512,6 +548,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             runtime_models = _build_runtime_models(
                 args, redaction, prompt_text
             )
+            assert runtime_models.catalog is not None
+            assert runtime_models.config is not None
+            has_bootstrap_candidates = bool(runtime_models.candidates)
             models, lead_model_name, child_model_name = runtime_models
         except ProviderConfigurationError as exc:
             render_print_stderr(f"Provider configuration error: {exc}")
@@ -535,6 +574,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             question_store=question_store,
             profile_models=profile_models,
             providers=runtime_models.providers,
+            candidates_fn=(runtime_models.routing_snapshot if has_bootstrap_candidates else None),
+            catalog_revision=(
+                runtime_models.catalog.revision if has_bootstrap_candidates else "catalog-v1"
+            ),
+            config_snapshot=(
+                runtime_models.config.model_dump(mode="json")
+                if has_bootstrap_candidates
+                else None
+            ),
         )
         initial_snapshot = None
         if args.resume_session is not None:
@@ -598,6 +646,27 @@ def _build_runtime_models(
         lead_key = lead_model_name if ":" in lead_model_name else f"fake:{lead_model_name}"
         child_key = child_model_name if ":" in child_model_name else f"fake:{child_model_name}"
         models = {lead_key: lead_fake, child_key: lead_fake}
+        fake_profiles = tuple(
+            ModelProfile(
+                provider="fake",
+                model=key.split(":", 1)[1],
+                support_level=ProviderSupportLevel.NATIVE,
+                input_usd_per_million=Decimal("1"),
+                output_usd_per_million=Decimal("2"),
+                context_tokens=128_000,
+                max_output_tokens=8_192,
+                supports_tools=True,
+                supports_structured_output=True,
+                capability=CapabilityVector(
+                    coding=0.9,
+                    reasoning=0.9,
+                    tool_reliability=0.9,
+                    latency=0.9,
+                ),
+                auto_eligible=True,
+            )
+            for key in models
+        )
         from rudder.providers.fake import FakeProviderAdapter
 
         return RuntimeModelSet(
@@ -608,6 +677,10 @@ def _build_runtime_models(
             catalog=catalog,
             config=config,
             redaction=redaction,
+            candidates=tuple(
+                _route_candidate(profile, hard_budget=args.budget is not None)
+                for profile in fake_profiles
+            ),
         )
 
     cred_resolver = EnvironmentCredentialResolver(redaction)
@@ -766,6 +839,7 @@ def _build_runtime_models(
         catalog=catalog,
         config=config,
         redaction=redaction,
+        candidates=(_route_candidate(profile, hard_budget=args.budget is not None),),
     )
 
 
@@ -788,6 +862,9 @@ async def _execute_instruction(
         runtime_models = _build_runtime_models(
             args, redaction, prompt
         )
+        assert runtime_models.catalog is not None
+        assert runtime_models.config is not None
+        has_bootstrap_candidates = bool(runtime_models.candidates)
         models, lead_model_name, child_model_name = runtime_models
     except ProviderConfigurationError as exc:
         render_print_stderr(f"Provider configuration error: {exc}")
@@ -817,6 +894,15 @@ async def _execute_instruction(
         question_store=question_store,
         profile_models=_parse_agent_models(getattr(args, "agent_models", [])),
         providers=runtime_models.providers,
+        candidates_fn=(runtime_models.routing_snapshot if has_bootstrap_candidates else None),
+        catalog_revision=(
+            runtime_models.catalog.revision if has_bootstrap_candidates else "catalog-v1"
+        ),
+        config_snapshot=(
+            runtime_models.config.model_dump(mode="json")
+            if has_bootstrap_candidates
+            else None
+        ),
         event_observer=render_jsonl_event if args.json_mode else None,
     )
 
