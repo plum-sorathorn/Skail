@@ -6,6 +6,105 @@ This is the authoritative execution tracker for the Phase 6–8 audit remediatio
 the historical implementation plan; it does not change the accepted product invariants, ADRs, or
 the requirement that `legacy/autoconduck/` remain inert.
 
+## Authoritative remediation phases
+
+Each phase is a separate, reviewable commit. A checked phase requires its stated acceptance
+evidence, focused and affected tests, static checks appropriate to the change, a Graphify update,
+and a complete diff review. Historical checkmarks below record partial implementation work only;
+they are reopened as release-completion claims until the corresponding phase has passed.
+
+### Phase 1 — Accurate tracker and preserved evidence
+
+- [x] Reconcile the audit with the current worktree; link this tracker from the historical plan and
+  delivery checklist.
+- [x] Withdraw unsupported evaluation and release claims, retain the 450 ms seed diagnostics, and
+  label existing `evals/results/` reports invalid for release sign-off.
+- [x] Remove the unverified 650 ms timing adjustment and restore the 100 appends/sec benchmark
+  threshold with a regression test.
+
+Evidence: `docs/rudder/EVALUATION.md`, `docs/rudder/PERFORMANCE.md`,
+`tests/unit/test_bench_runner.py`, and the phase commit. The untracked `out/` diagnostic material
+is preserved outside the commit.
+
+### Phase 2 — Provider and configuration composition
+
+- [ ] Build one typed CLI/TUI runtime bootstrap result for effective configuration, adapters,
+  qualified model identities, catalog, permissions, redaction, and controls.
+- [ ] Enforce catalog-backed production routing, explicit fake execution, provider-qualified model
+  pins, trusted configuration loading, supported adapter construction, and manual-only unknowns.
+- [ ] Represent unknown cost explicitly and make inspection reflect execution state.
+
+Acceptance evidence: configuration/provider contract regressions and CLI/TUI inspection tests.
+
+### Phase 3 — Authoritative provider-call accounting
+
+- [ ] Persist call identities and reservations before every call; distinguish replay from new work.
+- [ ] Normalize framework usage, settle once, fund calls from batch allowances without double
+  reservation, and retain authoritative, estimated, and unknown charges separately.
+- [ ] Block paid execution on uncertain reconciliation and preserve existing journals through
+  migration coverage.
+
+Acceptance evidence: multi-call exhaustion, restart, missing/mixed usage, and duplicate-charge tests.
+
+### Phase 4 — Delegated task contracts and scheduling
+
+- [ ] Preserve the standard task surface while validating full JSON packets, durable dependency
+  identities, duplicate fingerprints, profiles, scope, and budgets.
+- [ ] Dispatch by the scheduler queue and priority; release dependencies only after verification.
+- [ ] Persist terminal task results and two-attempt escalation evidence; preserve writer leases
+  through cancellation and shell shutdown.
+
+Acceptance evidence: cap, priority, dependency/cycle, verification, escalation, and write-lease tests.
+
+### Phase 5 — Verifiable outcomes and failure monitoring
+
+- [ ] Require recorded executable evidence or bounded source-referenced analysis reports; reject
+  malformed, empty, mismatched, and unsupported success results.
+- [ ] Preserve blocked/cancelled outcomes and correct repeated-error, progress, and configured-limit
+  classification.
+
+Acceptance evidence: evidence-reference and deterministic monitoring regressions using honest fakes.
+
+### Phase 6 — Recovery, approvals, redaction, and controls
+
+- [ ] Persist and restore original controls, workspace and lead identity, interrupts, task state,
+  assignments, and allowance ownership.
+- [ ] Scope and atomically consume approvals; resume only the exact policy-rechecked command.
+- [ ] Reconcile lifecycle/checkpoint crashes, live redaction, same-session mutation, TUI commands,
+  cancellation, and documented steering behavior.
+
+Acceptance evidence: recovery, approval race, redaction canary, cancellation, and live TUI tests.
+
+### Phase 7 — Persisted events and exit behavior
+
+- [ ] Deliver post-commit correlated events to journal, JSONL, and TUI, including exactly one
+  terminal event per invocation.
+- [ ] Preserve stdout, compatibility flags, exit codes, and isolated CLI test state.
+
+Acceptance evidence: CLI/TUI/event-stream integration tests for every terminal outcome.
+
+### Phase 8 — Independent evaluation and timing methodology
+
+- [ ] Separate scripted execution from oracle expectations and reported usage from routing estimates.
+- [ ] Measure equivalent useful serial/parallel work with real overlap, full settlement, paired
+  repetitions, fixed workloads, and retained raw failures.
+- [ ] Keep the 15% end-to-end gate; optimise actual overhead if it fails rather than changing
+  synthetic delay or thresholds.
+
+Acceptance evidence: oracle-independence, workload-equivalence, overlap, and raw-metric tests.
+
+### Phase 9 — Release checks, CI, and documentation
+
+- [ ] Independently recompute release summaries from raw evidence; reject forged, stale, incomplete,
+  mismatched, or insufficient reports.
+- [ ] Validate fresh wheel/sdist installation outside the checkout and record Windows and Linux
+  evidence for the exact candidate commit.
+- [ ] Synchronize active documentation only after the verified implementation; retain diagnostic
+  output outside the checkout.
+
+Acceptance evidence: release-check regressions, packaging integration, platform CI evidence, and a
+clean candidate commit. The requested documentation commit and `v0.1.0` tag occur only after this phase.
+
 ## Release decision
 
 - [x] Invalidate the prior v0.1.0 release-candidate evidence.
@@ -14,7 +113,12 @@ the requirement that `legacy/autoconduck/` remain inert.
 - [x] Keep the TUI in stable v0.1.0 scope rather than deferring it.
 - [ ] Create the fresh v0.1.0 release candidate and annotated release tag.
 
-## 1. Authoritative runtime lifecycle
+## Historical partial implementation inventory — not release acceptance
+
+The following entries are preserved for auditability. Their checked state does not claim that the
+full contract is complete; each is revalidated by the phase above that owns it.
+
+### 1. Authoritative runtime lifecycle
 
 - [x] Persist lead context packets before a lead model call.
 - [x] Persist terminal lead run, task, attempt, and session status on normal completion and failure.
@@ -40,7 +144,7 @@ the requirement that `legacy/autoconduck/` remain inert.
 - [x] Replace all remaining success inference with evidence-bearing verification results.
   - Implemented in `f66ff52`.
 
-## 2. Context, secrets, recovery, and projection
+### 2. Context, secrets, recovery, and projection
 
 - [x] Enforce compaction token budgets, record omissions, and persist compaction packets without
   rewriting usage records.
@@ -59,7 +163,7 @@ the requirement that `legacy/autoconduck/` remain inert.
 - [x] Persist task/attempt transitions transactionally with assignment and budget changes.
   - Implemented in `1abe230`.
 
-## 3. CLI and TUI integration
+### 3. CLI and TUI integration
 
 - [x] Resolve configured provider/catalog models in normal CLI execution; retain fake models only
   for explicit test, smoke, and evaluation modes.
@@ -73,7 +177,7 @@ the requirement that `legacy/autoconduck/` remain inert.
 - [x] Standardize the streaming CLI flag as `--jsonl`; retain `--json` only as a documented
   compatibility alias if needed.
 
-## 4. Evaluation and release evidence
+### 4. Evaluation and release evidence
 
 - [x] Remove evaluator-side oracle mutation and artificial parallel timing; fixture changes now
   pass through Rudder's runtime tool boundary.
@@ -89,7 +193,7 @@ the requirement that `legacy/autoconduck/` remain inert.
 - [ ] Require release checks to validate all fixtures, policies, report schema, freshness, and all
   acceptance gates.
 
-## 5. Documentation and release closeout
+### 5. Documentation and release closeout
 
 - [ ] Update `tasks/plan.md` and `tasks/todo.md` to show the reopened Phase 6–8/final-checkpoint
   work accurately.

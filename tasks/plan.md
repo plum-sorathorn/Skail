@@ -7,6 +7,10 @@ Architecture: [../docs/rudder/ARCHITECTURE.md](../docs/rudder/ARCHITECTURE.md)
 Feature contracts: [../docs/rudder/FEATURES.md](../docs/rudder/FEATURES.md)
 Repository transition: [../docs/rudder/MIGRATION.md](../docs/rudder/MIGRATION.md)
 
+> Historical implementation plan. The authoritative v0.1.0 release-remediation sequence and
+> acceptance evidence are in [rudder-v0.1.0-release-remediation.md](rudder-v0.1.0-release-remediation.md).
+> Completion checkboxes in this historical plan are not release sign-off.
+
 ## 1. Delivery strategy
 
 Build Rudder in vertical, verifiable slices. Establish the DeepAgents contracts and safety/economic invariants before investing in the full TUI. Every task should end with focused tests and a graph update. No task may silently broaden the approved specification.

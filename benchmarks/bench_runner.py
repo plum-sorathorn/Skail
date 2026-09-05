@@ -189,8 +189,8 @@ def validate_benchmarks(results: dict[str, dict[str, float]]) -> list[str]:
     projection = results["tui_projection"]
     context = results["context_assembly"]
     failures: list[str] = []
-    if persistence["appends_per_sec"] < 75.0:
-        failures.append("event persistence below 75 appends/sec")
+    if persistence["appends_per_sec"] < 100.0:
+        failures.append("event persistence below 100 appends/sec")
     if persistence["read_seconds"] >= 0.1:
         failures.append("event snapshot query exceeded 100ms")
     if persistence["bytes_per_event"] >= 1024.0:

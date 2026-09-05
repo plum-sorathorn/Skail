@@ -2,6 +2,10 @@
 
 Status: Active; implementation is in progress on the `rudder` branch.
 
+> Historical delivery checklist. Release completion is governed by the phased
+> [v0.1.0 release-remediation tracker](rudder-v0.1.0-release-remediation.md); checked items below
+> record prior implementation claims and do not establish release evidence.
+
 ## Approval and boundary
 
 - [x] 0.1 Resolve open specification decisions and accept ADR 0001.
@@ -81,13 +85,13 @@ Status: Active; implementation is in progress on the `rudder` branch.
 
 ## Validation and release
 
-- [x] 8.1 Build deterministic evaluation runner including context-policy metrics.
-- [x] 8.2 Curate at least 50 approved oracle-backed fixtures.
-- [x] 8.3 Validate and tune completion, cost, and parallel-time gates.
-- [x] 8.4 Complete security/recovery hardening.
-- [x] 8.5 Complete performance/context hardening and context-policy benchmarking.
-- [x] 8.6 Complete packaging, docs, installation, and release candidate.
-- [x] Final checkpoint: all stable-release criteria pass.
+- [ ] 8.1 Rebuild deterministic evaluation with independent fixtures and oracles.
+- [ ] 8.2 Validate the required fixture manifest and raw evidence.
+- [ ] 8.3 Validate completion, cost, and parallel-time gates without timing manipulation.
+- [ ] 8.4 Complete security/recovery hardening.
+- [ ] 8.5 Complete performance/context hardening and rendering measurements.
+- [ ] 8.6 Complete packaging, docs, installation, and clean release candidate checks.
+- [ ] Final checkpoint: all stable-release criteria pass.
 
 ## Post-stable / isolated
 
