@@ -78,6 +78,9 @@ def test_dispatch_all_required_slash_commands() -> None:
 
     # /resume, /compact, /trust, /config, /quit
     assert dispatch_slash_command("/resume", proj).action == "resume"
+    selected_resume = dispatch_slash_command("/resume session-2", proj)
+    assert selected_resume.action == "resume"
+    assert selected_resume.target_id == "session-2"
     assert dispatch_slash_command("/compact", proj).action == "compact"
     assert dispatch_slash_command("/trust", proj).action == "message"
     assert dispatch_slash_command("/config", proj).action == "message"

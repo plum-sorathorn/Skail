@@ -4,6 +4,7 @@ import io
 import logging
 from datetime import UTC, datetime
 
+from rudder.agents.context import ContextAssembler
 from rudder.domain.events import DiagnosticPayload, EventEnvelope
 from rudder.domain.ids import EventId, RunId, SessionId
 from rudder.runtime.redaction import RedactingLogFilter, RedactionRegistry
@@ -58,3 +59,14 @@ def test_redaction_covers_logs_tool_output_exception_chains_and_exports() -> Non
     assert canary not in repr(chain)
     assert canary not in repr(tool_output)
     assert canary not in repr(exported)
+
+
+def test_live_registry_redacts_values_registered_after_consumer_capture() -> None:
+    registry = RedactionRegistry()
+    consumer = ContextAssembler(redactor=registry)
+    late_secret = "late-provider-credential"
+
+    registry.register(late_secret)
+    packet = consumer.assemble(task_id="task-1", objective=f"use {late_secret}")
+
+    assert late_secret not in repr(packet)

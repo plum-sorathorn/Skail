@@ -215,6 +215,7 @@ def dispatch_slash_command(
             command="resume",
             action="resume",
             output_message="Session resume requested.",
+            target_id=args[0] if args else None,
         )
 
     if cmd == "compact":

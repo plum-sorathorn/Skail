@@ -59,6 +59,8 @@ def build_production_lead(
     runtime_event: Callable[[str, str], None] | None = None,
     runtime_model_name: str | None = None,
     model_response_observer: Callable[[Any], None] | None = None,
+    session_id: str = "",
+    run_id: str = "",
 ) -> Runnable[object, object]:
     allow_children = controls.delegation in ("auto", "ask")
     registry = _lead_registry(
@@ -83,6 +85,9 @@ def build_production_lead(
             runtime_model_name=runtime_model_name,
             model_response_observer=model_response_observer,
             system_prompt=TASK_PACKET_GUIDANCE,
+            session_id=session_id,
+            run_id=run_id,
+            graph_id=f"{session_id}:{run_id}:lead",
         ),
     )
 

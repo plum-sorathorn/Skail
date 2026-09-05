@@ -4,17 +4,21 @@ import json
 import re
 from collections import Counter, deque
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from rudder.domain.events import SecretRedactor
 
 Boundary = Literal["model_calls", "time", "budget"]
 
 
+class FailureRedactor(Protocol):
+    def scrub(self, value: Any) -> Any: ...
+
+
 class FailureMonitor:
     def __init__(
         self,
-        redactor: SecretRedactor | None = None,
+        redactor: FailureRedactor | None = None,
         *,
         max_calls: int | None = None,
         max_seconds: float | None = None,
@@ -75,7 +79,7 @@ class FailureMonitor:
         return None
 
 
-def _canonical(value: object, redactor: SecretRedactor) -> str:
+def _canonical(value: object, redactor: FailureRedactor) -> str:
     scrubbed: Any = redactor.scrub(value)
     try:
         return json.dumps(scrubbed, sort_keys=True, separators=(",", ":"), default=str)

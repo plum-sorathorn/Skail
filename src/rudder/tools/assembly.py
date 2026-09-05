@@ -139,7 +139,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
     ) -> None:
         self.model_name = model_name
         self.emit = emit
-        self.monitor = FailureMonitor(redactor.redactor())
+        self.monitor = FailureMonitor(redactor)
         self.model_response_observer = model_response_observer
 
     def wrap_model_call(
@@ -308,6 +308,8 @@ def build_default_agent(
     allowed_write_paths: tuple[str, ...] = (),
     execute_allowed: bool = True,
     system_prompt: str | None = None,
+    session_id: str = "",
+    run_id: str = "",
 ) -> Any:
     """Assemble pinned DeepAgents tools behind Rudder's workspace and shell policy."""
 
@@ -333,9 +335,14 @@ def build_default_agent(
         from contextlib import nullcontext
 
         lease = nullcontext() if lease_manager is None else lease_manager.hold(task_id)
+        action_id = CURRENT_TOOL_CALL_ID.get() or ""
+        request = CommandRequest(
+            command, arguments, workspace, session_id=session_id, run_id=run_id,
+            task_id=task_id, action_id=action_id,
+        )
         with lease:
             result = policy.run(
-                CommandRequest(command, arguments, workspace),
+                request,
                 interactive=False,
                 approvals=approvals,
             )
@@ -346,11 +353,15 @@ def build_default_agent(
                     "command": command,
                     "arguments": arguments,
                     "cwd": str(workspace),
+                    "session_id": session_id,
+                    "run_id": run_id,
+                    "task_id": task_id,
+                    "action_id": action_id,
                 }
             )
             with lease:
                 result = policy.run(
-                    CommandRequest(command, arguments, workspace),
+                    request,
                     interactive=False,
                     approvals=approvals,
                 )

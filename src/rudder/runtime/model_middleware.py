@@ -46,6 +46,7 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         call_begin: Callable[[str, str], str] | None = None,
         call_ambiguous: Callable[[str, Exception], None] | None = None,
         active_assignments: Mapping[str, FallbackBinding] | None = None,
+        redactor: Any = None,
     ) -> None:
         self._models = dict(models)
         self._assignments = dict(assignments)
@@ -57,13 +58,14 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         self._call_ambiguous = call_ambiguous
         self._active_assignments = dict(active_assignments or {})
         self._call_counts: dict[str, int] = {}
+        self._redactor = redactor
 
     def wrap_model_call(
         self,
         request: ModelRequest[Any],
         handler: Callable[[ModelRequest[Any]], ModelResponse[Any]],
     ) -> ModelResponse[Any]:
-        bound = self._bind(request)
+        bound = self._bind(self._redact_request(request))
         call_id = self._begin_call(request)
         try:
             response = handler(bound)
@@ -77,16 +79,16 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
             self._record_usage(
                 request, response, assignment_id=assignment_id, call_id=call_id
             )
-            return response
+            return self._redact_response(response)
         self._complete_call(request, response, call_id=call_id)
-        return response
+        return self._redact_response(response)
 
     async def awrap_model_call(
         self,
         request: ModelRequest[Any],
         handler: Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]],
     ) -> ModelResponse[Any]:
-        bound = self._bind(request)
+        bound = self._bind(self._redact_request(request))
         call_id = self._begin_call(request)
         try:
             response = await handler(bound)
@@ -100,9 +102,22 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
             self._record_usage(
                 request, response, assignment_id=assignment_id, call_id=call_id
             )
-            return response
+            return self._redact_response(response)
         self._complete_call(request, response, call_id=call_id)
-        return response
+        return self._redact_response(response)
+
+    def _redact_request(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
+        if self._redactor is None:
+            return request
+        return request.override(messages=self._redactor.scrub(request.messages))
+
+    def _redact_response(self, response: ModelResponse[Any]) -> ModelResponse[Any]:
+        if self._redactor is None:
+            return response
+        return ModelResponse(
+            result=self._redactor.scrub(response.result),
+            structured_response=self._redactor.scrub(response.structured_response),
+        )
 
     def _provider_error(self, request: ModelRequest[Any], error: Exception) -> ProviderError | None:
         provider_name = request.state.get("assigned_provider")

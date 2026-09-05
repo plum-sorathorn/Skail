@@ -26,8 +26,13 @@ class CommandRequest:
     arguments: tuple[str, ...]
     cwd: Path
     request_id: str = ""
+    session_id: str = ""
+    run_id: str = ""
+    task_id: str = ""
+    action_id: str = ""
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "cwd", self.cwd.resolve())
         if not self.request_id:
             object.__setattr__(self, "request_id", str(uuid4()))
 

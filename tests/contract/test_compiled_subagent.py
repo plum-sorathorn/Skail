@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from fakes.models import ScriptedChatModel, tool_call_message
 from fakes.provider import FakeProviderAdapter, FakeProviderChatModel
-from langchain.agents.middleware import ModelRequest
+from langchain.agents.middleware import ModelRequest, ModelResponse
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 
@@ -17,6 +17,7 @@ from rudder.runtime.model_middleware import (
     AssignmentInvariantError,
     TaskBoundModelMiddleware,
 )
+from rudder.runtime.redaction import RedactionRegistry
 from rudder.runtime.task_graph_spike import SpikeAssignment, build_compiled_task_subagent
 
 
@@ -301,6 +302,42 @@ def test_unpersisted_assignment_id_stops_before_the_model_call() -> None:
         )
     assert raised.value.error.code == "route.assignment_unknown"
     assert assigned_model.calls == ()
+
+
+def test_model_boundary_uses_live_redaction_for_requests_and_responses() -> None:
+    model = ScriptedChatModel(responses=[AIMessage(content="unused")])
+    redaction = RedactionRegistry()
+    middleware = TaskBoundModelMiddleware(
+        {"assigned-model": model},
+        assignments={"assignment-1": "assigned-model"},
+        redactor=redaction,
+    )
+    secret = "late-provider-secret"
+    redaction.register(secret)
+    state = {
+        "messages": [],
+        "current_assignment_id": "assignment-1",
+        "locked_assignment_id": "assignment-1",
+        "assigned_model": "assigned-model",
+        "attempt_id": "attempt-1",
+    }
+    seen_request: list[str] = []
+
+    def handler(request: ModelRequest[Any]) -> ModelResponse[Any]:
+        seen_request.append(str(request.messages[0].content))
+        return ModelResponse(result=[AIMessage(content=f"result {secret}")])
+
+    response = middleware.wrap_model_call(
+        ModelRequest(
+            model=model,
+            messages=[HumanMessage(content=f"prompt {secret}")],
+            state=state,
+        ),
+        handler,
+    )
+
+    assert secret not in seen_request[0]
+    assert secret not in str(response.result[0].content)
 
 
 def test_compiled_tool_loop_keeps_transport_fallback_binding_for_later_calls() -> None:

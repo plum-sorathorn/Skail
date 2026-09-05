@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from rudder.tools.approvals import ApprovalChoice, ApprovalStore
@@ -55,7 +56,10 @@ def test_command_policy_table_and_structured_arguments(tmp_path: Path) -> None:
 def test_edited_approval_creates_a_new_request_and_scopes_are_narrow(tmp_path: Path) -> None:
     path = tmp_path / "approvals.sqlite3"
     store = ApprovalStore(path)
-    original = CommandRequest("curl", ("https://bad.invalid",), tmp_path, request_id="old")
+    original = CommandRequest(
+        "curl", ("https://bad.invalid",), tmp_path, request_id="old",
+        session_id="session-1", run_id="run-1", task_id="task-1", action_id="action-1",
+    )
     decision = store.decide(
         original, ApprovalChoice.EDIT, edited=("curl", ("https://example.com",))
     )
@@ -63,6 +67,16 @@ def test_edited_approval_creates_a_new_request_and_scopes_are_narrow(tmp_path: P
     assert decision.request.arguments == ("https://example.com",)
     store.decide(decision.request, ApprovalChoice.ALLOW_SESSION)
     assert ApprovalStore(path).is_allowed(decision.request)
+    other_session = CommandRequest(
+        decision.request.executable,
+        decision.request.arguments,
+        decision.request.cwd,
+        session_id="session-2",
+        run_id=decision.request.run_id,
+        task_id=decision.request.task_id,
+        action_id=decision.request.action_id,
+    )
+    assert not ApprovalStore(path).is_allowed(other_session)
     assert not store.is_allowed(CommandRequest("curl", ("https://other.example",), tmp_path))
 
 
@@ -75,8 +89,36 @@ def test_non_interactive_approval_returns_without_executing(tmp_path: Path) -> N
 
 
 def test_allow_once_is_consumed_without_broadening_request(tmp_path: Path) -> None:
-    request = CommandRequest("git", ("commit", "-m", "safe"), tmp_path)
-    approvals = ApprovalStore()
+    request = CommandRequest(
+        "git", ("commit", "-m", "safe"), tmp_path,
+        session_id="session-1", run_id="run-1", task_id="task-1", action_id="action-1",
+    )
+    approvals = ApprovalStore(tmp_path / "approvals.sqlite")
     approvals.decide(request, ApprovalChoice.ALLOW_ONCE)
-    assert approvals.is_allowed(request)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = tuple(executor.map(lambda _: approvals.is_allowed(request), range(2)))
+    assert sorted(outcomes) == [False, True]
     assert not approvals.is_allowed(request)
+
+
+def test_allow_once_rejects_changed_command_or_action_identity(tmp_path: Path) -> None:
+    approvals = ApprovalStore(tmp_path / "approvals.sqlite")
+    request = CommandRequest(
+        "pwsh", ("-Command", "Write-Output safe"), tmp_path,
+        session_id="session-1", run_id="run-1", task_id="lead", action_id="call-1",
+    )
+    approvals.decide(request, ApprovalChoice.ALLOW_ONCE)
+
+    changed = CommandRequest(
+        request.executable, ("-Command", "Write-Output changed"), request.cwd,
+        session_id=request.session_id, run_id=request.run_id,
+        task_id=request.task_id, action_id=request.action_id,
+    )
+    replay = CommandRequest(
+        request.executable, request.arguments, request.cwd,
+        session_id=request.session_id, run_id=request.run_id,
+        task_id=request.task_id, action_id="call-2",
+    )
+    assert not approvals.is_allowed(changed)
+    assert not approvals.is_allowed(replay)
+    assert approvals.is_allowed(request)

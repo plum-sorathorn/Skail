@@ -75,13 +75,18 @@ complete offline suite passes with 497 tests and two documented skips.
 
 ### Phase 6 — Recovery, approvals, redaction, and controls
 
-- [ ] Persist and restore original controls, workspace and lead identity, interrupts, task state,
+- [x] Persist and restore original controls, workspace and lead identity, interrupts, task state,
   assignments, and allowance ownership.
-- [ ] Scope and atomically consume approvals; resume only the exact policy-rechecked command.
-- [ ] Reconcile lifecycle/checkpoint crashes, live redaction, same-session mutation, TUI commands,
+- [x] Scope and atomically consume approvals; resume only the exact policy-rechecked command.
+- [x] Reconcile lifecycle/checkpoint crashes, live redaction, same-session mutation, TUI commands,
   cancellation, and documented steering behavior.
 
-Acceptance evidence: recovery, approval race, redaction canary, cancellation, and live TUI tests.
+Acceptance evidence: recovery tests restore the persisted control and workspace revision envelope;
+approval tests prove atomic single-use consumption, exact action matching, and cross-session denial;
+model-boundary canaries prove late-registered secrets are scrubbed in both directions. TUI coverage
+exercises answer/resume, command approve/reject, explicit session selection, compaction, cancellation,
+and the foreground worker lifecycle. The complete offline suite passes with 500 tests and two
+documented skips.
 
 ### Phase 7 — Persisted events and exit behavior
 

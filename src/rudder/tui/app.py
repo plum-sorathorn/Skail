@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
@@ -240,6 +241,13 @@ class RudderApp(App[int]):
         finally:
             self.update_views()
 
+    async def _execute_follow_up(self, previous: Any, text: str) -> None:
+        try:
+            await previous.wait()
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+        await self._execute_prompt(text)
+
     async def _resume_prompt(self, answer: str) -> None:
         if self.controller is None:
             return
@@ -299,7 +307,23 @@ class RudderApp(App[int]):
                 self.projection,
                 background_supported=self.background_supported,
             )
+            if result.command == "config" and self.controller is not None:
+                result.output_message = json.dumps(
+                    self.controller.redaction.scrub(self.controller.config_snapshot),
+                    sort_keys=True,
+                )
+            elif result.command == "trust" and self.controller is not None:
+                trusted = bool(self.controller.config_snapshot.get("project_trusted", False))
+                result.output_message = (
+                    "Project is trusted." if trusted else "Project is untrusted."
+                )
             if result.action == "quit":
+                if self._active_worker is not None:
+                    self._active_worker.cancel()
+                if self.session_service is not None and self.session_id is not None:
+                    self.session_service.journal.update_session_status(
+                        session_id=str(self.session_id), status="idle"
+                    )
                 self.exit(0)
                 return
             if result.action == "view" and result.target_view:
@@ -314,12 +338,25 @@ class RudderApp(App[int]):
             elif (
                 result.action == "resume"
                 and self.session_service is not None
-                and self.session_id is not None
             ):
-                resume_res = self.session_service.resume_session(str(self.session_id))
-                if resume_res.ok and resume_res.session is not None:
+                selected_id = result.target_id or (
+                    str(self.session_id) if self.session_id is not None else None
+                )
+                if selected_id is None:
+                    sessions = self.session_service.list_sessions()
+                    selected_id = sessions[0].session_id if sessions else None
+                resume_res = (
+                    self.session_service.resume_session(selected_id)
+                    if selected_id is not None
+                    else None
+                )
+                if resume_res is not None and resume_res.ok and resume_res.session is not None:
+                    self.session_id = SessionId(resume_res.session.session_id)
+                    if self.controller is not None:
+                        self.controller.session_id = self.session_id
+                        self.controller.restore_interrupted()
                     snapshot = self.session_service.journal.get_session_snapshot(
-                        str(self.session_id)
+                        resume_res.session.session_id
                     )
                     self.apply_snapshot(snapshot)
             elif (
@@ -370,7 +407,23 @@ class RudderApp(App[int]):
         )
         self.update_views()
         if self.controller is not None:
-            self._active_worker = self.run_worker(self._execute_prompt(text), exclusive=True)
+            previous = self._active_worker
+            if previous is not None and not previous.is_finished:
+                self.projection.transcript_items.append(
+                    TranscriptItem(
+                        id=f"queue-{len(self.projection.transcript_items)}",
+                        role="system",
+                        title="Follow-up queued",
+                        content="This prompt will run after the active foreground request.",
+                    )
+                )
+                self._active_worker = self.run_worker(
+                    self._execute_follow_up(previous, text), exclusive=False
+                )
+            else:
+                self._active_worker = self.run_worker(
+                    self._execute_prompt(text), exclusive=False
+                )
 
     # Interrupt handling
     def on_interrupt_widget_approved(self, event: InterruptWidget.Approved) -> None:
@@ -395,6 +448,10 @@ class RudderApp(App[int]):
                         )
                     )
                 ),
+                session_id=str(pending.payload.get("session_id", "")),
+                run_id=str(pending.payload.get("run_id", "")),
+                task_id=str(pending.payload.get("task_id", "")),
+                action_id=str(pending.payload.get("action_id", "")),
             )
             self.approval_store.decide(request, ApprovalChoice.ALLOW_ONCE)
         if self.controller is not None:

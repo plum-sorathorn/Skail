@@ -11,8 +11,11 @@ import pytest
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
 
+from rudder.agents.lead import LeadControls
 from rudder.domain.ids import new_session_id
+from rudder.domain.routing import RoutingMode
 from rudder.domain.tasks import AttemptStatus
+from rudder.routing.requirements import TaskRisk
 from rudder.runtime.errors import FrameworkContractError
 from rudder.runtime.interrupts import QuestionStore
 from rudder.runtime.run_controller import RunController
@@ -538,7 +541,19 @@ async def test_controller_interrupt_checkpoint_preserves_live_attempt_on_recover
         question_store=questions,
     )
 
-    result = await controller.run_instruction("Ask before continuing")
+    controls = LeadControls(
+        delegation="off",
+        write_allowed=False,
+        max_children=1,
+        routing_mode=RoutingMode.QUALITY,
+        risk=TaskRisk.HIGH,
+    )
+    result = await controller.run_instruction(
+        "Ask before continuing",
+        controls=controls,
+        workspace_revision="workspace:abc123",
+        delegation_approved=True,
+    )
     assert result.status == "blocked"
     recovered = recover_session(
         journal=journal,
@@ -564,9 +579,13 @@ async def test_controller_interrupt_checkpoint_preserves_live_attempt_on_recover
         question_store=questions,
     )
     assert resumed_controller.restore_interrupted()
+    assert resumed_controller._pending_run is not None
+    assert resumed_controller._pending_run.controls == controls
+    assert resumed_controller._pending_run.workspace_revision == "workspace:abc123"
+    assert resumed_controller._pending_run.delegation_approved is True
 
     resumed = await resumed_controller.resume_interrupted("yes")
 
     assert resumed.status == "completed"
     assert resumed.output == "Recovered execution completed."
-    assert questions.pending("lead") == ()
+    assert questions.pending(f"{session_id}:{result.run_id}:lead") == ()

@@ -3,10 +3,15 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from hashlib import sha256
+from typing import Any, Protocol
 
 from rudder.domain.events import SecretRedactor
 
 CONTEXT_PACKET_VERSION = 1
+
+
+class ContextRedactor(Protocol):
+    def scrub(self, value: Any) -> Any: ...
 
 
 @dataclass(frozen=True)
@@ -47,7 +52,7 @@ class ContextAssembler:
         self,
         *,
         max_tokens: int = 2_000,
-        redactor: SecretRedactor | None = None,
+        redactor: ContextRedactor | None = None,
     ) -> None:
         self.max_tokens = max_tokens
         self.redactor = redactor or SecretRedactor()
