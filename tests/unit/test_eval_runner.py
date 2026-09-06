@@ -13,15 +13,48 @@ from evals.runner import (
 from evals.schema import (
     EvaluationFixture,
     EvaluationPolicy,
+    ExecutionScript,
     OracleSpec,
     OracleType,
     RouteInvariants,
+    ScriptedModelResponse,
+    ScriptedToolCall,
+    ScriptedUsage,
     TaskEvalResult,
 )
 from rudder.domain.ids import new_assignment_id, new_reservation_id, new_task_id
 from rudder.domain.routing import RoutingMode, TaskAssignment
 from rudder.routing.requirements import RequirementBuilder, TaskRisk
 from rudder.routing.selector import select_model
+
+
+def _execution_script(*, target: str, content: str) -> ExecutionScript:
+    return ExecutionScript(
+        responses=(
+            ScriptedModelResponse(
+                tool_calls=(
+                    ScriptedToolCall(
+                        name="write_file",
+                        args={"file_path": target, "content": content},
+                        id="write-result",
+                    ),
+                ),
+                usage=ScriptedUsage(
+                    input_tokens=11,
+                    output_tokens=7,
+                    cost_usd=Decimal("0.012"),
+                ),
+            ),
+        ),
+        final_response=ScriptedModelResponse(
+            content="Fixture work completed through Rudder tools.",
+            usage=ScriptedUsage(
+                input_tokens=13,
+                output_tokens=5,
+                cost_usd=Decimal("0.008"),
+            ),
+        ),
+    )
 
 
 def test_oracle_evaluation_file_exists_and_content(tmp_path: Path) -> None:
@@ -124,6 +157,7 @@ def test_evaluation_runner_runs_deterministic_fake_suite() -> None:
             role="implementer",
             risk=TaskRisk.TRIVIAL,
             prompt="Write hello.txt",
+            execution=_execution_script(target="hello.txt", content="hello\n"),
             oracle=OracleSpec(type=OracleType.FILE_EXISTS, target="hello.txt"),
         ),
         EvaluationFixture(
@@ -134,6 +168,7 @@ def test_evaluation_runner_runs_deterministic_fake_suite() -> None:
             risk=TaskRisk.ROUTINE,
             prompt="Write math.txt",
             parallel_eligible=True,
+            execution=_execution_script(target="math.txt", content="math\n"),
             oracle=OracleSpec(type=OracleType.FILE_EXISTS, target="math.txt"),
         ),
     ]
@@ -164,16 +199,108 @@ def test_evaluation_runner_runs_deterministic_fake_suite() -> None:
     # create a genuine parallel workload, so it must not manufacture a speedup.
     assert not report.comparison.all_gates_passed
 
-    # Auto cost should be substantially lower than quality cost
+    # Scripted provider usage is runtime evidence, not a route estimate.
     auto_cost = report.policy_summaries[EvaluationPolicy.AUTO.value].median_cost_usd
     quality_cost = report.policy_summaries[EvaluationPolicy.QUALITY.value].median_cost_usd
-    assert auto_cost < quality_cost
+    assert auto_cost == quality_cost == Decimal("0.02")
 
     # Markdown rendering should produce formatted tables
     md = render_markdown_report(report)
     assert "Rudder Routing & Orchestration Evaluation Report" in md
     assert "SPEC.md Section 21 Acceptance Gates" in md
     assert "GATES FAILED" in md
+
+
+def test_oracle_mutation_changes_scoring_without_changing_execution_record() -> None:
+    fixture = EvaluationFixture(
+        id="oracle-independent",
+        title="Oracle-independent execution",
+        category="trivial",
+        prompt="Write result.txt",
+        execution=_execution_script(target="result.txt", content="expected\n"),
+        oracle=OracleSpec(
+            type=OracleType.FILE_CONTENT,
+            target="result.txt",
+            expected="expected",
+        ),
+    )
+    policy = [EvaluationPolicy.AUTO]
+
+    passing = EvaluationRunner(fixtures=[fixture], policies=policy).run()
+    failing = EvaluationRunner(
+        fixtures=[fixture.model_copy(
+            update={"oracle": fixture.oracle.model_copy(update={"expected": "different"})}
+        )],
+        policies=policy,
+    ).run()
+
+    assert passing.results[0].completed
+    assert not failing.results[0].completed
+    assert passing.raw_records[0] == failing.raw_records[0]
+    assert passing.raw_records[0].evidence_class == "synthetic_offline"
+
+
+def test_scripted_usage_is_recorded_independently_of_route_estimates() -> None:
+    fixture = EvaluationFixture(
+        id="scripted-usage",
+        title="Scripted usage",
+        category="trivial",
+        prompt="Write cost.txt",
+        execution=_execution_script(target="cost.txt", content="cost\n"),
+        oracle=OracleSpec(type=OracleType.FILE_CONTENT, target="cost.txt", expected="cost"),
+    )
+    inflated_candidates = tuple(
+        candidate.model_copy(update={"estimated_cost_usd": Decimal("99.00")})
+        for candidate in _default_eval_candidates()
+    )
+
+    report = EvaluationRunner(
+        fixtures=[fixture], policies=[EvaluationPolicy.AUTO], candidates=inflated_candidates
+    ).run()
+
+    assert report.results[0].total_cost_usd == Decimal("0.020")
+    assert report.raw_records[0].usage_cost_usd == Decimal("0.020")
+
+
+def test_disabling_runtime_writes_fails_a_required_mutation_fixture() -> None:
+    fixture = EvaluationFixture(
+        id="writes-disabled",
+        title="Writes disabled",
+        category="trivial",
+        prompt="Write blocked.txt",
+        execution=_execution_script(target="blocked.txt", content="blocked\n"),
+        oracle=OracleSpec(
+            type=OracleType.FILE_CONTENT,
+            target="blocked.txt",
+            expected="blocked",
+        ),
+    )
+
+    report = EvaluationRunner(
+        fixtures=[fixture],
+        policies=[EvaluationPolicy.AUTO],
+        runtime_writes_enabled=False,
+    ).run()
+
+    assert not report.results[0].completed
+    assert not report.results[0].passed_oracle
+
+
+def test_missing_execution_script_cannot_be_scored_as_completed() -> None:
+    fixture = EvaluationFixture(
+        id="missing-script",
+        title="Missing script",
+        category="trivial",
+        prompt="Do no work",
+        initial_files={"already-there.txt": "present\n"},
+        oracle=OracleSpec(type=OracleType.FILE_EXISTS, target="already-there.txt"),
+    )
+
+    report = EvaluationRunner(fixtures=[fixture], policies=[EvaluationPolicy.AUTO]).run()
+
+    assert not report.results[0].completed
+    assert not report.results[0].passed_oracle
+    assert report.raw_records[0].error == "fixture execution script is required"
 def test_child_run_gate_records_concurrent_timing() -> None:
     import asyncio
 
@@ -281,6 +408,7 @@ def test_evaluator_reports_only_runtime_observed_escalations() -> None:
         role="implementer",
         risk=TaskRisk.COMPLEX,
         prompt="Write result.txt",
+        execution=_execution_script(target="result.txt", content="result\n"),
         oracle=OracleSpec(type=OracleType.FILE_EXISTS, target="result.txt"),
     )
 

@@ -303,6 +303,8 @@ diff checks pass.
 
 ### Phase 04 — Make evaluation execution independent of its oracle
 
+**Status:** complete.
+
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 03. **Begins:** old remediation 8.
 
 1. Separate fixture input/workspace/prompt, scripted provider/tool behavior, and private scoring oracle into distinct structures. Provider fakes and script builders must not receive the oracle object or read its target/expected fields.
@@ -713,6 +715,23 @@ External evidence location and source identity, if applicable: none required; al
 Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, `run_2.md` excluded from phase staging
 Unproven claims or missing evidence: this phase does not certify release readiness, cross-platform packaging, or live-provider quality/economic qualification.
 Next phase and its dependencies: Phase 04 — Make evaluation execution independent of its oracle; depends on completed Phase 03
+```
+
+### Phase 04 handoff
+
+```text
+Phase: 04 — Make evaluation execution independent of its oracle
+Status: complete
+Implementation model: GPT-5 Codex (assigned Terra treated as a recommendation)
+Commit(s): phase commit; resolve from Git history by the required commit subject
+Behavior delivered: Evaluation fixtures may carry an explicit execution script whose model responses, tool calls, and reported usage are independent of the scoring oracle. The runner persists immutable raw execution records before scoring and summaries, and a missing script yields an incomplete execution rather than a passing result. Disabling runtime writes correctly fails required mutation fixtures.
+Acceptance evidence and commands: `rtk pytest tests\unit\test_eval_runner.py -q`; `rtk pytest tests\contract\test_eval_fixtures.py tests\unit\test_release_check.py tests\unit\test_eval_runner.py -q`; `python scripts\eval_routing.py --policies auto --seed 42`; full offline suite, Ruff, mypy, fake-provider smoke, Graphify, diff check, and complete diff review
+Test results and documented skips: focused evaluator suite and affected fixture/release suite pass. The sample evaluator runs deterministically but exits 1 because its unqualified cost and parallel gates remain intentionally unmet. Live providers and paid evaluation remain out of scope. Existing fixtures without execution scripts remain loadable but incomplete until Phase 05 independently rebuilds and approves them.
+Review findings closed/open: oracle-derived execution and estimate-derived fake usage are closed. Independent 50-fixture curation, approval, and measurement remain Phase 05 work.
+External evidence location and source identity, if applicable: raw execution records are embedded in the offline evaluation report; no external evidence is required for this phase.
+Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging
+Unproven claims or missing evidence: deterministic fake usage is not provider billing evidence; no quality, savings, timing, or release-readiness claim is made.
+Next phase and its dependencies: Phase 05 — Curate independent offline workloads; depends on completed Phase 04
 ```
 
 ## 10. Definition of completion

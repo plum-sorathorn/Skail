@@ -13,6 +13,19 @@ Rudder retains offline fixtures for contract testing. They exercise the runtime 
 fake responses; they do not establish real-provider quality or savings. Live-provider validation
 is opt-in and has not been performed for v0.1.0.
 
+## Independent execution foundation
+
+Each runnable fixture now separates its `execution` script from its scoring `oracle`. The fake
+provider receives only scripted responses, tool calls, and explicit reported usage; route estimates
+do not become observed usage. The runner captures immutable raw execution records before oracle
+scoring and before policy summaries are generated. A missing execution script is an incomplete
+runtime evaluation, never a passing oracle result.
+
+The pre-existing fixture corpus remains loadable for auditability but has not yet been approved as
+independent execution evidence. Phase 05 owns rebuilding and approving those scripts; until then,
+running the old manifest is expected to report incomplete fixture executions rather than create
+release evidence.
+
 ## Current methodology record
 
 - The documented end-to-end parallel gate remains at 15% against the serial policy.

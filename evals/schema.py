@@ -29,6 +29,46 @@ class OracleSpec(BaseModel):
     assertions: tuple[dict[str, Any], ...] = ()
 
 
+class ScriptedUsage(BaseModel):
+    """Usage reported by one deterministic fake-provider response."""
+
+    model_config = ConfigDict(frozen=True)
+
+    input_tokens: int
+    output_tokens: int
+    cost_usd: Decimal
+
+
+class ScriptedToolCall(BaseModel):
+    """One model-authored tool call in an execution script."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    args: dict[str, Any] = Field(default_factory=dict)
+    id: str
+
+
+class ScriptedModelResponse(BaseModel):
+    """One deterministic response, independent of the fixture's scoring oracle."""
+
+    model_config = ConfigDict(frozen=True)
+
+    content: str = ""
+    tool_calls: tuple[ScriptedToolCall, ...] = ()
+    usage: ScriptedUsage
+
+
+class ExecutionScript(BaseModel):
+    """Private runtime input; scoring code never supplies this to the fake model."""
+
+    model_config = ConfigDict(frozen=True)
+
+    responses: tuple[ScriptedModelResponse, ...] = ()
+    final_response: ScriptedModelResponse
+    child_response: ScriptedModelResponse | None = None
+
+
 class RouteInvariants(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -60,6 +100,7 @@ class EvaluationFixture(BaseModel):
     prompt: str
     initial_files: dict[str, str] = Field(default_factory=dict)
     allowed_tools: tuple[str, ...] = ()
+    execution: ExecutionScript | None = None
     oracle: OracleSpec
     route_invariants: RouteInvariants = Field(default_factory=RouteInvariants)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -122,6 +163,22 @@ class TaskEvalResult(BaseModel):
     child_count: int = 0
 
 
+class RawExecutionRecord(BaseModel):
+    """Immutable execution evidence captured before oracle scoring and summaries."""
+
+    model_config = ConfigDict(frozen=True)
+
+    fixture_id: str
+    policy: EvaluationPolicy
+    evidence_class: Literal["synthetic_offline"] = "synthetic_offline"
+    script_digest: str
+    run_status: str | None = None
+    error: str | None = None
+    usage_cost_usd: Decimal
+    usage_records: tuple[Decimal, ...] = ()
+    workspace_files: tuple[tuple[str, str], ...] = ()
+
+
 class PolicySummary(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -169,3 +226,4 @@ class EvaluationReport(BaseModel):
     policy_summaries: dict[str, PolicySummary]
     comparison: EvaluationComparison | None = None
     results: tuple[TaskEvalResult, ...] = ()
+    raw_records: tuple[RawExecutionRecord, ...] = ()

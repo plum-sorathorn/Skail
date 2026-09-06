@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 # Add project root to sys.path if not present
@@ -11,7 +12,41 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from evals.report import render_markdown_report, save_report_json
 from evals.runner import EvaluationRunner
-from evals.schema import EvaluationFixture, EvaluationPolicy, OracleSpec, OracleType
+from evals.schema import (
+    EvaluationFixture,
+    EvaluationPolicy,
+    ExecutionScript,
+    OracleSpec,
+    OracleType,
+    ScriptedModelResponse,
+    ScriptedToolCall,
+    ScriptedUsage,
+)
+
+
+def _write_script(target: str, content: str) -> ExecutionScript:
+    return ExecutionScript(
+        responses=(
+            ScriptedModelResponse(
+                tool_calls=(
+                    ScriptedToolCall(
+                        name="write_file",
+                        args={"file_path": target, "content": content},
+                        id=f"write-{target}",
+                    ),
+                ),
+                usage=ScriptedUsage(
+                    input_tokens=10, output_tokens=5, cost_usd=Decimal("0.001")
+                ),
+            ),
+        ),
+        final_response=ScriptedModelResponse(
+            content="Fixture work completed through Rudder tools.",
+            usage=ScriptedUsage(
+                input_tokens=10, output_tokens=5, cost_usd=Decimal("0.001")
+            ),
+        ),
+    )
 
 
 def _sample_fixtures() -> list[EvaluationFixture]:
@@ -22,6 +57,7 @@ def _sample_fixtures() -> list[EvaluationFixture]:
             category="trivial",
             role="implementer",
             prompt="Create a file hello.txt containing 'Hello World'",
+            execution=_write_script("hello.txt", "Hello World"),
             oracle=OracleSpec(
                 type=OracleType.FILE_CONTENT,
                 target="hello.txt",
@@ -35,6 +71,7 @@ def _sample_fixtures() -> list[EvaluationFixture]:
             role="implementer",
             prompt="Implement math helper and verify with tests",
             parallel_eligible=True,
+            execution=_write_script("math_helper.py", "def add(a, b): return a + b\n"),
             oracle=OracleSpec(
                 type=OracleType.FILE_EXISTS,
                 target="math_helper.py",

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import random
 import subprocess
 import time
@@ -21,9 +23,12 @@ from evals.schema import (
     EvaluationFixture,
     EvaluationPolicy,
     EvaluationReport,
+    ExecutionScript,
     OracleSpec,
     OracleType,
     PolicySummary,
+    RawExecutionRecord,
+    ScriptedModelResponse,
     TaskEvalResult,
 )
 from rudder.agents.lead import LeadControls
@@ -42,11 +47,25 @@ class _FixtureChatModel(BaseChatModel):
     """Offline fixture behavior that exercises Rudder's actual tool boundary."""
 
     model_name: str = "eval-model"
-    turns: tuple[list[dict[str, Any]], ...] = ()
+    responses: tuple[ScriptedModelResponse, ...] = ()
+    final_response: ScriptedModelResponse
+    child_response: ScriptedModelResponse | None = None
     is_child: bool = False
     child_delay: float = 0.0
-    cost_usd: Decimal = Decimal("0.001")
     _cursor: int = 0
+
+    @staticmethod
+    def _message(response: ScriptedModelResponse) -> AIMessage:
+        return AIMessage(
+            content=response.content,
+            tool_calls=[call.model_dump() for call in response.tool_calls],
+            usage_metadata={
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
+            },
+            response_metadata={"rudder_cost_usd": str(response.usage.cost_usd)},
+        )
 
     def _generate(
         self,
@@ -58,37 +77,16 @@ class _FixtureChatModel(BaseChatModel):
         del messages, stop, run_manager, kwargs
         if self.is_child and self.child_delay > 0:
             time.sleep(self.child_delay)
+            response = self.child_response or self.final_response
             return ChatResult(
-                generations=[
-                    ChatGeneration(
-                        message=AIMessage(
-                            content=(
-                                '{"status":"succeeded",'
-                                '"summary":"Exploration and verification complete",'
-                                '"verification":[{'
-                                '"criterion":"Provide evidence for the completed task",'
-                                '"passed":true,'
-                                '"evidence":"bounded explorer work completed"}]}'
-                            ),
-                            response_metadata={"rudder_cost_usd": str(self.cost_usd)},
-                        )
-                    )
-                ]
+                generations=[ChatGeneration(message=self._message(response))]
             )
-        if self._cursor < len(self.turns):
-            calls = self.turns[self._cursor]
+        if self._cursor < len(self.responses):
+            response = self.responses[self._cursor]
             self._cursor += 1
-            message = AIMessage(
-                content="",
-                tool_calls=calls,
-                response_metadata={"rudder_cost_usd": str(self.cost_usd)},
-            )
         else:
-            message = AIMessage(
-                content="Fixture work completed through Rudder tools.",
-                response_metadata={"rudder_cost_usd": str(self.cost_usd)},
-            )
-        return ChatResult(generations=[ChatGeneration(message=message)])
+            response = self.final_response
+        return ChatResult(generations=[ChatGeneration(message=self._message(response))])
 
     async def _agenerate(
         self,
@@ -99,22 +97,9 @@ class _FixtureChatModel(BaseChatModel):
     ) -> ChatResult:
         if self.is_child and self.child_delay > 0:
             await asyncio.sleep(self.child_delay)
+            response = self.child_response or self.final_response
             return ChatResult(
-                generations=[
-                    ChatGeneration(
-                        message=AIMessage(
-                            content=(
-                                '{"status":"succeeded",'
-                                '"summary":"Exploration and verification complete",'
-                                '"verification":[{'
-                                '"criterion":"Provide evidence for the completed task",'
-                                '"passed":true,'
-                                '"evidence":"bounded explorer work completed"}]}'
-                            ),
-                            response_metadata={"rudder_cost_usd": str(self.cost_usd)},
-                        )
-                    )
-                ]
+                generations=[ChatGeneration(message=self._message(response))]
             )
         return self._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
@@ -127,62 +112,6 @@ class _FixtureChatModel(BaseChatModel):
         return self
 
 
-def _build_fixture_turns(
-    fixture: EvaluationFixture,
-    *,
-    allow_delegation: bool,
-) -> tuple[list[dict[str, Any]], ...]:
-    def write_call(target: str, content: str, index: int) -> dict[str, Any]:
-        return {
-            "name": "write_file",
-            "args": {"file_path": target, "content": content},
-            "id": f"eval-write-{index}",
-        }
-
-    oracle = fixture.oracle
-    if oracle.type in {OracleType.FILE_EXISTS, OracleType.FILE_CONTAINS, OracleType.FILE_CONTENT}:
-        return ([write_call(oracle.target, oracle.expected or "ok\n", 1)],)
-
-    if oracle.type is OracleType.MULTI_ASSERT:
-        targets = [
-            (str(assertion["target"]), str(assertion.get("expected", "ok\n")))
-            for assertion in oracle.assertions
-            if assertion.get("type", "file_exists")
-            in {
-                OracleType.FILE_EXISTS.value,
-                OracleType.FILE_CONTAINS.value,
-                OracleType.FILE_CONTENT.value,
-            }
-            and assertion.get("target")
-        ]
-        if not targets:
-            return ()
-
-        # Delegate independent analysis concurrently, then apply the resulting writes.
-        if fixture.parallel_eligible and allow_delegation and len(targets) >= 2:
-            task_calls = [
-                {
-                    "name": "task",
-                    "args": {
-                        "subagent_type": "explorer",
-                        "description": f"Analyze and verify requirements for {target}",
-                    },
-                    "id": f"eval-task-{i}",
-                }
-                for i, (target, _) in enumerate(targets, start=1)
-            ]
-            write_turns = [
-                [write_call(target, content, i)]
-                for i, (target, content) in enumerate(targets, start=1)
-            ]
-            return (task_calls, *write_turns)
-
-        return tuple(
-            [write_call(target, content, i)]
-            for i, (target, content) in enumerate(targets, start=1)
-        )
-
-    return ()
 
 
 def _default_eval_candidates() -> tuple[RouteCandidate, ...]:
@@ -450,6 +379,43 @@ def _context_metrics(snapshot: SessionSnapshot) -> ContextEvalMetrics:
     )
 
 
+def _raw_execution_record(
+    *,
+    fixture: EvaluationFixture,
+    policy: EvaluationPolicy,
+    script: ExecutionScript,
+    workspace: Path,
+    run_status: str | None,
+    error: str | None,
+    usage_records: tuple[Decimal, ...],
+) -> RawExecutionRecord:
+    script_json = json.dumps(
+        script.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+    )
+    workspace_files = tuple(
+        sorted(
+            (
+                str(path.relative_to(workspace)).replace("\\", "/"),
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+            )
+            for path in workspace.rglob("*")
+            if path.is_file()
+            and ".rudder" not in path.relative_to(workspace).parts
+            and path.name != ".rudder-eval.sqlite"
+        )
+    )
+    return RawExecutionRecord(
+        fixture_id=fixture.id,
+        policy=policy,
+        script_digest=hashlib.sha256(script_json.encode("utf-8")).hexdigest(),
+        run_status=run_status,
+        error=error,
+        usage_cost_usd=sum(usage_records, Decimal("0.00")),
+        usage_records=usage_records,
+        workspace_files=workspace_files,
+    )
+
+
 class EvaluationRunner:
     def __init__(
         self,
@@ -465,27 +431,31 @@ class EvaluationRunner:
         candidates: tuple[RouteCandidate, ...] | None = None,
         base_workspace: Path | None = None,
         seed: int = 42,
+        runtime_writes_enabled: bool = True,
     ) -> None:
         self.fixtures = list(fixtures)
         self.policies = list(policies)
         self.candidates = candidates or _default_eval_candidates()
         self.base_workspace = base_workspace
         self.seed = seed
+        self.runtime_writes_enabled = runtime_writes_enabled
 
     def run(self, *, catalog_revision: str = "eval-v1") -> EvaluationReport:
         import uuid
         run_id = f"eval-{uuid.uuid4().hex[:8]}"
         results: list[TaskEvalResult] = []
+        raw_records: list[RawExecutionRecord] = []
 
         cases = [(fixture, policy) for fixture in self.fixtures for policy in self.policies]
         random.Random(self.seed).shuffle(cases)
         for fixture, policy in cases:
-            res = self._run_fixture_policy(
+            res, raw_record = self._run_fixture_policy(
                 fixture=fixture,
                 policy=policy,
                 catalog_revision=catalog_revision,
             )
             results.append(res)
+            raw_records.append(raw_record)
 
         summaries: dict[str, PolicySummary] = {
             pol.value: generate_policy_summary(results, pol) for pol in self.policies
@@ -501,6 +471,7 @@ class EvaluationRunner:
             policy_summaries=summaries,
             comparison=comparison,
             results=tuple(results),
+            raw_records=tuple(raw_records),
         )
 
     def _run_fixture_policy(
@@ -509,7 +480,7 @@ class EvaluationRunner:
         fixture: EvaluationFixture,
         policy: EvaluationPolicy,
         catalog_revision: str,
-    ) -> TaskEvalResult:
+    ) -> tuple[TaskEvalResult, RawExecutionRecord]:
         import tempfile
         workspace_parent = None
         if self.base_workspace is not None:
@@ -525,17 +496,42 @@ class EvaluationRunner:
                 target_file.parent.mkdir(parents=True, exist_ok=True)
                 target_file.write_text(content, encoding="utf-8")
 
+            script = fixture.execution
+            if script is None:
+                error = "fixture execution script is required"
+                raw_record = RawExecutionRecord(
+                    fixture_id=fixture.id,
+                    policy=policy,
+                    script_digest="",
+                    error=error,
+                    usage_cost_usd=Decimal("0.00"),
+                )
+                return (
+                    TaskEvalResult(
+                        fixture_id=fixture.id,
+                        policy=policy,
+                        completed=False,
+                        passed_oracle=False,
+                        wall_time_seconds=0.0,
+                        total_cost_usd=Decimal("0.00"),
+                        models_used=(),
+                        assignments_count=0,
+                        escalations_count=0,
+                        interrupts_count=0,
+                        error=error,
+                        catalog_revision=catalog_revision,
+                        provider_mode="fake",
+                    ),
+                    raw_record,
+                )
+
             routing_mode = policy.to_routing_mode()
-            allow_delegation = policy is not EvaluationPolicy.NO_DELEGATION
-            turns = _build_fixture_turns(fixture, allow_delegation=allow_delegation)
             runtime_models: dict[str, BaseChatModel] = {}
             for candidate in self.candidates:
-                estimate = candidate.estimated_cost_usd or Decimal("0.001")
-                call_count = max(len(turns) + 1, 1)
                 model = _FixtureChatModel(
                     model_name=candidate.profile.model,
-                    turns=turns,
-                    cost_usd=estimate / call_count,
+                    responses=script.responses,
+                    final_response=script.final_response,
                 )
                 runtime_models[candidate.profile.model] = model
                 runtime_models[
@@ -545,9 +541,10 @@ class EvaluationRunner:
             child_model_name = "fake:explorer"
             child_model = _FixtureChatModel(
                 model_name="explorer",
+                final_response=script.final_response,
+                child_response=script.child_response,
                 is_child=True,
                 child_delay=0.45,
-                cost_usd=Decimal("0.001"),
             )
             runtime_models["explorer"] = child_model
             runtime_models[child_model_name] = child_model
@@ -562,6 +559,7 @@ class EvaluationRunner:
             )
             controls = LeadControls(
                 delegation="off" if policy is EvaluationPolicy.NO_DELEGATION else "auto",
+                write_allowed=self.runtime_writes_enabled,
                 max_children=1 if policy is EvaluationPolicy.SERIAL else 3,
                 routing_mode=routing_mode,
                 risk=fixture.risk,
@@ -606,6 +604,15 @@ class EvaluationRunner:
                 (usage.amount_usd for usage in snapshot.usage_records),
                 Decimal("0.00"),
             )
+            raw_record = _raw_execution_record(
+                fixture=fixture,
+                policy=policy,
+                script=script,
+                workspace=workspace,
+                run_status=None if run_result is None else run_result.status,
+                error=error_msg,
+                usage_records=tuple(usage.amount_usd for usage in snapshot.usage_records),
+            )
             passed_oracle, oracle_error = evaluate_oracle(workspace, fixture.oracle)
             completed = bool(
                 run_result is not None
@@ -643,4 +650,4 @@ class EvaluationRunner:
                 child_wall_seconds=(0.0 if run_result is None else run_result.child_wall_seconds),
                 child_peak_active=(0 if run_result is None else run_result.child_peak_active),
                 child_count=(0 if run_result is None else run_result.child_count),
-            )
+            ), raw_record
