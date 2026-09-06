@@ -50,6 +50,183 @@ async def test_delegation_off_removes_task_tool_and_forces_direct_work(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_delegation_off_rejects_a_hallucinated_task_without_admission(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Delegation off task", created_at=datetime.now(UTC)
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    ("execution_decision", _direct_decision("Bounded work"), "decision-1"),
+                    (
+                        "task",
+                        {"description": "Do not admit", "subagent_type": "implementer"},
+                        "task-1",
+                    ),
+                ]
+            ),
+            AIMessage(content="I completed the bounded work directly."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model},
+    )
+
+    await controller.run_instruction(
+        "Do this directly", controls=LeadControls(delegation="off")
+    )
+
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert len(snapshot.tasks) == 1  # The lead task only.
+    assert len(snapshot.attempts) == 1
+
+
+@pytest.mark.asyncio
+async def test_task_before_decision_is_not_admitted_or_assigned(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Task before decision", created_at=datetime.now(UTC)
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "task",
+                        {"description": "Do not admit", "subagent_type": "implementer"},
+                        "task-1",
+                    ),
+                    ("execution_decision", _direct_decision("Bounded work"), "decision-1"),
+                ]
+            ),
+            AIMessage(content="The task was rejected before admission."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model},
+    )
+
+    await controller.run_instruction("Do bounded work")
+
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert len(snapshot.tasks) == 1  # The lead task only.
+    assert len(snapshot.attempts) == 1
+
+
+@pytest.mark.asyncio
+async def test_read_only_controls_reject_write_capable_task_before_admission(
+    tmp_path: Path,
+) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Read-only task", created_at=datetime.now(UTC)
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    ("execution_decision", _direct_decision("Inspect only"), "decision-1"),
+                    (
+                        "task",
+                        {"description": "Modify a file", "subagent_type": "implementer"},
+                        "task-1",
+                    ),
+                ]
+            ),
+            AIMessage(content="The write-capable task was rejected."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model},
+    )
+
+    await controller.run_instruction(
+        "Inspect only", controls=LeadControls(write_allowed=False)
+    )
+
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert len(snapshot.tasks) == 1  # The lead task only.
+    assert len(snapshot.attempts) == 1
+
+
+@pytest.mark.asyncio
+async def test_explicit_plan_does_not_allow_task_to_bypass_plan_admission(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Explicit plan task", created_at=datetime.now(UTC)
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "planned",
+                            "objective": "Make a bounded change",
+                            "constraints": [],
+                            "reason": "The work has explicit dependencies.",
+                            "plan": {
+                                "schema_version": 1,
+                                "policy_version": "adaptive-v1",
+                                "revision": 1,
+                                "nodes": [
+                                    {
+                                        "local_id": "implement",
+                                        "kind": "agent",
+                                        "objective": "Make the bounded change",
+                                        "effect_scope": "workspace_write",
+                                    }
+                                ],
+                            },
+                        },
+                        "decision-1",
+                    ),
+                    (
+                        "task",
+                        {"description": "Bypass the plan", "subagent_type": "implementer"},
+                        "task-1",
+                    ),
+                ]
+            ),
+            AIMessage(content="The plan was recorded for the coordinator."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model},
+    )
+
+    result = await controller.run_instruction("Make a bounded change")
+
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert len(journal.plans_for_run(str(result.run_id))) == 1
+    assert len(snapshot.tasks) == 1  # The lead task only.
+    assert len(snapshot.attempts) == 1
+
+
+@pytest.mark.asyncio
 async def test_delegation_ask_blocks_when_unapproved(tmp_path: Path) -> None:
     journal = _journal(tmp_path)
     session_id = new_session_id()

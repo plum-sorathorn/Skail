@@ -29,6 +29,7 @@ from rudder.agents.task_graph import (
     build_compiled_profile_subagent,
     decode_task_request,
 )
+from rudder.domain.decisions import ExecutionMode
 from rudder.domain.events import (
     EventEnvelope,
     EventPayload,
@@ -629,13 +630,14 @@ class RunController:
 
         def observe_response(response: ModelResponse[Any]) -> None:
             decision_gate.prepare_response(response)
-            self._plan_task_batch(
+            self._admit_task_batch(
                 response,
                 run_id=run_id,
                 controls=controls,
                 workspace_revision=workspace_revision,
                 lead_assignment=lead_assignment,
                 scheduler=scheduler,
+                decision_gate=decision_gate,
             )
 
         return build_production_lead(
@@ -668,7 +670,7 @@ class RunController:
             return None
         return queue.popleft()
 
-    def _plan_task_batch(
+    def _admit_task_batch(
         self,
         response: ModelResponse[Any],
         *,
@@ -677,13 +679,22 @@ class RunController:
         workspace_revision: str,
         lead_assignment: TaskAssignment,
         scheduler: ChildScheduler,
+        decision_gate: ExecutionDecisionGate,
     ) -> None:
+        if (
+            controls.delegation == "off"
+            or decision_gate.decision is None
+            or decision_gate.decision.mode is not ExecutionMode.DIRECT
+        ):
+            return
         calls = [
             call
             for message in response.result
             if isinstance(message, AIMessage)
             for call in message.tool_calls
             if call.get("name") == "task"
+            and isinstance(call.get("id"), str)
+            and decision_gate.allows("task", call["id"])
         ]
         if not calls:
             return
@@ -696,6 +707,8 @@ class RunController:
             profile_name = str(args.get("subagent_type", "general-purpose"))
             profile = builtin_profiles().get(profile_name)
             if profile is None:
+                continue
+            if controls.write_allowed is False and profile.write_capable:
                 continue
             try:
                 request = decode_task_request(description, profile=profile_name)
@@ -1933,6 +1946,7 @@ class RunController:
             exhaust_fingerprint=exhaust_fp,
             task_event=emit_task,
             resolve_spec=self._resolve_planned_spec,
+            require_preplanned=True,
         )
 
 

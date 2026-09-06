@@ -103,6 +103,7 @@ def build_task_graph(
     task_registry: TaskRegistry | None = None,
     task_event: Callable[[TaskSpec, str, str | None], None] | None = None,
     resolve_spec: Callable[[str, str], TaskSpec | None] | None = None,
+    require_preplanned: bool = False,
 ) -> Any:
     assembler = context_assembler or ContextAssembler()
 
@@ -362,6 +363,7 @@ def build_compiled_profile_subagent(
     settle_attempt: Callable[[AttemptBinding, TaskResult], None] | None = None,
     persist_result: Callable[[TaskResult], None] | None = None,
     exhaust_fingerprint: Callable[[TaskSpec], None] | None = None,
+    require_preplanned: bool = False,
 ) -> CompiledSubAgent:
     lifecycle = build_task_graph(
         profile=profile,
@@ -377,6 +379,7 @@ def build_compiled_profile_subagent(
         task_registry=task_registry,
         task_event=task_event,
         resolve_spec=resolve_spec,
+        require_preplanned=require_preplanned,
     )
 
     def validate(state: ProfileTaskState) -> dict[str, Any]:
@@ -384,6 +387,15 @@ def build_compiled_profile_subagent(
         spec = resolve_spec(description, profile.name) if resolve_spec is not None else None
         preplanned = spec is not None
         if spec is None:
+            if require_preplanned:
+                return {
+                    "result": TaskResult(
+                        task_id=new_task_id(),
+                        status="blocked",
+                        summary="Task validation rejected: task.admission_required",
+                    ),
+                    "validation_error": "task.admission_required",
+                }
             try:
                 request = decode_task_request(description, profile=profile.name)
                 spec = validator.create_spec(
