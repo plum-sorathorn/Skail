@@ -33,6 +33,9 @@ EXPECTED_TABLES = {
     "provider_calls",
     "accounting_reconciliation_failures",
     "task_results",
+    "execution_plans",
+    "plan_nodes",
+    "plan_revisions",
 }
 
 

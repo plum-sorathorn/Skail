@@ -30,6 +30,13 @@ def test_execution_plan_round_trips_a_valid_dependency_graph() -> None:
     [
         ((_node("a", "missing"),), "plan.invalid_dependency"),
         ((_node("a"), _node("a")), "plan.duplicate_node"),
+        (
+            (
+                _node("a"),
+                PlanNode(local_id="b", kind=PlanNodeKind.AGENT, objective=" A "),
+            ),
+            "plan.duplicate_objective",
+        ),
         ((_node("a", "b"), _node("b", "a")), "plan.cycle"),
     ],
 )

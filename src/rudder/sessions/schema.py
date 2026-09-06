@@ -199,4 +199,36 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
         """,
     ),
+    (
+        9,
+        """
+        ALTER TABLE runs ADD COLUMN plan_schema_version INTEGER;
+        ALTER TABLE runs ADD COLUMN execution_policy_version TEXT;
+        CREATE TABLE execution_plans (
+            plan_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL UNIQUE REFERENCES runs(run_id),
+            schema_version INTEGER NOT NULL,
+            policy_version TEXT NOT NULL,
+            current_revision INTEGER NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE plan_nodes (
+            node_id TEXT PRIMARY KEY,
+            plan_id TEXT NOT NULL REFERENCES execution_plans(plan_id),
+            local_id TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(plan_id, local_id)
+        );
+        CREATE TABLE plan_revisions (
+            plan_id TEXT NOT NULL REFERENCES execution_plans(plan_id),
+            revision INTEGER NOT NULL,
+            expected_prior_revision INTEGER NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(plan_id, revision)
+        );
+        """,
+    ),
 )

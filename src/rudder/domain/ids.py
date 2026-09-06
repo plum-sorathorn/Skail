@@ -12,6 +12,8 @@ EventId = NewType("EventId", str)
 InvocationId = NewType("InvocationId", str)
 ReservationId = NewType("ReservationId", str)
 ApprovalId = NewType("ApprovalId", str)
+PlanId = NewType("PlanId", str)
+PlanNodeId = NewType("PlanNodeId", str)
 
 
 def new_uuid4() -> str:
@@ -55,3 +57,11 @@ def new_invocation_id() -> InvocationId:
 
 def new_reservation_id() -> ReservationId:
     return ReservationId(new_uuid4())
+
+
+def new_plan_id() -> PlanId:
+    return PlanId(new_uuid4())
+
+
+def new_plan_node_id() -> PlanNodeId:
+    return PlanNodeId(new_uuid4())

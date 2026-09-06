@@ -330,6 +330,8 @@ diff checks pass.
 
 ### Phase 06 — Persist plans and their legal transitions
 
+**Status:** complete.
+
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 05.
 
 This phase is split into three independently reviewable slices: 06a defines and validates the
@@ -351,10 +353,14 @@ and invalid node data are rejected before an admission caller can allocate work.
 
 #### Phase 06b — Persist atomically admitted plans
 
+**Status:** complete.
+
 **Depends on:** 06a. **Scope:** Add the journal migration and durable plan/node/revision records,
 then atomically validate and persist an accepted plan without allocating executable work.
 
 #### Phase 06c — Preserve policy compatibility and emit plan events
+
+**Status:** complete.
 
 **Depends on:** 06b. **Scope:** Record run policy/schema versions, preserve old-session behavior,
 reject unsupported future versions, and add typed plan/node/revision event variants.
@@ -778,6 +784,23 @@ External evidence location and source identity, if applicable: evals/manifest.to
 Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging.
 Unproven claims or missing evidence: offline fixtures do not constitute live provider performance or economic parity; Phase 06 plan state and subsequent runtime phases remain future work.
 Next phase and its dependencies: Phase 06 — Persist plans and their legal transitions; depends on completed Phase 05
+```
+
+### Phase 06 handoff
+
+```text
+Phase: 06 — Persist plans and their legal transitions (slices 06a–06c)
+Status: complete
+Implementation model: GPT-5 Codex (assigned Terra treated as a recommendation)
+Commit(s): 06a contracts `4b8c126`; 06a handoff `abd35c5`; 06b/06c phase commit resolves from Git history by subject
+Behavior delivered: Framework-free versioned plan/node/revision contracts reject invalid graphs and duplicate objectives. Migration 9 atomically stores plans, stable opaque node IDs, revision history, and nullable run policy metadata without creating tasks. Revision writes use compare-and-set. Legacy runs retain null policy metadata; unsupported schemas and policies fail closed. Typed plan, node, and revision events persist transactionally and notify observers only after commit.
+Acceptance evidence and commands: focused plan/domain/event/journal/recovery tests; complete offline suite; Ruff; mypy; fake-provider smoke; `graphify update .`; `rtk git diff --check`; complete diff review
+Test results and documented skips: focused plan/domain/event/journal/recovery/security matrix 126 passed; complete offline suite passed; Ruff, mypy, fake-provider smoke, Graphify, and diff checks passed. Live providers, paid evaluation, platform release evidence, tagging, pushing, publishing, remote rename, and legacy cleanup were out of scope.
+Review findings closed/open: atomic admission, revision conflict, future-version rejection, legacy migration, and post-commit plan event contracts closed. Runtime decision-tool admission begins in Phase 07.
+External evidence location and source identity, if applicable: none required; all verification is deterministic and offline
+Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging
+Unproven claims or missing evidence: persistence does not itself execute plans or certify orchestration/economic outcomes
+Next phase and its dependencies: Phase 07 — Require an execution decision and admit plans; depends on completed Phase 06
 ```
 
 ## 10. Definition of completion

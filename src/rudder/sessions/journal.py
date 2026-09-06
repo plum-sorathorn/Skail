@@ -12,7 +12,22 @@ from pathlib import Path
 from threading import RLock, local
 from typing import Any, Literal
 
-from rudder.domain.events import EventEnvelope, SecretRedactor
+from rudder.domain.events import EventEnvelope, PlanPayload, SecretRedactor
+from rudder.domain.ids import (
+    EventId,
+    RunId,
+    SessionId,
+    new_event_id,
+    new_plan_id,
+    new_plan_node_id,
+)
+from rudder.domain.plans import (
+    SUPPORTED_EXECUTION_POLICY_VERSION,
+    SUPPORTED_PLAN_SCHEMA_VERSION,
+    EffectScope,
+    ExecutionPlan,
+    PlanRevision,
+)
 from rudder.domain.tasks import AttemptStatus, TaskStatus
 from rudder.runtime.errors import FrameworkContractError
 from rudder.sessions.migrations import apply_migrations
@@ -24,6 +39,12 @@ def _now(value: datetime | None = None) -> str:
 
 def locals_without_self(values: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if key != "self"}
+
+
+def _event_callback(
+    observer: Callable[[EventEnvelope], None], event: EventEnvelope
+) -> Callable[[], None]:
+    return lambda: observer(event)
 
 
 class JournalBusyError(RuntimeError):
@@ -39,6 +60,36 @@ class RunSnapshot:
     run_id: str
     status: str
     budget_limit_usd: Decimal | None
+    plan_schema_version: int | None = None
+    execution_policy_version: str | None = None
+
+
+@dataclass(frozen=True)
+class PersistedPlan:
+    plan_id: str
+    run_id: str
+    plan: ExecutionPlan
+    node_ids: dict[str, str]
+
+
+def _run_snapshot(row: sqlite3.Row) -> RunSnapshot:
+    schema_version = row["plan_schema_version"]
+    policy_version = row["execution_policy_version"]
+    if schema_version is not None and schema_version != SUPPORTED_PLAN_SCHEMA_VERSION:
+        raise FrameworkContractError(
+            "plan.schema_unsupported", "stored run plan schema is unsupported"
+        )
+    if policy_version is not None and policy_version != SUPPORTED_EXECUTION_POLICY_VERSION:
+        raise FrameworkContractError(
+            "plan.policy_unsupported", "stored run execution policy is unsupported"
+        )
+    return RunSnapshot(
+        row["run_id"],
+        row["status"],
+        None if row["budget_limit_usd"] is None else Decimal(row["budget_limit_usd"]),
+        schema_version,
+        policy_version,
+    )
 
 
 @dataclass(frozen=True)
@@ -169,7 +220,10 @@ class JournalTransaction:
         idempotency_key: str | None = None,
     ) -> None:
         self.connection.execute(
-            "INSERT INTO runs VALUES (?,?,?,?,?,?)",
+            "INSERT INTO runs("
+            "run_id,session_id,status,idempotency_key,budget_limit_usd,created_at"
+            ") "
+            "VALUES (?,?,?,?,?,?)",
             (
                 run_id,
                 session_id,
@@ -743,6 +797,254 @@ class Journal:
             ).fetchall()
         return tuple(EventEnvelope.from_json(row["envelope_json"]) for row in rows)
 
+    def admit_plan(
+        self,
+        *,
+        run_id: str,
+        plan: ExecutionPlan,
+        event_observer: Callable[[EventEnvelope], None] | None = None,
+        authorized_effects: frozenset[EffectScope] = frozenset({EffectScope.READ}),
+    ) -> PersistedPlan:
+        if plan.schema_version != SUPPORTED_PLAN_SCHEMA_VERSION:
+            raise FrameworkContractError(
+                "plan.schema_unsupported", "execution plan schema is unsupported"
+            )
+        if plan.policy_version != SUPPORTED_EXECUTION_POLICY_VERSION:
+            raise FrameworkContractError(
+                "plan.policy_unsupported", "execution policy version is unsupported"
+            )
+        if plan.revision != 1:
+            raise FrameworkContractError(
+                "plan.initial_revision_invalid", "initial plan revision must be one"
+            )
+        if any(node.effect_scope not in authorized_effects for node in plan.nodes):
+            raise FrameworkContractError(
+                "plan.effect_unauthorized", "execution plan requests an unauthorized effect"
+            )
+        plan_id = str(new_plan_id())
+        node_ids = {node.local_id: str(new_plan_node_id()) for node in plan.nodes}
+        payload = json.dumps(
+            self.redactor.scrub(plan.model_dump(mode="json")),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        now = _now()
+        with self.transaction() as transaction:
+            connection = transaction.connection
+            run = connection.execute(
+                "SELECT session_id FROM runs WHERE run_id=?", (run_id,)
+            ).fetchone()
+            if run is None:
+                raise KeyError(run_id)
+            if connection.execute(
+                "SELECT 1 FROM execution_plans WHERE run_id=?", (run_id,)
+            ).fetchone():
+                raise FrameworkContractError(
+                    "plan.already_admitted", "run already has an execution plan"
+                )
+            connection.execute(
+                "INSERT INTO execution_plans VALUES (?,?,?,?,?,?,?)",
+                (plan_id, run_id, plan.schema_version, plan.policy_version, 1, payload, now),
+            )
+            for node in plan.nodes:
+                node_payload = json.dumps(
+                    self.redactor.scrub(node.model_dump(mode="json")),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                connection.execute(
+                    "INSERT INTO plan_nodes VALUES (?,?,?,?,?)",
+                    (node_ids[node.local_id], plan_id, node.local_id, node_payload, now),
+                )
+            connection.execute(
+                "INSERT INTO plan_revisions VALUES (?,?,?,?,?)",
+                (plan_id, 1, 0, payload, now),
+            )
+            connection.execute(
+                "UPDATE runs SET plan_schema_version=?,execution_policy_version=? WHERE run_id=?",
+                (plan.schema_version, plan.policy_version, run_id),
+            )
+            sequence = int(
+                connection.execute(
+                    "SELECT COALESCE(MAX(sequence),0) FROM events WHERE run_id=?", (run_id,)
+                ).fetchone()[0]
+            )
+            event_values = [
+                ("plan.admitted", None),
+                *(("plan.node_admitted", node_id) for node_id in node_ids.values()),
+            ]
+            for event_type, node_id in event_values:
+                sequence += 1
+                event = EventEnvelope(
+                    event_id=EventId(str(new_event_id())),
+                    session_id=SessionId(run["session_id"]),
+                    run_id=RunId(run_id),
+                    sequence=sequence,
+                    occurred_at=datetime.now(UTC),
+                    type=event_type,
+                    payload=PlanPayload(
+                        action=event_type.split(".", 1)[1],
+                        plan_id=plan_id,
+                        revision=plan.revision,
+                        node_id=node_id,
+                    ),
+                )
+                transaction.append_event(event)
+                if event_observer is not None:
+                    transaction.after_commit(_event_callback(event_observer, event))
+        return PersistedPlan(plan_id=plan_id, run_id=run_id, plan=plan, node_ids=node_ids)
+
+    def get_plan(self, plan_id: str) -> PersistedPlan:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT run_id,schema_version,policy_version,payload_json FROM execution_plans "
+                "WHERE plan_id=?",
+                (plan_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(plan_id)
+            if row["schema_version"] != SUPPORTED_PLAN_SCHEMA_VERSION:
+                raise FrameworkContractError(
+                    "plan.schema_unsupported", "stored execution plan schema is unsupported"
+                )
+            if row["policy_version"] != SUPPORTED_EXECUTION_POLICY_VERSION:
+                raise FrameworkContractError(
+                    "plan.policy_unsupported", "stored execution policy is unsupported"
+                )
+            nodes = connection.execute(
+                "SELECT local_id,node_id FROM plan_nodes WHERE plan_id=? ORDER BY rowid",
+                (plan_id,),
+            ).fetchall()
+        return PersistedPlan(
+            plan_id=plan_id,
+            run_id=row["run_id"],
+            plan=ExecutionPlan.model_validate_json(row["payload_json"]),
+            node_ids={item["local_id"]: item["node_id"] for item in nodes},
+        )
+
+    def revise_plan(
+        self,
+        *,
+        plan_id: str,
+        revision: PlanRevision,
+        plan: ExecutionPlan,
+        event_observer: Callable[[EventEnvelope], None] | None = None,
+        authorized_effects: frozenset[EffectScope] = frozenset({EffectScope.READ}),
+    ) -> PersistedPlan:
+        if plan.schema_version != SUPPORTED_PLAN_SCHEMA_VERSION:
+            raise FrameworkContractError(
+                "plan.schema_unsupported", "execution plan schema is unsupported"
+            )
+        if plan.policy_version != SUPPORTED_EXECUTION_POLICY_VERSION:
+            raise FrameworkContractError(
+                "plan.policy_unsupported", "execution policy version is unsupported"
+            )
+        if plan.revision != revision.expected_revision + 1:
+            raise FrameworkContractError(
+                "plan.revision_invalid", "new plan revision must follow the expected revision"
+            )
+        if any(node.effect_scope not in authorized_effects for node in plan.nodes):
+            raise FrameworkContractError(
+                "plan.effect_unauthorized", "execution plan requests an unauthorized effect"
+            )
+        payload = json.dumps(
+            self.redactor.scrub(plan.model_dump(mode="json")),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        revision_payload = json.dumps(
+            self.redactor.scrub(revision.model_dump(mode="json")),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        now = _now()
+        with self.transaction() as transaction:
+            connection = transaction.connection
+            current = connection.execute(
+                "SELECT current_revision FROM execution_plans WHERE plan_id=?", (plan_id,)
+            ).fetchone()
+            if current is None:
+                raise KeyError(plan_id)
+            if current["current_revision"] != revision.expected_revision:
+                raise FrameworkContractError(
+                    "plan.revision_conflict", "plan revision compare-and-set failed"
+                )
+            existing = {
+                row["local_id"]: row["node_id"]
+                for row in connection.execute(
+                    "SELECT local_id,node_id FROM plan_nodes WHERE plan_id=?", (plan_id,)
+                )
+            }
+            wanted = {node.local_id for node in plan.nodes}
+            for local_id in set(existing) - wanted:
+                connection.execute(
+                    "DELETE FROM plan_nodes WHERE plan_id=? AND local_id=?",
+                    (plan_id, local_id),
+                )
+            for node in plan.nodes:
+                node_payload = json.dumps(
+                    self.redactor.scrub(node.model_dump(mode="json")),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                if node.local_id in existing:
+                    connection.execute(
+                        "UPDATE plan_nodes SET payload_json=? WHERE plan_id=? AND local_id=?",
+                        (node_payload, plan_id, node.local_id),
+                    )
+                else:
+                    existing[node.local_id] = str(new_plan_node_id())
+                    connection.execute(
+                        "INSERT INTO plan_nodes VALUES (?,?,?,?,?)",
+                        (existing[node.local_id], plan_id, node.local_id, node_payload, now),
+                    )
+            cursor = connection.execute(
+                "UPDATE execution_plans SET current_revision=?,payload_json=? "
+                "WHERE plan_id=? AND current_revision=?",
+                (plan.revision, payload, plan_id, revision.expected_revision),
+            )
+            if cursor.rowcount != 1:
+                raise FrameworkContractError(
+                    "plan.revision_conflict", "plan revision compare-and-set failed"
+                )
+            connection.execute(
+                "INSERT INTO plan_revisions VALUES (?,?,?,?,?)",
+                (plan_id, plan.revision, revision.expected_revision, revision_payload, now),
+            )
+            owner = connection.execute(
+                "SELECT p.run_id,r.session_id FROM execution_plans p "
+                "JOIN runs r ON r.run_id=p.run_id WHERE p.plan_id=?",
+                (plan_id,),
+            ).fetchone()
+            sequence = int(
+                connection.execute(
+                    "SELECT COALESCE(MAX(sequence),0) FROM events WHERE run_id=?",
+                    (owner["run_id"],),
+                ).fetchone()[0]
+            ) + 1
+            event = EventEnvelope(
+                event_id=EventId(str(new_event_id())),
+                session_id=SessionId(owner["session_id"]),
+                run_id=RunId(owner["run_id"]),
+                sequence=sequence,
+                occurred_at=datetime.now(UTC),
+                type="plan.revised",
+                payload=PlanPayload(
+                    action="revised", plan_id=plan_id, revision=plan.revision
+                ),
+            )
+            transaction.append_event(event)
+            if event_observer is not None:
+                transaction.after_commit(_event_callback(event_observer, event))
+        return self.get_plan(plan_id)
+
+    def plans_for_run(self, run_id: str) -> tuple[PersistedPlan, ...]:
+        with self._connect() as connection:
+            ids = connection.execute(
+                "SELECT plan_id FROM execution_plans WHERE run_id=? ORDER BY rowid", (run_id,)
+            ).fetchall()
+        return tuple(self.get_plan(row["plan_id"]) for row in ids)
+
     def get_session_snapshot(self, session_id: str) -> SessionSnapshot:
         with self._connect() as connection:
             session = connection.execute(
@@ -753,7 +1055,8 @@ class Journal:
             if session is None:
                 raise KeyError(session_id)
             run_rows = connection.execute(
-                "SELECT run_id,status,budget_limit_usd FROM runs WHERE session_id=? ORDER BY rowid",
+                "SELECT run_id,status,budget_limit_usd,plan_schema_version,"
+                "execution_policy_version FROM runs WHERE session_id=? ORDER BY rowid",
                 (session_id,),
             ).fetchall()
             run_ids = tuple(row["run_id"] for row in run_rows)
@@ -822,14 +1125,7 @@ class Journal:
         return SessionSnapshot(
             session_id=session["session_id"],
             status=session["status"],
-            runs=tuple(
-                RunSnapshot(
-                    row["run_id"],
-                    row["status"],
-                    None if row["budget_limit_usd"] is None else Decimal(row["budget_limit_usd"]),
-                )
-                for row in run_rows
-            ),
+            runs=tuple(_run_snapshot(row) for row in run_rows),
             tasks=tuple(
                 TaskSnapshot(
                     row["task_id"],

@@ -14,6 +14,7 @@ from rudder.domain.events import (
     EventEnvelope,
     LifecyclePayload,
     ModelPayload,
+    PlanPayload,
     RoutePayload,
     SecretRedactor,
     TaskPayload,
@@ -51,6 +52,14 @@ def _envelope_data(payload: object, *, event_type: str) -> dict[str, object]:
         ("session.started", LifecyclePayload(status="started")),
         ("lead.delta", ModelPayload(model="fake-lead", delta="working")),
         ("task.queued", TaskPayload(status="queued", profile="tester")),
+        (
+            "plan.admitted",
+            PlanPayload(
+                action="admitted",
+                plan_id="99999999-9999-4999-8999-999999999999",
+                revision=1,
+            ),
+        ),
         (
             "route.selected",
             RoutePayload(action="selected", assignment_id=str(new_assignment_id())),

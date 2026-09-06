@@ -48,6 +48,9 @@ ALLOWED_EVENT_TYPES = frozenset(
         "task.budget_blocked",
         "task.cancelled",
         "task.returned_to_lead",
+        "plan.admitted",
+        "plan.revised",
+        "plan.node_admitted",
         "route.selected",
         "route.failed",
         "route.fallback",
@@ -144,6 +147,21 @@ class TaskPayload(PayloadBase):
     profile: str | None = None
 
 
+class PlanPayload(PayloadBase):
+    family: Literal["plan"] = "plan"
+    action: str
+    plan_id: str
+    revision: int = Field(ge=1)
+    node_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_ids(self) -> PlanPayload:
+        ensure_uuid4(self.plan_id)
+        if self.node_id is not None:
+            ensure_uuid4(self.node_id)
+        return self
+
+
 class RoutePayload(PayloadBase):
     family: Literal["route"] = "route"
     action: str
@@ -194,6 +212,7 @@ EventPayload = Annotated[
     LifecyclePayload
     | ModelPayload
     | TaskPayload
+    | PlanPayload
     | RoutePayload
     | ToolPayload
     | BudgetPayload
@@ -237,6 +256,7 @@ class EventEnvelope(BaseModel):
             "lead": "model",
             "model": "model",
             "task": "task",
+            "plan": "plan",
             "route": "route",
             "tool": "tool",
             "budget": "budget",
@@ -256,7 +276,7 @@ class EventEnvelope(BaseModel):
             state_value = self.payload.status
         elif isinstance(
             self.payload,
-            (RoutePayload, BudgetPayload, CheckpointPayload, UserPayload),
+            (RoutePayload, PlanPayload, BudgetPayload, CheckpointPayload, UserPayload),
         ):
             state_value = self.payload.action
         if state_value is not None and state_value != suffix:

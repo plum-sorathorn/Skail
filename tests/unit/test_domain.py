@@ -15,6 +15,8 @@ from rudder.domain.ids import (
     new_assignment_id,
     new_attempt_id,
     new_event_id,
+    new_plan_id,
+    new_plan_node_id,
     new_run_id,
     new_session_id,
     new_task_id,
@@ -44,6 +46,8 @@ DOMAIN = ROOT / "src" / "rudder" / "domain"
         new_attempt_id,
         new_assignment_id,
         new_event_id,
+        new_plan_id,
+        new_plan_node_id,
     ],
 )
 def test_typed_id_factories_return_canonical_uuid4_strings(factory: Callable[[], str]) -> None:
