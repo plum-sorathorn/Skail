@@ -332,6 +332,31 @@ diff checks pass.
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 05.
 
+This phase is split into three independently reviewable slices: 06a defines and validates the
+versioned framework-free plan contract; 06b persists it atomically with the required journal
+migration; 06c connects policy-version resume compatibility and plan events. Later slices may not
+reinterpret records created by earlier slices.
+
+#### Phase 06a — Define versioned plan contracts and admission validation
+
+**Scope:** Add domain-owned plan, node, and revision contracts with schema/policy versions and
+deterministic whole-graph validation. Model output remains plan-local; no runtime IDs, journal
+records, scheduler changes, or event variants are introduced in this slice.
+
+**Acceptance:** valid plans round-trip; missing dependencies, cycles, duplicate local identities,
+and invalid node data are rejected before an admission caller can allocate work. Commit
+`feat(domain): define validated execution plan contracts`.
+
+#### Phase 06b — Persist atomically admitted plans
+
+**Depends on:** 06a. **Scope:** Add the journal migration and durable plan/node/revision records,
+then atomically validate and persist an accepted plan without allocating executable work.
+
+#### Phase 06c — Preserve policy compatibility and emit plan events
+
+**Depends on:** 06b. **Scope:** Record run policy/schema versions, preserve old-session behavior,
+reject unsupported future versions, and add typed plan/node/revision event variants.
+
 1. Implement the minimum plan contracts in section 5 with schema versions, runtime IDs, revision compare-and-set, node dependencies, artifact references, and task lineage.
 2. Add journal migrations that preserve existing sessions, assignments, usage, approval state, and terminal results. Store the execution policy/schema revision on each new run.
 3. Validate the entire proposed graph atomically before allocating executable work: cycles, missing dependencies, invalid kinds, duplicate objectives, scope and authority violations. Reuse the task validator and registry.
