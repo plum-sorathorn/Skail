@@ -1,6 +1,6 @@
 # Rudder CLI Specification and Contract
 
-The command line interface for Rudder is `rudder`.
+The command line interface for Rudder Harness is `rudder`.
 
 ## 1. Invocation Syntax
 

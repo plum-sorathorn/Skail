@@ -34,6 +34,6 @@ def test_wheel_contains_only_the_rudder_runtime(tmp_path: Path) -> None:
 
         metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
         metadata = email.message_from_bytes(wheel.read(metadata_name))
-        assert metadata["Name"] == "rudder-agent"
+        assert metadata["Name"] == "rudder-harness"
         assert metadata["Requires-Python"] == ">=3.12"
         assert "Rudder" in metadata["Summary"]

@@ -6,7 +6,7 @@ Depends on: [SPEC.md](./SPEC.md)
 
 ## 1. Architectural intent
 
-Rudder is a native terminal coding harness. DeepAgents supplies the agent runtime, LangGraph supplies durable graph execution and checkpointing, and Rudder owns the product policies around task creation, model assignment, budgets, scheduling, safety, events, and presentation.
+Rudder Harness is a native terminal coding harness. DeepAgents supplies the agent runtime, LangGraph supplies durable graph execution and checkpointing, and Rudder owns the product policies around task creation, model assignment, budgets, scheduling, safety, events, and presentation.
 
 The framework is a dependency, not the product boundary. Rudder code must interact with DeepAgents through small adapters so that preview features and framework API changes do not leak into the rest of the system.
 

@@ -1,7 +1,7 @@
 # Rudder — AGENTS.md
 
-Rudder is a native, budget-aware multi-agent coding harness for Python 3.12+. The console command
-is `rudder`; the provisional distribution name is `rudder-agent`.
+Rudder Harness is a native, budget-aware multi-agent coding harness for Python 3.12+. The console command
+is `rudder`; the distribution name is `rudder-harness`.
 
 ## Commands
 

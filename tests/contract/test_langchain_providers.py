@@ -175,7 +175,7 @@ def test_missing_optional_package_returns_an_actionable_extra_install_hint() -> 
 
     assert raised.value.provider == "anthropic"
     assert raised.value.package == "langchain-anthropic"
-    assert raised.value.install_hint == 'python -m pip install "rudder-agent[anthropic]"'
+    assert raised.value.install_hint == 'python -m pip install "rudder-harness[anthropic]"'
     assert "langchain-anthropic" in str(raised.value)
 
 

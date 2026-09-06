@@ -112,3 +112,5 @@ Desktop.ini
 /legacy/
 /.pi-subagents
 /.agents
+
+evals/results/*

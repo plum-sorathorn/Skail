@@ -3,12 +3,12 @@ from __future__ import annotations
 import httpx
 import pytest
 from fakes.provider import ProviderHTTPFixtureTransport
+
+from rudder.config.models import ProviderConfig
 from rudder.providers.base import ModelOptions, ModelProfile, ProviderSupportLevel
 from rudder.providers.devpass import DevPassAdapter
 from rudder.providers.errors import ProviderErrorKind
 from rudder.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
-
-from rudder.config.models import ProviderConfig
 
 
 def _devpass_config() -> ProviderConfig:

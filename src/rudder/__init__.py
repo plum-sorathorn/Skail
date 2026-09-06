@@ -5,7 +5,7 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("rudder-agent")
+    __version__ = version("rudder-harness")
 except PackageNotFoundError:  # Source checkout before installation.
     __version__ = "0.1.0"
 

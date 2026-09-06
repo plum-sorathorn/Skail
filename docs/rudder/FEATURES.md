@@ -4,7 +4,7 @@ Status: Approved
 Date: 2026-09-02
 Depends on: [SPEC.md](./SPEC.md), [ARCHITECTURE.md](./ARCHITECTURE.md)
 
-This document defines how each product feature behaves from trigger to terminal result. It is intentionally more operational than a conventional feature list.
+This document defines how each Rudder Harness product feature behaves from trigger to terminal result. It is intentionally more operational than a conventional feature list.
 
 ## 1. Conversation-first harness
 

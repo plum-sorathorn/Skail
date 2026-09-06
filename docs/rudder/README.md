@@ -3,7 +3,7 @@
 Status: Approved for implementation
 Date: 2026-09-02
 
-Rudder is the successor to AutoConduck: a native, budget-aware, multi-agent coding harness built on DeepAgents. These documents are the implementation source of truth.
+Rudder Harness is the successor to AutoConduck: a native, budget-aware, multi-agent coding harness built on DeepAgents. These documents are the implementation source of truth.
 
 Read in this order:
 

@@ -6,11 +6,11 @@ import pytest
 from fakes.provider import FakeInjectedProviderFailure, FakeProviderAdapter, FakeProviderChatModel
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, ValidationError
+
+from rudder.domain.usage import UsageAuthority
 from rudder.providers.base import ModelOptions, ModelProfile, ProviderSupportLevel
 from rudder.providers.errors import ProviderErrorKind
 from rudder.providers.factory import ModelFactory, ModelFactoryKey
-
-from rudder.domain.usage import UsageAuthority
 
 
 class StructuredAnswer(BaseModel):

@@ -142,7 +142,7 @@ Frequent approvals destroy autonomy; permissive defaults destroy trust. Test app
 
 ### E4. Is “Rudder” available and distinguishable?
 
-Package registries, repository names, trademarks, and searchability remain unverified. Check before publication; the distribution name may differ from the executable.
+Package registries, repository names, trademarks, and searchability were checked. Resolved: the product full name is Rudder Harness, the Python distribution name is `rudder-harness`, and the console command is `rudder`.
 
 ### E5. Who maintains providers and the model catalog?
 

@@ -6,7 +6,7 @@ Depends on: [SPEC.md](./SPEC.md), [ADR 0001](../decisions/0001-rudder-native-mul
 
 ## 1. Goal
 
-Create Rudder as a clean product on a dedicated branch while retaining the current AutoConduck source as an inert, readable reference under `legacy/autoconduck/`.
+Create Rudder Harness as a clean product on a dedicated branch while retaining the current AutoConduck source as an inert, readable reference under `legacy/autoconduck/`.
 
 This is a source-tree transition, not an end-user migration. Rudder will not read AutoConduck configuration, expose AutoConduck commands, run its proxy/plugin services, or provide a compatibility layer.
 
@@ -137,7 +137,7 @@ The root package must use a `src/` layout and include only `rudder*`. Required c
 - runtime import scan finds no `legacy.autoconduck` or path manipulation into the archive;
 - distribution metadata and descriptions contain Rudder branding.
 
-The Python distribution name remains an open decision because the desired registry name must be checked. The console command is `rudder` regardless of the final distribution name.
+The Python distribution name is `rudder-harness`. The console command is `rudder`.
 
 ## 8. Dependency disposition
 

@@ -54,7 +54,7 @@ Optional background agents and worktrees follow the stable synchronous shared-wo
 
 **Decisions required:**
 
-- Python distribution name while retaining the `rudder` command;
+- Python distribution name (`rudder-harness`) while retaining the `rudder` command;
 - whether background agents ship experimental or post-stable;
 - initial evaluation fixture composition and numerical gates;
 - environment-only versus optional OS-keyring credentials;

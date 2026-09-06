@@ -33,7 +33,7 @@ class ProviderDependencyError(RuntimeError):
     def __init__(self, provider: str, package: str, extra: str) -> None:
         self.provider = provider
         self.package = package
-        self.install_hint = f'python -m pip install "rudder-agent[{extra}]"'
+        self.install_hint = f'python -m pip install "rudder-harness[{extra}]"'
         super().__init__(f"{provider} requires {package}; install with {self.install_hint}")
 
 

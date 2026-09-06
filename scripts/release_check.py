@@ -155,7 +155,7 @@ def check_wheel_contents() -> None:
             for name in namelist:
                 if name.startswith("legacy/"):
                     raise AssertionError(f"Forbidden legacy content packaged in wheel: {name}")
-                if "autoconduck" in name.lower() and not name.startswith("rudder_agent-"):
+                if "autoconduck" in name.lower() and not name.startswith("rudder_harness-"):
                     raise AssertionError(f"Forbidden legacy autoconduck reference in wheel: {name}")
 
             rudder_files = [n for n in namelist if n.startswith("rudder/")]

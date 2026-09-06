@@ -3,10 +3,10 @@ from __future__ import annotations
 import httpx
 import pytest
 from fakes.provider import ProviderHTTPFixtureTransport
-from rudder.providers.base import ModelOptions, ModelProfile, ProviderSupportLevel
-from rudder.providers.openai_compatible import OpenAICompatibleAdapter
 
 from rudder.config.models import ProviderConfig
+from rudder.providers.base import ModelOptions, ModelProfile, ProviderSupportLevel
+from rudder.providers.openai_compatible import OpenAICompatibleAdapter
 
 
 def _config() -> ProviderConfig:

@@ -8,7 +8,7 @@ Command: `rudder`
 
 ## 1. Objective
 
-Rudder is a local, provider-neutral coding harness for people who want the speed and accuracy of an orchestrated multi-agent workflow while staying within a budget.
+Rudder Harness (distribution: `rudder-harness`, command: `rudder`) is a local, provider-neutral coding harness for people who want the speed and accuracy of an orchestrated multi-agent workflow while staying within a budget.
 
 The default experience is:
 
@@ -596,7 +596,7 @@ The numerical evaluation thresholds are initial release gates and require explic
 
 ## 22. Approved implementation decisions
 
-1. Use `rudder-agent` as the provisional unpublished Python distribution name and retain the `rudder` command. Keep the distribution name easy to change before release.
+1. Use `rudder-harness` as the Python distribution name and retain the `rudder` command.
 2. Keep background agents experimental and isolated behind `TaskExecutor`; they are not a stable-release blocker.
 3. Use the numerical gates in section 21 as the initial evaluation gates. Stable evaluation uses at least 50 approved, oracle-backed fixtures balanced across risk, role, parallelism, platform, and failure behavior.
 4. The stable core resolves credentials from environment-variable references. OS keyring support may be added later as an optional extra.
