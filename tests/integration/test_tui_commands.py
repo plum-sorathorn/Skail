@@ -19,7 +19,7 @@ from rudder.tui.commands import dispatch_slash_command, parse_slash_command
 from rudder.tui.projection import InterruptItem, TuiProjection
 from rudder.tui.widgets.composer import PromptComposer
 from rudder.tui.widgets.interrupts import InterruptWidget
-from tests.fakes.models import ScriptedChatModel, tool_call_message
+from tests.fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_call_message
 
 
 def test_parse_slash_command() -> None:
@@ -366,10 +366,24 @@ async def test_tui_command_approval_executes_once_and_resumes(tmp_path: Path) ->
     request = CommandRequest("pwsh", ("-Command", "Write-Output approved"), tmp_path)
     model = ScriptedChatModel(
         responses=[
-            tool_call_message(
-                "execute",
-                {"command": request.executable, "arguments": list(request.arguments)},
-                call_id="exec-1",
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "direct",
+                            "objective": "Run the approved command",
+                            "constraints": [],
+                            "reason": "The command is bounded and requires approval.",
+                        },
+                        "decision-exec-1",
+                    ),
+                    (
+                        "execute",
+                        {"command": request.executable, "arguments": list(request.arguments)},
+                        "exec-1",
+                    ),
+                ]
             ),
             AIMessage(content="Approved command completed."),
         ]

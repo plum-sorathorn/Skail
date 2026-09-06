@@ -373,21 +373,46 @@ reject unsupported future versions, and add typed plan/node/revision event varia
 
 **Acceptance:** plan round-trip and migration tests pass; invalid graphs produce no partially admitted tasks; old journals resume unchanged. Commit `feat(runtime): persist versioned execution plans`.
 
-### Phase 07 — Require an execution decision and admit plans
+### Phase 07a — Require an execution decision and admit plans
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 06.
 
-1. Add the control-tool/middleware interface for initial direct/discovery/planned decisions, plan submission, and one repair opportunity. Final answers without tool work remain valid.
-2. Preserve first-call efficiency: a decision and valid following tool operations can be processed in one response. Reject side effects preceding admission. Do not add a permanent cheap classifier or keyword complexity detector.
-3. Keep direct DeepAgent work and allow a later transition to a plan. Discovery plans contain bounded evidence work and a checkpoint, not guessed downstream implementations.
-4. Route standard `task(description, subagent_type)` calls through the same admitted-task service. Enforce `delegation=off|ask|auto` on both interfaces. In ask mode planning may occur but children wait for approval.
-5. Attach the same user, trust, model, scope, and budget constraints regardless of entry surface.
+**Slice boundary:** The original phase joins a new control-plane protocol to the legacy DeepAgents
+`task` surface and then hands its ready work to the Phase 08 coordinator. That crosses three
+persisted contracts and cannot be verified atomically without implementing Phase 08 scheduling.
+Complete this control-plane slice first; Phase 07b owns the compatibility bridge.
 
-**Acceptance:** normal prompts exercise direct, discovery, and planned paths with scripted model decisions but no explicit user delegation instruction; a refused/invalid plan cannot bypass controls; simple work has no extra classifier call. Commit `feat(agents): add validated execution decisions and plan admission`.
+1. Add the typed control-tool/middleware interface for initial direct/discovery/planned decisions,
+   plan submission, and one repair opportunity. Final answers without tool work remain valid.
+2. Preserve first-call efficiency: a decision and valid following tool operations can be processed
+   in one response. Reject side effects preceding admission. Do not add a permanent cheap
+   classifier or keyword complexity detector.
+3. Keep direct DeepAgent work and allow a later transition to a plan. Discovery plans contain
+   bounded evidence work and a checkpoint, not guessed downstream implementations.
+4. Admit a submitted plan atomically under the run's existing user, trust, model, scope, and
+   budget constraints. This slice records accepted plans; Phase 08 owns their ready-node dispatch.
+
+**Acceptance:** scripted direct, discovery, and planned decisions pass through one initial model
+call; invalid/refused plans leave no records and cannot unlock operational tools; a valid decision
+followed by an operation in the same response works; simple final answers add no classifier call.
+Commit `feat(agents): add validated execution decisions and plan admission`.
+
+### Phase 07b — Route compatibility tasks through admitted plans
+
+**Owner:** `gpt-5.6-terra`, medium. **Depends on:** 07a.
+
+1. Route standard `task(description, subagent_type)` calls through the same admitted-task service.
+2. Enforce `delegation=off|ask|auto` on both interfaces. In ask mode planning may occur but
+   children wait for approval.
+3. Attach the same user, trust, model, scope, and budget constraints regardless of entry surface.
+
+**Acceptance:** standard `task` calls and explicit plans use the same admission validation and
+constraints; refused/invalid compatibility work cannot bypass controls. Commit
+`feat(agents): route task compatibility through admitted plans`.
 
 ### Phase 08 — Execute ready work without lead round trips
 
-**Owner:** `gpt-5.6-terra`, high only if needed. **Depends on:** 07.
+**Owner:** `gpt-5.6-terra`, high only if needed. **Depends on:** 07b.
 
 1. Implement a durable coordinator around existing compiled child graphs. Persist node launch intent, assignment/reservation, execution/checkpoint identity, result verification, and completion before dependent release.
 2. Schedule by readiness, explicit priority, and stable creation order; enforce the shared global one-to-three child limit across all dispatch surfaces. Do not reserve an execution slot for a node waiting on prerequisites or an unavailable workspace resource.

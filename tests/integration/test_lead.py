@@ -5,7 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from fakes.models import ScriptedChatModel, tool_call_message
+from fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_call_message
 from langchain_core.messages import AIMessage
 
 from rudder.agents.lead import LeadControls
@@ -39,10 +39,24 @@ async def test_lead_completes_direct_coding_flow_without_delegation(tmp_path: Pa
     lead_model = ScriptedChatModel(
         model_name="lead-model",
         responses=[
-            tool_call_message(
-                "write_file",
-                {"file_path": "solution.py", "content": "def solve(): return 42\n"},
-                call_id="call-write-1",
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "direct",
+                            "objective": "Write solution.py",
+                            "constraints": [],
+                            "reason": "The requested edit is bounded.",
+                        },
+                        "call-decision-1",
+                    ),
+                    (
+                        "write_file",
+                        {"file_path": "solution.py", "content": "def solve(): return 42\n"},
+                        "call-write-1",
+                    ),
+                ]
             ),
             AIMessage(content="I have written solution.py successfully without delegating."),
         ],
@@ -64,6 +78,60 @@ async def test_lead_completes_direct_coding_flow_without_delegation(tmp_path: Pa
     assert result.lead_assignment.model == "lead-model"
     assert result.lead_assignment.attempt_number == 1
     assert result.lead_context_packet.task_id == str(result.run_id)
+
+
+@pytest.mark.asyncio
+async def test_planned_decision_is_persisted_before_the_lead_continues(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Planned decision", created_at=datetime.now(UTC)
+    )
+    plan = {
+        "schema_version": 1,
+        "policy_version": "adaptive-v1",
+        "revision": 1,
+        "nodes": [
+            {
+                "local_id": "inspect",
+                "kind": "agent",
+                "objective": "Inspect the requested files",
+            }
+        ],
+    }
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={
+            "lead-model": ScriptedChatModel(
+                responses=[
+                    tool_call_message(
+                        "execution_decision",
+                        {
+                            "mode": "planned",
+                            "objective": "Inspect before changing code",
+                            "constraints": [],
+                            "reason": "The work needs a recorded dependency graph.",
+                            "plan": plan,
+                        },
+                        call_id="planned-decision-1",
+                    ),
+                    AIMessage(content="The plan is admitted and awaiting its coordinator."),
+                ]
+            )
+        },
+        default_lead_model="lead-model",
+    )
+
+    result = await controller.run_instruction("Inspect the project before changing code")
+
+    admitted = journal.plans_for_run(str(result.run_id))
+    assert len(admitted) == 1
+    assert admitted[0].plan.nodes[0].local_id == "inspect"
+    event_types = [event.type for event in journal.events_after(run_id=str(result.run_id))]
+    assert event_types.index("plan.admitted") < event_types.index("tool.started")
+    assert event_types.index("plan.node_admitted") < event_types.index("tool.completed")
 
 
 @pytest.mark.asyncio
@@ -131,13 +199,27 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
     lead_model = ScriptedChatModel(
         model_name="lead-model",
         responses=[
-            tool_call_message(
-                "task",
-                {
-                    "description": "Write child_output.txt file",
-                    "subagent_type": "implementer",
-                },
-                call_id="task-call-1",
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "direct",
+                            "objective": "Delegate one bounded file write",
+                            "constraints": [],
+                            "reason": "A single specialist can perform the work.",
+                        },
+                        "task-decision-1",
+                    ),
+                    (
+                        "task",
+                        {
+                            "description": "Write child_output.txt file",
+                            "subagent_type": "implementer",
+                        },
+                        "task-call-1",
+                    ),
+                ]
             ),
             AIMessage(content="Delegated task completed: child output created."),
         ],

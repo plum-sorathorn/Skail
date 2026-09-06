@@ -417,6 +417,9 @@ def build_default_agent(
 
     custom_tools: list[Any] = list(extension_tools)
     visible_names = frozenset(item.name for item in registry.visible_to(profile))
+    visible_names |= frozenset(
+        name for name in (_tool_name(item) for item in extension_tools) if name is not None
+    )
     if subagents:
         visible_names |= {"task"}
     if "execute" in visible_names:

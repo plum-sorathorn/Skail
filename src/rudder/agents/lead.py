@@ -18,7 +18,10 @@ from rudder.tools.registry import SideEffect, ToolMetadata, ToolRegistry
 
 DelegationMode = Literal["auto", "ask", "off"]
 
-TASK_PACKET_GUIDANCE = """When delegating, call task(description, subagent_type). The description
+TASK_PACKET_GUIDANCE = """Before any operational tool call, call execution_decision with mode,
+objective, constraints, and reason. Use direct for bounded work, discovery only for read-only
+evidence work with a checkpoint, or planned with a validated finite plan. A final answer needs no
+execution_decision. When delegating, call task(description, subagent_type). The description
 may be plain text or one JSON object with: description, success_criteria, depends_on (persisted task
 IDs), priority, write_scope, model_policy, budget_usd, and background. Preserve the user's criteria,
 dependencies, scope, model constraints, and budget. Never invent dependency IDs."""
@@ -59,6 +62,7 @@ def build_production_lead(
     runtime_event: Callable[[str, str], None] | None = None,
     runtime_model_name: str | None = None,
     model_response_observer: Callable[[Any], None] | None = None,
+    extension_tools: Sequence[Any] = (),
     session_id: str = "",
     run_id: str = "",
 ) -> Runnable[object, object]:
@@ -74,6 +78,7 @@ def build_production_lead(
             workspace=workspace,
             profile="lead",
             subagents=list(subagents) if allow_children else [],
+            extension_tools=extension_tools,
             registry=registry,
             lease_manager=leases,
             extra_middleware=extra_middleware,

@@ -51,6 +51,7 @@ from rudder.domain.ids import (
     new_run_id,
     new_task_id,
 )
+from rudder.domain.plans import EffectScope, ExecutionPlan
 from rudder.domain.routing import RoutingMode, TaskAssignment
 from rudder.domain.tasks import (
     TERMINAL_TASK_STATUSES,
@@ -77,6 +78,11 @@ from rudder.routing.budget import BudgetLedger
 from rudder.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
 from rudder.routing.requirements import RequirementBuilder, TaskRisk
 from rudder.routing.selector import RouteCandidate, RouteFailure
+from rudder.runtime.decisions import (
+    ExecutionDecisionGate,
+    ExecutionDecisionMiddleware,
+    execution_decision_tool,
+)
 from rudder.runtime.deepagents_adapter import ChildRunGate, resume_agent
 from rudder.runtime.event_bus import EventBus
 from rudder.runtime.interrupts import QuestionStore
@@ -607,6 +613,31 @@ class RunController:
             active_assignments=active,
             redactor=self.redaction,
         )
+        authorized_effects = {EffectScope.READ}
+        if controls.write_allowed is not False:
+            authorized_effects.add(EffectScope.WORKSPACE_WRITE)
+
+        def admit_plan(plan: ExecutionPlan) -> None:
+            self.journal.admit_plan(
+                run_id=str(run_id),
+                plan=plan,
+                event_observer=self.events.publish_persisted_nowait,
+                authorized_effects=frozenset(authorized_effects),
+            )
+
+        decision_gate = ExecutionDecisionGate(admit_plan=admit_plan)
+
+        def observe_response(response: ModelResponse[Any]) -> None:
+            decision_gate.prepare_response(response)
+            self._plan_task_batch(
+                response,
+                run_id=run_id,
+                controls=controls,
+                workspace_revision=workspace_revision,
+                lead_assignment=lead_assignment,
+                scheduler=scheduler,
+            )
+
         return build_production_lead(
             lead_chat_model,
             workspace=self.workspace,
@@ -614,7 +645,8 @@ class RunController:
             subagents=subagents,
             delegation_approved=delegation_approved,
             leases=leases,
-            extra_middleware=[lead_middleware],
+            extra_middleware=[lead_middleware, ExecutionDecisionMiddleware(decision_gate)],
+            extension_tools=[execution_decision_tool(decision_gate)],
             redactor=self.redaction,
             checkpointer=saver,
             approvals=self.approvals,
@@ -625,14 +657,7 @@ class RunController:
                 attempt_id=lead_attempt_id,
             ),
             runtime_model_name=lead_assignment.model,
-            model_response_observer=lambda response: self._plan_task_batch(
-                response,
-                run_id=run_id,
-                controls=controls,
-                workspace_revision=workspace_revision,
-                lead_assignment=lead_assignment,
-                scheduler=scheduler,
-            ),
+            model_response_observer=observe_response,
             session_id=str(self.session_id),
             run_id=str(run_id),
         )

@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from fakes.models import ScriptedChatModel, tool_call_message
+from fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_call_message
 from langchain_core.messages import AIMessage
 
 from rudder.agents.lead import LeadControls
@@ -62,10 +62,15 @@ async def test_delegation_ask_blocks_when_unapproved(tmp_path: Path) -> None:
     lead_model = ScriptedChatModel(
         model_name="lead-model",
         responses=[
-            tool_call_message(
-                "task",
-                {"description": "Perform work", "subagent_type": "implementer"},
-                call_id="task-1",
+            parallel_tool_call_message(
+                [
+                    ("execution_decision", _direct_decision("Perform work"), "decision-1"),
+                    (
+                        "task",
+                        {"description": "Perform work", "subagent_type": "implementer"},
+                        "task-1",
+                    ),
+                ]
             ),
             AIMessage(content="Delegation was blocked by user approval requirement."),
         ],
@@ -119,10 +124,15 @@ async def test_delegation_ask_executes_when_approved(tmp_path: Path) -> None:
     lead_model = ScriptedChatModel(
         model_name="lead-model",
         responses=[
-            tool_call_message(
-                "task",
-                {"description": "Approved work", "subagent_type": "implementer"},
-                call_id="task-1",
+            parallel_tool_call_message(
+                [
+                    ("execution_decision", _direct_decision("Approved work"), "decision-1"),
+                    (
+                        "task",
+                        {"description": "Approved work", "subagent_type": "implementer"},
+                        "task-1",
+                    ),
+                ]
             ),
             AIMessage(content="Approved delegation completed successfully."),
         ],
@@ -192,10 +202,15 @@ async def test_returned_child_failure_is_synthesized_once_without_looping(tmp_pa
     lead_model = ScriptedChatModel(
         model_name="lead-model",
         responses=[
-            tool_call_message(
-                "task",
-                {"description": "Impossible task", "subagent_type": "implementer"},
-                call_id="task-1",
+            parallel_tool_call_message(
+                [
+                    ("execution_decision", _direct_decision("Impossible task"), "decision-1"),
+                    (
+                        "task",
+                        {"description": "Impossible task", "subagent_type": "implementer"},
+                        "task-1",
+                    ),
+                ]
             ),
             AIMessage(
                 content="The delegated task failed after escalation: synthesizing failure report."
@@ -222,3 +237,12 @@ async def test_returned_child_failure_is_synthesized_once_without_looping(tmp_pa
     assert "synthesizing failure report" in result.output
     # Lead called exactly 2 times (task tool call, then final synthesis); no resubmission loop
     assert len(lead_model.calls) == 2
+
+
+def _direct_decision(objective: str) -> dict[str, object]:
+    return {
+        "mode": "direct",
+        "objective": objective,
+        "constraints": [],
+        "reason": "The requested work is bounded.",
+    }

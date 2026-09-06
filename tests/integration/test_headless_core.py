@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from fakes.models import ScriptedChatModel, tool_call_message
+from fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_call_message
 from langchain_core.messages import AIMessage
 
 from rudder.agents.lead import LeadControls
@@ -34,10 +34,19 @@ async def test_headless_core_direct_execution_path(tmp_path: Path) -> None:
     lead_model = ScriptedChatModel(
         model_name="lead-model",
         responses=[
-            tool_call_message(
-                "write_file",
-                {"file_path": "direct.txt", "content": "direct headless execution\n"},
-                call_id="call-write-direct",
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        _direct_decision("Write direct.txt"),
+                        "decision-direct",
+                    ),
+                    (
+                        "write_file",
+                        {"file_path": "direct.txt", "content": "direct headless execution\n"},
+                        "call-write-direct",
+                    ),
+                ]
             ),
             AIMessage(content="Direct execution finished successfully."),
         ],
@@ -122,10 +131,19 @@ async def test_headless_core_three_subagent_delegated_path(tmp_path: Path) -> No
     lead_model = ScriptedChatModel(
         model_name="lead-model",
         responses=[
-            tool_call_message(
-                "task",
-                {"description": "Write code.py", "subagent_type": "implementer"},
-                call_id="task-1",
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        _direct_decision("Implement, test, and review code"),
+                        "decision-1",
+                    ),
+                    (
+                        "task",
+                        {"description": "Write code.py", "subagent_type": "implementer"},
+                        "task-1",
+                    ),
+                ]
             ),
             tool_call_message(
                 "task",
@@ -220,10 +238,15 @@ async def test_headless_core_escalates_once_and_returns_to_lead(tmp_path: Path) 
     lead_model = ScriptedChatModel(
         model_name="lead-model",
         responses=[
-            tool_call_message(
-                "task",
-                {"description": "Difficult task", "subagent_type": "implementer"},
-                call_id="task-1",
+            parallel_tool_call_message(
+                [
+                    ("execution_decision", _direct_decision("Difficult task"), "decision-1"),
+                    (
+                        "task",
+                        {"description": "Difficult task", "subagent_type": "implementer"},
+                        "task-1",
+                    ),
+                ]
             ),
             AIMessage(content="Lead synthesized: The task failed after retry and escalation."),
         ],
@@ -295,10 +318,15 @@ async def test_live_child_failure_monitor_escalates_repeated_tool_calls(
     lead = ScriptedChatModel(
         model_name="lead-model",
         responses=[
-            tool_call_message(
-                "task",
-                {"description": "Inspect input", "subagent_type": "implementer"},
-                call_id="task-monitor",
+            parallel_tool_call_message(
+                [
+                    ("execution_decision", _direct_decision("Inspect input"), "decision-monitor"),
+                    (
+                        "task",
+                        {"description": "Inspect input", "subagent_type": "implementer"},
+                        "task-monitor",
+                    ),
+                ]
             ),
             AIMessage(content="Recovered child result synthesized."),
         ],
@@ -328,3 +356,12 @@ async def test_live_child_failure_monitor_escalates_repeated_tool_calls(
     assert [attempt.number for attempt in child_attempts] == [1, 2]
     assert child_attempts[0].status.value == "failed"
     assert child_attempts[1].status.value == "succeeded"
+
+
+def _direct_decision(objective: str) -> dict[str, object]:
+    return {
+        "mode": "direct",
+        "objective": objective,
+        "constraints": [],
+        "reason": "The requested work is bounded.",
+    }
