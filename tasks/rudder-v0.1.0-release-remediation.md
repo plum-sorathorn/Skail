@@ -118,7 +118,7 @@ Acceptance evidence: CLI/TUI/event-stream integration tests for every terminal o
 
 ### Phase 8 — Independent evaluation and timing methodology
 
-- [ ] Separate scripted execution from oracle expectations and reported usage from routing estimates.
+- [x] Separate scripted execution from oracle expectations and reported usage from routing estimates.
 - [ ] Measure equivalent useful serial/parallel work with real overlap, full settlement, paired
   repetitions, fixed workloads, and retained raw failures.
 - [ ] Keep the 15% end-to-end gate; optimise actual overhead if it fails rather than changing

@@ -7,14 +7,56 @@
     "risk": "bounded",
     "prompt": "Create UserProfile model in user.py with username, email, and age >= 0 validation",
     "initial_files": {},
-    "allowed_tools": ["write_file"],
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing UserProfile model in user.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "user.py",
+                "content": "from pydantic import BaseModel, Field\n\nclass UserProfile(BaseModel):\n    username: str\n    email: str\n    age: int = Field(ge=0)\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 22,
+            "output_tokens": 16,
+            "cost_usd": "0.0035"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "UserProfile model created with field validation.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
     "oracle": {
       "type": "file_contains",
       "target": "user.py",
       "expected": "class UserProfile(BaseModel):"
     },
-    "route_invariants": {"min_floor": 0.45},
-    "metadata": {"platform": "any"}
+    "route_invariants": {
+      "min_floor": 0.45
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Define Pydantic schema with Field constraints",
+      "scoring_meaning": "Verify UserProfile model class declaration",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
   },
   {
     "id": "bound-02",
@@ -24,14 +66,56 @@
     "risk": "bounded",
     "prompt": "Implement timed_lru_cache in cache.py combining functools.lru_cache with ttl expiry",
     "initial_files": {},
-    "allowed_tools": ["write_file"],
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing timed_lru_cache in cache.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "cache.py",
+                "content": "import functools\nimport time\n\ndef timed_lru_cache(ttl: int = 60, maxsize: int = 128):\n    def decorator(fn):\n        @functools.lru_cache(maxsize=maxsize)\n        def wrapper(*args, **kwargs):\n            return fn(*args, **kwargs)\n        return wrapper\n    return decorator\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 24,
+            "output_tokens": 18,
+            "cost_usd": "0.004"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "timed_lru_cache decorator created.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
     "oracle": {
       "type": "file_contains",
       "target": "cache.py",
       "expected": "def timed_lru_cache"
     },
-    "route_invariants": {"min_floor": 0.45},
-    "metadata": {"platform": "any"}
+    "route_invariants": {
+      "min_floor": 0.45
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement TTL + LRU cache decorator",
+      "scoring_meaning": "Verify timed_lru_cache definition",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
   },
   {
     "id": "bound-03",
@@ -41,14 +125,56 @@
     "risk": "bounded",
     "prompt": "Implement with_retry in retries.py catching specified exceptions and retrying up to max_attempts",
     "initial_files": {},
-    "allowed_tools": ["write_file"],
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing retry decorator in retries.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "retries.py",
+                "content": "import functools\nimport time\n\ndef with_retry(max_attempts: int = 3, delay: float = 0.1):\n    def decorator(fn):\n        @functools.wraps(fn)\n        def wrapper(*args, **kwargs):\n            for attempt in range(max_attempts):\n                try:\n                    return fn(*args, **kwargs)\n                except Exception:\n                    if attempt == max_attempts - 1:\n                        raise\n                    time.sleep(delay)\n        return wrapper\n    return decorator\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 26,
+            "output_tokens": 20,
+            "cost_usd": "0.0045"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "with_retry decorator created.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
     "oracle": {
       "type": "file_contains",
       "target": "retries.py",
       "expected": "def with_retry"
     },
-    "route_invariants": {"min_floor": 0.45},
-    "metadata": {"platform": "any"}
+    "route_invariants": {
+      "min_floor": 0.45
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement with_retry decorator logic",
+      "scoring_meaning": "Verify with_retry function definition",
+      "workload_type": "recovery",
+      "platform": "any"
+    }
   },
   {
     "id": "bound-04",
@@ -57,15 +183,78 @@
     "role": "explorer",
     "risk": "bounded",
     "prompt": "Implement walk_directory in walker.py yielding relative paths ignoring patterns in ignore_patterns",
-    "initial_files": {},
-    "allowed_tools": ["write_file"],
+    "initial_files": {
+      "package/__init__.py": ""
+    },
+    "allowed_tools": [
+      "write_file",
+      "glob",
+      "ls"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Checking workspace layout before creating walker.",
+          "tool_calls": [
+            {
+              "name": "glob",
+              "args": {
+                "pattern": "*"
+              },
+              "id": "call-glob"
+            }
+          ],
+          "usage": {
+            "input_tokens": 15,
+            "output_tokens": 6,
+            "cost_usd": "0.0018"
+          }
+        },
+        {
+          "content": "Implementing walker.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "walker.py",
+                "content": "from pathlib import Path\n\ndef walk_directory(base_dir: str, ignore_patterns: list[str] = ()): \n    root = Path(base_dir)\n    for path in root.rglob('*'):\n        if not any(path.match(p) for p in ignore_patterns):\n            yield str(path.relative_to(root))\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 24,
+            "output_tokens": 18,
+            "cost_usd": "0.004"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "walk_directory implemented.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
     "oracle": {
       "type": "file_contains",
       "target": "walker.py",
       "expected": "def walk_directory"
     },
-    "route_invariants": {"min_floor": 0.45},
-    "metadata": {"platform": "any"}
+    "route_invariants": {
+      "min_floor": 0.45
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Discover file hierarchy and implement path walker",
+      "scoring_meaning": "Verify walk_directory function definition",
+      "workload_type": "dependent_discovery",
+      "platform": "any"
+    }
   },
   {
     "id": "bound-05",
@@ -75,14 +264,56 @@
     "risk": "bounded",
     "prompt": "Implement ThreadSafeKV in kv.py using threading.RLock for get/set/delete operations",
     "initial_files": {},
-    "allowed_tools": ["write_file"],
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing ThreadSafeKV store in kv.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "kv.py",
+                "content": "import threading\n\nclass ThreadSafeKV:\n    def __init__(self):\n        self._data = {}\n        self._lock = threading.RLock()\n    def get(self, key, default=None):\n        with self._lock: return self._data.get(key, default)\n    def set(self, key, val):\n        with self._lock: self._data[key] = val\n    def delete(self, key):\n        with self._lock: self._data.pop(key, None)\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 25,
+            "output_tokens": 20,
+            "cost_usd": "0.004"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "ThreadSafeKV class created with locking.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
     "oracle": {
       "type": "file_contains",
       "target": "kv.py",
       "expected": "class ThreadSafeKV"
     },
-    "route_invariants": {"min_floor": 0.45},
-    "metadata": {"platform": "any"}
+    "route_invariants": {
+      "min_floor": 0.45
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement thread-safe dictionary with RLock",
+      "scoring_meaning": "Verify ThreadSafeKV class exists in kv.py",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
   },
   {
     "id": "bound-06",
@@ -91,15 +322,79 @@
     "role": "reviewer",
     "risk": "bounded",
     "prompt": "Add full type hints and PEP 257 docstrings to calculator.py",
-    "initial_files": {"calculator.py": "def calc(op, a, b):\n    if op == '+': return a + b\n    return a - b\n"},
-    "allowed_tools": ["edit_file", "write_file"],
+    "initial_files": {
+      "calculator.py": "def calc(op, a, b):\n    if op == '+': return a + b\n    return a - b\n"
+    },
+    "allowed_tools": [
+      "edit_file",
+      "write_file",
+      "read_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Reading existing calculator.py.",
+          "tool_calls": [
+            {
+              "name": "read_file",
+              "args": {
+                "file_path": "calculator.py"
+              },
+              "id": "call-read"
+            }
+          ],
+          "usage": {
+            "input_tokens": 16,
+            "output_tokens": 6,
+            "cost_usd": "0.0018"
+          }
+        },
+        {
+          "content": "Applying type hints and docstrings.",
+          "tool_calls": [
+            {
+              "name": "edit_file",
+              "args": {
+                "file_path": "calculator.py",
+                "old_string": "def calc(op, a, b):",
+                "new_string": "def calc(op: str, a: float, b: float) -> float:\n    \"\"\"Calculate result of operation.\"\"\""
+              },
+              "id": "call-edit"
+            }
+          ],
+          "usage": {
+            "input_tokens": 22,
+            "output_tokens": 14,
+            "cost_usd": "0.0032"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "calculator.py updated with PEP 257 docstrings and type annotations.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
     "oracle": {
       "type": "file_contains",
       "target": "calculator.py",
       "expected": "-> float:"
     },
-    "route_invariants": {"min_floor": 0.45},
-    "metadata": {"platform": "any"}
+    "route_invariants": {
+      "min_floor": 0.45
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Read code and edit in place with type annotations",
+      "scoring_meaning": "Verify return type hint '-> float:' present",
+      "workload_type": "direct_edit",
+      "platform": "any"
+    }
   },
   {
     "id": "bound-07",
@@ -109,14 +404,56 @@
     "risk": "bounded",
     "prompt": "Implement Paginator in paginate.py calculating total_pages, has_next, has_prev, and page_items",
     "initial_files": {},
-    "allowed_tools": ["write_file"],
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing Paginator in paginate.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "paginate.py",
+                "content": "import math\n\nclass Paginator:\n    def __init__(self, items: list, per_page: int = 10):\n        self.items = items\n        self.per_page = per_page\n        self.total_pages = max(1, math.ceil(len(items) / per_page))\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 24,
+            "output_tokens": 18,
+            "cost_usd": "0.004"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "Paginator implemented.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
     "oracle": {
       "type": "file_contains",
       "target": "paginate.py",
       "expected": "class Paginator"
     },
-    "route_invariants": {"min_floor": 0.45},
-    "metadata": {"platform": "any"}
+    "route_invariants": {
+      "min_floor": 0.45
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement bounded pagination class",
+      "scoring_meaning": "Verify class Paginator exists",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
   },
   {
     "id": "bound-08",
@@ -126,13 +463,55 @@
     "risk": "bounded",
     "prompt": "Implement build_query_string in url.py escaping keys and values using urllib.parse.quote",
     "initial_files": {},
-    "allowed_tools": ["write_file"],
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing query string builder.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "url.py",
+                "content": "import urllib.parse\n\ndef build_query_string(params: dict) -> str:\n    return '&'.join(f'{urllib.parse.quote(str(k))}={urllib.parse.quote(str(v))}' for k, v in params.items())\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 24,
+            "output_tokens": 16,
+            "cost_usd": "0.0038"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "build_query_string created in url.py.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
     "oracle": {
       "type": "file_contains",
       "target": "url.py",
       "expected": "def build_query_string"
     },
-    "route_invariants": {"min_floor": 0.45},
-    "metadata": {"platform": "any"}
+    "route_invariants": {
+      "min_floor": 0.45
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Build safe URL query parameter serializer",
+      "scoring_meaning": "Verify build_query_string function definition",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
   }
 ]

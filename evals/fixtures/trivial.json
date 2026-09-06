@@ -7,7 +7,40 @@
     "risk": "trivial",
     "prompt": "Create a VERSION file containing 1.0.0",
     "initial_files": {},
-    "allowed_tools": ["write_file"],
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Creating VERSION file.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "VERSION",
+                "content": "1.0.0"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "cost_usd": "0.001"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "VERSION file created containing 1.0.0.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 6,
+          "cost_usd": "0.001"
+        }
+      }
+    },
     "oracle": {
       "type": "file_content",
       "target": "VERSION",
@@ -17,7 +50,14 @@
       "min_floor": 0.25,
       "allow_delegation": true
     },
-    "metadata": {"platform": "any"}
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Write 1.0.0 directly into VERSION file",
+      "scoring_meaning": "Verify exact content match of 1.0.0",
+      "workload_type": "non_code_answer",
+      "platform": "any"
+    }
   },
   {
     "id": "triv-02",
@@ -27,7 +67,40 @@
     "risk": "trivial",
     "prompt": "Create constants.py with DEFAULT_TIMEOUT = 30",
     "initial_files": {},
-    "allowed_tools": ["write_file"],
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Creating constants.py module.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "constants.py",
+                "content": "DEFAULT_TIMEOUT = 30\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 12,
+            "output_tokens": 6,
+            "cost_usd": "0.001"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "constants.py created with DEFAULT_TIMEOUT = 30.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 6,
+          "cost_usd": "0.001"
+        }
+      }
+    },
     "oracle": {
       "type": "file_contains",
       "target": "constants.py",
@@ -36,7 +109,14 @@
     "route_invariants": {
       "min_floor": 0.25
     },
-    "metadata": {"platform": "any"}
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Create constants.py with timeout constant",
+      "scoring_meaning": "Verify constant definition exists in file",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
   },
   {
     "id": "triv-03",
@@ -45,8 +125,45 @@
     "role": "implementer",
     "risk": "trivial",
     "prompt": "Update README.md to have the header '# My App'",
-    "initial_files": {"README.md": "# Old App\nWelcome."},
-    "allowed_tools": ["edit_file", "write_file"],
+    "initial_files": {
+      "README.md": "# Old App\nWelcome."
+    },
+    "allowed_tools": [
+      "edit_file",
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Updating README.md header.",
+          "tool_calls": [
+            {
+              "name": "edit_file",
+              "args": {
+                "file_path": "README.md",
+                "old_string": "# Old App",
+                "new_string": "# My App"
+              },
+              "id": "call-edit"
+            }
+          ],
+          "usage": {
+            "input_tokens": 15,
+            "output_tokens": 8,
+            "cost_usd": "0.0015"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "README.md updated with header '# My App'.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 5,
+          "cost_usd": "0.001"
+        }
+      }
+    },
     "oracle": {
       "type": "file_contains",
       "target": "README.md",
@@ -55,7 +172,14 @@
     "route_invariants": {
       "min_floor": 0.25
     },
-    "metadata": {"platform": "any"}
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Edit existing README.md to update top-level header",
+      "scoring_meaning": "Verify README.md contains new title header",
+      "workload_type": "direct_edit",
+      "platform": "any"
+    }
   },
   {
     "id": "triv-04",
@@ -65,7 +189,40 @@
     "risk": "trivial",
     "prompt": "Create __init__.py with a module docstring",
     "initial_files": {},
-    "allowed_tools": ["write_file"],
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Creating __init__.py with docstring.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "__init__.py",
+                "content": "\"\"\"Package initialization module.\"\"\"\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 12,
+            "output_tokens": 6,
+            "cost_usd": "0.001"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "__init__.py created with docstring.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 10,
+          "output_tokens": 5,
+          "cost_usd": "0.001"
+        }
+      }
+    },
     "oracle": {
       "type": "file_exists",
       "target": "__init__.py"
@@ -73,7 +230,14 @@
     "route_invariants": {
       "min_floor": 0.25
     },
-    "metadata": {"platform": "any"}
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Create package __init__.py file with docstring",
+      "scoring_meaning": "Verify file exists in workspace root",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
   },
   {
     "id": "triv-05",
@@ -82,8 +246,45 @@
     "role": "implementer",
     "risk": "trivial",
     "prompt": "Add .env to .gitignore",
-    "initial_files": {".gitignore": "*.pyc\n__pycache__/\n"},
-    "allowed_tools": ["edit_file", "write_file"],
+    "initial_files": {
+      ".gitignore": "*.pyc\n__pycache__/\n"
+    },
+    "allowed_tools": [
+      "edit_file",
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Adding .env to .gitignore.",
+          "tool_calls": [
+            {
+              "name": "edit_file",
+              "args": {
+                "file_path": ".gitignore",
+                "old_string": "*.pyc\n__pycache__/\n",
+                "new_string": "*.pyc\n__pycache__/\n.env\n"
+              },
+              "id": "call-edit"
+            }
+          ],
+          "usage": {
+            "input_tokens": 15,
+            "output_tokens": 8,
+            "cost_usd": "0.0015"
+          }
+        }
+      ],
+      "final_response": {
+        "content": ".env entry added to .gitignore.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 5,
+          "cost_usd": "0.001"
+        }
+      }
+    },
     "oracle": {
       "type": "file_contains",
       "target": ".gitignore",
@@ -92,7 +293,14 @@
     "route_invariants": {
       "min_floor": 0.25
     },
-    "metadata": {"platform": "any"}
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Modify .gitignore to ignore .env files",
+      "scoring_meaning": "Verify .gitignore contains .env entry",
+      "workload_type": "direct_edit",
+      "platform": "any"
+    }
   },
   {
     "id": "triv-06",
@@ -101,8 +309,44 @@
     "role": "implementer",
     "risk": "trivial",
     "prompt": "Set DEBUG = False in settings.py",
-    "initial_files": {"settings.py": "DEBUG = True\nPORT = 8080\n"},
-    "allowed_tools": ["edit_file"],
+    "initial_files": {
+      "settings.py": "DEBUG = True\nPORT = 8080\n"
+    },
+    "allowed_tools": [
+      "edit_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Updating DEBUG flag in settings.py.",
+          "tool_calls": [
+            {
+              "name": "edit_file",
+              "args": {
+                "file_path": "settings.py",
+                "old_string": "DEBUG = True",
+                "new_string": "DEBUG = False"
+              },
+              "id": "call-edit"
+            }
+          ],
+          "usage": {
+            "input_tokens": 15,
+            "output_tokens": 8,
+            "cost_usd": "0.0015"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "DEBUG set to False in settings.py.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 5,
+          "cost_usd": "0.001"
+        }
+      }
+    },
     "oracle": {
       "type": "file_contains",
       "target": "settings.py",
@@ -111,7 +355,14 @@
     "route_invariants": {
       "min_floor": 0.25
     },
-    "metadata": {"platform": "any"}
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Edit settings.py to set DEBUG = False",
+      "scoring_meaning": "Verify DEBUG is False in settings.py",
+      "workload_type": "direct_edit",
+      "platform": "any"
+    }
   },
   {
     "id": "triv-07",
@@ -121,7 +372,40 @@
     "risk": "trivial",
     "prompt": "Create manifest.json with {}",
     "initial_files": {},
-    "allowed_tools": ["write_file"],
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Writing empty JSON manifest.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "manifest.json",
+                "content": "{}"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "cost_usd": "0.001"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "manifest.json written with {}.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 10,
+          "output_tokens": 5,
+          "cost_usd": "0.001"
+        }
+      }
+    },
     "oracle": {
       "type": "file_content",
       "target": "manifest.json",
@@ -130,7 +414,14 @@
     "route_invariants": {
       "min_floor": 0.25
     },
-    "metadata": {"platform": "any"}
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Create manifest.json with empty JSON object",
+      "scoring_meaning": "Verify exact content match {}",
+      "workload_type": "non_code_answer",
+      "platform": "any"
+    }
   },
   {
     "id": "triv-08",
@@ -139,8 +430,45 @@
     "role": "reviewer",
     "risk": "trivial",
     "prompt": "Ensure main.py starts with '# MIT License'",
-    "initial_files": {"main.py": "print('hello')\n"},
-    "allowed_tools": ["edit_file", "write_file"],
+    "initial_files": {
+      "main.py": "print('hello')\n"
+    },
+    "allowed_tools": [
+      "edit_file",
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Prepending MIT License header to main.py.",
+          "tool_calls": [
+            {
+              "name": "edit_file",
+              "args": {
+                "file_path": "main.py",
+                "old_string": "print('hello')",
+                "new_string": "# MIT License\nprint('hello')"
+              },
+              "id": "call-edit"
+            }
+          ],
+          "usage": {
+            "input_tokens": 15,
+            "output_tokens": 8,
+            "cost_usd": "0.0015"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "main.py updated with license header.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 5,
+          "cost_usd": "0.001"
+        }
+      }
+    },
     "oracle": {
       "type": "file_contains",
       "target": "main.py",
@@ -149,6 +477,13 @@
     "route_invariants": {
       "min_floor": 0.25
     },
-    "metadata": {"platform": "any"}
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Add license header to top of main.py",
+      "scoring_meaning": "Verify license string is present in main.py",
+      "workload_type": "direct_edit",
+      "platform": "any"
+    }
   }
 ]

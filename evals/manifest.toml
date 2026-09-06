@@ -1,7 +1,8 @@
 [manifest]
-version = "1.0.0"
-date = "2026-09-02"
-fixture_count = 52
+version = "1.1.0"
+date = "2026-09-06"
+fixture_count = 54
+approved = true
 categories = [
   "trivial",
   "routine",
@@ -20,5 +21,28 @@ files = [
   "evals/fixtures/complex.json",
   "evals/fixtures/high_risk.json",
   "evals/fixtures/parallel.json",
-  "evals/fixtures/failure.json"
+  "evals/fixtures/failure.json",
 ]
+
+[digests]
+trivial_json = "a84c0e0c9b39780bf7651e56c8121ec9448aabb270eadd3bb8cb8111ad78a0ef"
+"trivial.json" = "a84c0e0c9b39780bf7651e56c8121ec9448aabb270eadd3bb8cb8111ad78a0ef"
+"evals/fixtures/trivial.json" = "a84c0e0c9b39780bf7651e56c8121ec9448aabb270eadd3bb8cb8111ad78a0ef"
+routine_json = "17f3242c99dc8aacc92e46c04c1a1a81b46309158b68e4d5fe5082a1570ba6a4"
+"routine.json" = "17f3242c99dc8aacc92e46c04c1a1a81b46309158b68e4d5fe5082a1570ba6a4"
+"evals/fixtures/routine.json" = "17f3242c99dc8aacc92e46c04c1a1a81b46309158b68e4d5fe5082a1570ba6a4"
+bounded_json = "5b98bd6a6f0f4f0c66585c15503eba64cd7ba77d616ec60d0e3861820be23995"
+"bounded.json" = "5b98bd6a6f0f4f0c66585c15503eba64cd7ba77d616ec60d0e3861820be23995"
+"evals/fixtures/bounded.json" = "5b98bd6a6f0f4f0c66585c15503eba64cd7ba77d616ec60d0e3861820be23995"
+complex_json = "542e4d1d6e2509ec9b108f0edf96c70528c810947c98867f50845c895a2c5c43"
+"complex.json" = "542e4d1d6e2509ec9b108f0edf96c70528c810947c98867f50845c895a2c5c43"
+"evals/fixtures/complex.json" = "542e4d1d6e2509ec9b108f0edf96c70528c810947c98867f50845c895a2c5c43"
+high_risk_json = "a8ed8b5745aac1bc99cf3a39e26afd0dd92a963c2077b3967b726173eb79916b"
+"high_risk.json" = "a8ed8b5745aac1bc99cf3a39e26afd0dd92a963c2077b3967b726173eb79916b"
+"evals/fixtures/high_risk.json" = "a8ed8b5745aac1bc99cf3a39e26afd0dd92a963c2077b3967b726173eb79916b"
+parallel_json = "5bfa639ef44261762780f43cacb7b755c2b2d9f7fdbdf882623a0ab33a6fe51a"
+"parallel.json" = "5bfa639ef44261762780f43cacb7b755c2b2d9f7fdbdf882623a0ab33a6fe51a"
+"evals/fixtures/parallel.json" = "5bfa639ef44261762780f43cacb7b755c2b2d9f7fdbdf882623a0ab33a6fe51a"
+failure_json = "0ad38769db5d8012632dca2ab02e8183615c73e865a633d0bc0c11c020c4c2fa"
+"failure.json" = "0ad38769db5d8012632dca2ab02e8183615c73e865a633d0bc0c11c020c4c2fa"
+"evals/fixtures/failure.json" = "0ad38769db5d8012632dca2ab02e8183615c73e865a633d0bc0c11c020c4c2fa"

@@ -190,8 +190,8 @@ Every row starts unchecked. Dependencies refer to this guide, not the old phase 
 | [x] | 01 | Terra | 00 | Authoritative routing inputs and task estimates |
 | [x] | 02 | Terra | 01 | Post-commit event delivery |
 | [x] | 03 | Luna | 02 | CLI terminal/exit/output contract |
-| [ ] | 04 | Terra | 03 | Independent evaluator and fixture usage |
-| [ ] | 05 | Gemini Flash | 04 | Approved offline fixture corpus |
+| [x] | 04 | Terra | 03 | Independent evaluator and fixture usage |
+| [x] | 05 | Gemini Flash | 04 | Approved offline fixture corpus |
 | [ ] | 06 | Terra | 05 | Persistent executable-plan state |
 | [ ] | 07 | Terra | 06 | Required execution decisions and plan admission |
 | [ ] | 08 | Terra | 07 | Ready-work execution without lead round trips |
@@ -316,6 +316,8 @@ diff checks pass.
 **Acceptance:** changing only the oracle expectation changes pass to fail while the execution trace remains identical; disabling runtime writes causes required mutation fixtures to fail; changing a routing estimate does not change fake usage. Commit `fix(evals): separate execution scripts from scoring and usage`.
 
 ### Phase 05 — Curate independent offline workloads
+
+**Status:** complete.
 
 **Owner:** `gemini-3.8-flash`, medium; fallback Luna. **Depends on:** 04. **Scope:** fixtures, manifest, fixture validation tests.
 
@@ -732,6 +734,23 @@ External evidence location and source identity, if applicable: raw execution rec
 Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging
 Unproven claims or missing evidence: deterministic fake usage is not provider billing evidence; no quality, savings, timing, or release-readiness claim is made.
 Next phase and its dependencies: Phase 05 — Curate independent offline workloads; depends on completed Phase 04
+```
+
+### Phase 05 handoff
+
+```text
+Phase: 05 — Curate independent offline workloads
+Status: complete
+Implementation model: Antigravity (assigned Gemini Flash treated as a recommendation)
+Commit(s): phase commit; resolve from Git history by the required commit subject
+Behavior delivered: Curated 54 distinct approved offline fixtures across 7 workload categories (trivial, routine, bounded, complex, high-risk, parallel with multi-turn task delegation, failure contract checks) with independent scripted model execution and private oracles. Manifest v1.1.0 freezes all 54 fixtures with explicit approval, synthetic_offline evidence class, and SHA-256 digests. Contract tests verify oracle isolation, category balance, role and platform coverage, adversarial oracle mutations, workspace resets, boundary containment, and file write suppression.
+Acceptance evidence and commands: `rtk pytest tests\contract\test_eval_fixtures.py tests\unit\test_eval_runner.py tests\unit\test_release_check.py -q`; `rtk pytest -q`; `python -m ruff check src tests scripts evals benchmarks`; `python -m mypy src\rudder`; `python scripts\smoke.py --fake-provider`; `graphify update .`; `rtk git diff --check`; complete diff review
+Test results and documented skips: contract fixtures suite 10 passed; evaluator suite 13 passed; release check 2 passed; full offline suite 525 passed and 2 skipped; Ruff, mypy, fake-provider smoke, Graphify, and git diff checks all passed with zero errors. The two documented skips in pytest remain documented.
+Review findings closed/open: oracle access from fake/model/script closed; unapproved and duplicate fixtures closed; all 54 fixtures have explicit intended work, scoring meaning, independent usage, and frozen sha256 digests. No Phase 05 finding remains open.
+External evidence location and source identity, if applicable: evals/manifest.toml with sha256 digests of all 7 fixture files; all fixtures are offline and synthetic.
+Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging.
+Unproven claims or missing evidence: offline fixtures do not constitute live provider performance or economic parity; Phase 06 plan state and subsequent runtime phases remain future work.
+Next phase and its dependencies: Phase 06 — Persist plans and their legal transitions; depends on completed Phase 05
 ```
 
 ## 10. Definition of completion
