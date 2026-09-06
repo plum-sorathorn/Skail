@@ -828,6 +828,23 @@ Unproven claims or missing evidence: persistence does not itself execute plans o
 Next phase and its dependencies: Phase 07 — Require an execution decision and admit plans; depends on completed Phase 06
 ```
 
+### Phase 07a handoff
+
+```text
+Phase: 07a — Require an execution decision and admit plans
+Status: complete
+Implementation model: GPT-5 Codex (assigned Terra treated as a recommendation)
+Commit(s): `c5dc044` feat(agents): add validated execution decisions and plan admission
+Behavior delivered: Leads now expose a typed execution-decision tool and middleware gate. Direct work, read-only discovery plans with checkpoints, and finite planned execution are validated before operational tools; final answers need no decision. A response that declares a decision followed by tools is admitted before DeepAgents' parallel fan-out; preceding operations are rejected. Accepted plans persist atomically with the run's existing write-effect authority and post-commit events. One invalid/refused plan repair is available. Existing scripted runtime fixtures now declare their explicit decisions.
+Acceptance evidence and commands: `rtk pytest tests\contract\test_execution_decisions.py -q` (6 passed); `rtk pytest tests\integration\test_lead.py tests\integration\test_delegation_controls.py tests\integration\test_headless_core.py tests\integration\test_tui_commands.py tests\integration\test_questions.py tests\security\test_crash_recovery_and_reservations.py -q` (35 passed); `python -m ruff check src tests scripts evals benchmarks` (passed); `python -m mypy src\rudder` (passed); `python scripts\smoke.py --fake-provider` (passed); `graphify update .`; `rtk git diff --check`; complete staged-diff review.
+Test results and documented skips: focused and affected deterministic offline suites passed. Two `rtk pytest -q` full-suite invocations returned no result and left their exact pytest process trees hung; both were terminated after command-line verification. The full-suite result is therefore intentionally not claimed for this slice. Live providers, paid evaluation, platform release evidence, tagging, pushing, publishing, remote rename, and legacy cleanup were out of scope.
+Review findings closed/open: response-boundary pre-admission is required because DeepAgents may fan out same-response tools; rejected decision calls retain their original rejection and consume only one repair. Phase 07b still owns routing standard `task` calls through the admitted-task service; Phase 08 still owns ready-node execution.
+External evidence location and source identity, if applicable: none required; all completed verification is deterministic and offline
+Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging
+Unproven claims or missing evidence: this slice does not execute admitted plan nodes, unify compatibility task admission, or establish economic/quality claims; the full offline suite is unrecorded because its runner hung.
+Next phase and its dependencies: Phase 07b — Route compatibility tasks through admitted plans; depends on completed Phase 07a
+```
+
 ## 10. Definition of completion
 
 - Numbered implementation phases are complete only with their recorded checks and phase handoffs.
