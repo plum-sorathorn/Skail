@@ -108,6 +108,37 @@ def test_hints_can_only_strengthen_enforced_requirements() -> None:
     assert requirements.modalities == ("image", "text")
 
 
+def test_assignment_derivation_preserves_validated_hard_requirements_on_retry() -> None:
+    builder = RequirementBuilder()
+    initial = builder.build(
+        role="implementer",
+        risk=TaskRisk.ROUTINE,
+        role_hard_min=0.50,
+        required_tools=True,
+        required_structured_output=True,
+        required_context_tokens=32_000,
+        required_output_tokens=4_000,
+        required_modalities=frozenset({"text", "image"}),
+    )
+
+    retry = builder.for_assignment(
+        initial,
+        role="implementer",
+        risk=TaskRisk.ROUTINE,
+        mode=RoutingMode.AUTO,
+        role_hard_min=0.50,
+        escalated=True,
+        excluded_models=frozenset({("provider", "failed")}),
+    )
+
+    assert retry.tools_required is True
+    assert retry.structured_output_required is True
+    assert retry.minimum_context_tokens == 32_000
+    assert retry.minimum_output_tokens == 4_000
+    assert retry.modalities == ("image", "text")
+    assert retry.excluded_models == frozenset({("provider", "failed")})
+
+
 def test_all_floor_combinations_are_bounded_and_deterministic() -> None:
     builder = RequirementBuilder()
     for role, risk, mode, escalated in itertools.product(

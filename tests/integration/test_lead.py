@@ -1,6 +1,7 @@
 import hashlib
 import os
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,9 @@ from langchain_core.messages import AIMessage
 
 from rudder.agents.lead import LeadControls
 from rudder.domain.ids import new_session_id
+from rudder.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
+from rudder.routing.assignment import RoutingSnapshot, config_revision
+from rudder.routing.selector import RouteCandidate
 from rudder.runtime.run_controller import RunController
 from rudder.sessions.journal import Journal
 
@@ -124,6 +128,79 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
         result.child_results[0].verification[0].evidence_ref
     )
     assert result.child_results[0].status == "succeeded", result.child_results[0]
+
+
+@pytest.mark.asyncio
+async def test_controller_rejects_child_candidate_that_lacks_profile_tool_requirement(
+    tmp_path: Path,
+) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Routing requirements", created_at=datetime.now(UTC)
+    )
+    child_model = ScriptedChatModel(
+        model_name="implementer-model", responses=[AIMessage(content="must not run")]
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message(
+                "task",
+                {"description": "Write output", "subagent_type": "implementer"},
+                call_id="task-tool-requirements",
+            ),
+            AIMessage(content="The child could not be routed."),
+        ],
+    )
+
+    def candidate(model: str, *, tools: bool, auto_eligible: bool, cost: str) -> RouteCandidate:
+        return RouteCandidate(
+            profile=ModelProfile(
+                provider="fake",
+                model=model,
+                support_level=ProviderSupportLevel.NATIVE,
+                input_usd_per_million=Decimal("1"),
+                output_usd_per_million=Decimal("2"),
+                context_tokens=128_000,
+                max_output_tokens=8_192,
+                supports_tools=tools,
+                supports_structured_output=True,
+                capability=CapabilityVector(
+                    coding=0.9, reasoning=0.9, tool_reliability=0.9, latency=0.1
+                ),
+                auto_eligible=auto_eligible,
+                manual_selectable=True,
+            ),
+            estimated_cost_usd=Decimal(cost),
+        )
+
+    routing_snapshot = RoutingSnapshot(
+        catalog_revision="catalog-v1",
+        config_revision=config_revision({"routing": {"mode": "auto"}}),
+        health_revision="healthy",
+        candidates=(
+            candidate("lead-model", tools=True, auto_eligible=False, cost="0.01"),
+            candidate("implementer-model", tools=False, auto_eligible=True, cost="0.02"),
+        ),
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": child_model},
+        default_lead_model="lead-model",
+        default_child_model="implementer-model",
+        candidates_fn=lambda: routing_snapshot,
+    )
+
+    await controller.run_instruction(
+        "Delegate the write", controls=LeadControls(model="lead-model")
+    )
+
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert [assignment.model for assignment in snapshot.assignments] == ["lead-model"]
+    assert child_model.calls == ()
 
 
 @pytest.mark.asyncio

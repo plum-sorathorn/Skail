@@ -50,6 +50,35 @@ class RoutingRequirements(CapabilityRequirements):
 
 
 class RequirementBuilder:
+    def for_assignment(
+        self,
+        base: CapabilityRequirements,
+        *,
+        role: str,
+        risk: TaskRisk,
+        mode: RoutingMode,
+        role_hard_min: float,
+        escalated: bool = False,
+        failed_model: tuple[str, str] | None = None,
+        excluded_models: frozenset[tuple[str, str]] = frozenset(),
+    ) -> RoutingRequirements:
+        """Carry validated task requirements into an assignment-specific route decision."""
+        return self.build(
+            role=role,
+            risk=risk,
+            mode=mode,
+            role_hard_min=role_hard_min,
+            required_tools=base.tools_required,
+            required_structured_output=base.structured_output_required,
+            required_context_tokens=base.minimum_context_tokens,
+            required_output_tokens=base.minimum_output_tokens,
+            required_modalities=frozenset(base.modalities),
+            hinted_floor=base.capability_floor,
+            escalated=escalated,
+            failed_model=failed_model,
+            excluded_models=excluded_models,
+        )
+
     def build(
         self,
         *,

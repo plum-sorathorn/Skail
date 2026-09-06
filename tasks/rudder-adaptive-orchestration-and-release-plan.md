@@ -241,6 +241,25 @@ Start with routing requirements, selector, controller assignment paths, profiles
 
 **Acceptance:** incompatible candidates are rejected through the actual controller, not only selector unit tests; two materially different workloads produce different justified estimates; retries retain hard requirements. Run focused selector/requirements/assignment/controller tests plus common gates. Commit `fix(routing): preserve task requirements and workload estimates`.
 
+#### Phase 01a — Preserve validated requirements through controller assignment
+
+**Scope:** Carry `TaskSpec.requirements` into compatibility-task batch assignment and retry
+assignment, including role hard minimum, tools, structured output, modalities, context/output
+limits, model-policy floor, exclusions, and budget. Derive the lead assignment from the lead
+profile's hard requirements. Do not change estimates, ranking, or manual unknown-price behavior.
+
+**Acceptance:** the actual controller rejects a delegated candidate that lacks the profile-required
+tool capability; retry derivation retains validated hard requirements and exclusions. This slice is
+complete only with focused routing/controller tests and the common Python gates.
+
+#### Phase 01b — Estimate actual task packets and preserve manual unknowns
+
+**Scope:** Replace bootstrap candidate estimates with packet-aware estimates and profile expected-call
+priors, then verify manual unknown-price compatibility and hard-budget behavior without changing
+ranking or fixed-attempt semantics.
+
+**Depends on:** Phase 01a.
+
 ### Phase 02 — One post-commit event delivery path
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 01. **Replaces:** old remediation 7 event core.
@@ -592,6 +611,23 @@ External evidence location and source identity, if applicable: none required for
 Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging
 Unproven claims or missing evidence: economic qualification remains unproven until separately authorized Q1 evidence exists
 Next phase and its dependencies: Phase 01 — Fix the routing boundary before changing the policy; depends on completed Phase 00
+```
+
+### Phase 01a handoff
+
+```text
+Phase: 01a — Preserve validated requirements through controller assignment
+Status: complete
+Implementation model: GPT-6 Codex (assigned Terra treated as a recommendation)
+Commit(s): phase commit; resolve from Git history by the required commit subject
+Behavior delivered: Assignment derivation reuses validated task requirements for batch and retry paths, including hard compatibility requirements and exclusions. Lead routing derives profile-required tool and structured-output requirements.
+Acceptance evidence and commands: `rtk pytest tests\unit\test_requirements.py tests\unit\test_selector.py tests\integration\test_assignment.py tests\integration\test_lead.py -q`; `rtk pytest`; `python -m ruff check src tests scripts evals benchmarks`; `python -m mypy src\rudder`; `graphify update .`; `rtk git diff --check`; complete diff review
+Test results and documented skips: focused routing/controller suite 49 passed; complete offline suite 504 passed and 2 skipped; Ruff and mypy passed. The suite's two existing skips remain documented by pytest
+Review findings closed/open: controller requirement loss closed. Packet-aware estimation and manual unknown-price behavior remain open in Phase 01b.
+External evidence location and source identity, if applicable: none required; all fixtures are offline and deterministic
+Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging
+Unproven claims or missing evidence: Phase 01 remains incomplete until Phase 01b supplies actual-packet estimate and manual unknown-price evidence
+Next phase and its dependencies: Phase 01b — Estimate actual task packets and preserve manual unknowns; depends on Phase 01a
 ```
 
 ## 10. Definition of completion

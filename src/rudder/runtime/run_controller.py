@@ -72,7 +72,7 @@ from rudder.routing.assignment import (
     config_revision,
 )
 from rudder.routing.budget import BudgetLedger
-from rudder.routing.requirements import ROLE_FLOORS, RequirementBuilder, TaskRisk
+from rudder.routing.requirements import RequirementBuilder, TaskRisk
 from rudder.routing.selector import RouteCandidate, RouteFailure
 from rudder.runtime.deepagents_adapter import ChildRunGate, resume_agent
 from rudder.runtime.interrupts import QuestionStore
@@ -177,6 +177,7 @@ class RunController:
             max_depth=1,
             background_enabled=False,
         )
+        self._requirements = RequirementBuilder()
         self.registry = task_registry or TaskRegistry()
         self.assembler = context_assembler or ContextAssembler(redactor=self.redactor)
         self.budget_limit_usd = budget_limit_usd
@@ -670,13 +671,12 @@ class RunController:
                 if ":" in configured_model:
                     provider, model = configured_model.split(":", 1)
                 manual_model = (provider, model)
-            requirements = RequirementBuilder().build(
-                role=profile.role if profile.role in ROLE_FLOORS else "general-purpose",
+            requirements = self._requirements.for_assignment(
+                spec.requirements,
+                role=profile.role,
                 risk=controls.risk,
                 mode=mode,
-                hinted_floor=(
-                    None if model_policy is None else model_policy.minimum_capability
-                ),
+                role_hard_min=profile.role_floor,
             )
             requests.append(
                 AssignmentRequest(
@@ -867,10 +867,14 @@ class RunController:
         lead_mode = (
             RoutingMode.MANUAL if active_controls.model else active_controls.routing_mode
         )
-        lead_reqs = RequirementBuilder().build(
-            role="lead",
+        lead_profile = builtin_profiles()["lead"]
+        lead_reqs = self._requirements.build(
+            role=lead_profile.role,
             risk=active_controls.risk,
             mode=lead_mode,
+            role_hard_min=lead_profile.role_floor,
+            required_tools=bool(lead_profile.tools),
+            required_structured_output=lead_profile.response_schema is not None,
         )
         lead_config_snapshot = self._routing_config_snapshot(active_controls.routing_mode)
         lead_request = AssignmentRequest(
@@ -1542,25 +1546,20 @@ class RunController:
                     excluded_counts={"excluded": len(excluded)},
                 )
 
-            role_name = spec.request.profile
-            if role_name not in ROLE_FLOORS:
-                role_name = "general-purpose"
-
             escalated = number == 2
             req_mode = (
                 RoutingMode.MANUAL
                 if (configured_model and not escalated)
                 else controls.routing_mode
             )
-            reqs = RequirementBuilder().build(
-                role=role_name,
+            reqs = self._requirements.for_assignment(
+                spec.requirements,
+                role=profile.role,
                 risk=controls.risk,
                 mode=req_mode,
+                role_hard_min=profile.role_floor,
                 escalated=escalated,
                 excluded_models=frozenset(excluded),
-                hinted_floor=(
-                    None if model_policy is None else model_policy.minimum_capability
-                ),
             )
 
             manual_pin = None
