@@ -338,6 +338,37 @@ def test_plan_node_failure_blocks_the_downstream_closure(tmp_path: Path) -> None
     }
 
 
+def test_reconciliation_finishes_a_settled_node_without_relaunching_it(tmp_path: Path) -> None:
+    journal = _journal(tmp_path / "journal.sqlite")
+    admitted = journal.admit_plan(run_id=RUN_ID, plan=_plan())
+    inspect_id = admitted.node_ids["inspect"]
+
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=inspect_id,
+        expected=PlanNodeState.READY,
+        target=PlanNodeState.LAUNCHING,
+    )
+    journal.begin_plan_node_execution(
+        node_id=inspect_id, execution_key=f"task:{inspect_id}"
+    )
+    journal.settle_plan_node_execution(
+        node_id=inspect_id, result={"status": "succeeded", "verification": []}
+    )
+
+    journal.reconcile_plan_node_executions()
+
+    recovered = journal.get_plan(admitted.plan_id)
+    assert recovered.node_states == {
+        "inspect": PlanNodeState.SUCCEEDED,
+        "verify": PlanNodeState.READY,
+    }
+    execution = journal.begin_plan_node_execution(
+        node_id=inspect_id, execution_key=f"task:{inspect_id}"
+    )
+    assert execution.status == "settled"
+
+
 def test_node_state_migration_backfills_an_existing_admitted_plan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

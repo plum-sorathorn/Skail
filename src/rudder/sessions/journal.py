@@ -88,6 +88,14 @@ class PlanNodeTaskBinding:
     attempt_id: str
 
 
+@dataclass(frozen=True)
+class PlanNodeExecution:
+    node_id: str
+    execution_key: str
+    status: str
+    result: dict[str, Any] | None
+
+
 def _run_snapshot(row: sqlite3.Row) -> RunSnapshot:
     schema_version = row["plan_schema_version"]
     policy_version = row["execution_policy_version"]
@@ -1028,6 +1036,87 @@ class Journal:
                 (node_id,),
             ).fetchone()
         return None if row is None else PlanNodeTaskBinding(**dict(row))
+
+    def begin_plan_node_execution(
+        self, *, node_id: str, execution_key: str
+    ) -> PlanNodeExecution:
+        now = _now()
+        with self.transaction() as transaction:
+            row = transaction.connection.execute(
+                "SELECT execution_key,status,result_json FROM plan_node_executions WHERE node_id=?",
+                (node_id,),
+            ).fetchone()
+            if row is None:
+                transaction.connection.execute(
+                    "INSERT INTO plan_node_executions VALUES (?,?,?,?,?,?)",
+                    (node_id, execution_key, "running", None, now, now),
+                )
+                return PlanNodeExecution(node_id, execution_key, "running", None)
+            if row["execution_key"] != execution_key:
+                raise FrameworkContractError(
+                    "plan.node_execution_conflict",
+                    "plan node execution identity did not match the persisted launch",
+                )
+            return PlanNodeExecution(
+                node_id,
+                execution_key,
+                row["status"],
+                None if row["result_json"] is None else json.loads(row["result_json"]),
+            )
+
+    def settle_plan_node_execution(self, *, node_id: str, result: dict[str, Any]) -> None:
+        payload = json.dumps(self.redactor.scrub(result), sort_keys=True, separators=(",", ":"))
+        with self.transaction() as transaction:
+            row = transaction.connection.execute(
+                "SELECT status FROM plan_node_executions WHERE node_id=?", (node_id,)
+            ).fetchone()
+            if row is None:
+                raise FrameworkContractError(
+                    "plan.node_execution_missing", "plan node execution was not launched"
+                )
+            if row["status"] == "settled":
+                return
+            transaction.connection.execute(
+                "UPDATE plan_node_executions SET status='settled',result_json=?,updated_at=? "
+                "WHERE node_id=?",
+                (payload, _now(), node_id),
+            )
+
+    def reconcile_plan_node_executions(self) -> tuple[PlanNodeSnapshot, ...]:
+        """Finish durable settlements and block ambiguous launches without replaying them."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT n.plan_id,n.node_id,s.status,e.status AS execution_status,e.result_json "
+                "FROM plan_nodes n JOIN plan_node_states s ON s.node_id=n.node_id "
+                "LEFT JOIN plan_node_executions e ON e.node_id=n.node_id "
+                "WHERE s.status IN ('launching','running') ORDER BY n.rowid"
+            ).fetchall()
+        reconciled: list[PlanNodeSnapshot] = []
+        for row in rows:
+            state = PlanNodeState(row["status"])
+            if row["execution_status"] == "settled" and row["result_json"] is not None:
+                result = json.loads(row["result_json"])
+                target = {
+                    "succeeded": PlanNodeState.SUCCEEDED,
+                    "cancelled": PlanNodeState.CANCELLED,
+                    "blocked": PlanNodeState.BLOCKED,
+                    "budget_blocked": PlanNodeState.BLOCKED,
+                }.get(result.get("status"), PlanNodeState.FAILED)
+            else:
+                target = PlanNodeState.BLOCKED
+            if state is PlanNodeState.LAUNCHING and target is not PlanNodeState.BLOCKED:
+                self.transition_plan_node_state(
+                    plan_id=row["plan_id"], node_id=row["node_id"],
+                    expected=PlanNodeState.LAUNCHING, target=PlanNodeState.RUNNING,
+                )
+                state = PlanNodeState.RUNNING
+            reconciled.extend(
+                self.transition_plan_node_state(
+                    plan_id=row["plan_id"], node_id=row["node_id"],
+                    expected=state, target=target,
+                )
+            )
+        return tuple(reconciled)
 
     def transition_plan_node_state(
         self,

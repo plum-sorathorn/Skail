@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Event
 
 import pytest
 from fakes.barriers import AsyncStartBarrier
@@ -14,6 +15,7 @@ from rudder.domain.plans import PlanNodeState
 from rudder.domain.tasks import TaskResult
 from rudder.runtime.run_controller import RunController
 from rudder.sessions.journal import Journal
+from rudder.tools.execution import ExecutionPolicy, ExecutionResult
 
 
 def _journal(tmp_path: Path) -> Journal:
@@ -244,6 +246,7 @@ async def test_planned_ready_agent_nodes_use_the_admitted_child_lifecycle(tmp_pa
         responses=[
             _child_success("first complete", evidence_digest),
             _child_success("second complete", evidence_digest),
+            _child_success("dependent complete", evidence_digest),
         ],
     )
     lead_model = ScriptedChatModel(
@@ -266,19 +269,23 @@ async def test_planned_ready_agent_nodes_use_the_admitted_child_lifecycle(tmp_pa
     result = await controller.run_instruction("Inspect two independent files")
 
     plan = journal.plans_for_run(str(result.run_id))[0]
-    assert len(child_model.calls) == 2
-    assert [child.status for child in result.child_results] == ["succeeded", "succeeded"]
+    assert len(child_model.calls) == 3
+    assert [child.status for child in result.child_results] == [
+        "succeeded",
+        "succeeded",
+        "succeeded",
+    ]
     assert plan.node_states == {
-        "first": PlanNodeState.RUNNING,
-        "second": PlanNodeState.RUNNING,
-        "after_first": PlanNodeState.WAITING,
+        "first": PlanNodeState.SUCCEEDED,
+        "second": PlanNodeState.SUCCEEDED,
+        "after_first": PlanNodeState.SUCCEEDED,
     }
     snapshot = journal.get_session_snapshot(str(session_id))
-    assert len(snapshot.tasks) == 3  # Lead plus two plan-owned child tasks.
-    assert len(snapshot.attempts) == 3
+    assert len(snapshot.tasks) == 4  # Lead plus three plan-owned child tasks.
+    assert len(snapshot.attempts) == 4
     bindings = [
         journal.plan_node_task_binding(plan.node_ids[local_id])
-        for local_id in ("first", "second")
+        for local_id in ("first", "second", "after_first")
     ]
     assert {binding.task_id for binding in bindings if binding is not None} == {
         str(child.task_id) for child in result.child_results
@@ -295,13 +302,285 @@ async def test_planned_agent_nodes_obey_the_shared_child_limit(tmp_path: Path) -
     evidence_digest = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
     barrier = AsyncStartBarrier()
 
-    async def block_child(model: ScriptedChatModel, _) -> None:
-        await barrier.worker(f"child-{len(model.calls)}")
+    async def block_child(_: ScriptedChatModel, messages) -> None:
+        prompt = str(messages[-1].content)
+        label = (
+            "first" if "Inspect the first file" in prompt
+            else "second" if "Inspect the second file" in prompt
+            else "after-first"
+        )
+        await barrier.worker(label)
 
     journal = _journal(tmp_path)
     session_id = new_session_id()
     journal.create_session(
         session_id=str(session_id), title="Planned child cap", created_at=datetime.now(UTC)
+    )
+    child_model = ScriptedChatModel(
+        model_name="implementer-model",
+        responses=[
+            _child_success("first complete", evidence_digest),
+            _child_success("second complete", evidence_digest),
+            _child_success("dependent complete", evidence_digest),
+        ],
+        async_call_hook=block_child,
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [("execution_decision", _planned_decision(), "decision-1")]
+            ),
+            AIMessage(content="The planned work has been dispatched."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": child_model},
+        profile_models={"implementer": "implementer-model"},
+    )
+
+    run = asyncio.create_task(
+        controller.run_instruction(
+            "Inspect two independent files", controls=LeadControls(max_children=2)
+        )
+    )
+    await barrier.wait_for_started(2)
+    assert set(barrier.started) == {"first", "second"}
+    barrier.release("first")
+    await asyncio.wait_for(barrier.wait_for_started(3), timeout=1)
+    assert barrier.started[-1] == "after-first"
+    barrier.release("second")
+    barrier.release("after-first")
+
+    result = await run
+
+    assert result.child_peak_active == 2
+    assert [child.status for child in result.child_results] == [
+        "succeeded", "succeeded", "succeeded"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_authorized_tool_node_settles_before_releasing_agent_without_a_model_call(
+    tmp_path: Path,
+) -> None:
+    evidence_path = tmp_path / "planned-evidence.txt"
+    evidence_path.write_text("planned dispatch evidence\n", encoding="utf-8")
+    evidence_digest = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Plan tool node", created_at=datetime.now(UTC)
+    )
+    child_model = ScriptedChatModel(
+        model_name="implementer-model",
+        responses=[_child_success("dependent complete", evidence_digest)],
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "planned",
+                            "objective": "Run a known local check",
+                            "constraints": [],
+                            "reason": "The check has one bounded follow-up.",
+                            "plan": {
+                                "schema_version": 1,
+                                "policy_version": "adaptive-v1",
+                                "revision": 1,
+                                "nodes": [
+                                    {
+                                        "local_id": "check",
+                                        "kind": "tool",
+                                        "objective": "Check ruff version",
+                                        "effect_scope": "read",
+                                        "task_features": {
+                                            "tool": "execute",
+                                            "command": "python",
+                                            "arguments": ["-m", "ruff", "--version"],
+                                        },
+                                    },
+                                    {
+                                        "local_id": "report",
+                                        "kind": "agent",
+                                        "objective": "Report the completed local check",
+                                        "depends_on": ["check"],
+                                        "effect_scope": "workspace_write",
+                                        "task_features": {"profile": "implementer"},
+                                    },
+                                ],
+                            },
+                        },
+                        "decision-1",
+                    )
+                ]
+            ),
+            AIMessage(content="The local tool check and dependent report completed."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": child_model},
+        profile_models={"implementer": "implementer-model"},
+    )
+
+    result = await controller.run_instruction("Run the known check")
+
+    plan = journal.plans_for_run(str(result.run_id))[0]
+    assert plan.node_states == {
+        "check": PlanNodeState.SUCCEEDED,
+        "report": PlanNodeState.SUCCEEDED,
+    }
+    assert len(child_model.calls) == 1
+    assert len(lead_model.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_tool_and_agent_nodes_share_the_three_child_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    evidence_path = tmp_path / "planned-evidence.txt"
+    evidence_path.write_text("planned dispatch evidence\n", encoding="utf-8")
+    evidence_digest = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    barrier = AsyncStartBarrier()
+    tool_started = Event()
+    release_tool = Event()
+
+    def block_tool(*args, **kwargs) -> ExecutionResult:
+        del args, kwargs
+        tool_started.set()
+        assert release_tool.wait(timeout=2)
+        return ExecutionResult("completed", returncode=0)
+
+    monkeypatch.setattr(ExecutionPolicy, "run", block_tool)
+
+    async def block_child(model: ScriptedChatModel, _) -> None:
+        await barrier.worker(f"agent-{len(model.calls)}")
+
+    decision = _planned_decision()
+    plan = decision["plan"]
+    assert isinstance(plan, dict)
+    nodes = plan["nodes"]
+    assert isinstance(nodes, list)
+    nodes.append(
+        {
+            "local_id": "tool",
+            "kind": "tool",
+            "objective": "Run the bounded local check",
+            "effect_scope": "read",
+            "task_features": {"tool": "execute", "command": "python", "arguments": []},
+        }
+    )
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Mixed child cap", created_at=datetime.now(UTC)
+    )
+    child_model = ScriptedChatModel(
+        model_name="implementer-model",
+        responses=[
+            _child_success("first complete", evidence_digest),
+            _child_success("second complete", evidence_digest),
+            _child_success("dependent complete", evidence_digest),
+        ],
+        async_call_hook=block_child,
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message([("execution_decision", decision, "decision-1")]),
+            AIMessage(content="Mixed work completed."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": child_model},
+    )
+    run = asyncio.create_task(controller.run_instruction("Run mixed planned work"))
+
+    assert await asyncio.to_thread(tool_started.wait, 1)
+    await barrier.wait_for_started(2)
+    release_tool.set()
+    for agent in barrier.started:
+        barrier.release(agent)
+    await barrier.wait_for_started(3)
+    barrier.release(barrier.started[-1])
+
+    result = await run
+
+    assert result.child_peak_active == 3
+
+
+@pytest.mark.asyncio
+async def test_unverified_agent_success_does_not_release_its_plan_dependent(tmp_path: Path) -> None:
+    decision = _planned_decision()
+    plan_payload = decision["plan"]
+    assert isinstance(plan_payload, dict)
+    nodes = plan_payload["nodes"]
+    assert isinstance(nodes, list)
+    nodes[:] = [nodes[0], nodes[2]]
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Unverified planned result", created_at=datetime.now(UTC)
+    )
+    child_model = ScriptedChatModel(
+        model_name="implementer-model",
+        responses=[
+            AIMessage(content='{"status":"succeeded","summary":"No evidence."}'),
+            AIMessage(content='{"status":"succeeded","summary":"Still no evidence."}'),
+        ],
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message([("execution_decision", decision, "decision-1")]),
+            AIMessage(content="The unverified result was retained as a failure."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": child_model},
+    )
+
+    result = await controller.run_instruction("Run an unverified plan")
+
+    plan = journal.plans_for_run(str(result.run_id))[0]
+    assert plan.node_states == {
+        "first": PlanNodeState.BLOCKED,
+        "after_first": PlanNodeState.BLOCKED,
+    }
+    assert len(child_model.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_cancelling_planned_work_marks_inflight_nodes_terminal(tmp_path: Path) -> None:
+    evidence_path = tmp_path / "planned-evidence.txt"
+    evidence_path.write_text("planned dispatch evidence\n", encoding="utf-8")
+    evidence_digest = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    barrier = AsyncStartBarrier()
+
+    async def block_child(_: ScriptedChatModel, messages) -> None:
+        prompt = str(messages[-1].content)
+        await barrier.worker("first" if "Inspect the first file" in prompt else "second")
+
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Cancel planned work", created_at=datetime.now(UTC)
     )
     child_model = ScriptedChatModel(
         model_name="implementer-model",
@@ -325,25 +604,21 @@ async def test_planned_agent_nodes_obey_the_shared_child_limit(tmp_path: Path) -
         workspace=tmp_path,
         journal=journal,
         models={"lead-model": lead_model, "implementer-model": child_model},
-        profile_models={"implementer": "implementer-model"},
     )
-
-    run = asyncio.create_task(
-        controller.run_instruction(
-            "Inspect two independent files", controls=LeadControls(max_children=1)
-        )
-    )
-    await barrier.wait_for_started(1)
-    assert barrier.started == ["child-1"]
-    barrier.release("child-1")
+    run = asyncio.create_task(controller.run_instruction("Cancel planned work"))
     await barrier.wait_for_started(2)
-    assert barrier.started == ["child-1", "child-2"]
-    barrier.release("child-2")
+    run.cancel()
 
-    result = await run
+    with pytest.raises(asyncio.CancelledError):
+        await run
 
-    assert result.child_peak_active == 1
-    assert [child.status for child in result.child_results] == ["succeeded", "succeeded"]
+    snapshot = journal.get_session_snapshot(str(session_id))
+    plan = journal.plans_for_run(snapshot.runs[0].run_id)[0]
+    assert plan.node_states == {
+        "first": PlanNodeState.CANCELLED,
+        "second": PlanNodeState.CANCELLED,
+        "after_first": PlanNodeState.BLOCKED,
+    }
 
 
 @pytest.mark.asyncio
@@ -560,23 +835,23 @@ def _planned_decision() -> dict[str, object]:
                     "local_id": "first",
                     "kind": "agent",
                     "objective": "Inspect the first file",
-                    "effect_scope": "workspace_write",
-                    "task_features": {"profile": "implementer"},
+                    "effect_scope": "read",
+                    "task_features": {"profile": "explorer"},
                 },
                 {
                     "local_id": "second",
                     "kind": "agent",
                     "objective": "Inspect the second file",
-                    "effect_scope": "workspace_write",
-                    "task_features": {"profile": "implementer"},
+                    "effect_scope": "read",
+                    "task_features": {"profile": "explorer"},
                 },
                 {
                     "local_id": "after_first",
                     "kind": "agent",
                     "objective": "Inspect the first result",
                     "depends_on": ["first"],
-                    "effect_scope": "workspace_write",
-                    "task_features": {"profile": "implementer"},
+                    "effect_scope": "read",
+                    "task_features": {"profile": "explorer"},
                 },
             ],
         },
@@ -588,7 +863,7 @@ def _child_success(summary: str, evidence_digest: str) -> AIMessage:
         content=(
             '{"status":"succeeded","summary":"' + summary + '",'
             '"verification":[{"criterion":"dispatch evidence","passed":true,'
-            '"evidence":"planned-evidence.txt digest",'
+            '"evidence":"planned-evidence.txt:1",'
             '"evidence_ref":{"kind":"file","path":"planned-evidence.txt",'
             '"digest":"' + evidence_digest + '"}}]}'
         )

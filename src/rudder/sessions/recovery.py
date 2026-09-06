@@ -112,6 +112,7 @@ def _recover_locked(
                 (session_id,),
             )
         )
+    journal.reconcile_plan_node_executions()
     snapshot = journal.get_session_snapshot(session_id)
     return RecoveryResult(True, None, snapshot, tuple(interrupted), pending, tuple(released))
 

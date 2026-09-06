@@ -86,7 +86,6 @@ from rudder.runtime.decisions import (
     execution_decision_tool,
 )
 from rudder.runtime.deepagents_adapter import ChildRunGate, resume_agent
-from rudder.runtime.errors import FrameworkContractError
 from rudder.runtime.event_bus import EventBus
 from rudder.runtime.interrupts import QuestionStore
 from rudder.runtime.leases import WorkspaceLeaseManager
@@ -99,6 +98,7 @@ from rudder.sessions.checkpoints import CheckpointStore
 from rudder.sessions.journal import Journal, PersistedPlan
 from rudder.tools.approvals import ApprovalStore
 from rudder.tools.assembly import build_default_agent
+from rudder.tools.execution import CommandRequest, ExecutionPolicy, ExecutionSecurityContext
 
 DEFAULT_CONFIG_SNAPSHOT: dict[str, Any] = {"routing": {"mode": "auto"}}
 _TOOL_RESULT_ALLOWANCE_TOKENS = 1_024
@@ -638,6 +638,8 @@ class RunController:
                     if controls.write_allowed is False and profile.write_capable:
                         raise TaskValidationError("plan.node_write_disallowed")
                     self.validator.normalize(request, parent_depth=0)
+                elif node.kind is PlanNodeKind.TOOL:
+                    _validate_plan_tool_node(node)
             persisted = self.journal.admit_plan(
                 run_id=str(run_id),
                 plan=plan,
@@ -890,30 +892,217 @@ class RunController:
         scheduler: ChildScheduler,
         controls: LeadControls,
         delegation_approved: bool,
+        lead_assignment: TaskAssignment,
         recorded_child_results: list[TaskResult],
     ) -> None:
-        dispatches = tuple(self._planned_node_dispatches)
-        if not dispatches:
-            return
-        executions = []
-        for dispatch in dispatches:
-            subagent = self._build_profile_subagent(
-                profile=dispatch.profile,
-                run_id=run_id,
-                workspace_revision=workspace_revision,
-                leases=leases,
-                gate=gate,
-                scheduler=scheduler,
-                controls=controls,
-                delegation_approved=delegation_approved,
-                recorded_child_results=recorded_child_results,
-            )
-            executions.append(
-                subagent["runnable"].ainvoke(
-                    {"messages": [HumanMessage(content=dispatch.spec.request.description)]}
+        """Run the persisted ready frontier, releasing dependents at each completion."""
+        running: dict[asyncio.Task[Any], tuple[str, str]] = {}
+        dispatched = 0
+
+        async def start_ready_tools() -> None:
+            for persisted in self.journal.plans_for_run(str(run_id)):
+                nodes = {node.local_id: node for node in persisted.plan.nodes}
+                for ready in self.journal.ready_plan_nodes(persisted.plan_id):
+                    node = nodes[ready.local_id]
+                    if node.kind is not PlanNodeKind.TOOL:
+                        continue
+                    self.journal.transition_plan_node_state(
+                        plan_id=persisted.plan_id,
+                        node_id=ready.node_id,
+                        expected=PlanNodeState.READY,
+                        target=PlanNodeState.LAUNCHING,
+                        event_observer=self.events.publish_persisted_nowait,
+                    )
+                    self.journal.begin_plan_node_execution(
+                        node_id=ready.node_id, execution_key=f"tool:{ready.node_id}"
+                    )
+                    async def execute_tool(
+                        *, plan_id: str = persisted.plan_id,
+                        node_id: str = ready.node_id,
+                        plan_node: PlanNode = node,
+                    ) -> None:
+                        self.journal.transition_plan_node_state(
+                            plan_id=plan_id,
+                            node_id=node_id,
+                            expected=PlanNodeState.LAUNCHING,
+                            target=PlanNodeState.RUNNING,
+                            event_observer=self.events.publish_persisted_nowait,
+                        )
+                        result = await self._run_plan_tool_node(
+                            node_id=node_id,
+                            node=plan_node,
+                            controls=controls,
+                            leases=leases,
+                            scheduler=scheduler,
+                        )
+                        self._settle_plan_node(plan_id, node_id, result.model_dump(mode="json"))
+
+                    task = asyncio.create_task(
+                        execute_tool(), name=f"rudder-plan-tool-{ready.node_id}"
+                    )
+                    running[task] = (persisted.plan_id, ready.node_id)
+
+        async def admit_ready_agents() -> None:
+            for persisted in self.journal.plans_for_run(str(run_id)):
+                self._admit_ready_plan_agents(
+                    persisted,
+                    run_id=run_id,
+                    controls=controls,
+                    workspace_revision=workspace_revision,
+                    lead_assignment=lead_assignment,
+                    scheduler=scheduler,
                 )
+
+        try:
+            while True:
+                while dispatched < len(self._planned_node_dispatches):
+                    dispatch = self._planned_node_dispatches[dispatched]
+                    dispatched += 1
+                    execution = self.journal.begin_plan_node_execution(
+                        node_id=dispatch.node_id,
+                        execution_key=f"task:{dispatch.spec.task_id}",
+                    )
+                    if execution.status == "settled":
+                        continue
+                    subagent = self._build_profile_subagent(
+                        profile=dispatch.profile,
+                        run_id=run_id,
+                        workspace_revision=workspace_revision,
+                        leases=leases,
+                        gate=gate,
+                        scheduler=scheduler,
+                        controls=controls,
+                        delegation_approved=delegation_approved,
+                        recorded_child_results=recorded_child_results,
+                    )
+                    task = asyncio.create_task(
+                        subagent["runnable"].ainvoke(
+                            {"messages": [HumanMessage(content=dispatch.spec.request.description)]}
+                        ),
+                        name=f"rudder-plan-agent-{dispatch.node_id}",
+                    )
+                    running[task] = (dispatch.plan_id, dispatch.node_id)
+                await start_ready_tools()
+                if not running:
+                    await admit_ready_agents()
+                    if dispatched == len(self._planned_node_dispatches):
+                        break
+                    continue
+                done, _ = await asyncio.wait(running, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    running.pop(task)
+                    await task
+                await admit_ready_agents()
+        except asyncio.CancelledError:
+            for task in running:
+                task.cancel()
+            await asyncio.gather(*running, return_exceptions=True)
+            for plan_id, node_id in running.values():
+                self._cancel_plan_node(plan_id, node_id)
+            raise
+
+    async def _run_plan_tool_node(
+        self,
+        *,
+        node_id: str,
+        node: PlanNode,
+        controls: LeadControls,
+        leases: WorkspaceLeaseManager,
+        scheduler: ChildScheduler,
+    ) -> TaskResult:
+        features = dict(node.task_features)
+        if set(features) - {"tool", "command", "arguments", "priority"}:
+            return TaskResult(
+                task_id=TaskId(node_id),
+                status="blocked",
+                summary="plan.tool_features_invalid",
             )
-        await asyncio.gather(*executions)
+        if features.get("tool") != "execute" or not isinstance(
+            features.get("command"), str
+        ):
+            return TaskResult(
+                task_id=TaskId(node_id),
+                status="blocked",
+                summary="plan.tool_unauthorized",
+            )
+        arguments = features.get("arguments", ())
+        if not isinstance(arguments, (list, tuple)) or not all(
+            isinstance(item, str) for item in arguments
+        ):
+            return TaskResult(
+                task_id=TaskId(node_id),
+                status="blocked",
+                summary="plan.tool_features_invalid",
+            )
+        policy = ExecutionPolicy(
+            self.workspace,
+            ExecutionSecurityContext(
+                trusted_project=True,
+                workspace_write_allowed=controls.write_allowed is not False,
+                write_lease_held=node.effect_scope is not EffectScope.READ,
+            ),
+        )
+        request = CommandRequest(features["command"], tuple(arguments), self.workspace)
+
+        async def operation() -> TaskResult:
+            if node.effect_scope is EffectScope.READ:
+                result = await asyncio.to_thread(
+                    policy.run, request, interactive=False, approvals=self.approvals
+                )
+            else:
+                async with leases.acquire(node_id):
+                    result = await asyncio.to_thread(
+                        policy.run, request, interactive=False, approvals=self.approvals
+                    )
+            status: Literal["succeeded", "blocked"] = (
+                "succeeded"
+                if result.status == "completed" and result.returncode == 0
+                else "blocked"
+            )
+            return TaskResult(
+                task_id=TaskId(node_id), status=status,
+                summary=f"tool execute {result.status}",
+                verification_authority="runtime",
+            )
+
+        scheduler.submit(node_id, priority=int(features.get("priority", 0)))
+        return cast(TaskResult, await scheduler.execute(node_id, operation))
+
+    def _settle_plan_node(self, plan_id: str, node_id: str, result: dict[str, Any]) -> None:
+        self.journal.settle_plan_node_execution(node_id=node_id, result=result)
+        persisted = self.journal.get_plan(plan_id)
+        local_id = next(local for local, value in persisted.node_ids.items() if value == node_id)
+        state = persisted.node_states[local_id]
+        status = result.get("status")
+        target = {
+            "succeeded": PlanNodeState.SUCCEEDED,
+            "cancelled": PlanNodeState.CANCELLED,
+            "blocked": PlanNodeState.BLOCKED,
+            "budget_blocked": PlanNodeState.BLOCKED,
+        }.get(status if isinstance(status, str) else "", PlanNodeState.FAILED)
+        if state is PlanNodeState.LAUNCHING and target is not PlanNodeState.BLOCKED:
+            self.journal.transition_plan_node_state(
+                plan_id=plan_id, node_id=node_id,
+                expected=PlanNodeState.LAUNCHING, target=PlanNodeState.RUNNING,
+                event_observer=self.events.publish_persisted_nowait,
+            )
+            state = PlanNodeState.RUNNING
+        if state in {PlanNodeState.LAUNCHING, PlanNodeState.RUNNING}:
+            self.journal.transition_plan_node_state(
+                plan_id=plan_id, node_id=node_id, expected=state, target=target,
+                event_observer=self.events.publish_persisted_nowait,
+            )
+
+    def _cancel_plan_node(self, plan_id: str, node_id: str) -> None:
+        self._settle_plan_node(plan_id, node_id, {"status": "cancelled"})
+        binding = self.journal.plan_node_task_binding(node_id)
+        if binding is not None:
+            self.journal.update_attempt_status(
+                attempt_id=binding.attempt_id, status=AttemptStatus.CANCELLED
+            )
+            self.journal.update_task_status(
+                task_id=binding.task_id, status=TaskStatus.CANCELLED
+            )
 
     def _admit_task_batch(
         self,
@@ -1481,6 +1670,7 @@ class RunController:
             scheduler=scheduler,
             controls=active_controls,
             delegation_approved=delegation_approved,
+            lead_assignment=lead_assignment,
             recorded_child_results=recorded_child_results,
         )
 
@@ -2158,10 +2348,21 @@ class RunController:
                 "returned_to_lead": TaskStatus.RETURNED_TO_LEAD,
             }[result.status]
             with self.journal.transaction() as tx:
+                tx.record_task_result(
+                    task_id=str(result.task_id), payload=result.model_dump(mode="json")
+                )
                 tx.update_attempt_status(
                     attempt_id=str(binding.attempt_id), status=attempt_status
                 )
                 tx.update_task_status(task_id=str(result.task_id), status=task_status)
+
+            plan_node = self._plan_nodes_by_task.get(str(result.task_id))
+            if plan_node is not None and (
+                result.status != "failed" or binding.assignment.attempt_number == 2
+            ):
+                self.journal.settle_plan_node_execution(
+                    node_id=plan_node[1], result=result.model_dump(mode="json")
+                )
 
             self._finalize_assignment_budget(binding.assignment)
 
@@ -2181,17 +2382,9 @@ class RunController:
                         event_observer=self.events.publish_persisted_nowait,
                     )
                 elif status in {"blocked", "budget_blocked"}:
-                    try:
-                        self.journal.transition_plan_node_state(
-                            plan_id=plan_id,
-                            node_id=node_id,
-                            expected=PlanNodeState.LAUNCHING,
-                            target=PlanNodeState.BLOCKED,
-                            event_observer=self.events.publish_persisted_nowait,
-                        )
-                    except FrameworkContractError as error:
-                        if not str(error).startswith("plan.node_state_conflict"):
-                            raise
+                    self._settle_plan_node(plan_id, node_id, {"status": status})
+                elif status in {"succeeded", "cancelled", "returned_to_lead"}:
+                    self._settle_plan_node(plan_id, node_id, {"status": status})
             self._emit_event(
                 run_id=run_id,
                 type=f"task.{status}",
@@ -2264,6 +2457,19 @@ def _task_request_for_plan_node(node: PlanNode) -> TaskRequest:
     if node.effect_scope is EffectScope.WORKSPACE_WRITE and not profile.write_capable:
         raise TaskValidationError("plan.node_effect_profile_mismatch")
     return request
+
+
+def _validate_plan_tool_node(node: PlanNode) -> None:
+    features = dict(node.task_features)
+    if set(features) - {"tool", "command", "arguments", "priority"}:
+        raise TaskValidationError("plan.tool_features_invalid")
+    if features.get("tool") != "execute" or not isinstance(features.get("command"), str):
+        raise TaskValidationError("plan.tool_unauthorized")
+    arguments = features.get("arguments", ())
+    if not isinstance(arguments, (list, tuple)) or not all(
+        isinstance(item, str) for item in arguments
+    ):
+        raise TaskValidationError("plan.tool_features_invalid")
 
 
 def _format_context_packet(packet: ContextPacket) -> str:

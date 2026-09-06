@@ -12,7 +12,8 @@ from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
 
 from rudder.agents.lead import LeadControls
-from rudder.domain.ids import new_session_id
+from rudder.domain.ids import new_run_id, new_session_id
+from rudder.domain.plans import ExecutionPlan, PlanNode, PlanNodeKind, PlanNodeState
 from rudder.domain.routing import RoutingMode
 from rudder.domain.tasks import AttemptStatus
 from rudder.routing.requirements import TaskRisk
@@ -275,6 +276,55 @@ def test_pending_approval_remains_pending_across_repeated_recovery(tmp_path: Pat
     assert second.pending_approval_ids == ("approval-1",)
     assert second.snapshot is not None
     assert second.snapshot.approvals[0].status == "pending"
+
+
+def test_recovery_does_not_relaunch_a_node_settled_before_the_crash(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "rudder.sqlite")
+    checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
+    session_id = str(new_session_id())
+    run_id = str(new_run_id())
+    journal.migrate()
+    journal.create_session(session_id=session_id, title="Plan recovery", created_at=NOW)
+    journal.create_run(
+        run_id=run_id,
+        session_id=session_id,
+        status="running",
+        budget_limit_usd=Decimal("2.00"),
+        created_at=NOW,
+    )
+    plan = ExecutionPlan(
+        schema_version=1,
+        policy_version="adaptive-v1",
+        revision=1,
+        nodes=(PlanNode(local_id="inspect", kind=PlanNodeKind.AGENT, objective="Inspect"),),
+    )
+    admitted = journal.admit_plan(run_id=run_id, plan=plan)
+    node_id = admitted.node_ids["inspect"]
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=node_id,
+        expected=PlanNodeState.READY,
+        target=PlanNodeState.LAUNCHING,
+    )
+    journal.begin_plan_node_execution(node_id=node_id, execution_key=f"task:{node_id}")
+    journal.settle_plan_node_execution(node_id=node_id, result={"status": "succeeded"})
+    _record_real_checkpoint(
+        checkpoints,
+        session_id=session_id,
+        idempotency_key="crash-after-settlement",
+        status="committed",
+        payload={},
+    )
+
+    first = recover_session(journal=journal, checkpoints=checkpoints, session_id=session_id)
+    event_count = len(journal.events_after(run_id=run_id))
+    second = recover_session(journal=journal, checkpoints=checkpoints, session_id=session_id)
+
+    assert first.snapshot is not None
+    assert first.snapshot.runs[0].run_id == run_id
+    assert journal.get_plan(admitted.plan_id).node_states["inspect"] is PlanNodeState.SUCCEEDED
+    assert second.interrupted_call_keys == ()
+    assert len(journal.events_after(run_id=run_id)) == event_count
 
 
 def test_missing_checkpoint_returns_structured_error_and_preserves_journal(

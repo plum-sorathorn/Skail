@@ -278,6 +278,9 @@ def build_task_graph(
         attempts = (*state.get("attempts", ()), summary)
         if not result.attempts:
             result = result.model_copy(update={"attempts": attempts})
+        terminal = result.status != "failed" or number == 2
+        if terminal and persist_result is not None:
+            persist_result(result)
         binding = AttemptBinding(state["attempt_id"], state["assignment"])
         if settle_attempt is not None:
             settle_attempt(binding, result)
@@ -297,16 +300,18 @@ def build_task_graph(
                 attempt_number=number,
             )
         if task_event is not None:
-            task_event(spec, result.status, state.get("attempt_id"))
-        if result.status != "failed" or number == 2:
+            task_event(
+                spec,
+                "returned_to_lead" if result.status == "failed" and number == 2 else result.status,
+                state.get("attempt_id"),
+            )
+        if terminal:
             if result.status == "failed":
                 result = result.model_copy(
                     update={"status": "returned_to_lead", "attempts": attempts}
                 )
                 if exhaust_fingerprint is not None:
                     exhaust_fingerprint(state["spec"])
-            if persist_result is not None:
-                persist_result(result)
             return {"result": result, "attempts": attempts}
         assignment = state["assignment"]
         if task_registry is not None:
