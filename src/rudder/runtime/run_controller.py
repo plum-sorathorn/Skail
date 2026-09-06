@@ -505,26 +505,44 @@ class RunController:
         attempt_id: AttemptId | None = None,
     ) -> EventEnvelope:
         with self.journal.transaction() as tx:
-            persisted = tx.connection.execute(
-                "SELECT COALESCE(MAX(sequence), 0) FROM events WHERE run_id=?",
-                (str(run_id),),
-            ).fetchone()[0]
-            seq = int(persisted) + 1
-            event = EventEnvelope(
-                event_id=new_event_id(),
-                session_id=self.session_id,
+            return self._append_event(
+                tx,
                 run_id=run_id,
-                task_id=task_id,
-                attempt_id=attempt_id,
-                sequence=seq,
-                occurred_at=datetime.now(UTC),
                 type=type,
                 payload=payload,
+                task_id=task_id,
+                attempt_id=attempt_id,
             )
-            if self.redactor:
-                event = self.redactor.scrub(event)
-            tx.append_event(event)
-            self.events.publish_after_commit(tx, event)
+
+    def _append_event(
+        self,
+        tx: Any,
+        *,
+        run_id: RunId,
+        type: str,
+        payload: EventPayload,
+        task_id: TaskId | None = None,
+        attempt_id: AttemptId | None = None,
+    ) -> EventEnvelope:
+        persisted = tx.connection.execute(
+            "SELECT COALESCE(MAX(sequence), 0) FROM events WHERE run_id=?",
+            (str(run_id),),
+        ).fetchone()[0]
+        event = EventEnvelope(
+            event_id=new_event_id(),
+            session_id=self.session_id,
+            run_id=run_id,
+            task_id=task_id,
+            attempt_id=attempt_id,
+            sequence=int(persisted) + 1,
+            occurred_at=datetime.now(UTC),
+            type=type,
+            payload=payload,
+        )
+        if self.redactor:
+            event = self.redactor.scrub(event)
+        tx.append_event(event)
+        self.events.publish_after_commit(tx, event)
         return event
 
     def _build_lead_for_run(
@@ -1066,15 +1084,6 @@ class RunController:
             attempt_status = AttemptStatus.INTERRUPTED if is_cancelled else AttemptStatus.FAILED
             task_status = TaskStatus.RETURNED_TO_LEAD if is_cancelled else TaskStatus.FAILED
             terminal_type = "run.cancelled" if is_cancelled else "run.failed"
-            self._emit_event(
-                run_id=run_id,
-                type=terminal_type,
-                payload=LifecyclePayload(status=run_status),
-            )
-            await _save_checkpoint(
-                "terminal_cancelled" if is_cancelled else "terminal_failed",
-                status="committed",
-            )
             with self.journal.transaction() as tx:
                 tx.update_attempt_status(
                     attempt_id=str(lead_attempt_id), status=attempt_status
@@ -1082,6 +1091,16 @@ class RunController:
                 tx.update_task_status(task_id=str(lead_task_id), status=task_status)
                 tx.update_run_status(run_id=str(run_id), status=run_status)
                 tx.update_session_status(session_id=str(self.session_id), status="idle")
+                self._append_event(
+                    tx,
+                    run_id=run_id,
+                    type=terminal_type,
+                    payload=LifecyclePayload(status=run_status),
+                )
+            await _save_checkpoint(
+                "terminal_cancelled" if is_cancelled else "terminal_failed",
+                status="committed",
+            )
             self._finalize_assignment_budget(lead_assignment)
             self._release_lead_allowances()
             raise
@@ -1388,15 +1407,16 @@ class RunController:
                         status="cancelled" if cancelled else "failed",
                     )
                     tx.update_session_status(session_id=str(self.session_id), status="idle")
+                    self._append_event(
+                        tx,
+                        run_id=pending.run_id,
+                        type="run.cancelled" if cancelled else "run.failed",
+                        payload=LifecyclePayload(
+                            status="cancelled" if cancelled else "failed"
+                        ),
+                    )
                 self._finalize_assignment_budget(pending.lead_assignment)
                 self._release_lead_allowances()
-                self._emit_event(
-                    run_id=pending.run_id,
-                    type="run.cancelled" if cancelled else "run.failed",
-                    payload=LifecyclePayload(
-                        status="cancelled" if cancelled else "failed"
-                    ),
-                )
                 self._pending_run = None
                 self._pending_interrupt_payload = None
                 raise

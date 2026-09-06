@@ -11,7 +11,11 @@ from langchain_core.messages import AIMessage
 from rudder.agents.lead import LeadControls
 from rudder.domain.ids import new_session_id
 from rudder.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
-from rudder.routing.assignment import RoutingSnapshot, config_revision
+from rudder.routing.assignment import (
+    AccountingReconciliationRequired,
+    RoutingSnapshot,
+    config_revision,
+)
 from rudder.routing.selector import RouteCandidate
 from rudder.runtime.run_controller import RunController
 from rudder.sessions.journal import Journal
@@ -60,6 +64,36 @@ async def test_lead_completes_direct_coding_flow_without_delegation(tmp_path: Pa
     assert result.lead_assignment.model == "lead-model"
     assert result.lead_assignment.attempt_number == 1
     assert result.lead_context_packet.task_id == str(result.run_id)
+
+
+@pytest.mark.asyncio
+async def test_terminal_failure_event_observes_committed_failed_run(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Terminal failure", created_at=datetime.now(UTC)
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": ScriptedChatModel(responses=[])},
+        default_lead_model="lead-model",
+    )
+    observed: list[tuple[str, str]] = []
+
+    def observe(event) -> None:
+        if event.type != "run.failed":
+            return
+        snapshot = journal.get_session_snapshot(str(session_id))
+        observed.append((event.type, snapshot.runs[0].status))
+
+    controller.subscribe_events(observe)
+
+    with pytest.raises(AccountingReconciliationRequired):
+        await controller.run_instruction("fail deterministically")
+
+    assert observed == [("run.failed", "failed")]
 
 
 @pytest.mark.asyncio

@@ -276,6 +276,24 @@ ranking or fixed-attempt semantics.
 
 **Owner:** `gpt-5.6-luna`, medium; escalate transaction design defects to Terra. **Depends on:** 02. **Completes:** old remediation 7.
 
+This phase is split into two reviewable slices because terminal state ordering and invocation/output
+ownership are separate concerns. Phase 03a is the first slice; the parent phase remains incomplete
+until Phase 03b supplies the CLI invocation, exit, output, and isolated subprocess evidence.
+
+#### Phase 03a — Atomically commit terminal failure and cancellation events
+
+**Status:** complete. **Scope:** controller terminal exception paths only.
+
+Update run, task, attempt, and session state in the same journal transaction that appends a
+`run.failed` or `run.cancelled` event. Post-commit observers must never see a terminal event while
+the corresponding run is still `running`; this applies to initial execution and resumed
+interrupted execution. Preserve the existing uncertain-settlement error behavior.
+
+**Acceptance:** a production `RunController` subscriber reading the journal during a terminal
+failure observes the committed failed state; the same transaction ordering is used for cancellation
+and resumed failures. Focused controller/event tests, affected suites, Ruff, mypy, Graphify, and
+diff checks pass. The Phase 03b CLI contract remains open.
+
 1. Centralize terminal responsibility for each invocation with a persisted run. Distinguish invocation identity from run identity so resume can have one invocation outcome without creating contradictory terminal task/run states.
 2. Cover bootstrap-after-run-creation, routing, provider, checkpoint, resume, blocked, and cancellation exits. Failures before persistence still return the correct CLI error without inventing persisted events. An unavailable journal cannot honestly promise durable delivery; return failure and a truthful diagnostic rather than fabricate a success envelope.
 3. Preserve exit codes `0` success, `1` failure, `2` usage error, `3` blocked, `4` cancelled. Persist one terminal envelope and avoid duplicate emission by nested handlers.
@@ -662,6 +680,23 @@ External evidence location and source identity, if applicable: none required; al
 Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging
 Unproven claims or missing evidence: delivery is at-least-once to observers; consumers deduplicate by event ID. Terminal invocation contract remains Phase 03 work
 Next phase and its dependencies: Phase 03 — Terminal events, exit codes, and isolated CLI tests; depends on completed Phase 02
+```
+
+### Phase 03a handoff
+
+```text
+Phase: 03a — Atomically commit terminal failure and cancellation events
+Status: complete
+Implementation model: GPT-5 Codex (assigned Luna treated as a recommendation)
+Commit(s): resolve from Git history by the phase-owned commit subject
+Behavior delivered: Initial and resumed controller exception paths now update terminal run/task/attempt/session state and append the corresponding run.failed or run.cancelled event in one journal transaction. Post-commit subscribers therefore observe terminal state consistently.
+Acceptance evidence and commands: `rtk pytest tests\integration\test_lead.py -k terminal_failure_event_observes_committed_failed_run -q`; affected event/controller suite; `python -m ruff check src tests scripts evals benchmarks`; `python -m mypy src\rudder`; `graphify update .`; `rtk git diff --check`; complete diff review
+Test results and documented skips: regression passed. The deterministic no-response fake causes the existing provider-usage uncertainty exception after terminal state is committed; that behavior is preserved and is asserted by the test. Full affected verification follows below.
+Review findings closed/open: terminal event-before-state ordering closed for initial and resumed controller exception paths. CLI invocation identity, terminal output uniqueness, exit behavior, and subprocess isolation remain open in Phase 03b.
+External evidence location and source identity, if applicable: none required; all fixtures are offline and deterministic
+Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, `run_2.md` excluded from phase staging
+Unproven claims or missing evidence: Phase 03 parent remains incomplete; this slice does not certify the CLI contract or release readiness.
+Next phase and its dependencies: Phase 03b — CLI invocation, terminal output, exit codes, and isolated tests; depends on Phase 03a
 ```
 
 ## 10. Definition of completion
