@@ -81,6 +81,13 @@ class PlanNodeSnapshot:
     state: PlanNodeState
 
 
+@dataclass(frozen=True)
+class PlanNodeTaskBinding:
+    node_id: str
+    task_id: str
+    attempt_id: str
+
+
 def _run_snapshot(row: sqlite3.Row) -> RunSnapshot:
     schema_version = row["plan_schema_version"]
     policy_version = row["execution_policy_version"]
@@ -998,6 +1005,30 @@ class Journal:
             for row in rows
         )
 
+    def bind_plan_node_task(
+        self, *, node_id: str, task_id: str, attempt_id: str
+    ) -> PlanNodeTaskBinding:
+        with self.transaction() as transaction:
+            try:
+                transaction.connection.execute(
+                    "INSERT INTO plan_node_task_bindings VALUES (?,?,?,?)",
+                    (node_id, task_id, attempt_id, _now()),
+                )
+            except sqlite3.IntegrityError as error:
+                raise FrameworkContractError(
+                    "plan.node_task_binding_conflict",
+                    "plan node already has a task binding",
+                ) from error
+        return PlanNodeTaskBinding(node_id, task_id, attempt_id)
+
+    def plan_node_task_binding(self, node_id: str) -> PlanNodeTaskBinding | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT node_id,task_id,attempt_id FROM plan_node_task_bindings WHERE node_id=?",
+                (node_id,),
+            ).fetchone()
+        return None if row is None else PlanNodeTaskBinding(**dict(row))
+
     def transition_plan_node_state(
         self,
         *,
@@ -1010,6 +1041,7 @@ class Journal:
         legal = {
             (PlanNodeState.READY, PlanNodeState.LAUNCHING),
             (PlanNodeState.LAUNCHING, PlanNodeState.RUNNING),
+            (PlanNodeState.LAUNCHING, PlanNodeState.BLOCKED),
             (PlanNodeState.RUNNING, PlanNodeState.SUCCEEDED),
             (PlanNodeState.RUNNING, PlanNodeState.FAILED),
             (PlanNodeState.RUNNING, PlanNodeState.BLOCKED),

@@ -241,4 +241,15 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
         """,
     ),
+    (
+        11,
+        """
+        CREATE TABLE plan_node_task_bindings (
+            node_id TEXT PRIMARY KEY REFERENCES plan_nodes(node_id) ON DELETE CASCADE,
+            task_id TEXT NOT NULL UNIQUE REFERENCES tasks(task_id),
+            attempt_id TEXT NOT NULL UNIQUE REFERENCES attempts(attempt_id),
+            created_at TEXT NOT NULL
+        );
+        """,
+    ),
 )

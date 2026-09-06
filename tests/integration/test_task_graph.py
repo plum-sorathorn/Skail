@@ -6,6 +6,7 @@ from collections import deque
 from decimal import Decimal
 
 import pytest
+from fakes.barriers import AsyncStartBarrier
 from fakes.models import ScriptedChatModel, parallel_tool_call_message
 from langchain_core.messages import AIMessage
 
@@ -33,12 +34,12 @@ from rudder.runtime.scheduler import ChildScheduler
 from rudder.runtime.task_validation import TaskValidator
 
 
-def _spec(tmp_path):
+def _spec(tmp_path, *, profile: str = "implementer"):
     return TaskValidator(
         profiles=builtin_profiles(), workspace_root=tmp_path, max_depth=1,
         background_enabled=False,
     ).create_spec(
-        TaskRequest(description="Implement one change", profile="implementer"),
+        TaskRequest(description=f"Run {profile} work", profile=profile),
         run_id=new_run_id(), parent_task_id=None, parent_depth=0,
         workspace_revision="git:abc",
     )
@@ -366,3 +367,61 @@ async def test_cancelled_writer_keeps_lease_until_operation_stops(tmp_path) -> N
     with pytest.raises(asyncio.CancelledError):
         await running
     assert leases.holder is None
+
+
+@pytest.mark.asyncio
+async def test_writer_waiting_for_lease_does_not_occupy_a_child_slot(tmp_path) -> None:
+    first_writer = _spec(tmp_path)
+    waiting_writer = _spec(tmp_path)
+    reader = _spec(tmp_path, profile="explorer")
+    barrier = AsyncStartBarrier()
+    gate = ChildRunGate(2)
+    leases = WorkspaceLeaseManager()
+
+    def assign(spec, number, excluded):
+        return AttemptBinding(new_attempt_id(), _assignment(spec, number, "model"))
+
+    async def execute(spec, assignment, packet):
+        del assignment, packet
+        task_id = str(spec.task_id)
+        await barrier.worker(task_id)
+        return TaskResult(
+            task_id=spec.task_id,
+            status="succeeded",
+            summary="completed",
+            verification=(
+                VerificationResult(
+                    criterion="Provide evidence for the completed task",
+                    passed=True,
+                    evidence="deterministic barrier released",
+                ),
+            ),
+        )
+
+    def graph_for(spec):
+        return build_task_graph(
+            profile=builtin_profiles()[spec.request.profile],
+            assign=assign,
+            execute=execute,
+            gate=gate,
+            leases=leases,
+        )
+
+    first = asyncio.create_task(graph_for(first_writer).ainvoke({"spec": first_writer}))
+    await barrier.wait_for_started(1)
+    waiting = asyncio.create_task(
+        graph_for(waiting_writer).ainvoke({"spec": waiting_writer})
+    )
+    await asyncio.sleep(0)
+    reading = asyncio.create_task(graph_for(reader).ainvoke({"spec": reader}))
+    await barrier.wait_for_started(2)
+
+    assert str(reader.task_id) in barrier.started
+    assert gate.active == 2
+    barrier.release(str(reader.task_id))
+    barrier.release(str(first_writer.task_id))
+    await barrier.wait_for_started(3)
+    barrier.release(str(waiting_writer.task_id))
+
+    await asyncio.gather(first, waiting, reading)
+    assert gate.peak_active == 2

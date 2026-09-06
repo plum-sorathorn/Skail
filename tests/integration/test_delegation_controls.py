@@ -1,13 +1,16 @@
+import asyncio
 import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from fakes.barriers import AsyncStartBarrier
 from fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_call_message
 from langchain_core.messages import AIMessage
 
 from rudder.agents.lead import LeadControls
 from rudder.domain.ids import new_session_id
+from rudder.domain.plans import PlanNodeState
 from rudder.domain.tasks import TaskResult
 from rudder.runtime.run_controller import RunController
 from rudder.sessions.journal import Journal
@@ -222,8 +225,125 @@ async def test_explicit_plan_does_not_allow_task_to_bypass_plan_admission(tmp_pa
 
     snapshot = journal.get_session_snapshot(str(session_id))
     assert len(journal.plans_for_run(str(result.run_id))) == 1
-    assert len(snapshot.tasks) == 1  # The lead task only.
-    assert len(snapshot.attempts) == 1
+    assert len(snapshot.tasks) == 2  # Lead plus the admitted plan node, never the bypass call.
+    assert len(snapshot.attempts) == 3  # The admitted node may use its bounded retry.
+
+
+@pytest.mark.asyncio
+async def test_planned_ready_agent_nodes_use_the_admitted_child_lifecycle(tmp_path: Path) -> None:
+    evidence_path = tmp_path / "planned-evidence.txt"
+    evidence_path.write_text("planned dispatch evidence\n", encoding="utf-8")
+    evidence_digest = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Planned agent dispatch", created_at=datetime.now(UTC)
+    )
+    child_model = ScriptedChatModel(
+        model_name="implementer-model",
+        responses=[
+            _child_success("first complete", evidence_digest),
+            _child_success("second complete", evidence_digest),
+        ],
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [("execution_decision", _planned_decision(), "decision-1")]
+            ),
+            AIMessage(content="The planned work has been dispatched."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": child_model},
+        profile_models={"implementer": "implementer-model"},
+    )
+
+    result = await controller.run_instruction("Inspect two independent files")
+
+    plan = journal.plans_for_run(str(result.run_id))[0]
+    assert len(child_model.calls) == 2
+    assert [child.status for child in result.child_results] == ["succeeded", "succeeded"]
+    assert plan.node_states == {
+        "first": PlanNodeState.RUNNING,
+        "second": PlanNodeState.RUNNING,
+        "after_first": PlanNodeState.WAITING,
+    }
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert len(snapshot.tasks) == 3  # Lead plus two plan-owned child tasks.
+    assert len(snapshot.attempts) == 3
+    bindings = [
+        journal.plan_node_task_binding(plan.node_ids[local_id])
+        for local_id in ("first", "second")
+    ]
+    assert {binding.task_id for binding in bindings if binding is not None} == {
+        str(child.task_id) for child in result.child_results
+    }
+    assert {binding.attempt_id for binding in bindings if binding is not None} <= {
+        attempt.attempt_id for attempt in snapshot.attempts
+    }
+
+
+@pytest.mark.asyncio
+async def test_planned_agent_nodes_obey_the_shared_child_limit(tmp_path: Path) -> None:
+    evidence_path = tmp_path / "planned-evidence.txt"
+    evidence_path.write_text("planned dispatch evidence\n", encoding="utf-8")
+    evidence_digest = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    barrier = AsyncStartBarrier()
+
+    async def block_child(model: ScriptedChatModel, _) -> None:
+        await barrier.worker(f"child-{len(model.calls)}")
+
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Planned child cap", created_at=datetime.now(UTC)
+    )
+    child_model = ScriptedChatModel(
+        model_name="implementer-model",
+        responses=[
+            _child_success("first complete", evidence_digest),
+            _child_success("second complete", evidence_digest),
+        ],
+        async_call_hook=block_child,
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [("execution_decision", _planned_decision(), "decision-1")]
+            ),
+            AIMessage(content="The planned work has been dispatched."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": child_model},
+        profile_models={"implementer": "implementer-model"},
+    )
+
+    run = asyncio.create_task(
+        controller.run_instruction(
+            "Inspect two independent files", controls=LeadControls(max_children=1)
+        )
+    )
+    await barrier.wait_for_started(1)
+    assert barrier.started == ["child-1"]
+    barrier.release("child-1")
+    await barrier.wait_for_started(2)
+    assert barrier.started == ["child-1", "child-2"]
+    barrier.release("child-2")
+
+    result = await run
+
+    assert result.child_peak_active == 1
+    assert [child.status for child in result.child_results] == ["succeeded", "succeeded"]
 
 
 @pytest.mark.asyncio
@@ -423,3 +543,53 @@ def _direct_decision(objective: str) -> dict[str, object]:
         "constraints": [],
         "reason": "The requested work is bounded.",
     }
+
+
+def _planned_decision() -> dict[str, object]:
+    return {
+        "mode": "planned",
+        "objective": "Inspect independent files",
+        "constraints": ["read only"],
+        "reason": "The inspections are independent.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "first",
+                    "kind": "agent",
+                    "objective": "Inspect the first file",
+                    "effect_scope": "workspace_write",
+                    "task_features": {"profile": "implementer"},
+                },
+                {
+                    "local_id": "second",
+                    "kind": "agent",
+                    "objective": "Inspect the second file",
+                    "effect_scope": "workspace_write",
+                    "task_features": {"profile": "implementer"},
+                },
+                {
+                    "local_id": "after_first",
+                    "kind": "agent",
+                    "objective": "Inspect the first result",
+                    "depends_on": ["first"],
+                    "effect_scope": "workspace_write",
+                    "task_features": {"profile": "implementer"},
+                },
+            ],
+        },
+    }
+
+
+def _child_success(summary: str, evidence_digest: str) -> AIMessage:
+    return AIMessage(
+        content=(
+            '{"status":"succeeded","summary":"' + summary + '",'
+            '"verification":[{"criterion":"dispatch evidence","passed":true,'
+            '"evidence":"planned-evidence.txt digest",'
+            '"evidence_ref":{"kind":"file","path":"planned-evidence.txt",'
+            '"digest":"' + evidence_digest + '"}}]}'
+        )
+    )

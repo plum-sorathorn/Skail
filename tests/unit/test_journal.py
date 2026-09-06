@@ -37,6 +37,7 @@ EXPECTED_TABLES = {
     "plan_nodes",
     "plan_revisions",
     "plan_node_states",
+    "plan_node_task_bindings",
 }
 
 

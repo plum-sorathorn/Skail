@@ -209,21 +209,10 @@ def build_task_graph(
             task_event(spec, "started", state.get("attempt_id"))
 
         async def invoke() -> TaskResult:
-            if profile.write_capable:
-                async with leases.acquire(str(spec.task_id)):
-                    operation: asyncio.Future[TaskResult] = asyncio.ensure_future(
-                        execute(spec, assignment, packet)
-                    )
-                    try:
-                        raw = await asyncio.shield(operation)
-                    except asyncio.CancelledError:
-                        await operation
-                        raise
-            else:
-                raw = await execute(spec, assignment, packet)
+            raw = await execute(spec, assignment, packet)
             return evaluate_result(raw, required_criteria=spec.request.success_criteria)
 
-        try:
+        async def run_with_gate() -> TaskResult:
             if scheduler is not None:
                 task_id_str = str(spec.task_id)
                 if task_id_str not in scheduler._children:
@@ -239,6 +228,19 @@ def build_task_graph(
                 )
             else:
                 result = await gate.run(str(spec.task_id), invoke)
+            return cast(TaskResult, result)
+
+        try:
+            if profile.write_capable:
+                async with leases.acquire(str(spec.task_id)):
+                    operation: asyncio.Future[TaskResult] = asyncio.ensure_future(run_with_gate())
+                    try:
+                        result = await asyncio.shield(operation)
+                    except asyncio.CancelledError:
+                        await operation
+                        raise
+            else:
+                result = await run_with_gate()
         except Exception as exc:
             result = TaskResult(
                 task_id=spec.task_id,

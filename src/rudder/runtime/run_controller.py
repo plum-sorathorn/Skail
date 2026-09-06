@@ -52,12 +52,13 @@ from rudder.domain.ids import (
     new_run_id,
     new_task_id,
 )
-from rudder.domain.plans import EffectScope, ExecutionPlan
+from rudder.domain.plans import EffectScope, ExecutionPlan, PlanNode, PlanNodeKind, PlanNodeState
 from rudder.domain.routing import RoutingMode, TaskAssignment
 from rudder.domain.tasks import (
     TERMINAL_TASK_STATUSES,
     ArtifactRef,
     AttemptStatus,
+    TaskRequest,
     TaskResult,
     TaskSpec,
     TaskStatus,
@@ -85,6 +86,7 @@ from rudder.runtime.decisions import (
     execution_decision_tool,
 )
 from rudder.runtime.deepagents_adapter import ChildRunGate, resume_agent
+from rudder.runtime.errors import FrameworkContractError
 from rudder.runtime.event_bus import EventBus
 from rudder.runtime.interrupts import QuestionStore
 from rudder.runtime.leases import WorkspaceLeaseManager
@@ -94,7 +96,7 @@ from rudder.runtime.scheduler import ChildScheduler
 from rudder.runtime.task_registry import TaskRegistry
 from rudder.runtime.task_validation import TaskValidationError, TaskValidator
 from rudder.sessions.checkpoints import CheckpointStore
-from rudder.sessions.journal import Journal
+from rudder.sessions.journal import Journal, PersistedPlan
 from rudder.tools.approvals import ApprovalStore
 from rudder.tools.assembly import build_default_agent
 
@@ -130,6 +132,14 @@ class _PendingRun:
     lead_attempt_id: AttemptId
     lead_assignment: TaskAssignment
     lead_context_packet: ContextPacket
+
+
+@dataclass(frozen=True)
+class _PlannedNodeDispatch:
+    plan_id: str
+    node_id: str
+    profile: AgentProfile
+    spec: TaskSpec
 
 
 AssignChildAttempt = Callable[
@@ -231,6 +241,8 @@ class RunController:
         self._pending_interrupt_payload: dict[str, Any] | None = None
         self._planned_specs: dict[tuple[str, str], deque[TaskSpec]] = {}
         self._planned_assignments: dict[str, AttemptBinding | RouteFailure] = {}
+        self._planned_node_dispatches: list[_PlannedNodeDispatch] = []
+        self._plan_nodes_by_task: dict[str, tuple[str, str]] = {}
         self._lead_allowance_ids: list[str] = []
 
     @property
@@ -619,11 +631,26 @@ class RunController:
             authorized_effects.add(EffectScope.WORKSPACE_WRITE)
 
         def admit_plan(plan: ExecutionPlan) -> None:
-            self.journal.admit_plan(
+            for node in plan.nodes:
+                if node.kind is PlanNodeKind.AGENT:
+                    request = _task_request_for_plan_node(node)
+                    profile = builtin_profiles()[request.profile]
+                    if controls.write_allowed is False and profile.write_capable:
+                        raise TaskValidationError("plan.node_write_disallowed")
+                    self.validator.normalize(request, parent_depth=0)
+            persisted = self.journal.admit_plan(
                 run_id=str(run_id),
                 plan=plan,
                 event_observer=self.events.publish_persisted_nowait,
                 authorized_effects=frozenset(authorized_effects),
+            )
+            self._admit_ready_plan_agents(
+                persisted,
+                run_id=run_id,
+                controls=controls,
+                workspace_revision=workspace_revision,
+                lead_assignment=lead_assignment,
+                scheduler=scheduler,
             )
 
         decision_gate = ExecutionDecisionGate(admit_plan=admit_plan)
@@ -669,6 +696,224 @@ class RunController:
         if not queue:
             return None
         return queue.popleft()
+
+    def _admit_ready_plan_agents(
+        self,
+        persisted: PersistedPlan,
+        *,
+        run_id: RunId,
+        controls: LeadControls,
+        workspace_revision: str,
+        lead_assignment: TaskAssignment,
+        scheduler: ChildScheduler,
+    ) -> None:
+        """Bind an admitted plan's initial ready agent frontier to child task records."""
+        if controls.delegation == "off":
+            return
+        nodes = {node.local_id: node for node in persisted.plan.nodes}
+        planned: list[tuple[PlanNode, str, TaskSpec, AgentProfile, AttemptId]] = []
+        for ready in self.journal.ready_plan_nodes(persisted.plan_id):
+            node = nodes[ready.local_id]
+            if node.kind is not PlanNodeKind.AGENT:
+                continue
+            request = _task_request_for_plan_node(node)
+            profile = builtin_profiles()[request.profile]
+            if controls.write_allowed is False and profile.write_capable:
+                raise TaskValidationError("plan.node_write_disallowed")
+            spec = self.validator.create_spec(
+                request,
+                run_id=run_id,
+                parent_task_id=None,
+                parent_depth=0,
+                workspace_revision=workspace_revision,
+                risk=controls.risk,
+            )
+            planned.append((node, ready.node_id, spec, profile, new_attempt_id()))
+        if not planned:
+            return
+        self.registry.register_many(tuple(item[2] for item in planned))
+
+        now = datetime.now(UTC)
+        requests: list[AssignmentRequest] = []
+        for node, node_id, spec, profile, attempt_id in planned:
+            self.journal.transition_plan_node_state(
+                plan_id=persisted.plan_id,
+                node_id=node_id,
+                expected=PlanNodeState.READY,
+                target=PlanNodeState.LAUNCHING,
+                event_observer=self.events.publish_persisted_nowait,
+            )
+            self.registry.transition(
+                spec.task_id,
+                expected=TaskStatus.PROPOSED,
+                target=TaskStatus.QUEUED,
+                attempt_number=1,
+            )
+            self.journal.create_task(
+                task_id=str(spec.task_id),
+                run_id=str(run_id),
+                description=spec.request.description,
+                status="queued",
+                idempotency_key=f"task:{spec.task_id}",
+                created_at=now,
+                fingerprint=spec.fingerprint,
+            )
+            self.journal.create_attempt(
+                attempt_id=str(attempt_id),
+                task_id=str(spec.task_id),
+                number=1,
+                status="assigned",
+                idempotency_key=f"attempt:{attempt_id}",
+                created_at=now,
+            )
+            self.journal.bind_plan_node_task(
+                node_id=node_id,
+                task_id=str(spec.task_id),
+                attempt_id=str(attempt_id),
+            )
+            scheduler.submit(str(spec.task_id), priority=spec.request.priority)
+            self._planned_specs.setdefault(
+                (profile.name, spec.request.description), deque()
+            ).append(spec)
+            self._plan_nodes_by_task[str(spec.task_id)] = (persisted.plan_id, node_id)
+            self._planned_node_dispatches.append(
+                _PlannedNodeDispatch(persisted.plan_id, node_id, profile, spec)
+            )
+            self._emit_event(
+                run_id=run_id,
+                type="task.proposed",
+                payload=TaskPayload(status="proposed", profile=profile.name),
+                task_id=spec.task_id,
+            )
+            self._emit_event(
+                run_id=run_id,
+                type="task.queued",
+                payload=TaskPayload(status="queued", profile=profile.name),
+                task_id=spec.task_id,
+            )
+            configured_model = self.profile_models.get(profile.name)
+            policy = spec.request.model_policy
+            if policy is not None and policy.model is not None:
+                configured_model = (
+                    f"{policy.provider}:{policy.model}" if policy.provider else policy.model
+                )
+            mode = RoutingMode.MANUAL if configured_model else controls.routing_mode
+            manual_model: tuple[str, str] | None = None
+            if configured_model:
+                provider, model = "fake", configured_model
+                if ":" in configured_model:
+                    provider, model = configured_model.split(":", 1)
+                manual_model = (provider, model)
+            requirements = self._requirements.for_assignment(
+                spec.requirements,
+                role=profile.role,
+                risk=controls.risk,
+                mode=mode,
+                role_hard_min=profile.role_floor,
+            )
+            requests.append(
+                AssignmentRequest(
+                    session_id=self.session_id,
+                    run_id=run_id,
+                    task_id=spec.task_id,
+                    attempt_id=attempt_id,
+                    attempt_number=1,
+                    catalog_revision=self.catalog_revision,
+                    requirements=requirements,
+                    config_snapshot=self._routing_config_snapshot(controls.routing_mode),
+                    manual_model=manual_model,
+                    task_limit_usd=spec.request.budget_usd,
+                )
+            )
+
+        specs_by_id = {str(spec.task_id): spec for _, _, spec, _, _ in planned}
+        profiles_by_task = {str(spec.task_id): profile for _, _, spec, profile, _ in planned}
+
+        def batch_candidates(request: AssignmentRequest) -> RoutingSnapshot:
+            spec = specs_by_id[str(request.task_id)]
+            profile = profiles_by_task[str(request.task_id)]
+            packet = self.assembler.assemble(
+                task_id=str(spec.task_id),
+                objective=spec.request.description,
+                constraints=spec.request.success_criteria,
+                state="attempt=1; assignment=pending",
+            )
+            snapshot = self._estimate_snapshot(
+                self._get_candidates(
+                    for_lead=False,
+                    target_lead_model=controls.model or self.default_lead_model,
+                    routing_mode=controls.routing_mode,
+                ),
+                packet=packet,
+                profile=profile,
+                minimum_output_tokens=request.requirements.minimum_output_tokens,
+            )
+            policy = spec.request.model_policy
+            if policy is None or policy.provider is None:
+                return snapshot
+            return snapshot.model_copy(
+                update={
+                    "candidates": tuple(
+                        candidate
+                        for candidate in snapshot.candidates
+                        if candidate.profile.provider == policy.provider
+                    )
+                }
+            )
+
+        result = self.assignment_service.assign_batch(
+            tuple(requests),
+            batch_candidates,
+            lead_allowance_usd=lead_assignment.estimated_attempt_cost_usd,
+        )
+        if result.lead_reservation_id:
+            self._lead_allowance_ids.append(result.lead_reservation_id)
+        assignments = {str(item.task_id): item for item in result.assignments}
+        for _, _, spec, _, attempt_id in planned:
+            assignment = assignments.get(str(spec.task_id))
+            self._planned_assignments[str(spec.task_id)] = (
+                AttemptBinding(str(attempt_id), assignment)
+                if assignment is not None
+                else RouteFailure(
+                    excluded_counts={"budget_unaffordable": 1},
+                    binding_constraint="budget_unaffordable",
+                )
+            )
+
+    async def _dispatch_admitted_plan_agents(
+        self,
+        *,
+        run_id: RunId,
+        workspace_revision: str,
+        leases: WorkspaceLeaseManager,
+        gate: ChildRunGate,
+        scheduler: ChildScheduler,
+        controls: LeadControls,
+        delegation_approved: bool,
+        recorded_child_results: list[TaskResult],
+    ) -> None:
+        dispatches = tuple(self._planned_node_dispatches)
+        if not dispatches:
+            return
+        executions = []
+        for dispatch in dispatches:
+            subagent = self._build_profile_subagent(
+                profile=dispatch.profile,
+                run_id=run_id,
+                workspace_revision=workspace_revision,
+                leases=leases,
+                gate=gate,
+                scheduler=scheduler,
+                controls=controls,
+                delegation_approved=delegation_approved,
+                recorded_child_results=recorded_child_results,
+            )
+            executions.append(
+                subagent["runnable"].ainvoke(
+                    {"messages": [HumanMessage(content=dispatch.spec.request.description)]}
+                )
+            )
+        await asyncio.gather(*executions)
 
     def _admit_task_batch(
         self,
@@ -914,6 +1159,8 @@ class RunController:
         active_controls = controls or LeadControls()
         self._planned_specs.clear()
         self._planned_assignments.clear()
+        self._planned_node_dispatches.clear()
+        self._plan_nodes_by_task.clear()
         self._lead_allowance_ids.clear()
         max_children = min(max(active_controls.max_children, 1), 3)
 
@@ -1225,6 +1472,17 @@ class RunController:
                 child_count=len(scheduler.gate.completed),
                 pending_interrupt=pending_interrupt,
             )
+
+        await self._dispatch_admitted_plan_agents(
+            run_id=run_id,
+            workspace_revision=workspace_revision,
+            leases=leases,
+            gate=gate,
+            scheduler=scheduler,
+            controls=active_controls,
+            delegation_approved=delegation_approved,
+            recorded_child_results=recorded_child_results,
+        )
 
         with self.journal.transaction() as tx:
             tx.update_attempt_status(
@@ -1911,6 +2169,29 @@ class RunController:
             self.registry._failed_fingerprint_attempts[spec.fingerprint] = 2
 
         def emit_task(spec: TaskSpec, status: str, attempt_id: str | None) -> None:
+            plan_node = self._plan_nodes_by_task.get(str(spec.task_id))
+            if plan_node is not None:
+                plan_id, node_id = plan_node
+                if status == "started":
+                    self.journal.transition_plan_node_state(
+                        plan_id=plan_id,
+                        node_id=node_id,
+                        expected=PlanNodeState.LAUNCHING,
+                        target=PlanNodeState.RUNNING,
+                        event_observer=self.events.publish_persisted_nowait,
+                    )
+                elif status in {"blocked", "budget_blocked"}:
+                    try:
+                        self.journal.transition_plan_node_state(
+                            plan_id=plan_id,
+                            node_id=node_id,
+                            expected=PlanNodeState.LAUNCHING,
+                            target=PlanNodeState.BLOCKED,
+                            event_observer=self.events.publish_persisted_nowait,
+                        )
+                    except FrameworkContractError as error:
+                        if not str(error).startswith("plan.node_state_conflict"):
+                            raise
             self._emit_event(
                 run_id=run_id,
                 type=f"task.{status}",
@@ -1948,6 +2229,41 @@ class RunController:
             resolve_spec=self._resolve_planned_spec,
             require_preplanned=True,
         )
+
+
+def _task_request_for_plan_node(node: PlanNode) -> TaskRequest:
+    features = dict(node.task_features)
+    allowed = {
+        "profile",
+        "write_scope",
+        "model_policy",
+        "budget_usd",
+        "priority",
+    }
+    if set(features) - allowed:
+        raise TaskValidationError("plan.task_features_invalid")
+    default_profile = (
+        "explorer" if node.effect_scope is EffectScope.READ else "implementer"
+    )
+    try:
+        request = TaskRequest.model_validate(
+            {
+                **features,
+                "description": node.objective,
+                "profile": features.get("profile", default_profile),
+                "success_criteria": node.acceptance_criteria,
+            }
+        )
+    except ValueError as error:
+        raise TaskValidationError("plan.task_features_invalid") from error
+    profile = builtin_profiles().get(request.profile)
+    if profile is None:
+        raise TaskValidationError("task.profile_unknown")
+    if node.effect_scope is EffectScope.READ and profile.write_capable:
+        raise TaskValidationError("plan.node_effect_profile_mismatch")
+    if node.effect_scope is EffectScope.WORKSPACE_WRITE and not profile.write_capable:
+        raise TaskValidationError("plan.node_effect_profile_mismatch")
+    return request
 
 
 def _format_context_packet(packet: ContextPacket) -> str:
