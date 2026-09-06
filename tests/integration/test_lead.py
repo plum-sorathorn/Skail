@@ -128,6 +128,15 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
         result.child_results[0].verification[0].evidence_ref
     )
     assert result.child_results[0].status == "succeeded", result.child_results[0]
+    child_assignment = next(
+        assignment
+        for assignment in journal.get_session_snapshot(str(session_id)).assignments
+        if assignment.model == "implementer-model"
+    )
+    assumptions = child_assignment.payload["routing_inputs"][0]["estimate_assumptions"]
+    assert "expected_calls=8" in assumptions
+    assert "expected_calls_prior=profile:implementer" in assumptions
+    assert "cache_assumption=no_cache_reuse" in assumptions
 
 
 @pytest.mark.asyncio
@@ -241,6 +250,39 @@ async def test_lead_assignment_persists_before_first_model_call(tmp_path: Path) 
     result = await controller.run_instruction("Direct prompt")
     assert observed_assignments_before_call == [1]
     assert result.output == "Direct answer."
+
+
+@pytest.mark.asyncio
+async def test_lead_assignments_use_the_assembled_packet_and_profile_call_prior(
+    tmp_path: Path,
+) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Packet estimates", created_at=datetime.now(UTC)
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={
+            "lead-model": ScriptedChatModel(
+                model_name="lead-model",
+                responses=[AIMessage(content="short done"), AIMessage(content="long done")],
+            )
+        },
+    )
+
+    await controller.run_instruction("Summarize this")
+    await controller.run_instruction("x" * 16_000)
+
+    assignments = journal.get_session_snapshot(str(session_id)).assignments
+    assert assignments[1].estimated_cost_usd > assignments[0].estimated_cost_usd
+    for assignment in assignments:
+        assumptions = assignment.payload["routing_inputs"][0]["estimate_assumptions"]
+        assert "expected_calls=12" in assumptions
+        assert "expected_calls_prior=profile:lead" in assumptions
+        assert "cached_input_tokens=0" in assumptions
 
 
 @pytest.mark.asyncio

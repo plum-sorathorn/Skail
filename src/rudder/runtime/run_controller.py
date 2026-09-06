@@ -72,6 +72,7 @@ from rudder.routing.assignment import (
     config_revision,
 )
 from rudder.routing.budget import BudgetLedger
+from rudder.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
 from rudder.routing.requirements import RequirementBuilder, TaskRisk
 from rudder.routing.selector import RouteCandidate, RouteFailure
 from rudder.runtime.deepagents_adapter import ChildRunGate, resume_agent
@@ -88,6 +89,8 @@ from rudder.tools.approvals import ApprovalStore
 from rudder.tools.assembly import build_default_agent
 
 DEFAULT_CONFIG_SNAPSHOT: dict[str, Any] = {"routing": {"mode": "auto"}}
+_TOOL_RESULT_ALLOWANCE_TOKENS = 1_024
+_DEFAULT_OUTPUT_ALLOWANCE_TOKENS = 2_048
 
 
 @dataclass(frozen=True)
@@ -302,6 +305,51 @@ class RunController:
         snapshot.setdefault("routing", {})["mode"] = mode.value
         return snapshot
 
+    def _estimate_snapshot(
+        self,
+        snapshot: RoutingSnapshot,
+        *,
+        packet: ContextPacket,
+        profile: AgentProfile,
+        minimum_output_tokens: int,
+    ) -> RoutingSnapshot:
+        """Attach a task-packet estimate to each candidate without assuming cache reuse."""
+        candidates: list[RouteCandidate] = []
+        for candidate in snapshot.candidates:
+            output_allowance = max(
+                minimum_output_tokens,
+                min(
+                    candidate.profile.max_output_tokens or _DEFAULT_OUTPUT_ALLOWANCE_TOKENS,
+                    _DEFAULT_OUTPUT_ALLOWANCE_TOKENS,
+                ),
+            )
+            estimate = estimate_attempt_cost(
+                AttemptEstimateInput(
+                    context_tokens=packet.estimated_tokens,
+                    tool_result_tokens=(
+                        _TOOL_RESULT_ALLOWANCE_TOKENS if profile.tools else 0
+                    ),
+                    output_tokens=output_allowance,
+                    expected_calls=profile.expected_calls,
+                    input_usd_per_million=candidate.profile.input_usd_per_million,
+                    output_usd_per_million=candidate.profile.output_usd_per_million,
+                    cached_input_usd_per_million=candidate.profile.cached_input_usd_per_million,
+                )
+            )
+            candidates.append(
+                candidate.model_copy(
+                    update={
+                        "estimated_cost_usd": estimate.cost_usd,
+                        "estimate_assumptions": (
+                            *estimate.assumptions,
+                            f"expected_calls_prior=profile:{profile.name}",
+                            "cache_assumption=no_cache_reuse",
+                        ),
+                    }
+                )
+            )
+        return snapshot.model_copy(update={"candidates": tuple(candidates)})
+
     def _get_candidates(
         self,
         *,
@@ -358,8 +406,8 @@ class RunController:
             candidates.append(
                 RouteCandidate(
                     profile=profile,
-                    estimated_cost_usd=Decimal("0.01") if is_lead else Decimal("0.02"),
-                    estimate_assumptions=("expected_calls=2",),
+                    estimated_cost_usd=None,
+                    estimate_assumptions=("estimate_pending_task_packet",),
                     configured=True,
                     healthy=True,
                     enabled=True,
@@ -397,8 +445,8 @@ class RunController:
                 candidates.append(
                     RouteCandidate(
                         profile=profile,
-                        estimated_cost_usd=Decimal("0.02"),
-                        estimate_assumptions=("expected_calls=2",),
+                        estimated_cost_usd=None,
+                        estimate_assumptions=("estimate_pending_task_packet",),
                         configured=True,
                         healthy=True,
                         enabled=True,
@@ -707,14 +755,29 @@ class RunController:
             )
 
         specs_by_id = {str(item[0].task_id): item[0] for item in planned}
+        profiles_by_task = {str(spec.task_id): profile for spec, _, profile, _ in planned}
 
         def batch_candidates(request: AssignmentRequest) -> RoutingSnapshot:
+            spec = specs_by_id[str(request.task_id)]
+            profile = profiles_by_task[str(request.task_id)]
+            packet = self.assembler.assemble(
+                task_id=str(spec.task_id),
+                objective=spec.request.description,
+                constraints=spec.request.success_criteria,
+                state="attempt=1; assignment=pending",
+            )
             snapshot = self._get_candidates(
                 for_lead=False,
                 target_lead_model=controls.model or self.default_lead_model,
                 routing_mode=controls.routing_mode,
             )
-            policy = specs_by_id[str(request.task_id)].request.model_policy
+            snapshot = self._estimate_snapshot(
+                snapshot,
+                packet=packet,
+                profile=profile,
+                minimum_output_tokens=request.requirements.minimum_output_tokens,
+            )
+            policy = spec.request.model_policy
             if policy is None or policy.provider is None:
                 return snapshot
             return snapshot.model_copy(
@@ -888,12 +951,24 @@ class RunController:
             config_snapshot=lead_config_snapshot,
             manual_model=(lead_provider, lead_model) if lead_mode is RoutingMode.MANUAL else None,
         )
+        lead_preflight_packet = self.assembler.assemble(
+            task_id=str(run_id),
+            objective=instruction,
+            constraints=(),
+            state=f"run_id={run_id}; assignment=pending",
+            references=self._compaction_references(),
+        )
         assigned_lead = self.assignment_service.assign(
             lead_request,
-            lambda: self._get_candidates(
-                for_lead=True,
-                target_lead_model=lead_model_name,
-                routing_mode=active_controls.routing_mode,
+            lambda: self._estimate_snapshot(
+                self._get_candidates(
+                    for_lead=True,
+                    target_lead_model=lead_model_name,
+                    routing_mode=active_controls.routing_mode,
+                ),
+                packet=lead_preflight_packet,
+                profile=lead_profile,
+                minimum_output_tokens=lead_reqs.minimum_output_tokens,
             ),
         )
         if isinstance(assigned_lead, RouteFailure):
@@ -1585,10 +1660,22 @@ class RunController:
             )
 
             def child_candidates() -> RoutingSnapshot:
+                packet = self.assembler.assemble(
+                    task_id=str(spec.task_id),
+                    objective=spec.request.description,
+                    constraints=spec.request.success_criteria,
+                    state=f"attempt={number}; assignment=pending",
+                )
                 snapshot = self._get_candidates(
                     for_lead=False,
                     target_lead_model=controls.model or self.default_lead_model,
                     routing_mode=controls.routing_mode,
+                )
+                snapshot = self._estimate_snapshot(
+                    snapshot,
+                    packet=packet,
+                    profile=profile,
+                    minimum_output_tokens=reqs.minimum_output_tokens,
                 )
                 if model_policy is None or model_policy.provider is None:
                     return snapshot

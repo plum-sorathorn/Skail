@@ -12,6 +12,7 @@ from langchain_core.messages import AIMessage
 
 from rudder.domain.events import EventEnvelope
 from rudder.domain.ids import AttemptId, RunId, SessionId, TaskId
+from rudder.domain.routing import RoutingMode
 from rudder.domain.usage import NormalizedUsage, UsageAuthority
 from rudder.providers.models import CapabilityVector, ModelProfile
 from rudder.routing.assignment import (
@@ -199,6 +200,25 @@ def test_task_budget_block_is_a_structured_route_failure(tmp_path: Path) -> None
     result = service.assign(request, lambda: _snapshot(_candidate(cost="0.20")))
     assert isinstance(result, RouteFailure)
     assert result.binding_constraint == "budget_unaffordable"
+    assert journal.get_session_snapshot(str(SESSION_ID)).assignments == ()
+
+
+def test_manual_unknown_price_is_never_reserved_as_zero(tmp_path: Path) -> None:
+    service, journal = _service(tmp_path)
+    request = _request().model_copy(
+        update={
+            "manual_model": ("fake", "manual"),
+            "requirements": RequirementBuilder().build(
+                role="implementer", risk=TaskRisk.ROUTINE, mode=RoutingMode.MANUAL
+            ),
+        }
+    )
+    unknown_price = _candidate("manual").model_copy(update={"estimated_cost_usd": None})
+
+    result = service.assign(request, lambda: _snapshot(unknown_price))
+
+    assert isinstance(result, RouteFailure)
+    assert result.binding_constraint == "price_unavailable"
     assert journal.get_session_snapshot(str(SESSION_ID)).assignments == ()
 
 

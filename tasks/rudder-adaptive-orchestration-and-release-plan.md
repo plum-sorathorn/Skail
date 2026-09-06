@@ -187,7 +187,7 @@ Every row starts unchecked. Dependencies refer to this guide, not the old phase 
 | Done | Phase | Owner | Main dependency | Deliverable |
 |---|---|---|---|---|
 | [x] | 00 | Sol | Existing baseline | Reconciled ADR/spec and tracker contract |
-| [ ] | 01 | Terra | 00 | Authoritative routing inputs and task estimates |
+| [x] | 01 | Terra | 00 | Authoritative routing inputs and task estimates |
 | [ ] | 02 | Terra | 01 | Post-commit event delivery |
 | [ ] | 03 | Luna | 02 | CLI terminal/exit/output contract |
 | [ ] | 04 | Terra | 03 | Independent evaluator and fixture usage |
@@ -628,6 +628,23 @@ External evidence location and source identity, if applicable: none required; al
 Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging
 Unproven claims or missing evidence: Phase 01 remains incomplete until Phase 01b supplies actual-packet estimate and manual unknown-price evidence
 Next phase and its dependencies: Phase 01b — Estimate actual task packets and preserve manual unknowns; depends on Phase 01a
+```
+
+### Phase 01b handoff
+
+```text
+Phase: 01b — Estimate actual task packets and preserve manual unknowns
+Status: complete
+Implementation model: GPT-6 Codex (assigned Terra treated as a recommendation)
+Commit(s): phase commit; resolve from Git history by the required commit subject
+Behavior delivered: Lead, compatibility-task batch, and retry candidate snapshots are estimated from a deterministic assembled preflight packet, profile-specific expected-call priors, declared tool-result allowance, output requirements, and zero cache reuse. Unknown manual price remains explicit and cannot be reserved as zero.
+Acceptance evidence and commands: `rtk pytest tests\unit\test_estimates.py tests\unit\test_selector.py tests\integration\test_assignment.py tests\integration\test_lead.py -q`; `rtk pytest`; `python -m ruff check src tests scripts evals benchmarks`; `python -m mypy src\rudder`; `graphify update .`; `rtk git diff --check`; complete diff review
+Test results and documented skips: focused routing/controller suite 41 passed; complete offline suite 506 passed and 2 skipped; Ruff and mypy passed. The suite's two existing skips remain documented by pytest
+Review findings closed/open: bootstrap-sized runtime estimates replaced; manual unknown-price reservation remains correctly blocked rather than treated as zero. No Phase 01 finding remains open.
+External evidence location and source identity, if applicable: none required; all fixtures are offline and deterministic
+Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging
+Unproven claims or missing evidence: observed workload estimates remain priors until later evaluation phases; no economic strategy promotion claim is made
+Next phase and its dependencies: Phase 02 — One post-commit event delivery path; depends on completed Phase 01
 ```
 
 ## 10. Definition of completion
