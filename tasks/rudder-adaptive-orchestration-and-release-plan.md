@@ -459,7 +459,7 @@ read-only child. Commit `feat(runtime): bind ready plan nodes to child work`.
 
 #### Phase 08c — Complete independent dispatch, tool nodes, and recovery
 
-**Depends on:** 08b. **Scope:** completion notifications, authorized tool nodes, checkpoint/restart
+**Status:** complete. **Depends on:** 08b. **Scope:** completion notifications, authorized tool nodes, checkpoint/restart
 reconciliation, cancellation, and final Phase 08 acceptance coverage.
 
 1. Implement a durable coordinator around existing compiled child graphs. Persist node launch intent, assignment/reservation, execution/checkpoint identity, result verification, and completion before dependent release.
@@ -942,6 +942,23 @@ External evidence location and source identity, if applicable: none required; al
 Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, `run_2.md` were not modified or staged
 Unproven claims or missing evidence: This slice does not prove dependent overlap, task-result verification binding, authorized tool-node execution, cancellation/restart recovery, crash idempotence, or mixed-surface max-three behavior; all belong to 08c. The full offline suite is unrecorded because its runner hung.
 Next phase and its dependencies: Phase 08c — Complete independent dispatch, tool nodes, and recovery; depends on completed 08b
+```
+
+### Phase 08c handoff
+
+```text
+Phase: 08c — Complete independent dispatch, tool nodes, and recovery
+Status: complete
+Implementation model: GPT-5 Codex (assigned Terra treated as a recommendation)
+Commit(s): `5c16461` feat(runtime): schedule persistent ready work independently
+Behavior delivered: Migration 12 persists one execution identity and settled result per plan node. The controller consumes completions individually, settles verified child results before plan-node terminal transitions, and immediately admits newly ready dependents without another lead call or waiting for unrelated work. Known `execute` tool nodes are admitted with a narrow feature contract, run through the existing execution policy/approval wrapper, share the child scheduler/gate and write lease, and do not invoke a model. Cancellation settles in-flight plan nodes as cancelled; recovery completes a durable settled node or blocks an ambiguous launch without replaying it.
+Acceptance evidence and commands: `rtk pytest tests\integration\test_delegation_controls.py tests\integration\test_task_graph.py tests\integration\test_plan_persistence.py tests\integration\test_recovery.py tests\unit\test_journal.py -q` (64 passed); `python -m ruff check src tests scripts evals benchmarks` (passed); `python -m mypy src\rudder` (passed); `python scripts\smoke.py --fake-provider` (passed); `graphify update .`; `rtk git diff --check`; complete phase-diff review.
+Test results and documented skips: deterministic barriers prove A -> C dispatch while B remains running and a mixed tool/agent frontier reaches the shared cap of three. Tests also prove no dependent release after unverified work, no tool-node model call, cancellation terminal state, and no restart replay after durable settlement. A fresh `rtk pytest -q` produced no output for 60 seconds and was interrupted; full-suite success is intentionally not claimed. Live providers, paid evaluation, platform release evidence, tagging, pushing, publishing, remote rename, and legacy cleanup were out of scope.
+Review findings closed/open: the 08b batch-wide join and delayed result persistence are closed. Ambiguous launches fail closed as blocked on recovery; Phase 09 owns richer resume/replanning rather than replaying uncertain work. No Phase 08 blocker remains.
+External evidence location and source identity, if applicable: none required; all completed verification is deterministic and offline
+Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, `run_2.md` were not modified or staged
+Unproven claims or missing evidence: the full offline suite is unrecorded because its runner hung. This phase does not implement Phase 09 revision/resume policy or later workspace integration.
+Next phase and its dependencies: Phase 09 — Replanning, context, interrupts, and recovery; depends on completed Phase 08
 ```
 
 ## 10. Definition of completion
