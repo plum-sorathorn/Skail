@@ -38,3 +38,10 @@ def test_release_contract_separates_engineering_and_external_authority() -> None
     assert "within five percentage points" not in spec
     assert "A tag never authorizes a remote rename" in adr
     assert "Creating a tag never authorizes" in remediation
+
+
+def test_active_guide_uses_the_renamed_rudder_workspace() -> None:
+    guide = _read("tasks/rudder-adaptive-orchestration-and-release-plan.md")
+
+    assert "C:\\Users\\plum\\Documents\\Works\\Rudder" in guide
+    assert "C:\\Users\\plum\\Documents\\Works\\AutoConduck" not in guide

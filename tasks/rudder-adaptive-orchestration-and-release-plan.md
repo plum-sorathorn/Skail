@@ -2,7 +2,7 @@
 
 Status: **Ready for phased implementation; no phase or release gate is certified by this document.**
 Prepared: 2026-09-05
-Workspace: `C:\Users\plum\Documents\Works\AutoConduck`
+Workspace: `C:\Users\plum\Documents\Works\Rudder`
 Branch: `rudder`
 Target: v0.1.0 remediation plus adaptive execution graphs and outcome-based routing.
 
@@ -576,7 +576,7 @@ Require a small representative end-to-end trace for direct, discovery/replan, is
 ```text
 Implement only phase <PHASE_ID> from:
   tasks/rudder-adaptive-orchestration-and-release-plan.md
-in C:\Users\plum\Documents\Works\AutoConduck on branch rudder.
+in C:\Users\plum\Documents\Works\Rudder on branch rudder.
 
 Use the phase's assigned model if available through my existing access. Read the guide's
 common contract, architecture contract, phase dependencies, and applicable AGENTS/ADR/spec
@@ -620,7 +620,7 @@ Phase: 00 — Lock the successor architecture and release boundaries
 Status: complete
 Implementation model: GPT-6 Codex (assigned Sol treated as a recommendation)
 Commit(s): phase commit; resolve from Git history by the required commit subject
-Behavior delivered: ADR 0006 accepts adaptive typed plans, task compatibility, isolated-writer and schema ownership contracts, model stickiness, outcome qualification, and separate engineering/economic release boundaries. Active and historical trackers are reconciled.
+Behavior delivered: ADR 0006 accepts adaptive typed plans, task compatibility, isolated-writer and schema ownership contracts, model stickiness, outcome qualification, and separate engineering/economic release boundaries. Active and historical trackers are reconciled. The active guide and its copyable phase-start prompt name the canonical `Rudder` workspace; intentional AutoConduck legacy and migration references remain unchanged.
 Acceptance evidence and commands: `rtk pytest tests\unit\test_documentation_contracts.py -q`; `rtk pytest`; `python -m ruff check src tests scripts evals benchmarks`; `python -m mypy src\rudder`; targeted content/link review; `graphify update .`; `rtk git diff --check`; complete diff review
 Test results and documented skips: documentation contracts 2 passed; complete offline suite 502 passed and 2 skipped; Ruff and mypy passed. The suite's two existing skips remain documented by pytest. Live providers, paid evaluation, platform release evidence, tagging, pushing, publishing, remote rename, and legacy cleanup were out of scope
 Review findings closed/open: conflicting static-DAG, five-point quality-loss, tracker-authority, and tag/remote instructions closed; no Phase 00 finding remains open
