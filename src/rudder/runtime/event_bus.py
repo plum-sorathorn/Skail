@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
+from typing import Any
 
 from rudder.domain.events import EventEnvelope, EventPayload
 from rudder.domain.ids import (
@@ -21,7 +22,22 @@ class EventBus:
         self._lock = asyncio.Lock()
         self._sequences: dict[RunId, int] = defaultdict(int)
         self._subscribers: dict[RunId, set[asyncio.Queue[EventEnvelope]]] = defaultdict(set)
+        self._listeners: set[Callable[[EventEnvelope], None]] = set()
         self._journal = journal
+
+    def add_listener(self, listener: Callable[[EventEnvelope], None]) -> None:
+        self._listeners.add(listener)
+
+    def remove_listener(self, listener: Callable[[EventEnvelope], None]) -> None:
+        self._listeners.discard(listener)
+
+    def publish_after_commit(self, transaction: Any, event: EventEnvelope) -> None:
+        transaction.after_commit(lambda: self.publish_persisted_nowait(event))
+
+    def replay(self, run_id: RunId, *, cursor: int = 0) -> tuple[EventEnvelope, ...]:
+        if self._journal is None:
+            return ()
+        return self._journal.events_after(run_id=str(run_id), cursor=cursor)
 
     async def publish(
         self,
@@ -69,14 +85,26 @@ class EventBus:
                     transaction.append_event(event)
                 self._sequences[run_id] = sequence
             subscribers = tuple(self._subscribers[run_id])
-        for queue in subscribers:
-            queue.put_nowait(event)
+        self._deliver(event, subscribers)
         return event
 
     def publish_persisted_nowait(self, event: EventEnvelope) -> None:
         self._sequences[event.run_id] = max(self._sequences[event.run_id], event.sequence)
-        for queue in tuple(self._subscribers[event.run_id]):
-            queue.put_nowait(event)
+        self._deliver(event, tuple(self._subscribers[event.run_id]))
+
+    def _deliver(
+        self, event: EventEnvelope, queues: tuple[asyncio.Queue[EventEnvelope], ...]
+    ) -> None:
+        for queue in queues:
+            try:
+                queue.put_nowait(event)
+            except Exception:
+                continue
+        for listener in tuple(self._listeners):
+            try:
+                listener(event)
+            except Exception:
+                continue
 
     async def subscribe(self, run_id: RunId) -> AsyncIterator[EventEnvelope]:
         queue: asyncio.Queue[EventEnvelope] = asyncio.Queue()

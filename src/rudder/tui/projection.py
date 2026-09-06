@@ -97,6 +97,7 @@ class TuiProjection:
         self.pending_interrupt: InterruptItem | None = None
         self.footer_data: FooterData = FooterData()
         self.focused_agent_id: str | None = None
+        self._seen_event_ids: set[str] = set()
 
     def apply_snapshot(self, snapshot: SessionSnapshot) -> None:
         self.transcript_items = []
@@ -105,6 +106,7 @@ class TuiProjection:
         self.budget_item = BudgetViewItem()
         self.pending_interrupt = None
         self.footer_data = FooterData()
+        self._seen_event_ids = set()
         self.session_id = snapshot.session_id
         self.session_title = snapshot.title
         self.session_status = snapshot.status
@@ -254,6 +256,10 @@ class TuiProjection:
         )
 
     def apply_event(self, event: EventEnvelope) -> None:
+        event_id = str(event.event_id)
+        if event_id in self._seen_event_ids:
+            return
+        self._seen_event_ids.add(event_id)
         ev_type = event.type
         task_id_str = str(event.task_id) if event.task_id else None
 

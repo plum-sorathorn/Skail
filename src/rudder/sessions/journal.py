@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from threading import RLock
+from threading import RLock, local
 from typing import Any, Literal
 
 from rudder.domain.events import EventEnvelope, SecretRedactor
@@ -468,6 +468,7 @@ class Journal:
         self.max_retries = max_retries
         self.redactor = redactor or SecretRedactor()
         self._migration_lock = RLock()
+        self._transactions = local()
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(
@@ -500,6 +501,25 @@ class Journal:
 
     @contextmanager
     def transaction(self) -> Iterator[JournalTransaction]:
+        active = getattr(self._transactions, "active", None)
+        if active is not None:
+            nested_connection, transaction, depth = active
+            savepoint = f"rudder_nested_{depth}"
+            callback_count = len(transaction.after_commit_callbacks)
+            nested_connection.execute(f"SAVEPOINT {savepoint}")
+            self._transactions.active = (nested_connection, transaction, depth + 1)
+            try:
+                yield transaction
+            except BaseException:
+                nested_connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                nested_connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+                del transaction.after_commit_callbacks[callback_count:]
+                raise
+            else:
+                nested_connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+            finally:
+                self._transactions.active = active
+            return
         connection: sqlite3.Connection | None = None
         for attempt in range(self.max_retries + 1):
             connection = self._connect()
@@ -515,6 +535,7 @@ class Journal:
         if connection is None:
             raise JournalBusyError("journal connection was not acquired")
         transaction = JournalTransaction(connection, self.redactor)
+        self._transactions.active = (connection, transaction, 1)
         try:
             yield transaction
         except BaseException:
@@ -525,6 +546,7 @@ class Journal:
             for callback in transaction.after_commit_callbacks:
                 callback()
         finally:
+            self._transactions.active = None
             connection.close()
 
     def _write(self, method: str, **values: Any) -> None:
@@ -712,6 +734,14 @@ class Journal:
 
     def append_event(self, *, event: EventEnvelope) -> None:
         self._write("append_event", event=event)
+
+    def events_after(self, *, run_id: str, cursor: int = 0) -> tuple[EventEnvelope, ...]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT envelope_json FROM events WHERE run_id=? AND sequence>? ORDER BY sequence",
+                (run_id, cursor),
+            ).fetchall()
+        return tuple(EventEnvelope.from_json(row["envelope_json"]) for row in rows)
 
     def get_session_snapshot(self, session_id: str) -> SessionSnapshot:
         with self._connect() as connection:

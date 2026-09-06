@@ -188,7 +188,7 @@ Every row starts unchecked. Dependencies refer to this guide, not the old phase 
 |---|---|---|---|---|
 | [x] | 00 | Sol | Existing baseline | Reconciled ADR/spec and tracker contract |
 | [x] | 01 | Terra | 00 | Authoritative routing inputs and task estimates |
-| [ ] | 02 | Terra | 01 | Post-commit event delivery |
+| [x] | 02 | Terra | 01 | Post-commit event delivery |
 | [ ] | 03 | Luna | 02 | CLI terminal/exit/output contract |
 | [ ] | 04 | Terra | 03 | Independent evaluator and fixture usage |
 | [ ] | 05 | Gemini Flash | 04 | Approved offline fixture corpus |
@@ -645,6 +645,23 @@ External evidence location and source identity, if applicable: none required; al
 Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging
 Unproven claims or missing evidence: observed workload estimates remain priors until later evaluation phases; no economic strategy promotion claim is made
 Next phase and its dependencies: Phase 02 — One post-commit event delivery path; depends on completed Phase 01
+```
+
+### Phase 02 handoff
+
+```text
+Phase: 02 — One post-commit event delivery path
+Status: complete
+Implementation model: GPT-6 Codex (assigned Terra treated as a recommendation)
+Commit(s): phase commit; resolve from Git history by the required commit subject
+Behavior delivered: A journal-backed EventBus is the controller and assignment delivery path. Events notify only after the outer transaction commits; nested transactions use savepoints; rollback drops callbacks. Durable cursor replay reads committed events, failed subscribers are isolated, and TUI projections deduplicate replayed event IDs.
+Acceptance evidence and commands: `rtk pytest tests\unit\test_event_bus.py tests\unit\test_tui_projection.py tests\integration\test_lead.py tests\integration\test_assignment.py -q`; `rtk pytest`; `python -m ruff check src tests scripts evals benchmarks`; `python -m mypy src\rudder`; `python scripts\smoke.py --fake-provider`; `graphify update .`; `rtk git diff --check`; complete diff review
+Test results and documented skips: focused event/journal/projection/controller suite 41 passed; complete offline suite 510 passed and 2 skipped; Ruff, mypy, and fake-provider smoke passed. The suite's two existing skips remain documented by pytest
+Review findings closed/open: early observer capture and direct unshared delivery closed. Phase 03 remains responsible for terminal invocation events and CLI exit behavior.
+External evidence location and source identity, if applicable: none required; all fixtures are offline and deterministic
+Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging
+Unproven claims or missing evidence: delivery is at-least-once to observers; consumers deduplicate by event ID. Terminal invocation contract remains Phase 03 work
+Next phase and its dependencies: Phase 03 — Terminal events, exit codes, and isolated CLI tests; depends on completed Phase 02
 ```
 
 ## 10. Definition of completion

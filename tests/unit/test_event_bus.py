@@ -162,3 +162,88 @@ async def test_journal_backed_bus_continues_after_transactional_route_events(
         2,
         3,
     ]
+
+
+def test_post_commit_delivery_waits_for_outer_transaction_and_isolates_subscribers(
+    tmp_path: Path,
+) -> None:
+    journal = Journal(tmp_path / "rudder.sqlite")
+    journal.migrate()
+    session_id = new_session_id()
+    run_id = new_run_id()
+    now = datetime.now(UTC)
+    journal.create_session(session_id=session_id, title="events", created_at=now)
+    journal.create_run(
+        run_id=run_id,
+        session_id=session_id,
+        status="running",
+        budget_limit_usd=Decimal("1"),
+        created_at=now,
+    )
+    bus = EventBus(journal)
+    received: list[str] = []
+    bus.add_listener(lambda event: received.append(str(event.event_id)))
+    bus.add_listener(lambda event: (_ for _ in ()).throw(RuntimeError("subscriber failed")))
+
+    with journal.transaction() as outer:
+        first = EventEnvelope(
+            event_id=new_event_id(),
+            session_id=session_id,
+            run_id=run_id,
+            sequence=1,
+            type="run.started",
+            payload=LifecyclePayload(status="started"),
+        )
+        outer.append_event(first)
+        bus.publish_after_commit(outer, first)
+        with journal.transaction() as inner:
+            second = EventEnvelope(
+                event_id=new_event_id(),
+                session_id=session_id,
+                run_id=run_id,
+                sequence=2,
+                type="run.completed",
+                payload=LifecyclePayload(status="completed"),
+            )
+            inner.append_event(second)
+            bus.publish_after_commit(inner, second)
+        assert received == []
+
+    assert received == [str(first.event_id), str(second.event_id)]
+    assert [event.sequence for event in bus.replay(run_id, cursor=0)] == [1, 2]
+
+
+def test_rolled_back_events_are_never_delivered_or_replayed(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "rudder.sqlite")
+    journal.migrate()
+    session_id = new_session_id()
+    run_id = new_run_id()
+    now = datetime.now(UTC)
+    journal.create_session(session_id=session_id, title="events", created_at=now)
+    journal.create_run(
+        run_id=run_id,
+        session_id=session_id,
+        status="running",
+        budget_limit_usd=Decimal("1"),
+        created_at=now,
+    )
+    bus = EventBus(journal)
+    received: list[str] = []
+    bus.add_listener(lambda event: received.append(str(event.event_id)))
+    event = EventEnvelope(
+        event_id=new_event_id(),
+        session_id=session_id,
+        run_id=run_id,
+        sequence=1,
+        type="run.started",
+        payload=LifecyclePayload(status="started"),
+    )
+
+    with pytest.raises(RuntimeError, match="rollback"):
+        with journal.transaction() as transaction:
+            transaction.append_event(event)
+            bus.publish_after_commit(transaction, event)
+            raise RuntimeError("rollback")
+
+    assert received == []
+    assert bus.replay(run_id, cursor=0) == ()

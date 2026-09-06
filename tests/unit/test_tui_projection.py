@@ -283,3 +283,21 @@ def test_budget_event_projection() -> None:
     assert proj.budget_item.authoritative_actual_usd == Decimal('1.50')
     assert proj.budget_item.available_usd == Decimal('6.50')
     assert proj.footer_data.session_cost_usd == Decimal('1.50')
+
+
+def test_projection_deduplicates_replayed_event_ids() -> None:
+    proj = TuiProjection()
+    event = EventEnvelope(
+        event_id=new_event_id(),
+        session_id=new_session_id(),
+        run_id=new_run_id(),
+        task_id=new_task_id(),
+        sequence=1,
+        type='tool.completed',
+        payload=ToolPayload(tool='read_file', status='completed'),
+    )
+
+    proj.apply_event(event)
+    proj.apply_event(event)
+
+    assert len(proj.transcript_items) == 1

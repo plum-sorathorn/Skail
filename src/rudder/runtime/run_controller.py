@@ -76,6 +76,7 @@ from rudder.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
 from rudder.routing.requirements import RequirementBuilder, TaskRisk
 from rudder.routing.selector import RouteCandidate, RouteFailure
 from rudder.runtime.deepagents_adapter import ChildRunGate, resume_agent
+from rudder.runtime.event_bus import EventBus
 from rudder.runtime.interrupts import QuestionStore
 from rudder.runtime.leases import WorkspaceLeaseManager
 from rudder.runtime.model_middleware import TaskBoundModelMiddleware
@@ -171,7 +172,9 @@ class RunController:
         self.redaction = redaction or RedactionRegistry()
         self.redactor = redactor or self.redaction
         self.checkpoints = checkpoints
-        self.event_observer = event_observer
+        self.events = EventBus(self.journal)
+        if event_observer is not None:
+            self.events.add_listener(event_observer)
         self.approvals = approvals
         self.question_store = question_store
         self.validator = task_validator or TaskValidator(
@@ -201,9 +204,8 @@ class RunController:
             self.journal,
             warning_percent=Decimal(budget_warning_percent) / Decimal("100"),
         )
-        self.assignment_service = assignment_service or AssignmentService(
-            self.journal, self.ledger, event_observer=self.event_observer
-        )
+        self.assignment_service = assignment_service or AssignmentService(self.journal, self.ledger)
+        self.assignment_service.event_observer = self.events.publish_persisted_nowait
         self.persisted_registry = persisted_registry or PersistedAssignmentRegistry(self.journal)
         self.usage_settler = usage_settler or AssignmentUsageSettler(
             self.journal, self.ledger, self.providers
@@ -304,6 +306,9 @@ class RunController:
         snapshot = deepcopy(self.config_snapshot)
         snapshot.setdefault("routing", {})["mode"] = mode.value
         return snapshot
+
+    def subscribe_events(self, listener: Callable[[EventEnvelope], None]) -> None:
+        self.events.add_listener(listener)
 
     def _estimate_snapshot(
         self,
@@ -519,8 +524,7 @@ class RunController:
             if self.redactor:
                 event = self.redactor.scrub(event)
             tx.append_event(event)
-        if self.event_observer is not None:
-            self.event_observer(event)
+            self.events.publish_after_commit(tx, event)
         return event
 
     def _build_lead_for_run(

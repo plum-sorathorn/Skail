@@ -132,7 +132,7 @@ class RudderApp(App[int]):
 
     def on_mount(self) -> None:
         if self.controller is not None:
-            self.controller.event_observer = self.apply_event
+            self.controller.subscribe_events(self.apply_event)
         if self.initial_snapshot is not None:
             self.projection.apply_snapshot(self.initial_snapshot)
         if self.controller is not None and self.controller.pending_interrupt is not None:

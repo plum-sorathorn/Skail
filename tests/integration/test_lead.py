@@ -286,6 +286,33 @@ async def test_lead_assignments_use_the_assembled_packet_and_profile_call_prior(
 
 
 @pytest.mark.asyncio
+async def test_controller_subscribers_see_committed_assignment_events(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Event delivery", created_at=datetime.now(UTC)
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": ScriptedChatModel(responses=[AIMessage(content="Done")])},
+    )
+    received: list[str] = []
+
+    def observe(event) -> None:
+        persisted = journal.get_session_snapshot(str(session_id)).events
+        assert any(item.event_id == event.event_id for item in persisted)
+        received.append(event.type)
+
+    controller.subscribe_events(observe)
+    await controller.run_instruction("Answer directly")
+
+    assert "route.selected" in received
+    assert "run.completed" in received
+
+
+@pytest.mark.asyncio
 async def test_lead_completion_persists_terminal_lifecycle_and_context_packet(
     tmp_path: Path,
 ) -> None:
