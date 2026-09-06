@@ -105,9 +105,14 @@ documented skips.
 
 ### Phase 7 — Persisted events and exit behavior
 
-- [ ] Deliver post-commit correlated events to journal, JSONL, and TUI, including exactly one
+- [x] Deliver post-commit correlated events to journal, JSONL, and TUI, including exactly one
   terminal event per invocation.
-- [ ] Preserve stdout, compatibility flags, exit codes, and isolated CLI test state.
+- [x] Preserve stdout, compatibility flags, exit codes, and isolated CLI test state.
+
+Evidence: active-guide Phase 03a/03b commits `e78907f` and the Phase 03b commit; focused CLI,
+event, controller, recovery, and TUI suites plus the full offline suite. Events carry one
+invocation identity distinct from the resumable run identity; pre-persistence failures do not
+fabricate terminal events.
 
 Acceptance evidence: CLI/TUI/event-stream integration tests for every terminal outcome.
 

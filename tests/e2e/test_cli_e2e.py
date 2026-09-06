@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +16,25 @@ def run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.Complet
     return subprocess.run(
         [sys.executable, "-m", "rudder.cli.main", *args],
         cwd=ROOT,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def run_cli_isolated(
+    home: Path, *args: str
+) -> subprocess.CompletedProcess[str]:
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+        "USERPROFILE": str(home),
+        "APPDATA": str(home / "AppData"),
+        "LOCALAPPDATA": str(home / "AppData" / "Local"),
+    }
+    return subprocess.run(
+        [sys.executable, "-m", "rudder.cli.main", *args],
+        cwd=home,
         capture_output=True,
         text=True,
         env=env,
@@ -170,6 +190,58 @@ def test_cli_single_run_id_across_streamed_events() -> None:
     sequences = [event.sequence for event in parsed_events]
     assert sequences == sorted(sequences)
     assert len(set(sequences)) == len(sequences)
+
+
+def test_cli_jsonl_has_one_terminal_event_per_invocation_identity() -> None:
+    result = run_cli(
+        "--jsonl", "inspect invocation identity",
+        "--model", "fake:fast-model",
+        "--fake-provider",
+    )
+    assert result.returncode == EXIT_OK
+    events = [
+        EventEnvelope.model_validate(json.loads(line))
+        for line in result.stdout.splitlines()
+        if line.strip()
+    ]
+    assert events
+    invocation_ids = {event.invocation_id for event in events}
+    assert len(invocation_ids) == 1
+    assert None not in invocation_ids
+    terminal_types = {
+        "run.completed",
+        "run.failed",
+        "run.blocked",
+        "run.cancelled",
+    }
+    assert sum(event.type in terminal_types for event in events) == 1
+    assert events[-1].type in terminal_types
+
+
+def test_cli_jsonl_blocked_run_has_one_terminal_event() -> None:
+    result = run_cli(
+        "--jsonl", "do not launch unaffordable work",
+        "--fake-provider",
+        "--budget", "0.001",
+    )
+    assert result.returncode == EXIT_BLOCKED
+    events = [
+        EventEnvelope.model_validate(json.loads(line))
+        for line in result.stdout.splitlines()
+        if line.strip()
+    ]
+    assert events[-1].type == "run.blocked"
+    assert (
+        sum(event.type.startswith("run.") and event.type != "run.started" for event in events)
+        == 1
+    )
+    assert result.stderr == ""
+
+
+def test_cli_isolated_subprocess_uses_temporary_home(tmp_path: Path) -> None:
+    result = run_cli_isolated(tmp_path, "config", "path")
+    assert result.returncode == EXIT_OK
+    assert str(tmp_path / ".rudder") in result.stdout
 
 
 def test_cli_normal_mode_without_fake_provider_fails_when_no_credentials() -> None:

@@ -9,6 +9,7 @@ TaskId = NewType("TaskId", str)
 AttemptId = NewType("AttemptId", str)
 AssignmentId = NewType("AssignmentId", str)
 EventId = NewType("EventId", str)
+InvocationId = NewType("InvocationId", str)
 ReservationId = NewType("ReservationId", str)
 ApprovalId = NewType("ApprovalId", str)
 
@@ -46,6 +47,10 @@ def new_assignment_id() -> AssignmentId:
 
 def new_event_id() -> EventId:
     return EventId(new_uuid4())
+
+
+def new_invocation_id() -> InvocationId:
+    return InvocationId(new_uuid4())
 
 
 def new_reservation_id() -> ReservationId:

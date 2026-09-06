@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from rudder.domain.events import BudgetPayload, EventEnvelope, RoutePayload
 from rudder.domain.ids import (
     AttemptId,
+    InvocationId,
     RunId,
     SessionId,
     TaskId,
@@ -74,12 +75,14 @@ class AssignmentService:
         ledger: BudgetLedger,
         *,
         event_observer: Callable[[EventEnvelope], None] | None = None,
+        invocation_id: InvocationId | None = None,
         snapshot_is_current: Callable[[RoutingSnapshot], bool] | None = None,
         max_snapshot_retries: int = 2,
     ) -> None:
         self.journal = journal
         self.ledger = ledger
         self.event_observer = event_observer
+        self.invocation_id = invocation_id
         self.snapshot_is_current = snapshot_is_current or (lambda snapshot: True)
         self.max_snapshot_retries = max_snapshot_retries
 
@@ -408,6 +411,7 @@ class AssignmentService:
                 event_id=new_event_id(),
                 session_id=request.session_id,
                 run_id=request.run_id,
+                invocation_id=self.invocation_id,
                 task_id=request.task_id,
                 attempt_id=request.attempt_id,
                 sequence=sequence + offset,
@@ -501,6 +505,7 @@ class AssignmentService:
                 event_id=new_event_id(),
                 session_id=request.session_id,
                 run_id=request.run_id,
+                invocation_id=self.invocation_id,
                 task_id=request.task_id,
                 attempt_id=request.attempt_id,
                 sequence=sequence + 1,

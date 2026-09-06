@@ -52,6 +52,8 @@ Non-interactive single-response mode:
 Machine-readable event streaming mode:
 - **stdout**: Emits valid UTF-8 JSON lines, each encoding an `EventEnvelope` (schema version 1).
 - **terminal event**: The final emitted JSON line is guaranteed to be a terminal lifecycle event: `run.completed`, `run.failed`, `run.blocked`, or `run.cancelled`.
+- **invocation identity**: Every event emitted for one CLI invocation carries the same `invocation_id`, which is distinct from the resumable `run_id`.
+- Exactly one terminal lifecycle event is emitted for an invocation that creates or resumes a persisted run. Failures before run persistence return the documented exit code without fabricating a terminal event.
 - **stderr**: Reserved for fatal process-level panics or critical runtime errors.
 
 ## 4. Subcommands

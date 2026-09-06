@@ -42,7 +42,7 @@ from rudder.config.paths import (
     user_data_dir,
 )
 from rudder.config.trust import ProjectTrustStore
-from rudder.domain.ids import SessionId, new_run_id
+from rudder.domain.ids import SessionId, new_invocation_id, new_run_id
 from rudder.domain.routing import RoutingMode
 from rudder.domain.security import ProjectTrustLevel, identify_workspace
 from rudder.domain.sessions import SessionRecord
@@ -879,6 +879,7 @@ async def _execute_instruction(
     )
 
     run_id = new_run_id()
+    invocation_id = new_invocation_id()
     controller = RunController(
         session_id=SessionId(session.session_id),
         workspace=workspace,
@@ -904,6 +905,7 @@ async def _execute_instruction(
             else None
         ),
         event_observer=render_jsonl_event if args.json_mode else None,
+        invocation_id=invocation_id,
     )
 
     try:

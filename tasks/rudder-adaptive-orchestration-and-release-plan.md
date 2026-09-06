@@ -189,7 +189,7 @@ Every row starts unchecked. Dependencies refer to this guide, not the old phase 
 | [x] | 00 | Sol | Existing baseline | Reconciled ADR/spec and tracker contract |
 | [x] | 01 | Terra | 00 | Authoritative routing inputs and task estimates |
 | [x] | 02 | Terra | 01 | Post-commit event delivery |
-| [ ] | 03 | Luna | 02 | CLI terminal/exit/output contract |
+| [x] | 03 | Luna | 02 | CLI terminal/exit/output contract |
 | [ ] | 04 | Terra | 03 | Independent evaluator and fixture usage |
 | [ ] | 05 | Gemini Flash | 04 | Approved offline fixture corpus |
 | [ ] | 06 | Terra | 05 | Persistent executable-plan state |
@@ -277,8 +277,7 @@ ranking or fixed-attempt semantics.
 **Owner:** `gpt-5.6-luna`, medium; escalate transaction design defects to Terra. **Depends on:** 02. **Completes:** old remediation 7.
 
 This phase is split into two reviewable slices because terminal state ordering and invocation/output
-ownership are separate concerns. Phase 03a is the first slice; the parent phase remains incomplete
-until Phase 03b supplies the CLI invocation, exit, output, and isolated subprocess evidence.
+ownership are separate concerns. Both slices are complete.
 
 #### Phase 03a — Atomically commit terminal failure and cancellation events
 
@@ -292,7 +291,7 @@ interrupted execution. Preserve the existing uncertain-settlement error behavior
 **Acceptance:** a production `RunController` subscriber reading the journal during a terminal
 failure observes the committed failed state; the same transaction ordering is used for cancellation
 and resumed failures. Focused controller/event tests, affected suites, Ruff, mypy, Graphify, and
-diff checks pass. The Phase 03b CLI contract remains open.
+diff checks pass.
 
 1. Centralize terminal responsibility for each invocation with a persisted run. Distinguish invocation identity from run identity so resume can have one invocation outcome without creating contradictory terminal task/run states.
 2. Cover bootstrap-after-run-creation, routing, provider, checkpoint, resume, blocked, and cancellation exits. Failures before persistence still return the correct CLI error without inventing persisted events. An unavailable journal cannot honestly promise durable delivery; return failure and a truthful diagnostic rather than fabricate a success envelope.
@@ -697,6 +696,23 @@ External evidence location and source identity, if applicable: none required; al
 Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, `run_2.md` excluded from phase staging
 Unproven claims or missing evidence: Phase 03 parent remains incomplete; this slice does not certify the CLI contract or release readiness.
 Next phase and its dependencies: Phase 03b — CLI invocation, terminal output, exit codes, and isolated tests; depends on Phase 03a
+```
+
+### Phase 03b handoff
+
+```text
+Phase: 03b — CLI invocation, terminal output, exit codes, and isolated tests
+Status: complete
+Implementation model: GPT-5 Codex (assigned Luna treated as a recommendation)
+Commit(s): resolve from Git history by the phase-owned commit subject
+Behavior delivered: Each CLI execution carries one invocation_id distinct from its resumable run_id, including route and budget events. JSONL preserves one terminal event as the final envelope for completed and blocked persisted runs; pre-persistence failures do not fabricate terminal events. Print/JSONL output separation and temporary-home subprocess isolation are covered by end-to-end tests.
+Acceptance evidence and commands: `rtk pytest tests\e2e\test_cli_e2e.py -q`; `rtk pytest tests\unit\test_event_bus.py tests\unit\test_events.py tests\unit\test_tui_projection.py tests\integration\test_assignment.py tests\integration\test_lead.py tests\integration\test_recovery.py tests\integration\test_tui_shell.py tests\integration\test_tui_commands.py tests\e2e\test_cli_e2e.py -q`; `rtk pytest -q`; `python -m ruff check src tests scripts evals benchmarks`; `python -m mypy src\rudder`; `python scripts\smoke.py --fake-provider`; `graphify update .`; `rtk git diff --check`; complete diff review
+Test results and documented skips: CLI suite 18 passed; affected suite 115 passed; full offline suite 514 passed and 2 skipped; Ruff, mypy, fake-provider smoke, Graphify, and diff checks passed. The two existing pytest skips remain documented.
+Review findings closed/open: invocation propagation through controller and assignment-generated events, terminal uniqueness, documented output separation, and temporary-home isolation closed. No Phase 03 finding remains open.
+External evidence location and source identity, if applicable: none required; all fixtures are offline and deterministic
+Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, `run_2.md` excluded from phase staging
+Unproven claims or missing evidence: this phase does not certify release readiness, cross-platform packaging, or live-provider quality/economic qualification.
+Next phase and its dependencies: Phase 04 — Make evaluation execution independent of its oracle; depends on completed Phase 03
 ```
 
 ## 10. Definition of completion

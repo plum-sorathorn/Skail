@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 from rudder.domain.ids import (
     AttemptId,
     EventId,
+    InvocationId,
     RunId,
     SessionId,
     TaskId,
@@ -210,6 +211,7 @@ class EventEnvelope(BaseModel):
     event_id: EventId
     session_id: SessionId
     run_id: RunId
+    invocation_id: InvocationId | None = None
     task_id: TaskId | None = None
     attempt_id: AttemptId | None = None
     sequence: int = Field(ge=1)
@@ -221,7 +223,7 @@ class EventEnvelope(BaseModel):
     def validate_envelope(self) -> EventEnvelope:
         for required_identifier in (self.event_id, self.session_id, self.run_id):
             ensure_uuid4(str(required_identifier))
-        for optional_identifier in (self.task_id, self.attempt_id):
+        for optional_identifier in (self.invocation_id, self.task_id, self.attempt_id):
             if optional_identifier is not None:
                 ensure_uuid4(str(optional_identifier))
         if self.occurred_at.tzinfo is None:

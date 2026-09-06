@@ -41,11 +41,13 @@ from rudder.domain.events import (
 )
 from rudder.domain.ids import (
     AttemptId,
+    InvocationId,
     RunId,
     SessionId,
     TaskId,
     new_attempt_id,
     new_event_id,
+    new_invocation_id,
     new_run_id,
     new_task_id,
 )
@@ -159,6 +161,7 @@ class RunController:
         catalog_revision: str = "catalog-v1",
         config_snapshot: Mapping[str, Any] | None = None,
         event_observer: Callable[[EventEnvelope], None] | None = None,
+        invocation_id: InvocationId | None = None,
         approvals: ApprovalStore | None = None,
         question_store: QuestionStore | None = None,
     ) -> None:
@@ -172,6 +175,7 @@ class RunController:
         self.redaction = redaction or RedactionRegistry()
         self.redactor = redactor or self.redaction
         self.checkpoints = checkpoints
+        self.invocation_id = invocation_id or new_invocation_id()
         self.events = EventBus(self.journal)
         if event_observer is not None:
             self.events.add_listener(event_observer)
@@ -204,7 +208,10 @@ class RunController:
             self.journal,
             warning_percent=Decimal(budget_warning_percent) / Decimal("100"),
         )
-        self.assignment_service = assignment_service or AssignmentService(self.journal, self.ledger)
+        self.assignment_service = assignment_service or AssignmentService(
+            self.journal, self.ledger, invocation_id=self.invocation_id
+        )
+        self.assignment_service.invocation_id = self.invocation_id
         self.assignment_service.event_observer = self.events.publish_persisted_nowait
         self.persisted_registry = persisted_registry or PersistedAssignmentRegistry(self.journal)
         self.usage_settler = usage_settler or AssignmentUsageSettler(
@@ -532,6 +539,7 @@ class RunController:
             event_id=new_event_id(),
             session_id=self.session_id,
             run_id=run_id,
+            invocation_id=self.invocation_id,
             task_id=task_id,
             attempt_id=attempt_id,
             sequence=int(persisted) + 1,
