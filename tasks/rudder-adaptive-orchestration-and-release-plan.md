@@ -339,6 +339,8 @@ reinterpret records created by earlier slices.
 
 #### Phase 06a — Define versioned plan contracts and admission validation
 
+**Status:** complete. **Commit:** `4b8c126`.
+
 **Scope:** Add domain-owned plan, node, and revision contracts with schema/policy versions and
 deterministic whole-graph validation. Model output remains plan-local; no runtime IDs, journal
 records, scheduler changes, or event variants are introduced in this slice.
