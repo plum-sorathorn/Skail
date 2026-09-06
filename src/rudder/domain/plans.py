@@ -21,6 +21,17 @@ class PlanNodeKind(StrEnum):
     CHECKPOINT = "checkpoint"
 
 
+class PlanNodeState(StrEnum):
+    WAITING = "waiting"
+    READY = "ready"
+    LAUNCHING = "launching"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    BLOCKED = "blocked"
+    CANCELLED = "cancelled"
+
+
 class EffectScope(StrEnum):
     READ = "read"
     WORKSPACE_WRITE = "workspace_write"

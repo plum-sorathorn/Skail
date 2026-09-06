@@ -5,7 +5,7 @@ import sqlite3
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -26,6 +26,7 @@ from rudder.domain.plans import (
     SUPPORTED_PLAN_SCHEMA_VERSION,
     EffectScope,
     ExecutionPlan,
+    PlanNodeState,
     PlanRevision,
 )
 from rudder.domain.tasks import AttemptStatus, TaskStatus
@@ -70,6 +71,14 @@ class PersistedPlan:
     run_id: str
     plan: ExecutionPlan
     node_ids: dict[str, str]
+    node_states: dict[str, PlanNodeState] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PlanNodeSnapshot:
+    node_id: str
+    local_id: str
+    state: PlanNodeState
 
 
 def _run_snapshot(row: sqlite3.Row) -> RunSnapshot:
@@ -548,10 +557,38 @@ class Journal:
             connection.execute("BEGIN IMMEDIATE")
             try:
                 apply_migrations(connection)
+                self._backfill_plan_node_states(connection)
                 connection.commit()
             except BaseException:
                 connection.rollback()
                 raise
+
+    @staticmethod
+    def _backfill_plan_node_states(connection: sqlite3.Connection) -> None:
+        table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='plan_node_states'"
+        ).fetchone()
+        if table is None:
+            return
+        plans = connection.execute(
+            "SELECT plan_id,payload_json FROM execution_plans"
+        ).fetchall()
+        for plan_row in plans:
+            plan = ExecutionPlan.model_validate_json(plan_row["payload_json"])
+            nodes = connection.execute(
+                "SELECT node_id,local_id FROM plan_nodes WHERE plan_id=? ORDER BY rowid",
+                (plan_row["plan_id"],),
+            ).fetchall()
+            by_local_id = {node.local_id: node for node in plan.nodes}
+            for node_row in nodes:
+                node = by_local_id[node_row["local_id"]]
+                state = (
+                    PlanNodeState.READY if not node.depends_on else PlanNodeState.WAITING
+                )
+                connection.execute(
+                    "INSERT OR IGNORE INTO plan_node_states VALUES (?,?,?)",
+                    (node_row["node_id"], state.value, _now()),
+                )
 
     @contextmanager
     def transaction(self) -> Iterator[JournalTransaction]:
@@ -856,6 +893,11 @@ class Journal:
                     "INSERT INTO plan_nodes VALUES (?,?,?,?,?)",
                     (node_ids[node.local_id], plan_id, node.local_id, node_payload, now),
                 )
+                state = PlanNodeState.READY if not node.depends_on else PlanNodeState.WAITING
+                connection.execute(
+                    "INSERT INTO plan_node_states VALUES (?,?,?)",
+                    (node_ids[node.local_id], state.value, now),
+                )
             connection.execute(
                 "INSERT INTO plan_revisions VALUES (?,?,?,?,?)",
                 (plan_id, 1, 0, payload, now),
@@ -892,7 +934,18 @@ class Journal:
                 transaction.append_event(event)
                 if event_observer is not None:
                     transaction.after_commit(_event_callback(event_observer, event))
-        return PersistedPlan(plan_id=plan_id, run_id=run_id, plan=plan, node_ids=node_ids)
+        return PersistedPlan(
+            plan_id=plan_id,
+            run_id=run_id,
+            plan=plan,
+            node_ids=node_ids,
+            node_states={
+                node.local_id: (
+                    PlanNodeState.READY if not node.depends_on else PlanNodeState.WAITING
+                )
+                for node in plan.nodes
+            },
+        )
 
     def get_plan(self, plan_id: str) -> PersistedPlan:
         with self._connect() as connection:
@@ -912,7 +965,9 @@ class Journal:
                     "plan.policy_unsupported", "stored execution policy is unsupported"
                 )
             nodes = connection.execute(
-                "SELECT local_id,node_id FROM plan_nodes WHERE plan_id=? ORDER BY rowid",
+                "SELECT n.local_id,n.node_id,s.status FROM plan_nodes n "
+                "JOIN plan_node_states s ON s.node_id=n.node_id "
+                "WHERE n.plan_id=? ORDER BY n.rowid",
                 (plan_id,),
             ).fetchall()
         return PersistedPlan(
@@ -920,6 +975,163 @@ class Journal:
             run_id=row["run_id"],
             plan=ExecutionPlan.model_validate_json(row["payload_json"]),
             node_ids={item["local_id"]: item["node_id"] for item in nodes},
+            node_states={
+                item["local_id"]: PlanNodeState(item["status"])
+                for item in nodes
+            },
+        )
+
+    def ready_plan_nodes(self, plan_id: str) -> tuple[PlanNodeSnapshot, ...]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT n.node_id,n.local_id,s.status FROM plan_nodes n "
+                "JOIN plan_node_states s ON s.node_id=n.node_id "
+                "WHERE n.plan_id=? AND s.status=? ORDER BY n.rowid",
+                (plan_id, PlanNodeState.READY.value),
+            ).fetchall()
+        return tuple(
+            PlanNodeSnapshot(
+                node_id=row["node_id"],
+                local_id=row["local_id"],
+                state=PlanNodeState(row["status"]),
+            )
+            for row in rows
+        )
+
+    def transition_plan_node_state(
+        self,
+        *,
+        plan_id: str,
+        node_id: str,
+        expected: PlanNodeState,
+        target: PlanNodeState,
+        event_observer: Callable[[EventEnvelope], None] | None = None,
+    ) -> tuple[PlanNodeSnapshot, ...]:
+        legal = {
+            (PlanNodeState.READY, PlanNodeState.LAUNCHING),
+            (PlanNodeState.LAUNCHING, PlanNodeState.RUNNING),
+            (PlanNodeState.RUNNING, PlanNodeState.SUCCEEDED),
+            (PlanNodeState.RUNNING, PlanNodeState.FAILED),
+            (PlanNodeState.RUNNING, PlanNodeState.BLOCKED),
+            (PlanNodeState.RUNNING, PlanNodeState.CANCELLED),
+        }
+        if (expected, target) not in legal:
+            raise FrameworkContractError(
+                "plan.node_state_illegal", "plan node state transition is not legal"
+            )
+        now = _now()
+        with self.transaction() as transaction:
+            connection = transaction.connection
+            owner = connection.execute(
+                "SELECT p.run_id,r.session_id,p.current_revision,p.payload_json "
+                "FROM execution_plans p JOIN runs r ON r.run_id=p.run_id WHERE p.plan_id=?",
+                (plan_id,),
+            ).fetchone()
+            if owner is None:
+                raise KeyError(plan_id)
+            node_rows = connection.execute(
+                "SELECT n.node_id,n.local_id,s.status FROM plan_nodes n "
+                "JOIN plan_node_states s ON s.node_id=n.node_id "
+                "WHERE n.plan_id=? ORDER BY n.rowid",
+                (plan_id,),
+            ).fetchall()
+            by_id = {row["node_id"]: row for row in node_rows}
+            if node_id not in by_id:
+                raise KeyError(node_id)
+            current = PlanNodeState(by_id[node_id]["status"])
+            if current is not expected:
+                raise FrameworkContractError(
+                    "plan.node_state_conflict", "plan node state did not match expectation"
+                )
+            cursor = connection.execute(
+                "UPDATE plan_node_states SET status=?,updated_at=? WHERE node_id=? AND status=?",
+                (target.value, now, node_id, expected.value),
+            )
+            if cursor.rowcount != 1:
+                raise FrameworkContractError(
+                    "plan.node_state_conflict", "plan node state did not match expectation"
+                )
+            states = {row["local_id"]: PlanNodeState(row["status"]) for row in node_rows}
+            changed = [(node_id, by_id[node_id]["local_id"], target)]
+            states[by_id[node_id]["local_id"]] = target
+            plan = ExecutionPlan.model_validate_json(owner["payload_json"])
+            if target is PlanNodeState.SUCCEEDED:
+                for node in plan.nodes:
+                    if (
+                        states[node.local_id] is PlanNodeState.WAITING
+                        and all(
+                            states[dependency] is PlanNodeState.SUCCEEDED
+                            for dependency in node.depends_on
+                        )
+                    ):
+                        child_id = next(
+                            row["node_id"]
+                            for row in node_rows
+                            if row["local_id"] == node.local_id
+                        )
+                        connection.execute(
+                            "UPDATE plan_node_states SET status=?,updated_at=? WHERE node_id=?",
+                            (PlanNodeState.READY.value, now, child_id),
+                        )
+                        states[node.local_id] = PlanNodeState.READY
+                        changed.append((child_id, node.local_id, PlanNodeState.READY))
+            elif target in {
+                PlanNodeState.FAILED,
+                PlanNodeState.BLOCKED,
+                PlanNodeState.CANCELLED,
+            }:
+                blocked = {by_id[node_id]["local_id"]}
+                while True:
+                    newly_blocked = {
+                        node.local_id
+                        for node in plan.nodes
+                        if node.local_id not in blocked
+                        and any(dependency in blocked for dependency in node.depends_on)
+                    }
+                    if not newly_blocked:
+                        break
+                    blocked.update(newly_blocked)
+                for node in plan.nodes:
+                    if node.local_id in blocked and states[node.local_id] is PlanNodeState.WAITING:
+                        child_id = next(
+                            row["node_id"]
+                            for row in node_rows
+                            if row["local_id"] == node.local_id
+                        )
+                        connection.execute(
+                            "UPDATE plan_node_states SET status=?,updated_at=? WHERE node_id=?",
+                            (PlanNodeState.BLOCKED.value, now, child_id),
+                        )
+                        states[node.local_id] = PlanNodeState.BLOCKED
+                        changed.append((child_id, node.local_id, PlanNodeState.BLOCKED))
+            sequence = int(
+                connection.execute(
+                    "SELECT COALESCE(MAX(sequence),0) FROM events WHERE run_id=?",
+                    (owner["run_id"],),
+                ).fetchone()[0]
+            )
+            for changed_node_id, _, state in changed:
+                sequence += 1
+                event = EventEnvelope(
+                    event_id=EventId(str(new_event_id())),
+                    session_id=SessionId(owner["session_id"]),
+                    run_id=RunId(owner["run_id"]),
+                    sequence=sequence,
+                    occurred_at=datetime.now(UTC),
+                    type=f"plan.node_{state.value}",
+                    payload=PlanPayload(
+                        action=f"node_{state.value}",
+                        plan_id=plan_id,
+                        revision=owner["current_revision"],
+                        node_id=changed_node_id,
+                    ),
+                )
+                transaction.append_event(event)
+                if event_observer is not None:
+                    transaction.after_commit(_event_callback(event_observer, event))
+        return tuple(
+            PlanNodeSnapshot(node_id=changed_node_id, local_id=local_id, state=state)
+            for changed_node_id, local_id, state in changed
         )
 
     def revise_plan(
@@ -997,6 +1209,15 @@ class Journal:
                     connection.execute(
                         "INSERT INTO plan_nodes VALUES (?,?,?,?,?)",
                         (existing[node.local_id], plan_id, node.local_id, node_payload, now),
+                    )
+                    state = (
+                        PlanNodeState.READY
+                        if not node.depends_on
+                        else PlanNodeState.WAITING
+                    )
+                    connection.execute(
+                        "INSERT INTO plan_node_states VALUES (?,?,?)",
+                        (existing[node.local_id], state.value, now),
                     )
             cursor = connection.execute(
                 "UPDATE execution_plans SET current_revision=?,payload_json=? "

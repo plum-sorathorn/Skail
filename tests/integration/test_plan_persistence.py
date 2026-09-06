@@ -14,6 +14,7 @@ from rudder.domain.plans import (
     ExecutionPlan,
     PlanNode,
     PlanNodeKind,
+    PlanNodeState,
     PlanRevision,
 )
 from rudder.runtime.errors import FrameworkContractError
@@ -225,7 +226,150 @@ def test_plan_revision_compare_and_set_preserves_existing_node_identity(tmp_path
     )
 
     assert updated.node_ids["inspect"] == admitted.node_ids["inspect"]
+    assert updated.node_states["finish"] is PlanNodeState.READY
     assert journal.get_plan(admitted.plan_id).plan.revision == 2
     assert [event.type for event in delivered] == ["plan.revised"]
     with pytest.raises(FrameworkContractError, match="plan.revision_conflict"):
         journal.revise_plan(plan_id=admitted.plan_id, revision=change, plan=revised)
+
+
+def test_plan_node_readiness_requires_verified_prerequisite_success(tmp_path: Path) -> None:
+    journal = _journal(tmp_path / "journal.sqlite")
+    admitted = journal.admit_plan(run_id=RUN_ID, plan=_plan())
+    inspect_id = admitted.node_ids["inspect"]
+    verify_id = admitted.node_ids["verify"]
+    delivered = []
+
+    assert admitted.node_states == {
+        "inspect": PlanNodeState.READY,
+        "verify": PlanNodeState.WAITING,
+    }
+    assert [node.node_id for node in journal.ready_plan_nodes(admitted.plan_id)] == [inspect_id]
+
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=inspect_id,
+        expected=PlanNodeState.READY,
+        target=PlanNodeState.LAUNCHING,
+        event_observer=delivered.append,
+    )
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=inspect_id,
+        expected=PlanNodeState.LAUNCHING,
+        target=PlanNodeState.RUNNING,
+        event_observer=delivered.append,
+    )
+    assert journal.ready_plan_nodes(admitted.plan_id) == ()
+
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=inspect_id,
+        expected=PlanNodeState.RUNNING,
+        target=PlanNodeState.SUCCEEDED,
+        event_observer=delivered.append,
+    )
+
+    assert journal.get_plan(admitted.plan_id).node_states["verify"] is PlanNodeState.READY
+    assert [node.node_id for node in journal.ready_plan_nodes(admitted.plan_id)] == [verify_id]
+    assert [event.type for event in delivered] == [
+        "plan.node_launching",
+        "plan.node_running",
+        "plan.node_succeeded",
+        "plan.node_ready",
+    ]
+    with pytest.raises(FrameworkContractError, match="plan.node_state_conflict"):
+        journal.transition_plan_node_state(
+            plan_id=admitted.plan_id,
+            node_id=inspect_id,
+            expected=PlanNodeState.READY,
+            target=PlanNodeState.LAUNCHING,
+        )
+
+
+def test_plan_node_failure_blocks_the_downstream_closure(tmp_path: Path) -> None:
+    journal = _journal(tmp_path / "journal.sqlite")
+    plan = ExecutionPlan(
+        schema_version=1,
+        policy_version="adaptive-v1",
+        revision=1,
+        nodes=(
+            PlanNode(local_id="first", kind=PlanNodeKind.AGENT, objective="First"),
+            PlanNode(
+                local_id="second",
+                kind=PlanNodeKind.AGENT,
+                objective="Second",
+                depends_on=("first",),
+            ),
+            PlanNode(
+                local_id="third",
+                kind=PlanNodeKind.VERIFICATION,
+                objective="Third",
+                depends_on=("second",),
+            ),
+        ),
+    )
+    admitted = journal.admit_plan(run_id=RUN_ID, plan=plan)
+    first_id = admitted.node_ids["first"]
+
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=first_id,
+        expected=PlanNodeState.READY,
+        target=PlanNodeState.LAUNCHING,
+    )
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=first_id,
+        expected=PlanNodeState.LAUNCHING,
+        target=PlanNodeState.RUNNING,
+    )
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=first_id,
+        expected=PlanNodeState.RUNNING,
+        target=PlanNodeState.FAILED,
+    )
+
+    assert journal.get_plan(admitted.plan_id).node_states == {
+        "first": PlanNodeState.FAILED,
+        "second": PlanNodeState.BLOCKED,
+        "third": PlanNodeState.BLOCKED,
+    }
+
+
+def test_node_state_migration_backfills_an_existing_admitted_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "legacy.sqlite"
+    migrations = journal_migrations.MIGRATIONS
+    monkeypatch.setattr(journal_migrations, "MIGRATIONS", migrations[:-1])
+    _journal(database)
+    plan = _plan()
+    plan_id = "11111111-1111-4111-8111-111111111111"
+    inspect_id = "22222222-2222-4222-8222-222222222222"
+    verify_id = "33333333-3333-4333-8333-333333333333"
+    now = datetime.now(UTC).isoformat()
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "INSERT INTO execution_plans VALUES (?,?,?,?,?,?,?)",
+            (plan_id, RUN_ID, 1, "adaptive-v1", 1, plan.model_dump_json(), now),
+        )
+        for node, node_id in zip(plan.nodes, (inspect_id, verify_id), strict=True):
+            connection.execute(
+                "INSERT INTO plan_nodes VALUES (?,?,?,?,?)",
+                (node_id, plan_id, node.local_id, node.model_dump_json(), now),
+            )
+        connection.execute(
+            "INSERT INTO plan_revisions VALUES (?,?,?,?,?)",
+            (plan_id, 1, 0, plan.model_dump_json(), now),
+        )
+
+    monkeypatch.setattr(journal_migrations, "MIGRATIONS", migrations)
+    upgraded = Journal(database)
+    upgraded.migrate()
+
+    assert upgraded.get_plan(plan_id).node_states == {
+        "inspect": PlanNodeState.READY,
+        "verify": PlanNodeState.WAITING,
+    }

@@ -231,4 +231,14 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
         """,
     ),
+    (
+        10,
+        """
+        CREATE TABLE plan_node_states (
+            node_id TEXT PRIMARY KEY REFERENCES plan_nodes(node_id) ON DELETE CASCADE,
+            status TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """,
+    ),
 )

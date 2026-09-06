@@ -416,6 +416,39 @@ constraints; refused/invalid compatibility work cannot bypass controls. Commit
 
 **Owner:** `gpt-5.6-terra`, high only if needed. **Depends on:** 07b.
 
+This phase is split to keep durable scheduling separate from child execution and recovery. 08a owns
+the journal-backed node-state machine and ready queue only; it does not create tasks, assignments,
+reservations, or child calls. 08b binds ready agent nodes to the existing admitted task lifecycle and
+global child limit. 08c adds independent completion notifications, authorized tool-node execution,
+and crash recovery over the persisted launch records.
+
+#### Phase 08a — Persist legal node state and readiness
+
+**Status:** complete. **Depends on:** 07b. **Scope:** plan-state domain contract, journal
+migration/read-write API, typed node-state events, and deterministic persistence tests.
+
+Persist every admitted node as `waiting` or `ready` in stable plan creation order. Only a persisted
+`succeeded` prerequisite may release a dependent node; 08b binds that state to verified task results.
+Persist `launching` before later
+slices bind an assignment or start execution; reject duplicate and illegal transitions, and mark
+dependent work blocked when a prerequisite reaches a non-success terminal state. Existing admitted
+plans must be backfilled during migration without reinterpretation.
+
+**Acceptance:** clean and upgraded journals reconstruct the same ready frontier; a dependent stays
+waiting through launch/running states and becomes ready only after its prerequisite succeeds;
+duplicate launch attempts and illegal transitions fail without changing durable state; a failed
+prerequisite blocks its downstream closure. Commit `feat(runtime): persist plan node readiness`.
+
+#### Phase 08b — Bind ready agent nodes to admitted child work
+
+**Depends on:** 08a. **Scope:** controller/coordinator integration for agent nodes, task/attempt,
+assignment/reservation, global scheduling, and deterministic barriers.
+
+#### Phase 08c — Complete independent dispatch, tool nodes, and recovery
+
+**Depends on:** 08b. **Scope:** completion notifications, authorized tool nodes, checkpoint/restart
+reconciliation, cancellation, and final Phase 08 acceptance coverage.
+
 1. Implement a durable coordinator around existing compiled child graphs. Persist node launch intent, assignment/reservation, execution/checkpoint identity, result verification, and completion before dependent release.
 2. Schedule by readiness, explicit priority, and stable creation order; enforce the shared global one-to-three child limit across all dispatch surfaces. Do not reserve an execution slot for a node waiting on prerequisites or an unavailable workspace resource.
 3. Handle independent completion notifications so `A -> C` permits C to start when A finishes while independent B is still running. Avoid a batch-wide graph join that waits for B.
