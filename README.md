@@ -31,8 +31,8 @@ A capable lead agent completes simple coding tasks directly or delegates bounded
 
 ```bash
 # Clone and install in editable mode with development dependencies
-git clone https://github.com/plum-sorathorn/AutoConduck.git -b rudder
-cd AutoConduck
+git clone https://github.com/plum-sorathorn/Rudder.git -b rudder
+cd Rudder
 python -m pip install -e ".[dev]"
 ```
 

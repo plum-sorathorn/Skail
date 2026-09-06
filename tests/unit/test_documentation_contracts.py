@@ -45,3 +45,12 @@ def test_active_guide_uses_the_renamed_rudder_workspace() -> None:
 
     assert "C:\\Users\\plum\\Documents\\Works\\Rudder" in guide
     assert "C:\\Users\\plum\\Documents\\Works\\AutoConduck" not in guide
+
+
+def test_readme_clones_the_rudder_branch_into_a_rudder_directory() -> None:
+    readme = _read("README.md")
+
+    assert "git clone https://github.com/plum-sorathorn/Rudder.git -b rudder" in readme
+    assert "cd Rudder" in readme
+    assert "github.com/plum-sorathorn/AutoConduck" not in readme
+    assert "cd AutoConduck" not in readme
