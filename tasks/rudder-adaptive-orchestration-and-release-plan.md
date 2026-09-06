@@ -441,8 +441,21 @@ prerequisite blocks its downstream closure. Commit `feat(runtime): persist plan 
 
 #### Phase 08b — Bind ready agent nodes to admitted child work
 
-**Depends on:** 08a. **Scope:** controller/coordinator integration for agent nodes, task/attempt,
-assignment/reservation, global scheduling, and deterministic barriers.
+**Status:** complete. **Depends on:** 08a. **Scope:** controller/coordinator integration for agent
+nodes, task/attempt, assignment/reservation, global scheduling, and deterministic barriers.
+
+Ready agent nodes now prevalidate their task features and effect-compatible profile, persist launch
+intent, task/attempt identity, and a durable node-to-task binding, then receive the existing batch
+assignment/reservation path and compiled child lifecycle. Agent work uses the shared scheduler, gate,
+and workspace lease; a writer waiting for its lease does not occupy a child slot. A node becomes
+`running` only when its admitted task starts; immediate admission failures block the node. This slice
+does not settle a plan node from a child result or release dependents: 08c owns verified completion,
+independent notifications, tool nodes, cancellation, and recovery.
+
+**Acceptance:** deterministic controller fixtures prove ready roots receive persisted task/attempt
+bindings and task-bound child execution while a dependent remains waiting; a barrier proves the
+shared one-child limit; a task-graph barrier proves a lease-waiting writer leaves capacity for a
+read-only child. Commit `feat(runtime): bind ready plan nodes to child work`.
 
 #### Phase 08c — Complete independent dispatch, tool nodes, and recovery
 
@@ -912,6 +925,23 @@ External evidence location and source identity, if applicable: none required; al
 Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, `run_2.md` were not staged or modified
 Unproven claims or missing evidence: state transitions do not execute plan nodes, prove independent completion overlap, or bind succeeded state to verification evidence; the full offline suite is unrecorded because its runner hung.
 Next phase and its dependencies: Phase 08b — Bind ready agent nodes to admitted child work; depends on completed Phase 08a
+```
+
+### Phase 08b handoff
+
+```text
+Phase: 08b — Bind ready agent nodes to admitted child work
+Status: complete
+Implementation model: GPT-5 Codex (assigned Terra treated as a recommendation)
+Commit(s): `8c9d3d4` feat(runtime): bind ready plan nodes to child work
+Behavior delivered: Ready agent nodes now validate their supported task features and effect-compatible profile before admission. The controller persists ready -> launching intent, creates task and attempt records, records a durable plan-node/task/attempt binding (migration 11), reserves through the existing batch assignment path, and invokes the existing compiled profile child lifecycle. Child starts transition plan nodes to running. The same scheduler/gate and workspace lease apply to plan and compatibility work; a writer waiting for the lease no longer consumes a child slot. Failed immediate assignment/admission paths block a launching node. Child-result-to-plan-node terminal settlement remains intentionally absent.
+Acceptance evidence and commands: `rtk pytest tests\contract\test_execution_decisions.py tests\integration\test_delegation_controls.py tests\integration\test_task_graph.py tests\integration\test_plan_persistence.py tests\unit\test_journal.py -q` (50 passed); `python -m ruff check src tests scripts evals benchmarks` (passed); `python -m mypy src\rudder` (passed); `python scripts\smoke.py --fake-provider` (passed); `graphify update .`; `rtk git diff --check`; complete phase-diff review.
+Test results and documented skips: Focused and affected deterministic offline checks passed. A fresh `rtk pytest -q` produced no output for 60 seconds; its exact local test session was interrupted with Ctrl+C and exited 1. Full-suite success is intentionally not claimed. Live providers, paid evaluation, platform release evidence, tagging, pushing, publishing, remote rename, and legacy cleanup were out of scope.
+Review findings closed/open: Review found that a writer could acquire the child gate before waiting for its workspace lease. The lifecycle now acquires the lease before the shared gate, proven by a deterministic reader/writer barrier. No Phase 08b blocker remains. Plan nodes intentionally remain running after child task results until 08c persists verified completion and independently releases ready work.
+External evidence location and source identity, if applicable: none required; all completed verification is deterministic and offline
+Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, `run_2.md` were not modified or staged
+Unproven claims or missing evidence: This slice does not prove dependent overlap, task-result verification binding, authorized tool-node execution, cancellation/restart recovery, crash idempotence, or mixed-surface max-three behavior; all belong to 08c. The full offline suite is unrecorded because its runner hung.
+Next phase and its dependencies: Phase 08c — Complete independent dispatch, tool nodes, and recovery; depends on completed 08b
 ```
 
 ## 10. Definition of completion
