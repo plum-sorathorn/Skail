@@ -186,7 +186,7 @@ Every row starts unchecked. Dependencies refer to this guide, not the old phase 
 
 | Done | Phase | Owner | Main dependency | Deliverable |
 |---|---|---|---|---|
-| [ ] | 00 | Sol | Existing baseline | Reconciled ADR/spec and tracker contract |
+| [x] | 00 | Sol | Existing baseline | Reconciled ADR/spec and tracker contract |
 | [ ] | 01 | Terra | 00 | Authoritative routing inputs and task estimates |
 | [ ] | 02 | Terra | 01 | Post-commit event delivery |
 | [ ] | 03 | Luna | 02 | CLI terminal/exit/output contract |
@@ -575,6 +575,23 @@ External evidence location and source identity, if applicable:
 Protected/unrelated files preserved:
 Unproven claims or missing evidence:
 Next phase and its dependencies:
+```
+
+### Phase 00 handoff
+
+```text
+Phase: 00 — Lock the successor architecture and release boundaries
+Status: complete
+Implementation model: GPT-6 Codex (assigned Sol treated as a recommendation)
+Commit(s): phase commit; resolve from Git history by the required commit subject
+Behavior delivered: ADR 0006 accepts adaptive typed plans, task compatibility, isolated-writer and schema ownership contracts, model stickiness, outcome qualification, and separate engineering/economic release boundaries. Active and historical trackers are reconciled.
+Acceptance evidence and commands: `rtk pytest tests\unit\test_documentation_contracts.py -q`; `rtk pytest`; `python -m ruff check src tests scripts evals benchmarks`; `python -m mypy src\rudder`; targeted content/link review; `graphify update .`; `rtk git diff --check`; complete diff review
+Test results and documented skips: documentation contracts 2 passed; complete offline suite 502 passed and 2 skipped; Ruff and mypy passed. The suite's two existing skips remain documented by pytest. Live providers, paid evaluation, platform release evidence, tagging, pushing, publishing, remote rename, and legacy cleanup were out of scope
+Review findings closed/open: conflicting static-DAG, five-point quality-loss, tracker-authority, and tag/remote instructions closed; no Phase 00 finding remains open
+External evidence location and source identity, if applicable: none required for this documentation/contracts phase
+Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging
+Unproven claims or missing evidence: economic qualification remains unproven until separately authorized Q1 evidence exists
+Next phase and its dependencies: Phase 01 — Fix the routing boundary before changing the policy; depends on completed Phase 00
 ```
 
 ## 10. Definition of completion

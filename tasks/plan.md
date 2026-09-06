@@ -1,15 +1,16 @@
 # Rudder Implementation Plan
 
-Status: Approved; implementation in progress on the `rudder` branch.
+Status: Historical; superseded as an execution sequence by the adaptive orchestration and release guide.
 Date: 2026-09-02
 Product specification: [../docs/rudder/SPEC.md](../docs/rudder/SPEC.md)
 Architecture: [../docs/rudder/ARCHITECTURE.md](../docs/rudder/ARCHITECTURE.md)
 Feature contracts: [../docs/rudder/FEATURES.md](../docs/rudder/FEATURES.md)
 Repository transition: [../docs/rudder/MIGRATION.md](../docs/rudder/MIGRATION.md)
 
-> Historical implementation plan. The authoritative v0.1.0 release-remediation sequence and
-> acceptance evidence are in [rudder-v0.1.0-release-remediation.md](rudder-v0.1.0-release-remediation.md).
-> Completion checkboxes in this historical plan are not release sign-off.
+> Historical implementation plan. Active work proceeds through the
+> [adaptive orchestration and release guide](rudder-adaptive-orchestration-and-release-plan.md).
+> The [v0.1.0 remediation tracker](rudder-v0.1.0-release-remediation.md) remains an audit record and
+> maps its unfinished items to that guide. Completion checkboxes here are not release sign-off.
 
 ## 1. Delivery strategy
 

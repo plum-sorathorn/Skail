@@ -123,7 +123,10 @@ These features must sit behind Rudder-owned interfaces because DeepAgents async 
 
 ### 5.1 Lead behavior
 
-The lead agent is a normal tool-using coding agent. For each user instruction it may:
+The lead agent is a normal tool-using coding agent. Its first necessary response may provide a final
+answer or record a typed `direct`, `discover`, or `planned` execution decision. The same response may
+continue with compatible tools after the decision is accepted. A scoped user question may come
+first when intent or authority is genuinely missing. For each user instruction the lead may:
 
 - answer directly;
 - inspect and modify the workspace directly;
@@ -131,6 +134,11 @@ The lead agent is a normal tool-using coding agent. For each user instruction it
 - delegate one or more independent tasks;
 - synthesize subagent results and continue implementation;
 - ask the user when requirements or authority are missing.
+
+`direct` retains the full lead tool loop and may submit a plan later when evidence changes.
+`discover` submits only the next evidence-gathering frontier and a decision checkpoint. `planned`
+submits a finite dependency graph whose ready work can proceed without another lead call. The
+runtime validates plans before execution; generated code and `write_todos` content are not plans.
 
 The lead should delegate when at least one of these is true:
 
@@ -166,6 +174,11 @@ compaction preserves current intent, task state, assignments/budgets, approvals/
 paths/verification, unresolved errors, and references to retained records.
 
 Default child agents cannot delegate further. User-defined agents may opt into delegation, but the default maximum depth is one and the global three-agent concurrency limit still applies.
+
+The standard `task` tool remains supported and admits one task through the same plan service. Plans
+use local node names; Rudder assigns persistent IDs, rejects cycles, missing references, duplicate
+objectives, invalid scopes, and unauthorized effects, and preserves completed node identities across
+revisions.
 
 ### 5.3 Foreground and background work
 
@@ -320,6 +333,8 @@ Project and user profiles use `.rudder/agents/<name>/AGENTS.md` and `~/.rudder/a
 - The lead does not edit while a child holds the shared-workspace write lease.
 - If a non-Git workspace cannot provide worktrees, Rudder falls back to a single writer rather than pretending isolation.
 - The scheduler queues excess tasks; it does not fail them merely because the current concurrency limit is full.
+- Isolated writers execute from a recorded reproducible workspace snapshot and return a change set;
+  one serialized integration owner checks conflicts and verification before applying it.
 
 ## 11. Failure and escalation
 
@@ -588,16 +603,26 @@ Rudder is ready for stable release when:
 - resume restores task and budget state without duplicating work;
 - LLM Gateway completes streaming tool-call and structured-output contract tests;
 - all default tests run offline;
-- automatic routing's completion rate is within five percentage points of the fixed quality baseline while reducing median cost per completed task by at least 20% on the agreed evaluation suite;
+- engineering readiness passes every approved deterministic offline oracle with no new safety or
+  workspace defect; unsupported economic strategies remain shadow or experimental;
+- production promotion of an economic strategy requires paired held-out evidence showing no lower
+  observed completion than the capable direct baseline, with the preregistered confidence bound,
+  and at least 20% lower aggregate cost per successful request;
 - parallel-eligible scenarios reduce median wall-clock time by at least 15% compared with the same tasks forced serial;
 - no critical safety or data-loss defect remains open.
 
-The numerical evaluation thresholds are initial release gates and require explicit confirmation when the evaluation fixture set is approved.
+The offline engineering boundary and live economic-qualification boundary are separate. Live
+qualification requires explicit provider-spend authorization and an approved evaluation protocol.
+Neither engineering readiness nor a release tag proves a broad savings claim.
 
 ## 22. Approved implementation decisions
 
 1. Use `rudder-harness` as the Python distribution name and retain the `rudder` command.
 2. Keep background agents experimental and isolated behind `TaskExecutor`; they are not a stable-release blocker.
-3. Use the numerical gates in section 21 as the initial evaluation gates. Stable evaluation uses at least 50 approved, oracle-backed fixtures balanced across risk, role, parallelism, platform, and failure behavior.
+3. Stable engineering evaluation uses at least 50 approved, oracle-backed offline fixtures balanced
+   across risk, role, parallelism, platform, and failure behavior. Economic promotion uses the
+   separate paired live qualification contract in ADR 0006 and the active implementation guide.
 4. The stable core resolves credentials from environment-variable references. OS keyring support may be added later as an optional extra.
 5. Target Python 3.12+. Pin the exact DeepAgents/LangGraph compatibility range only after Phase 1 contract spikes verify it.
+6. Use the adaptive execution and release boundaries accepted in
+   [ADR 0006](../decisions/0006-adaptive-execution-and-release-boundaries.md).

@@ -1,10 +1,11 @@
 # Rudder Delivery Checklist
 
-Status: Active; implementation is in progress on the `rudder` branch.
+Status: Historical; active work is tracked in the adaptive orchestration and release guide.
 
-> Historical delivery checklist. Release completion is governed by the phased
-> [v0.1.0 release-remediation tracker](rudder-v0.1.0-release-remediation.md); checked items below
-> record prior implementation claims and do not establish release evidence.
+> Historical delivery checklist. Active work and release completion are governed by the
+> [adaptive orchestration and release guide](rudder-adaptive-orchestration-and-release-plan.md).
+> The [v0.1.0 remediation tracker](rudder-v0.1.0-release-remediation.md) remains an audit mapping;
+> checked items below record prior implementation claims and do not establish release evidence.
 
 ## Approval and boundary
 
@@ -85,6 +86,10 @@ Status: Active; implementation is in progress on the `rudder` branch.
 
 ## Validation and release
 
+The active guide owns these historical items: 8.1–8.3 map to phases 04–05 and 15; 8.4 maps to
+phases 10, 16, 19, and 21; 8.5 maps to phases 09, 15, and 19; 8.6 and the final checkpoint map to
+phases 17–24. The checkboxes remain open until their mapped evidence is complete.
+
 - [ ] 8.1 Rebuild deterministic evaluation with independent fixtures and oracles.
 - [ ] 8.2 Validate the required fixture manifest and raw evidence.
 - [ ] 8.3 Validate completion, cost, and parallel-time gates without timing manipulation.
@@ -94,6 +99,9 @@ Status: Active; implementation is in progress on the `rudder` branch.
 - [ ] Final checkpoint: all stable-release criteria pass.
 
 ## Post-stable / isolated
+
+The active guide moves worktree-isolated writers into release phases 11–12. Background execution
+and the editor protocol remain post-stable P.2 and P.3 work.
 
 - [ ] P.1 Worktree-isolated concurrent writers.
 - [ ] P.2 Preview-backed background task executor, if approved.

@@ -44,6 +44,11 @@ Keep Rudder useful for simple work and resilient when delegation is unnecessary 
 
 The lead gets the full default coding tool set under the active safety policy. It owns the user-facing outcome and may inspect, edit, execute, ask questions, create todos, delegate, synthesize, and verify.
 
+Its first necessary response may finish directly or record a typed `direct`, `discover`, or
+`planned` decision. Direct work keeps the capable tool loop. Discovery schedules a bounded evidence
+frontier and checkpoint. A validated plan releases ready dependencies without asking the lead to
+select every batch. A scoped question may precede the decision when intent or authority is missing.
+
 Its prompt defines delegation heuristics, but the runtime enforces user directives:
 
 - `delegation=off`: the `task` tool is hidden or rejects calls before scheduling;
@@ -72,6 +77,7 @@ Avoid conflating a conversational checklist with work actually scheduled on an a
 - `task` creates a task request which Rudder validates and registers.
 - The task registry owns executable states, assignments, attempts, budgets, and results.
 - A todo may reference a task ID, but neither state system silently mutates the other.
+- An `ExecutionPlan` is a separate versioned domain contract; todo prose never becomes executable.
 
 ### Display
 
@@ -82,6 +88,9 @@ Avoid conflating a conversational checklist with work actually scheduled on an a
 ### Purpose
 
 Turn a normal user prompt into bounded parallel or specialized work without requiring the user to describe an orchestration strategy.
+
+The lead may use the standard `task` call for one task or submit a finite typed plan. Both enter one
+Rudder-owned plan service and share validation, assignment, budget, lifecycle, events, and recovery.
 
 ### Task request fields
 
@@ -101,6 +110,11 @@ Rudder rejects or blocks a request when:
 - background execution is requested but not enabled.
 
 Valid requests receive Rudder-generated IDs and requirements. The model cannot self-assign authority, a larger budget, or extra concurrency by placing it in task text.
+
+Plans use local names and declare dependencies, acceptance criteria, output contracts, effects,
+resource scopes, and decision checkpoints. Admission allocates persistent IDs atomically and rejects
+cycles, missing references, duplicate objectives, invalid scopes, and unauthorized effects. A
+revision identifies its expected predecessor; completed nodes retain identity and retry history.
 
 ### Result logic
 
@@ -271,7 +285,9 @@ Every model call in the attempt uses the assignment in graph state. The provider
 
 ### `auto`
 
-Find the cheapest estimated attempt that clears requirements. This is the default.
+Use the lowest expected-total-spend strategy among quality-qualified choices. In cold-start, stale,
+or unsupported workload classes, use the recorded conservative baseline and expose why. New cheaper
+strategies remain shadow or experimental until an approved paired evaluation qualifies them.
 
 ### `economy`
 
@@ -390,7 +406,10 @@ Tasks launch only after every dependency succeeds. A failed, blocked, or cancell
 
 ### Worktree mode
 
-Worktree isolation may allow non-overlapping writer tasks. It is not required for the stable core and falls back to serialized shared mode on non-Git or unsafe repositories.
+Worktree isolation may allow non-overlapping writer tasks. Each worker starts from a recorded
+canonical snapshot and returns a content-addressed change set with verification evidence. One
+serialized integration owner checks stale inputs, conflicts, scope, and verification. Non-Git or
+unsafe repositories fall back to serialized shared mode without discarding user changes.
 
 ### Fairness
 
@@ -696,6 +715,10 @@ Each fixture defines repository snapshot, user prompt, allowed tools, success or
 - unsafe-action and state-recovery defects.
 
 Prompt self-reports do not count as completion.
+
+The deterministic offline suite gates engineering readiness. It cannot promote a novel economic
+strategy or establish a broad savings claim. Promotion requires a separately authorized, held-out,
+paired live evaluation with preregistered completion, cost, latency, and safety criteria.
 
 ## 26. Features removed from AutoConduck
 

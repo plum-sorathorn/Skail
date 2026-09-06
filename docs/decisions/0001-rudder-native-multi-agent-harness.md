@@ -3,6 +3,10 @@
 Status: Accepted
 Date: 2026-09-02
 
+> ADR 0006 supersedes decision 3 and the blanket rejection of precompiled task DAGs with a typed,
+> adaptive execution-plan contract. The native harness boundary, capable lead, standard `task`
+> compatibility, task-bound model stickiness, concurrency maximum, and retry limit remain active.
+
 ## Context
 
 AutoConduck is a local model-routing proxy with optional plugin and OMA orchestration features. That position limits its control over the main agent loop, tool execution, subagent lifecycle, model ownership, safety, and user experience. The desired product is instead a coding harness launched directly as `rudder`, aimed at users who want orchestrated speed and accuracy within a budget.
@@ -13,7 +17,8 @@ DeepAgents provides a harness framework on LangGraph with a capable agent loop, 
 
 1. Rudder will be a native terminal coding harness, not a proxy, plugin, daemon, or compatibility layer for another harness.
 2. The lead will be a capable DeepAgent that can work directly and selectively delegate. It will not be a coordinator that can only create tasks.
-3. Rudder will use DeepAgents' standard `task` surface. Built-in subagents will be supplied as `CompiledSubAgent` runnables whose outer LangGraph nodes enforce validation, model assignment, budget reservation, execution, result evaluation, and one escalation.
+3. Superseded in part by ADR 0006. Rudder retains DeepAgents' standard `task` surface, but routes it
+   through the same Rudder-owned adaptive plan admission and lifecycle services as typed plans.
 4. Models will be assigned at the lead-run or task-attempt boundary. Middleware installs the recorded model; it does not reroute each model call.
 5. Synchronous foreground subagents are the stable initial path. Preview asynchronous subagents will be optional and isolated behind a Rudder `TaskExecutor` adapter.
 6. Concurrency will be configurable from one to three child agents. Delegation depth defaults to one. Shared-workspace writers are serialized until worktree isolation is implemented.
@@ -46,9 +51,11 @@ Rejected because the agent loop, graph state, checkpointing, tool middleware, su
 
 Rejected as the architectural foundation. Rudder should emulate the proven behavior of a capable lead with selective delegation, but use a maintained framework boundary and its own policies rather than depend on another product's internal implementation.
 
-### Precompile every user request into a static task DAG
+### Precompile every user request into a static task DAG (superseded in part by ADR 0006)
 
-Rejected for the default path. It recreates OMA-like planning overhead, is brittle when repository evidence changes, and makes small tasks inconvenient. The lead may build todos and submit tasks incrementally.
+The rejection of a mandatory static DAG remains. ADR 0006 permits an optional typed, revision-aware
+plan interpreted by a fixed coordinator, while simple work remains direct and todo prose remains
+non-executable.
 
 ### Route every model call dynamically
 

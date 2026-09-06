@@ -17,7 +17,9 @@ flowchart TD
     UI[CLI / TUI / JSONL] --> RC[Run Controller]
     RC --> LG[Lead DeepAgent graph]
     LG -->|direct tools| TA[Tool Assembly]
-    LG -->|task request| SCH[Task Scheduler]
+    LG -->|execution decision / task| PA[Plan Admission]
+    PA --> PC[Persistent Plan Coordinator]
+    PC -->|ready nodes| SCH[Task Scheduler]
     SCH --> TG1[Task graph A]
     SCH --> TG2[Task graph B]
     SCH --> TG3[Task graph C]
@@ -43,7 +45,10 @@ flowchart TD
     ES --> UI
 ```
 
-Only the lead may create first-level delegated tasks by default. A maximum of three children execute at once. The task scheduler is a Rudder component, even though the `task` tool and child execution use DeepAgents.
+Only the lead may create first-level delegated tasks by default. A maximum of three children execute
+at once. Plan admission, coordination, and scheduling are Rudder components, even though the `task`
+tool and child execution use DeepAgents. The fixed coordinator interprets typed data; it never
+executes model-authored code.
 
 ## 3. What DeepAgents owns
 
@@ -77,6 +82,8 @@ Rudder owns these semantics and may not delegate them to prompts:
 - provider health, fallback recording, and usage normalization;
 - stable user-facing events, errors, CLI behavior, and persistence;
 - compatibility adapters around DeepAgents preview or changing APIs.
+- execution-decision admission, plan identity/revision, ready-queue dispatch, and integration state;
+- schema ownership and migration for plans, routes, workspaces, change sets, and verification.
 
 ## 5. Graph composition
 
@@ -92,9 +99,28 @@ Rudder owns these semantics and may not delegate them to prompts:
 - a LangGraph checkpointer and session identifiers;
 - event and usage middleware.
 
-The lead assignment is created at the beginning of each user-instruction run and remains fixed until the lead reaches a terminal response, is cancelled, or starts an explicitly recorded fallback attempt. It is not permanently fixed for the entire conversation.
+The first necessary lead response ends with a final answer or records a typed execution decision.
+Runtime middleware admits that decision before operational tool calls from the same response. A
+scoped question interrupt is allowed before the decision when required. Direct mode retains the
+normal tool loop; discovery records a bounded frontier and checkpoint; planned mode records a finite
+dependency graph. The standard `task` call admits one node through the same service.
 
-### 5.2 Compiled task graph
+The lead assignment is created at the beginning of each user-instruction run and remains fixed until the lead reaches a terminal response, is cancelled, or starts an explicitly recorded fallback attempt. It is not permanently fixed for the entire conversation. Plan waits, revisions, and integration do not replace a healthy assignment.
+
+### 5.2 Persistent plan coordinator
+
+The coordinator persists plan schema/policy version, plan and node IDs, revision, dependencies,
+acceptance criteria, effects, resource scopes, and decision checkpoints before dispatch. It allocates
+opaque persistent IDs from model-supplied local names and rejects cycles, missing references,
+duplicate objectives, invalid scopes, and unauthorized effects atomically.
+
+A durable ready queue releases nodes after successful prerequisites without waking the lead for
+ordinary worker success. Discovery checkpoints, contradictory evidence, changed scope, unresolved
+failure, integration conflict, material steering, and final synthesis wake the lead. Revisions name
+the expected prior revision and may add, replace, or cancel unfinished nodes; completed identities
+and the two-attempt fingerprint remain stable.
+
+### 5.3 Compiled task graph
 
 Each built-in subagent profile supplied to DeepAgents is a `CompiledSubAgent`. It implements this lifecycle:
 
@@ -130,7 +156,7 @@ Conceptual nodes:
 
 The graph, rather than the child prompt, enforces the attempt limit.
 
-### 5.3 Model binding
+### 5.4 Model binding
 
 DeepAgents and LangChain allow middleware to override a request model. Rudder uses that mechanism only to install the model already chosen for the current task attempt.
 
@@ -146,7 +172,7 @@ return handler(request.override(model=model))
 
 It does not call the router. Selection occurs in `assign_attempt` or the lead-run setup. The middleware validates that every subsequent model request in the attempt has the same assignment ID. A mismatch is an invariant failure and is recorded before the run stops safely.
 
-### 5.4 Synchronous stable path
+### 5.5 Synchronous stable path
 
 The first stable release uses synchronous DeepAgents subagents:
 
@@ -158,7 +184,7 @@ The first stable release uses synchronous DeepAgents subagents:
 
 This path is release-critical because synchronous subagents are the mature framework feature.
 
-### 5.5 Optional asynchronous path
+### 5.6 Optional asynchronous path
 
 Background agents use a `TaskExecutor` adapter. No caller outside the adapter may import the framework's Agent Protocol types.
 
@@ -179,7 +205,7 @@ Implementations:
 
 If async framework support changes, only `BackgroundTaskExecutor` and its contract tests change.
 
-### 5.6 Context assembly
+### 5.7 Context assembly
 
 Before each lead or compiled-child model attempt, Rudder assembles a versioned context packet. The
 packet contains the minimum stable task state plus labelled references selected under user, trust,
@@ -601,6 +627,12 @@ Initial logical tables:
 - `approvals`;
 - `events`.
 
+Adaptive execution adds versioned plan, plan-node, plan-revision, workspace-snapshot, change-set,
+and verification records through explicit journal migrations. `sessions/migrations.py` owns journal
+schema evolution. Domain serializers own their record schema versions, while `domain/events.py`
+owns envelope and payload versions. Readers reject unsupported future versions; migrations retain
+historical evidence rather than rewriting its meaning.
+
 Task and budget state changes that must agree occur in one Rudder database transaction. Checkpoints are coordinated by idempotency keys because they cannot share that transaction.
 
 ### 13.3 Recovery
@@ -649,6 +681,9 @@ Required event families:
 - checkpointed/resumed/compacted;
 - user question/answer/cancellation;
 - invariant and diagnostic errors.
+- execution decision and plan admitted/revised/blocked;
+- plan node ready/started/terminal and decision checkpoint;
+- workspace snapshot, change-set validation, and integration outcome.
 
 ### 14.2 Projections
 

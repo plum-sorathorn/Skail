@@ -1,17 +1,32 @@
 # Rudder v0.1.0 Release Remediation Plan
 
-Status: **In progress — release sign-off withheld**
+Status: **Historical audit record — release sign-off remains withheld**
 
-This is the authoritative execution tracker for the Phase 6–8 audit remediation. It supplements
-the historical implementation plan; it does not change the accepted product invariants, ADRs, or
-the requirement that `legacy/autoconduck/` remain inert.
+This is the historical audit-remediation tracker. Active work proceeds through the
+[adaptive orchestration and release guide](rudder-adaptive-orchestration-and-release-plan.md), which
+preserves completed evidence here and maps every unfinished item to a numbered owner. This record
+does not change the requirement that `legacy/autoconduck/` remain inert.
 
-## Authoritative remediation phases
+## Active-guide mapping
 
-Each phase is a separate, reviewable commit. A checked phase requires its stated acceptance
-evidence, focused and affected tests, static checks appropriate to the change, a Graphify update,
-and a complete diff review. Historical checkmarks below record partial implementation work only;
-they are reopened as release-completion claims until the corresponding phase has passed.
+| Historical item | Active owner |
+|---|---|
+| Phase 2 provider/configuration composition | Phase 01 revalidates the routing boundary; demonstrated defects remain repair prerequisites |
+| Phase 7 persisted events and exit behavior | Phases 02–03 |
+| Phase 8 independent evaluation and timing | Phases 04–05 and 15 |
+| Phase 9 release checks, CI, and documentation | Phases 17–24 |
+| Worktree isolation | Phases 11–12 |
+| Economic savings qualification | Q1, separately authorized |
+| Legacy cleanup | C1, separately authorized |
+
+The release tag in phase 24 requires separate explicit authorization and exact-commit platform
+evidence. Creating a tag never authorizes a repository or remote rename.
+
+## Historical remediation phases
+
+Each phase required a separate, reviewable commit under this tracker. Historical checkmarks below
+record partial implementation work only; open release claims are now owned by the active-guide
+mapping above.
 
 ### Phase 1 — Accurate tracker and preserved evidence
 
@@ -217,7 +232,8 @@ full contract is complete; each is revalidated by the phase above that owns it.
   wheel inspection, and the strengthened release check.
 - [ ] Review a clean complete diff and commit documentation as
   `docs(rudder): synchronize all documentation and repository metadata for v0.1.0 release`.
-- [ ] Tag the verified release as `v0.1.0`; only then update the GitHub repository name/remote.
+- [ ] Tag the verified release as `v0.1.0` only with separate explicit authorization; repository or
+  remote renaming is a different external action and requires its own authorization.
 
 ## Current verification
 
