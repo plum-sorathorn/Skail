@@ -401,6 +401,8 @@ Commit `feat(agents): add validated execution decisions and plan admission`.
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 07a.
 
+**Status:** complete.
+
 1. Route standard `task(description, subagent_type)` calls through the same admitted-task service.
 2. Enforce `delegation=off|ask|auto` on both interfaces. In ask mode planning may occur but
    children wait for approval.
@@ -843,6 +845,23 @@ External evidence location and source identity, if applicable: none required; al
 Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, run_2.md excluded from phase staging
 Unproven claims or missing evidence: this slice does not execute admitted plan nodes, unify compatibility task admission, or establish economic/quality claims; the full offline suite is unrecorded because its runner hung.
 Next phase and its dependencies: Phase 07b — Route compatibility tasks through admitted plans; depends on completed Phase 07a
+```
+
+### Phase 07b handoff
+
+```text
+Phase: 07b — Route compatibility tasks through admitted plans
+Status: complete
+Implementation model: GPT-5 Codex (assigned Terra treated as a recommendation)
+Commit(s): `f5a1e88` feat(agents): route task compatibility through admitted plans
+Behavior delivered: Compatibility `task` calls now enter the child lifecycle only after the controller admits a validated task spec. Calls rejected by the execution-decision ordering, disabled delegation, read-only controls, or an already-recorded explicit plan cannot create tasks, attempts, assignments, reservations, or child work. `ask` mode still admits validated work and blocks child execution until approval; permitted direct-mode task calls retain the existing lifecycle, scope, model, and budget handling. Explicit plans remain persisted for the Phase 08 coordinator rather than being bypassed by a compatibility task.
+Acceptance evidence and commands: `rtk pytest tests\contract\test_execution_decisions.py tests\integration\test_delegation_controls.py tests\integration\test_lead.py tests\integration\test_headless_core.py tests\integration\test_tui_commands.py tests\integration\test_task_graph.py tests\security\test_crash_recovery_and_reservations.py -q` (51 passed); `python -m mypy src\rudder` (passed); `python -m ruff check src tests scripts evals benchmarks` (passed); `python scripts\smoke.py --fake-provider` (passed); `graphify update .`; `rtk git diff --check`; complete diff review.
+Test results and documented skips: focused and affected deterministic offline tests passed. A fresh `rtk pytest -q` attempt produced no result after 30 seconds and left only its verified `pytest.exe` and child `python.exe` process tree; those test processes were terminated. Full-suite success is intentionally not claimed. Live providers, paid evaluation, platform release evidence, tagging, pushing, publishing, remote rename, and legacy cleanup were out of scope.
+Review findings closed/open: compatibility task allocation previously occurred from the model-response observer even when the call was rejected or unavailable. The controller now filters admission before the compiled task graph and the graph fails closed without a pre-admitted spec. No Phase 07 blocker remains; Phase 08 owns ready-node execution and durable dispatch.
+External evidence location and source identity, if applicable: none required; all completed verification is deterministic and offline
+Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, `run_2.md` excluded from phase staging
+Unproven claims or missing evidence: this phase does not execute persisted plan nodes or establish economic/quality claims; the full offline suite is unrecorded because its runner hung.
+Next phase and its dependencies: Phase 08 — Execute ready work without lead round trips; depends on completed Phase 07b
 ```
 
 ## 10. Definition of completion
