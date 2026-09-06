@@ -897,6 +897,23 @@ Unproven claims or missing evidence: this phase does not execute persisted plan 
 Next phase and its dependencies: Phase 08 — Execute ready work without lead round trips; depends on completed Phase 07b
 ```
 
+### Phase 08a handoff
+
+```text
+Phase: 08a — Persist legal node state and readiness
+Status: complete
+Implementation model: GPT-5 Codex (assigned Terra treated as a recommendation)
+Commit(s): `ff3da2f` feat(runtime): persist plan node readiness
+Behavior delivered: Migration 10 persists each admitted plan node as waiting or ready and backfills already-admitted plans without changing their plan payloads. The journal exposes stable-order ready nodes and atomically enforces ready -> launching -> running -> terminal transitions. A persisted success releases only dependents with all succeeded prerequisites; failed, blocked, or cancelled prerequisites block the complete waiting downstream closure. State transitions write typed plan-node events and notify observers only after commit. Plan revisions initialize state for newly admitted nodes while preserving existing node state.
+Acceptance evidence and commands: `rtk pytest tests\integration\test_plan_persistence.py tests\unit\test_journal.py -q` (23 passed); `rtk pytest tests\contract\test_execution_decisions.py tests\integration\test_delegation_controls.py tests\integration\test_task_graph.py tests\integration\test_plan_persistence.py tests\unit\test_journal.py -q` (47 passed); `python -m ruff check src tests scripts evals benchmarks` (passed); `python -m mypy src\rudder` (passed); `python scripts\smoke.py --fake-provider` (passed); `graphify update .`; `rtk git diff --check`; complete staged-diff review.
+Test results and documented skips: focused and affected deterministic offline checks passed. A fresh `rtk pytest -q` produced no output for 60 seconds and was interrupted; full-suite success is intentionally not claimed. Live providers, paid evaluation, platform release evidence, tagging, pushing, publishing, remote rename, and legacy cleanup were out of scope.
+Review findings closed/open: phase 06 revisions initially did not create state for newly added nodes; 08a now initializes those rows. No 08a blocker remains. State is intentionally not yet bound to child assignments, reservations, task results, checkpoints, or execution; 08b owns that binding.
+External evidence location and source identity, if applicable: none required; all completed verification is deterministic and offline
+Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, `run_2.md` were not staged or modified
+Unproven claims or missing evidence: state transitions do not execute plan nodes, prove independent completion overlap, or bind succeeded state to verification evidence; the full offline suite is unrecorded because its runner hung.
+Next phase and its dependencies: Phase 08b — Bind ready agent nodes to admitted child work; depends on completed Phase 08a
+```
+
 ## 10. Definition of completion
 
 - Numbered implementation phases are complete only with their recorded checks and phase handoffs.
