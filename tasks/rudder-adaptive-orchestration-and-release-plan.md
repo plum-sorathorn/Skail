@@ -195,7 +195,7 @@ Every row starts unchecked. Dependencies refer to this guide, not the old phase 
 | [x] | 06 | Terra | 05 | Persistent executable-plan state |
 | [x] | 07 | Terra | 06 | Required execution decisions and plan admission |
 | [x] | 08 | Terra | 07 | Ready-work execution without lead round trips |
-| [ ] | 09 | Terra | 08 | 09a revisions and 09b context complete; 09c recovery/steering pending |
+| [x] | 09 | Terra | 08 | Revision-aware context, recovery, and steering |
 | [ ] | 10 | Sol | 09 | Independent graph/accounting review |
 | [ ] | 11 | Terra | 10 | Reproducible isolated worker snapshots |
 | [ ] | 12 | Terra | 11 | Serialized verified integration |
@@ -474,7 +474,7 @@ reconciliation, cancellation, and final Phase 08 acceptance coverage.
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 08.
 
-**Status:** in progress. This phase is deliberately split because plan mutation, worker context,
+**Status:** complete. This phase was deliberately split because plan mutation, worker context,
 and interruption recovery each change separate persistent boundaries. The slices below preserve a
 testable handoff without treating an unimplemented resume path as complete.
 
@@ -533,9 +533,21 @@ interrupts and recovery.
 
 #### Phase 09c — Resume revised plans through interrupts and recovery
 
-**Status:** pending. **Depends on:** 09b. **Scope:** checkpoint/journal readiness reconstruction,
+**Status:** complete. **Depends on:** 09b. **Scope:** checkpoint/journal readiness reconstruction,
 ambiguous in-flight call handling, run versus node cancellation, approval recheck, repair limits,
 and attempt lineage across replacement nodes.
+
+**Handoff (completed 2026-09-06):** Commit `12b1a92` makes recovery report ambiguous provider calls
+and retain their reservations rather than replaying or releasing possibly charged work. Resume and
+planned admission reload failed fingerprint evidence. Agent replacements must explicitly retain the
+prior lineage; lineage drives task fingerprints so a rename cannot create a third automatic attempt.
+No-op revisions are rejected, avoiding no-progress revision loops. Existing node-level cancellation,
+exact-command approval scope/recheck, and interrupted lead-resume paths remain intact. Offline
+regressions cover ambiguous recovery reservation retention, restart-stable lineage fingerprints,
+required replacement lineage, and no-progress rejection. Focused/affected suite: 80 passed; Ruff,
+mypy, and fake-provider smoke passed. `rtk pytest -q` remained silent for 60 seconds and was
+interrupted, so full-suite success is not claimed. Graphify updated after code changes (AST 233/233;
+existing 14 zero-node JSON warning remains). Next: Phase 10 independent graph and accounting review.
 
 ### Phase 10 — Independent graph and accounting review
 
