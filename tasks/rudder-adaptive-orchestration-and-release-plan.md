@@ -474,6 +474,10 @@ reconciliation, cancellation, and final Phase 08 acceptance coverage.
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 08.
 
+**Status:** in progress. This phase is deliberately split because plan mutation, worker context,
+and interruption recovery each change separate persistent boundaries. The slices below preserve a
+testable handoff without treating an unimplemented resume path as complete.
+
 1. Implement evidence-triggered checkpoints and incremental revisions. Completed nodes stay immutable; changed assumptions invalidate affected downstream artifacts/tasks rather than restarting the entire graph.
 2. Pass bounded objective/constraints/prerequisite artifacts and source revisions to workers; enable authorized retrieval of additional detail. Preserve failure evidence and unresolved questions during compaction. Do not inherit entire lead transcripts.
 3. Reconstruct plan readiness from journal plus checkpoints after interruption. Account for in-flight ambiguous calls before replay. Distinguish node cancellation from a run-level terminal outcome.
@@ -481,6 +485,45 @@ reconciliation, cancellation, and final Phase 08 acceptance coverage.
 5. Enforce the repair/no-progress limits and attempt lineage across renamed/replaced nodes. Distinguish failure types before choosing escalation, waiting, direct takeover, or blocking.
 
 **Acceptance:** discovery changes later tasks; stale evidence is rejected; unrelated completed work survives replanning; approval/resume/cancel and two-attempt invariants hold across restarts. Commit `feat(runtime): reconcile plan revisions context and recovery`.
+
+#### Phase 09a — Reconcile durable incremental plan revisions
+
+**Status:** complete. **Scope:** evidence-bearing revision compare-and-set, immutable completed
+node evidence, replacement/cancellation state, downstream invalidation, and stale-completion
+exclusion at the journal boundary.
+
+Completed or terminal plan nodes retain their identity, payload, result, and attempt history.
+Revisions must carry explicit evidence, can add work or replace/cancel only affected non-terminal
+nodes, and retain historical node records rather than deleting them. A revision atomically changes
+the active plan frontier; a completion from a retired node is rejected and cannot release or
+integrate stale work. Independent completed nodes remain available to the revised plan.
+
+**Acceptance:** offline journal fixtures prove evidence is required; completed nodes are immutable;
+replacement preserves historical node evidence while invalidating only its downstream closure; and
+a stale completion loses to the revision CAS. Commit `feat(runtime): reconcile durable plan revisions`.
+
+**Handoff (completed 2026-09-06):** Commit `d706f7e` adds evidence references to plan revisions and
+migration 13, which retains retired node records instead of deleting them. Revision compare-and-set
+now preserves terminal node payloads/identity, rejects undeclared deltas, blocks only the cancelled
+branch's downstream closure, reconstructs readiness from active records, and rejects stale terminal
+transitions from retired nodes. Offline regression coverage covers required evidence, immutable
+completed work, targeted invalidation, restart/migration reconstruction, and stale completion.
+`tests\\integration\\test_plan_persistence.py` (19), `test_recovery.py` (15), and
+`test_delegation_controls.py` (15) passed; Ruff, mypy, and fake-provider smoke passed. `rtk pytest
+-q` remained silent for 60 seconds and was interrupted, so full-suite success is not claimed.
+Graphify updated after the code change (AST 233/233; its existing 14 zero-node JSON warning remains).
+Next: 09b bounded worker context and compaction evidence.
+
+#### Phase 09b — Bound worker context and preserve compaction evidence
+
+**Status:** pending. **Depends on:** 09a. **Scope:** revision-aware bounded worker packets,
+authorized progressive retrieval, and compaction retention of failures/questions.
+
+#### Phase 09c — Resume revised plans through interrupts and recovery
+
+**Status:** pending. **Depends on:** 09b. **Scope:** checkpoint/journal readiness reconstruction,
+ambiguous in-flight call handling, run versus node cancellation, approval recheck, repair limits,
+and attempt lineage across replacement nodes.
 
 ### Phase 10 — Independent graph and accounting review
 
