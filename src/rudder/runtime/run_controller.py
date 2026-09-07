@@ -719,6 +719,14 @@ class RunController:
             if node.kind is not PlanNodeKind.AGENT:
                 continue
             request = _task_request_for_plan_node(node)
+            request = request.model_copy(
+                update={
+                    "source_revisions": (
+                        *request.source_revisions,
+                        f"plan:{persisted.plan_id}:revision:{persisted.plan.revision}",
+                    )
+                }
+            )
             profile = builtin_profiles()[request.profile]
             if controls.write_allowed is False and profile.write_capable:
                 raise TaskValidationError("plan.node_write_disallowed")
@@ -2445,6 +2453,8 @@ def _task_request_for_plan_node(node: PlanNode) -> TaskRequest:
                 "description": node.objective,
                 "profile": features.get("profile", default_profile),
                 "success_criteria": node.acceptance_criteria,
+                "prerequisite_artifacts": node.artifact_refs,
+                "source_revisions": node.inputs,
             }
         )
     except ValueError as error:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from decimal import Decimal
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -126,8 +127,45 @@ class TaskValidator:
                 ),
                 "depends_on": dependencies,
                 "write_scope": scope,
+                "prerequisite_artifacts": tuple(
+                    self._normalize_context_reference(value)
+                    for value in request.prerequisite_artifacts
+                ),
+                "source_revisions": tuple(
+                    self._normalize_context_revision(value)
+                    for value in request.source_revisions
+                ),
             }
         )
+
+    def _normalize_context_reference(self, value: str) -> str:
+        reference = value.strip()
+        if not reference or len(reference) > 512:
+            raise TaskValidationError("task.context_reference_invalid")
+        if reference.startswith("file:"):
+            try:
+                path = self._normalize_scope(reference.removeprefix("file:"))
+            except TaskValidationError as error:
+                raise TaskValidationError("task.context_reference_invalid") from error
+            return f"file:{path}"
+        if reference.startswith("artifact:"):
+            artifact = reference.removeprefix("artifact:")
+            if re.fullmatch(r"[A-Za-z0-9._/-]+", artifact) and ".." not in PurePosixPath(
+                artifact
+            ).parts:
+                return reference
+        raise TaskValidationError("task.context_reference_invalid")
+
+    @staticmethod
+    def _normalize_context_revision(value: str) -> str:
+        revision = value.strip()
+        if (
+            not revision
+            or len(revision) > 512
+            or any(character.isspace() for character in revision)
+        ):
+            raise TaskValidationError("task.context_revision_invalid")
+        return revision
 
     def _normalize_scope(self, value: str) -> str:
         candidate = value.strip().replace("\\", "/")

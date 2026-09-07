@@ -117,6 +117,8 @@ class TaskRequest(BaseModel):
     budget_usd: Decimal | None = Field(default=None, ge=0)
     background: bool = False
     priority: int = Field(default=0, ge=-100, le=100)
+    prerequisite_artifacts: tuple[str, ...] = ()
+    source_revisions: tuple[str, ...] = ()
 
     @field_serializer("budget_usd")
     def serialize_budget(self, value: Decimal | None) -> str | None:

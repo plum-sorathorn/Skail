@@ -30,6 +30,8 @@ class SessionCompactionInput:
     objective: str
     constraints: tuple[str, ...] = ()
     terminal_result_summaries: dict[str, str] = field(default_factory=dict)
+    failure_evidence: dict[str, str] = field(default_factory=dict)
+    unresolved_questions: tuple[str, ...] = ()
     changed_paths: tuple[str, ...] = ()
     verification: str = ""
     verbose_events: tuple[dict[str, Any], ...] = ()
@@ -84,6 +86,15 @@ class CompactionService:
                 results_lines.append(f"- {t.task_id} [succeeded]: {t.description}")
         results_text = "\n".join(results_lines) or "No completed tasks yet"
 
+        failure_lines = [
+            f"- {task_id}: {summary}"
+            for task_id, summary in input.failure_evidence.items()
+        ]
+        for task in snapshot.tasks:
+            if task.status.value in {"failed", "returned_to_lead", "blocked"}:
+                failure_lines.append(f"- {task.task_id} [{task.status.value}]: {task.description}")
+        failure_text = "\n".join(dict.fromkeys(failure_lines)) or "None recorded"
+
         # 3. Changed files and verification
         paths_text = ", ".join(input.changed_paths) if input.changed_paths else "None"
         verif_text = input.verification or "Unverified"
@@ -113,6 +124,13 @@ class CompactionService:
             if pending_approvals
             else "None pending"
         )
+        if input.unresolved_questions:
+            questions_text = "\n".join(f"- {question}" for question in input.unresolved_questions)
+            approvals_text = (
+                f"{approvals_text}\nUnresolved questions:\n{questions_text}"
+                if pending_approvals
+                else f"Unresolved questions:\n{questions_text}"
+            )
 
         # 6. References for dropped verbose details/events
         covered_event_ids: list[str] = []
@@ -145,6 +163,10 @@ class CompactionService:
             ContextComponent(
                 "results", "current", results_text, "terminal result summaries",
                 _tokens(results_text)
+            ),
+            ContextComponent(
+                "failure_evidence", "current", failure_text,
+                "failure evidence and unresolved errors", _tokens(failure_text)
             ),
             ContextComponent(
                 "changes_and_verification", "current", changes_verification_text,

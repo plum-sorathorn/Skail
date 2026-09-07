@@ -179,6 +179,24 @@ def test_compaction_never_rewrites_usage_records(tmp_path: Path) -> None:
     assert usage_after[0].usage_id == usage_before[0].usage_id
 
 
+def test_compaction_preserves_failure_evidence_and_unresolved_questions(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "journal.sqlite")
+    _seed_compaction_journal(journal, "session-c4")
+
+    result = CompactionService(journal=journal).compact(
+        SessionCompactionInput(
+            session_id="session-c4",
+            objective="Recover the parser failure",
+            failure_evidence={"task-1": "pytest failed: quoted string regression"},
+            unresolved_questions=("Should the legacy escape syntax remain supported?",),
+        )
+    )
+
+    by_label = {component.label: component for component in result.context_packet.components}
+    assert "quoted string regression" in by_label["failure_evidence"].content
+    assert "legacy escape syntax" in by_label["approvals_and_questions"].content
+
+
 def test_compaction_bounds_packet_and_persists_selected_context(tmp_path: Path) -> None:
     journal = Journal(tmp_path / "journal.sqlite")
     _seed_compaction_journal(journal, "session-c3")

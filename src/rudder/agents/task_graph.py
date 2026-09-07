@@ -177,6 +177,39 @@ def build_task_graph(
                     max(1, len(repr(handoff)) // 4),
                 ),
             )
+        if spec.request.prerequisite_artifacts:
+            artifact_references = "\n".join(spec.request.prerequisite_artifacts)
+            references += (
+                ContextComponent(
+                    "prerequisite-artifacts",
+                    "declared",
+                    artifact_references,
+                    "bounded prerequisite artifact references",
+                    max(1, len(artifact_references) // 4),
+                    "reference",
+                ),
+                ContextComponent(
+                    "authorized-retrieval",
+                    "runtime-policy",
+                    "Retrieve listed references only through enabled Rudder tools; "
+                    "runtime policy rechecks access.",
+                    "progressive retrieval boundary",
+                    24,
+                    "reference",
+                ),
+            )
+        if spec.request.source_revisions:
+            source_revisions = "\n".join(spec.request.source_revisions)
+            references += (
+                ContextComponent(
+                    "source-revisions",
+                    "declared",
+                    source_revisions,
+                    "source revisions for this task packet",
+                    max(1, len(source_revisions) // 4),
+                    "reference",
+                ),
+            )
         packet = assembler.assemble(
             task_id=str(spec.task_id),
             objective=spec.request.description,

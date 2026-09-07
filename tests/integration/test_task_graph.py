@@ -25,13 +25,15 @@ from rudder.domain.ids import (
     new_run_id,
     new_task_id,
 )
+from rudder.domain.plans import PlanNode, PlanNodeKind
 from rudder.domain.routing import RoutingMode, TaskAssignment
 from rudder.domain.tasks import TaskRequest, TaskResult, VerificationResult
 from rudder.routing.selector import RouteFailure
 from rudder.runtime.deepagents_adapter import ChildRunGate, build_lead_agent
 from rudder.runtime.leases import WorkspaceLeaseManager
+from rudder.runtime.run_controller import _task_request_for_plan_node
 from rudder.runtime.scheduler import ChildScheduler
-from rudder.runtime.task_validation import TaskValidator
+from rudder.runtime.task_validation import TaskValidationError, TaskValidator
 
 
 def _spec(tmp_path, *, profile: str = "implementer"):
@@ -67,6 +69,8 @@ def test_standard_task_description_decodes_structured_rudder_fields() -> None:
                 "write_scope": ["src/rudder"],
                 "budget_usd": "0.25",
                 "priority": 7,
+                "prerequisite_artifacts": ["artifact:parser-report"],
+                "source_revisions": ["plan:parse:revision:2"],
             }
         ),
         profile="implementer",
@@ -78,6 +82,8 @@ def test_standard_task_description_decodes_structured_rudder_fields() -> None:
     assert request.write_scope == ("src/rudder",)
     assert request.budget_usd == Decimal("0.25")
     assert request.priority == 7
+    assert request.prerequisite_artifacts == ("artifact:parser-report",)
+    assert request.source_revisions == ("plan:parse:revision:2",)
 
 
 def test_plain_task_description_requires_evidence_by_default() -> None:
@@ -85,6 +91,43 @@ def test_plain_task_description_requires_evidence_by_default() -> None:
 
     assert request.description == "Inspect the implementation"
     assert request.success_criteria == ("Provide evidence for the completed task",)
+
+
+def test_plan_node_request_carries_declared_artifact_and_source_references() -> None:
+    request = _task_request_for_plan_node(
+        PlanNode(
+            local_id="review",
+            kind=PlanNodeKind.AGENT,
+            objective="Review parser changes",
+            artifact_refs=("artifact:parser-report", "file:docs/parser.md"),
+            inputs=("workspace:abc123",),
+        )
+    )
+
+    assert request.prerequisite_artifacts == (
+        "artifact:parser-report",
+        "file:docs/parser.md",
+    )
+    assert request.source_revisions == ("workspace:abc123",)
+
+
+def test_task_validator_rejects_unsafe_context_file_references(tmp_path) -> None:
+    validator = TaskValidator(
+        profiles=builtin_profiles(), workspace_root=tmp_path, max_depth=1,
+        background_enabled=False,
+    )
+
+    for reference in ("file:../secret.txt", "artifact:../secret"):
+        with pytest.raises(TaskValidationError, match="task.context_reference_invalid"):
+            validator.create_spec(
+                TaskRequest(
+                    description="Read outside the workspace",
+                    profile="reviewer",
+                    prerequisite_artifacts=(reference,),
+                ),
+                run_id=new_run_id(), parent_task_id=None, parent_depth=0,
+                workspace_revision="git:abc",
+            )
 
 
 @pytest.mark.asyncio
@@ -126,6 +169,71 @@ async def test_task_graph_escalates_once_with_isolated_context_and_returns_to_le
     assert len(set(settled)) == 2
     assert exhausted == [spec.fingerprint]
     assert len(state["result"].attempts) == 2
+
+
+@pytest.mark.asyncio
+async def test_task_graph_passes_bounded_artifact_and_revision_references_to_workers(
+    tmp_path,
+) -> None:
+    validator = TaskValidator(
+        profiles=builtin_profiles(), workspace_root=tmp_path, max_depth=1,
+        background_enabled=False,
+    )
+    spec = validator.create_spec(
+        TaskRequest(
+            description="Verify revised parser work",
+            profile="reviewer",
+            prerequisite_artifacts=("artifact:parser-report", "file:docs/parser.md"),
+            source_revisions=("plan:parser:revision:2", "workspace:abc123"),
+        ),
+        run_id=new_run_id(), parent_task_id=None, parent_depth=0,
+        workspace_revision="git:abc",
+    )
+    assignment = _assignment(spec, 1, "reviewer-model")
+    packets = []
+
+    def assign(task, number, excluded):
+        assert task.task_id == spec.task_id
+        assert number == 1
+        assert excluded == ()
+        return AttemptBinding(new_attempt_id(), assignment)
+
+    async def execute(task, assigned, packet):
+        assert task == spec
+        assert assigned == assignment
+        return TaskResult(
+            task_id=spec.task_id,
+            status="succeeded",
+            summary="verified",
+            verification=(
+                VerificationResult(
+                    criterion="context references available",
+                    passed=True,
+                    evidence="bounded packet persisted",
+                ),
+            ),
+        )
+
+    graph = build_task_graph(
+        profile=builtin_profiles()["reviewer"],
+        assign=assign,
+        execute=execute,
+        persist_context=packets.append,
+        gate=ChildRunGate(3),
+        leases=WorkspaceLeaseManager(),
+    )
+    state = await graph.ainvoke({"spec": spec})
+
+    assert state["result"].status == "succeeded"
+    assert len(packets) == 1
+    by_label = {component.label: component for component in packets[0].components}
+    assert {"prerequisite-artifacts", "source-revisions", "authorized-retrieval"} <= set(by_label)
+    assert "lead-transcript" not in by_label
+    assert by_label["prerequisite-artifacts"].content == (
+        "artifact:parser-report\nfile:docs/parser.md"
+    )
+    assert by_label["source-revisions"].content == "plan:parser:revision:2\nworkspace:abc123"
+    assert by_label["authorized-retrieval"].disposition == "reference"
 
 
 @pytest.mark.asyncio
