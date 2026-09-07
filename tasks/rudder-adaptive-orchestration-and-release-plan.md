@@ -192,10 +192,10 @@ Every row starts unchecked. Dependencies refer to this guide, not the old phase 
 | [x] | 03 | Luna | 02 | CLI terminal/exit/output contract |
 | [x] | 04 | Terra | 03 | Independent evaluator and fixture usage |
 | [x] | 05 | Gemini Flash | 04 | Approved offline fixture corpus |
-| [ ] | 06 | Terra | 05 | Persistent executable-plan state |
-| [ ] | 07 | Terra | 06 | Required execution decisions and plan admission |
-| [ ] | 08 | Terra | 07 | Ready-work execution without lead round trips |
-| [ ] | 09 | Terra | 08 | Revision-aware context, recovery, and steering |
+| [x] | 06 | Terra | 05 | Persistent executable-plan state |
+| [x] | 07 | Terra | 06 | Required execution decisions and plan admission |
+| [x] | 08 | Terra | 07 | Ready-work execution without lead round trips |
+| [ ] | 09 | Terra | 08 | 09a revisions and 09b context complete; 09c recovery/steering pending |
 | [ ] | 10 | Sol | 09 | Independent graph/accounting review |
 | [ ] | 11 | Terra | 10 | Reproducible isolated worker snapshots |
 | [ ] | 12 | Terra | 11 | Serialized verified integration |
@@ -516,8 +516,20 @@ Next: 09b bounded worker context and compaction evidence.
 
 #### Phase 09b — Bound worker context and preserve compaction evidence
 
-**Status:** pending. **Depends on:** 09a. **Scope:** revision-aware bounded worker packets,
+**Status:** complete. **Depends on:** 09a. **Scope:** revision-aware bounded worker packets,
 authorized progressive retrieval, and compaction retention of failures/questions.
+
+**Handoff (completed 2026-09-06):** Commit `1a436c8` carries declared prerequisite artifact
+references, source revisions, and the durable plan revision into each validated worker request and
+bounded context packet. References stay opaque and require existing enabled Rudder tools, whose
+filesystem policy rechecks access; unsafe file/artifact traversal references are rejected before
+assignment. Compaction now retains supplied failure evidence, failed task summaries, and unresolved
+questions alongside approvals. Offline tests cover structured task decoding, planned-node reference
+mapping, isolated worker packets, unsafe locators, and compaction retention. Focused/affected suite:
+53 passed; Ruff, mypy, and fake-provider smoke passed. `rtk pytest -q` remained silent for 60 seconds
+and was interrupted, so full-suite success is not claimed. Graphify updated after code changes (AST
+233/233; existing 14 zero-node JSON warning remains). Next: 09c resume revised plans through
+interrupts and recovery.
 
 #### Phase 09c — Resume revised plans through interrupts and recovery
 
