@@ -139,6 +139,10 @@ first when intent or authority is genuinely missing. For each user instruction t
 `discover` submits only the next evidence-gathering frontier and a decision checkpoint. `planned`
 submits a finite dependency graph whose ready work can proceed without another lead call. The
 runtime validates plans before execution; generated code and `write_todos` content are not plans.
+When a discovery checkpoint becomes ready, Rudder wakes the same lead assignment with the current
+plan and the bounded evidence references produced by its completed prerequisites. The lead records
+the complete next plan plus typed revision metadata through `execution_decision`; the runtime
+validates those references and applies the revision compare-and-set before releasing new work.
 
 The lead should delegate when at least one of these is true:
 

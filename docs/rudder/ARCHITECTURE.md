@@ -120,6 +120,13 @@ failure, integration conflict, material steering, and final synthesis wake the l
 the expected prior revision and may add, replace, or cancel unfinished nodes; completed identities
 and the two-attempt fingerprint remain stable.
 
+When a checkpoint reaches `ready`, the coordinator durably records its launch, marks it running,
+and wakes the same lead attempt with the current plan plus only the evidence references produced by
+the checkpoint's successful prerequisites. The next `execution_decision` carries the complete next
+plan and a typed `PlanRevision`. Rudder rejects invented evidence, applies the journal revision
+compare-and-set, and settles the checkpoint successfully only after that revision commits. A lead
+response without an admissible revision blocks the checkpoint rather than completing the run.
+
 ### 5.3 Compiled task graph
 
 Each built-in subagent profile supplied to DeepAgents is a `CompiledSubAgent`. It implements this lifecycle:

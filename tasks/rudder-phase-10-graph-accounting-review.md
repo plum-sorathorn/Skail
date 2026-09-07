@@ -29,6 +29,13 @@ session did not authorize an external model invocation or provider spend.
 
 ### P10-001 — Critical — Discovery checkpoints never wake the lead
 
+**Resolution:** fixed by Phase 10b on 2026-09-07. Production regressions now prove the same lead
+assignment is woken, only available frontier evidence can authorize a typed revision, the journal
+compare-and-set advances the plan, the checkpoint settles, and newly ready work dispatches. The
+remaining Phase 10 findings are unchanged. Focused/affected verification passed 109 tests; the full
+offline suite advanced from 578 to 580 passing tests and retained only the two previously recorded
+evaluator failures and two Windows symlink skips.
+
 **Production-path reproduction:** run a `RunController` with a discovery decision containing one
 read-only agent followed by a checkpoint. The agent succeeds through the compiled child lifecycle.
 The controller returns `completed`, the lead has made only its original two calls, and the persisted
@@ -223,7 +230,8 @@ provider-live, paid, OAuth, push, publish, tag, remote rename, or legacy operati
 
 ## Repair sequence
 
-1. **Phase 10b:** execute discovery checkpoints and admit evidence-backed revisions.
+1. **Phase 10b (complete 2026-09-07):** execute discovery checkpoints and admit evidence-backed
+   revisions.
 2. **Phase 10c:** restore decision state and dispatch safe planned work after interrupt/crash resume.
 3. **Phase 10d:** route compatibility tasks through canonical persistent plan admission.
 4. **Phase 10e:** make plan/run/task terminal state and events truthful and atomic.

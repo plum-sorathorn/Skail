@@ -296,6 +296,132 @@ async def test_planned_ready_agent_nodes_use_the_admitted_child_lifecycle(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_discovery_checkpoint_wakes_lead_and_dispatches_revision(
+    tmp_path: Path,
+) -> None:
+    evidence_path = tmp_path / "planned-evidence.txt"
+    evidence_path.write_text("planned dispatch evidence\n", encoding="utf-8")
+    evidence_digest = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    evidence_ref = f"file:planned-evidence.txt:{evidence_digest}"
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Discovery checkpoint", created_at=datetime.now(UTC)
+    )
+    child_model = ScriptedChatModel(
+        model_name="implementer-model",
+        responses=[
+            _child_success("discovery complete", evidence_digest),
+            _child_success("revised follow-up complete", evidence_digest),
+        ],
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [("execution_decision", _discovery_decision(), "decision-1")]
+            ),
+            AIMessage(content="Discovery is running."),
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        _revised_discovery_decision(evidence_ref),
+                        "decision-2",
+                    )
+                ]
+            ),
+            AIMessage(content="The evidence-backed revision completed."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": child_model},
+    )
+
+    result = await controller.run_instruction("Discover, reconsider, then report")
+
+    plan = journal.plans_for_run(str(result.run_id))[0]
+    assert result.status == "completed", (
+        plan.plan.revision,
+        [getattr(message, "content", "") for message in result.messages],
+    )
+    assert result.output == "The evidence-backed revision completed."
+    assert len(lead_model.calls) == 4
+    assert len(child_model.calls) == 2
+    assert plan.plan.revision == 2
+    assert plan.node_states == {
+        "inspect": PlanNodeState.SUCCEEDED,
+        "reconsider": PlanNodeState.SUCCEEDED,
+        "report": PlanNodeState.SUCCEEDED,
+    }
+    assert [child.summary for child in result.child_results] == [
+        "discovery complete",
+        "revised follow-up complete",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_discovery_checkpoint_rejects_unavailable_revision_evidence(
+    tmp_path: Path,
+) -> None:
+    evidence_path = tmp_path / "planned-evidence.txt"
+    evidence_path.write_text("planned dispatch evidence\n", encoding="utf-8")
+    evidence_digest = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Invalid revision evidence", created_at=datetime.now(UTC)
+    )
+    child_model = ScriptedChatModel(
+        model_name="implementer-model",
+        responses=[_child_success("discovery complete", evidence_digest)],
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [("execution_decision", _discovery_decision(), "decision-1")]
+            ),
+            AIMessage(content="Discovery is running."),
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        _revised_discovery_decision("artifact:invented"),
+                        "decision-2",
+                    )
+                ]
+            ),
+            AIMessage(content="I could not admit the revision."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": child_model},
+    )
+
+    result = await controller.run_instruction("Discover without inventing evidence")
+
+    plan = journal.plans_for_run(str(result.run_id))[0]
+    assert result.status == "blocked"
+    assert plan.plan.revision == 1
+    assert plan.node_states == {
+        "inspect": PlanNodeState.SUCCEEDED,
+        "reconsider": PlanNodeState.BLOCKED,
+    }
+    assert any(
+        "decision.plan_refused" in str(getattr(message, "content", ""))
+        for message in result.messages
+    )
+    assert len(child_model.calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_planned_agent_nodes_obey_the_shared_child_limit(tmp_path: Path) -> None:
     evidence_path = tmp_path / "planned-evidence.txt"
     evidence_path.write_text("planned dispatch evidence\n", encoding="utf-8")
@@ -854,6 +980,69 @@ def _planned_decision() -> dict[str, object]:
                     "task_features": {"profile": "explorer"},
                 },
             ],
+        },
+    }
+
+
+def _discovery_decision() -> dict[str, object]:
+    return {
+        "mode": "discovery",
+        "objective": "Inspect evidence before choosing the follow-up",
+        "constraints": ["read only"],
+        "reason": "The follow-up depends on repository evidence.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "inspect",
+                    "kind": "agent",
+                    "objective": "Inspect the evidence file",
+                    "effect_scope": "read",
+                    "task_features": {"profile": "explorer"},
+                },
+                {
+                    "local_id": "reconsider",
+                    "kind": "checkpoint",
+                    "objective": "Revise the plan from inspected evidence",
+                    "depends_on": ["inspect"],
+                    "effect_scope": "read",
+                },
+            ],
+        },
+    }
+
+
+def _revised_discovery_decision(evidence_ref: str) -> dict[str, object]:
+    report = {
+        "local_id": "report",
+        "kind": "agent",
+        "objective": "Report the evidence-backed conclusion",
+        "depends_on": ["reconsider"],
+        "effect_scope": "read",
+        "task_features": {"profile": "explorer"},
+    }
+    initial = _discovery_decision()
+    plan = initial["plan"]
+    assert isinstance(plan, dict)
+    nodes = plan["nodes"]
+    assert isinstance(nodes, list)
+    return {
+        "mode": "planned",
+        "objective": "Report the evidence-backed conclusion",
+        "constraints": ["use only recorded discovery evidence"],
+        "reason": "The discovery evidence resolved the checkpoint.",
+        "plan": {
+            **plan,
+            "revision": 2,
+            "nodes": [*nodes, report],
+        },
+        "revision": {
+            "expected_revision": 1,
+            "added_nodes": [report],
+            "justification": "The recorded discovery evidence supports the follow-up.",
+            "evidence_refs": [evidence_ref],
         },
     }
 

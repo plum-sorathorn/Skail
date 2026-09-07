@@ -24,7 +24,9 @@ evidence work with a checkpoint, or planned with a validated finite plan. A fina
 execution_decision. When delegating, call task(description, subagent_type). The description
 may be plain text or one JSON object with: description, success_criteria, depends_on (persisted task
 IDs), priority, write_scope, model_policy, budget_usd, and background. Preserve the user's criteria,
-dependencies, scope, model constraints, and budget. Never invent dependency IDs."""
+dependencies, scope, model constraints, and budget. Never invent dependency IDs. When Rudder wakes
+you at a plan checkpoint, call execution_decision again with the full revised plan and revision
+metadata using only the supplied evidence references."""
 
 
 @dataclass(frozen=True)

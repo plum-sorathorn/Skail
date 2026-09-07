@@ -9,7 +9,7 @@ from langchain_core.tools import BaseTool, tool
 from pydantic import ValidationError
 
 from rudder.domain.decisions import ExecutionDecision, ExecutionMode
-from rudder.domain.plans import ExecutionPlan
+from rudder.domain.plans import ExecutionPlan, PlanRevision
 
 
 class DecisionAdmissionError(ValueError):
@@ -19,8 +19,14 @@ class DecisionAdmissionError(ValueError):
 class ExecutionDecisionGate:
     """Accept one initial decision and gate every operational tool behind it."""
 
-    def __init__(self, *, admit_plan: Callable[[ExecutionPlan], Any]) -> None:
+    def __init__(
+        self,
+        *,
+        admit_plan: Callable[[ExecutionPlan], Any],
+        revise_plan: Callable[[PlanRevision, ExecutionPlan], Any] | None = None,
+    ) -> None:
         self._admit_plan = admit_plan
+        self._revise_plan = revise_plan
         self.decision: ExecutionDecision | None = None
         self._repairs_remaining = 1
         self._prepared_decision_ids: set[str] = set()
@@ -32,9 +38,7 @@ class ExecutionDecisionGate:
 
     def admit(self, value: dict[str, Any]) -> ExecutionDecision:
         if self.decision is not None:
-            if self.decision.mode is ExecutionMode.DIRECT:
-                return self._admit_transition(value)
-            raise DecisionAdmissionError("decision.already_recorded")
+            return self._admit_transition(value)
         return self._validate_and_record(value)
 
     def allows(self, tool_name: str, tool_call_id: str | None = None) -> bool:
@@ -81,6 +85,11 @@ class ExecutionDecisionGate:
         candidate = self._parse(value)
         if candidate.mode is ExecutionMode.DIRECT:
             raise DecisionAdmissionError("decision.already_recorded")
+        if self.decision is not None and self.decision.plan is not None:
+            if candidate.revision is None:
+                raise DecisionAdmissionError("decision.already_recorded")
+            if candidate.revision.expected_revision != self.decision.plan.revision:
+                raise DecisionAdmissionError("decision.revision_conflict")
         self._record(candidate)
         return candidate
 
@@ -99,7 +108,12 @@ class ExecutionDecisionGate:
     def _record(self, decision: ExecutionDecision) -> None:
         if decision.plan is not None:
             try:
-                self._admit_plan(decision.plan)
+                if decision.revision is None:
+                    self._admit_plan(decision.plan)
+                elif self._revise_plan is None:
+                    raise DecisionAdmissionError("decision.revision_unavailable")
+                else:
+                    self._revise_plan(decision.revision, decision.plan)
             except Exception as exc:
                 self._consume_repair()
                 raise DecisionAdmissionError("decision.plan_refused") from exc
@@ -119,6 +133,7 @@ def execution_decision_tool(gate: ExecutionDecisionGate) -> BaseTool:
         reason: str,
         constraints: tuple[str, ...] = (),
         plan: dict[str, Any] | None = None,
+        revision: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Choose direct, discovery, or planned execution before operational work."""
 
@@ -130,6 +145,7 @@ def execution_decision_tool(gate: ExecutionDecisionGate) -> BaseTool:
                     "reason": reason,
                     "constraints": constraints,
                     "plan": plan,
+                    "revision": revision,
                 }
             )
         except DecisionAdmissionError as exc:

@@ -48,6 +48,10 @@ Its first necessary response may finish directly or record a typed `direct`, `di
 `planned` decision. Direct work keeps the capable tool loop. Discovery schedules a bounded evidence
 frontier and checkpoint. A validated plan releases ready dependencies without asking the lead to
 select every batch. A scoped question may precede the decision when intent or authority is missing.
+At a ready discovery checkpoint, Rudder wakes the same lead assignment with the current plan and
+bounded prerequisite evidence. The lead uses `execution_decision` again with the complete revised
+plan and typed revision metadata; unavailable evidence or a failed revision compare-and-set cannot
+release downstream work.
 
 Its prompt defines delegation heuristics, but the runtime enforces user directives:
 

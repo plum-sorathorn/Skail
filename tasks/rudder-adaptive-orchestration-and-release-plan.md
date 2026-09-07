@@ -580,6 +580,27 @@ and fake-provider smoke passed. No live-provider or external action ran. The rev
 the required test-first repair sequence. Next: Phase 10b, execute discovery checkpoints and admit
 evidence-backed revisions.
 
+#### Phase 10b — Execute discovery checkpoints and admit revisions
+
+**Status:** complete. **Depends on:** 10a. **Scope:** P10-001 only; ready discovery checkpoints,
+same-lead wake-up, bounded frontier evidence, typed revision admission, and redispatch of revised
+ready work.
+
+**Handoff (completed 2026-09-07):** The persistent coordinator now durably launches a ready
+checkpoint, wakes the existing lead assignment with the current plan and prerequisite evidence
+references, accepts a complete next plan plus `PlanRevision` through the existing
+`execution_decision` surface, validates evidence availability, applies the journal compare-and-set,
+settles the checkpoint only after the revision commits, and dispatches newly ready agent work. A
+missing or invented-evidence revision blocks the checkpoint and run rather than reporting false
+completion. Production regressions cover successful discovery/revision/redispatch and unavailable
+evidence rejection. Focused and affected decision/plan/controller/assignment/task/recovery suites:
+109 passed. Documentation contracts passed 4 tests; Ruff, mypy (104 source files), and fake-provider
+smoke passed. The complete offline suite reported 580 passed, 2 failed, and 2 skipped; the only
+failures remain the Phase 10a evaluator decision-contract defects assigned to Phase 10h, while both
+new Phase 10b regressions pass. Graphify was updated after the source and documentation changes.
+The exact implementation commit is recorded at the user handoff. Next: Phase 10c, restore decision
+state and dispatch safe planned work after interrupt/crash resume.
+
 ### Phase 11 — Snapshot and isolate writer workspaces
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 10.

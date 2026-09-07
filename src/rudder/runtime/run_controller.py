@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
@@ -16,7 +17,7 @@ from typing import Any, Literal, cast
 from deepagents.middleware.subagents import CompiledSubAgent
 from langchain.agents.middleware import ModelResponse
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from rudder.agents.context import ContextAssembler, ContextComponent, ContextPacket
@@ -52,7 +53,14 @@ from rudder.domain.ids import (
     new_run_id,
     new_task_id,
 )
-from rudder.domain.plans import EffectScope, ExecutionPlan, PlanNode, PlanNodeKind, PlanNodeState
+from rudder.domain.plans import (
+    EffectScope,
+    ExecutionPlan,
+    PlanNode,
+    PlanNodeKind,
+    PlanNodeState,
+    PlanRevision,
+)
 from rudder.domain.routing import RoutingMode, TaskAssignment
 from rudder.domain.tasks import (
     TERMINAL_TASK_STATUSES,
@@ -244,6 +252,8 @@ class RunController:
         self._planned_node_dispatches: list[_PlannedNodeDispatch] = []
         self._plan_nodes_by_task: dict[str, tuple[str, str]] = {}
         self._lead_allowance_ids: list[str] = []
+        self._plan_revision_evidence: dict[str, frozenset[str]] = {}
+        self._plan_revision_checkpoints: dict[str, str] = {}
 
     @property
     def pending_interrupt(self) -> dict[str, Any] | None:
@@ -630,7 +640,7 @@ class RunController:
         if controls.write_allowed is not False:
             authorized_effects.add(EffectScope.WORKSPACE_WRITE)
 
-        def admit_plan(plan: ExecutionPlan) -> None:
+        def validate_plan(plan: ExecutionPlan) -> None:
             for node in plan.nodes:
                 if node.kind is PlanNodeKind.AGENT:
                     request = _task_request_for_plan_node(node)
@@ -640,12 +650,19 @@ class RunController:
                     self.validator.normalize(request, parent_depth=0)
                 elif node.kind is PlanNodeKind.TOOL:
                     _validate_plan_tool_node(node)
+
+        active_plan_id: str | None = None
+
+        def admit_plan(plan: ExecutionPlan) -> None:
+            nonlocal active_plan_id
+            validate_plan(plan)
             persisted = self.journal.admit_plan(
                 run_id=str(run_id),
                 plan=plan,
                 event_observer=self.events.publish_persisted_nowait,
                 authorized_effects=frozenset(authorized_effects),
             )
+            active_plan_id = persisted.plan_id
             self._admit_ready_plan_agents(
                 persisted,
                 run_id=run_id,
@@ -655,7 +672,31 @@ class RunController:
                 scheduler=scheduler,
             )
 
-        decision_gate = ExecutionDecisionGate(admit_plan=admit_plan)
+        def revise_plan(revision: PlanRevision, plan: ExecutionPlan) -> None:
+            if active_plan_id is None:
+                raise TaskValidationError("plan.revision_without_active_plan")
+            validate_plan(plan)
+            allowed_evidence = self._plan_revision_evidence.get(active_plan_id, frozenset())
+            if not revision.evidence_refs or not set(revision.evidence_refs) <= allowed_evidence:
+                raise TaskValidationError("plan.revision_evidence_unavailable")
+            checkpoint = self._plan_revision_checkpoints.get(active_plan_id)
+            if checkpoint is not None and checkpoint in {
+                *revision.replaced_local_ids,
+                *revision.cancelled_local_ids,
+            }:
+                raise TaskValidationError("plan.active_checkpoint_immutable")
+            self.journal.revise_plan(
+                plan_id=active_plan_id,
+                revision=revision,
+                plan=plan,
+                event_observer=self.events.publish_persisted_nowait,
+                authorized_effects=frozenset(authorized_effects),
+            )
+
+        decision_gate = ExecutionDecisionGate(
+            admit_plan=admit_plan,
+            revise_plan=revise_plan,
+        )
 
         def observe_response(response: ModelResponse[Any]) -> None:
             decision_gate.prepare_response(response)
@@ -905,11 +946,16 @@ class RunController:
         controls: LeadControls,
         delegation_approved: bool,
         lead_assignment: TaskAssignment,
+        lead_agent: Any,
+        lead_attempt_id: AttemptId,
+        invoke_config: RunnableConfig,
         recorded_child_results: list[TaskResult],
-    ) -> None:
+    ) -> tuple[dict[str, Any] | None, bool]:
         """Run the persisted ready frontier, releasing dependents at each completion."""
         running: dict[asyncio.Task[Any], tuple[str, str]] = {}
         dispatched = 0
+        latest_lead_state: dict[str, Any] | None = None
+        checkpoint_blocked = False
 
         async def start_ready_tools() -> None:
             for persisted in self.journal.plans_for_run(str(run_id)):
@@ -965,6 +1011,96 @@ class RunController:
                     scheduler=scheduler,
                 )
 
+        async def run_ready_checkpoint() -> bool:
+            nonlocal latest_lead_state, checkpoint_blocked
+            for persisted in self.journal.plans_for_run(str(run_id)):
+                nodes = {node.local_id: node for node in persisted.plan.nodes}
+                for ready in self.journal.ready_plan_nodes(persisted.plan_id):
+                    node = nodes[ready.local_id]
+                    if node.kind is not PlanNodeKind.CHECKPOINT:
+                        continue
+                    evidence_refs = self._checkpoint_evidence_refs(
+                        persisted,
+                        node,
+                        recorded_child_results,
+                    )
+                    self._plan_revision_evidence[persisted.plan_id] = frozenset(evidence_refs)
+                    self._plan_revision_checkpoints[persisted.plan_id] = node.local_id
+                    self.journal.transition_plan_node_state(
+                        plan_id=persisted.plan_id,
+                        node_id=ready.node_id,
+                        expected=PlanNodeState.READY,
+                        target=PlanNodeState.LAUNCHING,
+                        event_observer=self.events.publish_persisted_nowait,
+                    )
+                    self.journal.begin_plan_node_execution(
+                        node_id=ready.node_id,
+                        execution_key=(
+                            f"checkpoint:{ready.node_id}:revision:{persisted.plan.revision}"
+                        ),
+                    )
+                    self.journal.transition_plan_node_state(
+                        plan_id=persisted.plan_id,
+                        node_id=ready.node_id,
+                        expected=PlanNodeState.LAUNCHING,
+                        target=PlanNodeState.RUNNING,
+                        event_observer=self.events.publish_persisted_nowait,
+                    )
+                    checkpoint_payload = {
+                        "type": "rudder.plan_checkpoint",
+                        "plan_id": persisted.plan_id,
+                        "expected_revision": persisted.plan.revision,
+                        "checkpoint": node.model_dump(mode="json"),
+                        "current_plan": persisted.plan.model_dump(mode="json"),
+                        "evidence_refs": evidence_refs,
+                        "instruction": (
+                            "Reconsider the plan from this evidence. Call execution_decision "
+                            "with a complete next-revision plan and PlanRevision metadata."
+                        ),
+                    }
+                    latest_lead_state = cast(
+                        dict[str, Any],
+                        await lead_agent.ainvoke(
+                            {
+                                "messages": [
+                                    SystemMessage(
+                                        content=json.dumps(
+                                            checkpoint_payload,
+                                            sort_keys=True,
+                                            separators=(",", ":"),
+                                        )
+                                    )
+                                ],
+                                "attempt_id": str(lead_attempt_id),
+                            },
+                            config=invoke_config,
+                        ),
+                    )
+                    revised = self.journal.get_plan(persisted.plan_id)
+                    if revised.plan.revision <= persisted.plan.revision:
+                        self._settle_plan_node(
+                            persisted.plan_id,
+                            ready.node_id,
+                            {
+                                "status": "blocked",
+                                "summary": "plan.checkpoint_revision_required",
+                            },
+                        )
+                        checkpoint_blocked = True
+                    else:
+                        self._settle_plan_node(
+                            persisted.plan_id,
+                            ready.node_id,
+                            {
+                                "status": "succeeded",
+                                "summary": "checkpoint admitted an evidence-backed revision",
+                            },
+                        )
+                    self._plan_revision_evidence.pop(persisted.plan_id, None)
+                    self._plan_revision_checkpoints.pop(persisted.plan_id, None)
+                    return True
+            return False
+
         try:
             while True:
                 while dispatched < len(self._planned_node_dispatches):
@@ -996,6 +1132,12 @@ class RunController:
                     running[task] = (dispatch.plan_id, dispatch.node_id)
                 await start_ready_tools()
                 if not running:
+                    checkpoint_ran = await run_ready_checkpoint()
+                    if checkpoint_blocked:
+                        break
+                    if checkpoint_ran:
+                        await admit_ready_agents()
+                        continue
                     await admit_ready_agents()
                     if dispatched == len(self._planned_node_dispatches):
                         break
@@ -1012,6 +1154,31 @@ class RunController:
             for plan_id, node_id in running.values():
                 self._cancel_plan_node(plan_id, node_id)
             raise
+        return latest_lead_state, checkpoint_blocked
+
+    def _checkpoint_evidence_refs(
+        self,
+        persisted: PersistedPlan,
+        checkpoint: PlanNode,
+        results: Sequence[TaskResult],
+    ) -> tuple[str, ...]:
+        results_by_task = {str(result.task_id): result for result in results}
+        references: list[str] = []
+        for dependency in checkpoint.depends_on:
+            dependency_node_id = persisted.node_ids[dependency]
+            references.append(f"plan-node:{dependency}:succeeded")
+            binding = self.journal.plan_node_task_binding(dependency_node_id)
+            result = None if binding is None else results_by_task.get(binding.task_id)
+            if result is None:
+                continue
+            for artifact in result.artifacts:
+                if artifact.digest:
+                    references.append(f"{artifact.kind}:{artifact.path}:{artifact.digest}")
+            for verification in result.verification:
+                evidence = verification.evidence_ref
+                if verification.passed and evidence is not None and evidence.digest:
+                    references.append(f"{evidence.kind}:{evidence.path}:{evidence.digest}")
+        return tuple(dict.fromkeys(references))
 
     async def _run_plan_tool_node(
         self,
@@ -1363,6 +1530,8 @@ class RunController:
         self._planned_node_dispatches.clear()
         self._plan_nodes_by_task.clear()
         self._lead_allowance_ids.clear()
+        self._plan_revision_evidence.clear()
+        self._plan_revision_checkpoints.clear()
         max_children = min(max(active_controls.max_children, 1), 3)
 
         # Run-scoped locks and gates shared across lead and all children
@@ -1674,7 +1843,7 @@ class RunController:
                 pending_interrupt=pending_interrupt,
             )
 
-        await self._dispatch_admitted_plan_agents(
+        checkpoint_state, checkpoint_blocked = await self._dispatch_admitted_plan_agents(
             run_id=run_id,
             workspace_revision=workspace_revision,
             leases=leases,
@@ -1683,8 +1852,50 @@ class RunController:
             controls=active_controls,
             delegation_approved=delegation_approved,
             lead_assignment=lead_assignment,
+            lead_agent=lead_agent,
+            lead_attempt_id=lead_attempt_id,
+            invoke_config=invoke_config,
             recorded_child_results=recorded_child_results,
         )
+
+        if checkpoint_state is not None:
+            messages = cast(list[BaseMessage], checkpoint_state.get("messages", []))
+            output_text = ""
+            for message in reversed(messages):
+                if isinstance(message, AIMessage) and message.content:
+                    output_text = (
+                        message.content
+                        if isinstance(message.content, str)
+                        else str(message.content)
+                    )
+                    break
+        if checkpoint_blocked:
+            with self.journal.transaction() as tx:
+                tx.update_attempt_status(
+                    attempt_id=str(lead_attempt_id), status=AttemptStatus.BLOCKED
+                )
+                tx.update_task_status(task_id=str(lead_task_id), status=TaskStatus.BLOCKED)
+                tx.update_run_status(run_id=str(run_id), status="blocked")
+                tx.update_session_status(session_id=str(self.session_id), status="idle")
+            self._finalize_assignment_budget(lead_assignment)
+            self._release_lead_allowances()
+            self._emit_event(
+                run_id=run_id,
+                type="run.blocked",
+                payload=LifecyclePayload(status="blocked"),
+            )
+            return RunResult(
+                run_id=run_id,
+                lead_assignment=lead_assignment,
+                lead_context_packet=lead_context_packet,
+                output=output_text,
+                messages=messages,
+                child_results=recorded_child_results,
+                status="blocked",
+                child_wall_seconds=scheduler.gate.child_wall_seconds,
+                child_peak_active=scheduler.gate.peak_active,
+                child_count=len(scheduler.gate.completed),
+            )
 
         with self.journal.transaction() as tx:
             tx.update_attempt_status(
