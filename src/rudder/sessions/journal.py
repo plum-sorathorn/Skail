@@ -26,6 +26,7 @@ from rudder.domain.plans import (
     SUPPORTED_PLAN_SCHEMA_VERSION,
     EffectScope,
     ExecutionPlan,
+    PlanNode,
     PlanNodeState,
     PlanRevision,
 )
@@ -591,7 +592,8 @@ class Journal:
         for plan_row in plans:
             plan = ExecutionPlan.model_validate_json(plan_row["payload_json"])
             nodes = connection.execute(
-                "SELECT node_id,local_id FROM plan_nodes WHERE plan_id=? ORDER BY rowid",
+                "SELECT node_id,local_id FROM plan_nodes "
+                "WHERE plan_id=? AND retired_revision IS NULL ORDER BY rowid",
                 (plan_row["plan_id"],),
             ).fetchall()
             by_local_id = {node.local_id: node for node in plan.nodes}
@@ -905,7 +907,8 @@ class Journal:
                     separators=(",", ":"),
                 )
                 connection.execute(
-                    "INSERT INTO plan_nodes VALUES (?,?,?,?,?)",
+                    "INSERT INTO plan_nodes(node_id,plan_id,local_id,payload_json,created_at) "
+                    "VALUES (?,?,?,?,?)",
                     (node_ids[node.local_id], plan_id, node.local_id, node_payload, now),
                 )
                 state = PlanNodeState.READY if not node.depends_on else PlanNodeState.WAITING
@@ -982,7 +985,7 @@ class Journal:
             nodes = connection.execute(
                 "SELECT n.local_id,n.node_id,s.status FROM plan_nodes n "
                 "JOIN plan_node_states s ON s.node_id=n.node_id "
-                "WHERE n.plan_id=? ORDER BY n.rowid",
+                "WHERE n.plan_id=? AND n.retired_revision IS NULL ORDER BY n.rowid",
                 (plan_id,),
             ).fetchall()
         return PersistedPlan(
@@ -1001,7 +1004,7 @@ class Journal:
             rows = connection.execute(
                 "SELECT n.node_id,n.local_id,s.status FROM plan_nodes n "
                 "JOIN plan_node_states s ON s.node_id=n.node_id "
-                "WHERE n.plan_id=? AND s.status=? ORDER BY n.rowid",
+                "WHERE n.plan_id=? AND n.retired_revision IS NULL AND s.status=? ORDER BY n.rowid",
                 (plan_id, PlanNodeState.READY.value),
             ).fetchall()
         return tuple(
@@ -1089,7 +1092,8 @@ class Journal:
                 "SELECT n.plan_id,n.node_id,s.status,e.status AS execution_status,e.result_json "
                 "FROM plan_nodes n JOIN plan_node_states s ON s.node_id=n.node_id "
                 "LEFT JOIN plan_node_executions e ON e.node_id=n.node_id "
-                "WHERE s.status IN ('launching','running') ORDER BY n.rowid"
+                "WHERE n.retired_revision IS NULL "
+                "AND s.status IN ('launching','running') ORDER BY n.rowid"
             ).fetchall()
         reconciled: list[PlanNodeSnapshot] = []
         for row in rows:
@@ -1153,11 +1157,21 @@ class Journal:
             node_rows = connection.execute(
                 "SELECT n.node_id,n.local_id,s.status FROM plan_nodes n "
                 "JOIN plan_node_states s ON s.node_id=n.node_id "
-                "WHERE n.plan_id=? ORDER BY n.rowid",
+                "WHERE n.plan_id=? AND n.retired_revision IS NULL ORDER BY n.rowid",
                 (plan_id,),
             ).fetchall()
             by_id = {row["node_id"]: row for row in node_rows}
             if node_id not in by_id:
+                retired = connection.execute(
+                    "SELECT 1 FROM plan_nodes WHERE plan_id=? AND node_id=? "
+                    "AND retired_revision IS NOT NULL",
+                    (plan_id, node_id),
+                ).fetchone()
+                if retired is not None:
+                    raise FrameworkContractError(
+                        "plan.node_stale_revision",
+                        "plan node was retired by a newer revision",
+                    )
                 raise KeyError(node_id)
             current = PlanNodeState(by_id[node_id]["status"])
             if current is not expected:
@@ -1264,6 +1278,11 @@ class Journal:
         event_observer: Callable[[EventEnvelope], None] | None = None,
         authorized_effects: frozenset[EffectScope] = frozenset({EffectScope.READ}),
     ) -> PersistedPlan:
+        if not revision.evidence_refs:
+            raise FrameworkContractError(
+                "plan.revision_evidence_required",
+                "plan revisions require at least one evidence reference",
+            )
         if plan.schema_version != SUPPORTED_PLAN_SCHEMA_VERSION:
             raise FrameworkContractError(
                 "plan.schema_unsupported", "execution plan schema is unsupported"
@@ -1294,7 +1313,8 @@ class Journal:
         with self.transaction() as transaction:
             connection = transaction.connection
             current = connection.execute(
-                "SELECT current_revision FROM execution_plans WHERE plan_id=?", (plan_id,)
+                "SELECT current_revision,payload_json FROM execution_plans WHERE plan_id=?",
+                (plan_id,),
             ).fetchone()
             if current is None:
                 raise KeyError(plan_id)
@@ -1302,44 +1322,119 @@ class Journal:
                 raise FrameworkContractError(
                     "plan.revision_conflict", "plan revision compare-and-set failed"
                 )
+            previous = ExecutionPlan.model_validate_json(current["payload_json"])
             existing = {
-                row["local_id"]: row["node_id"]
+                row["local_id"]: row
                 for row in connection.execute(
-                    "SELECT local_id,node_id FROM plan_nodes WHERE plan_id=?", (plan_id,)
+                    "SELECT n.node_id,n.local_id,n.payload_json,s.status FROM plan_nodes n "
+                    "JOIN plan_node_states s ON s.node_id=n.node_id "
+                    "WHERE n.plan_id=? AND n.retired_revision IS NULL",
+                    (plan_id,),
                 )
             }
-            wanted = {node.local_id for node in plan.nodes}
-            for local_id in set(existing) - wanted:
-                connection.execute(
-                    "DELETE FROM plan_nodes WHERE plan_id=? AND local_id=?",
-                    (plan_id, local_id),
+            wanted = {node.local_id: node for node in plan.nodes}
+            existing_ids = set(existing)
+            wanted_ids = set(wanted)
+            added_ids = wanted_ids - existing_ids
+            replaced_ids = set(revision.replaced_local_ids)
+            cancelled_ids = set(revision.cancelled_local_ids)
+            declared_added = {node.local_id: node for node in revision.added_nodes}
+            if (
+                len(declared_added) != len(revision.added_nodes)
+                or declared_added != {local_id: wanted[local_id] for local_id in added_ids}
+                or len(replaced_ids) != len(revision.replaced_local_ids)
+                or len(cancelled_ids) != len(revision.cancelled_local_ids)
+                or replaced_ids & cancelled_ids
+                or existing_ids - wanted_ids != replaced_ids
+                or not replaced_ids <= existing_ids
+                or not cancelled_ids <= existing_ids
+                or cancelled_ids - wanted_ids
+            ):
+                raise FrameworkContractError(
+                    "plan.revision_delta_invalid",
+                    "plan revision does not describe the active-plan delta",
                 )
+            terminal = {
+                PlanNodeState.SUCCEEDED,
+                PlanNodeState.FAILED,
+                PlanNodeState.BLOCKED,
+                PlanNodeState.CANCELLED,
+            }
+            for local_id in existing_ids & wanted_ids:
+                persisted = PlanNode.model_validate_json(existing[local_id]["payload_json"])
+                if persisted != wanted[local_id]:
+                    code = (
+                        "plan.completed_node_immutable"
+                        if PlanNodeState(existing[local_id]["status"]) in terminal
+                        else "plan.revision_mutation_requires_replacement"
+                    )
+                    raise FrameworkContractError(
+                        code, "active plan node payload cannot be rewritten"
+                    )
+            for local_id in replaced_ids | cancelled_ids:
+                if PlanNodeState(existing[local_id]["status"]) in terminal:
+                    raise FrameworkContractError(
+                        "plan.completed_node_immutable",
+                        "terminal plan nodes cannot be replaced or cancelled",
+                    )
+                connection.execute(
+                    "UPDATE plan_node_states SET status=?,updated_at=? WHERE node_id=?",
+                    (PlanNodeState.CANCELLED.value, now, existing[local_id]["node_id"]),
+                )
+            blocked_ids = set(cancelled_ids)
+            while True:
+                newly_blocked = {
+                    node.local_id
+                    for node in previous.nodes
+                    if node.local_id not in blocked_ids
+                    and any(dependency in blocked_ids for dependency in node.depends_on)
+                }
+                if not newly_blocked:
+                    break
+                blocked_ids.update(newly_blocked)
+            for local_id in blocked_ids - cancelled_ids:
+                state = PlanNodeState(existing[local_id]["status"])
+                if state not in terminal:
+                    connection.execute(
+                        "UPDATE plan_node_states SET status=?,updated_at=? WHERE node_id=?",
+                        (PlanNodeState.BLOCKED.value, now, existing[local_id]["node_id"]),
+                    )
+            for local_id in replaced_ids:
+                connection.execute(
+                    "UPDATE plan_nodes SET retired_revision=? WHERE node_id=?",
+                    (plan.revision, existing[local_id]["node_id"]),
+                )
+            active_states = {
+                row["local_id"]: PlanNodeState(row["status"])
+                for row in connection.execute(
+                    "SELECT n.local_id,s.status FROM plan_nodes n "
+                    "JOIN plan_node_states s ON s.node_id=n.node_id "
+                    "WHERE n.plan_id=? AND n.retired_revision IS NULL",
+                    (plan_id,),
+                )
+            }
             for node in plan.nodes:
                 node_payload = json.dumps(
                     self.redactor.scrub(node.model_dump(mode="json")),
                     sort_keys=True,
                     separators=(",", ":"),
                 )
-                if node.local_id in existing:
+                if node.local_id not in existing:
+                    node_id = str(new_plan_node_id())
                     connection.execute(
-                        "UPDATE plan_nodes SET payload_json=? WHERE plan_id=? AND local_id=?",
-                        (node_payload, plan_id, node.local_id),
+                        "INSERT INTO plan_nodes(node_id,plan_id,local_id,payload_json,created_at) "
+                        "VALUES (?,?,?,?,?)",
+                        (node_id, plan_id, node.local_id, node_payload, now),
                     )
-                else:
-                    existing[node.local_id] = str(new_plan_node_id())
-                    connection.execute(
-                        "INSERT INTO plan_nodes VALUES (?,?,?,?,?)",
-                        (existing[node.local_id], plan_id, node.local_id, node_payload, now),
-                    )
-                    state = (
-                        PlanNodeState.READY
-                        if not node.depends_on
-                        else PlanNodeState.WAITING
-                    )
+                    state = PlanNodeState.READY if all(
+                        active_states.get(dependency) is PlanNodeState.SUCCEEDED
+                        for dependency in node.depends_on
+                    ) else PlanNodeState.WAITING
                     connection.execute(
                         "INSERT INTO plan_node_states VALUES (?,?,?)",
-                        (existing[node.local_id], state.value, now),
+                        (node_id, state.value, now),
                     )
+                    active_states[node.local_id] = state
             cursor = connection.execute(
                 "UPDATE execution_plans SET current_revision=?,payload_json=? "
                 "WHERE plan_id=? AND current_revision=?",

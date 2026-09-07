@@ -104,3 +104,4 @@ class PlanRevision(BaseModel):
     replaced_local_ids: tuple[str, ...] = ()
     cancelled_local_ids: tuple[str, ...] = ()
     justification: str = Field(min_length=1)
+    evidence_refs: tuple[str, ...] = ()

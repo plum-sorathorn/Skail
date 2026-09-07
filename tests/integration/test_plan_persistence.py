@@ -216,6 +216,7 @@ def test_plan_revision_compare_and_set_preserves_existing_node_identity(tmp_path
         expected_revision=1,
         added_nodes=(revised.nodes[-1],),
         justification="New evidence requires synthesis",
+        evidence_refs=("artifact:discovery",),
     )
 
     updated = journal.revise_plan(
@@ -231,6 +232,220 @@ def test_plan_revision_compare_and_set_preserves_existing_node_identity(tmp_path
     assert [event.type for event in delivered] == ["plan.revised"]
     with pytest.raises(FrameworkContractError, match="plan.revision_conflict"):
         journal.revise_plan(plan_id=admitted.plan_id, revision=change, plan=revised)
+
+
+def test_plan_revision_requires_explicit_evidence(tmp_path: Path) -> None:
+    journal = _journal(tmp_path / "journal.sqlite")
+    admitted = journal.admit_plan(run_id=RUN_ID, plan=_plan())
+    revised = _plan().model_copy(update={"revision": 2})
+    change = PlanRevision(
+        expected_revision=1,
+        justification="Discovery found a changed assumption",
+    )
+
+    with pytest.raises(FrameworkContractError, match="plan.revision_evidence_required"):
+        journal.revise_plan(plan_id=admitted.plan_id, revision=change, plan=revised)
+
+
+def test_plan_revision_preserves_completed_nodes_and_retires_only_replaced_work(
+    tmp_path: Path,
+) -> None:
+    journal = _journal(tmp_path / "journal.sqlite")
+    plan = ExecutionPlan(
+        schema_version=1,
+        policy_version="adaptive-v1",
+        revision=1,
+        nodes=(
+            PlanNode(local_id="discovery", kind=PlanNodeKind.AGENT, objective="Discovery"),
+            PlanNode(
+                local_id="obsolete",
+                kind=PlanNodeKind.AGENT,
+                objective="Obsolete follow-up",
+                depends_on=("discovery",),
+            ),
+            PlanNode(local_id="unrelated", kind=PlanNodeKind.AGENT, objective="Unrelated"),
+        ),
+    )
+    admitted = journal.admit_plan(run_id=RUN_ID, plan=plan)
+    for local_id in ("discovery", "unrelated"):
+        node_id = admitted.node_ids[local_id]
+        journal.transition_plan_node_state(
+            plan_id=admitted.plan_id,
+            node_id=node_id,
+            expected=PlanNodeState.READY,
+            target=PlanNodeState.LAUNCHING,
+        )
+        journal.transition_plan_node_state(
+            plan_id=admitted.plan_id,
+            node_id=node_id,
+            expected=PlanNodeState.LAUNCHING,
+            target=PlanNodeState.RUNNING,
+        )
+        journal.transition_plan_node_state(
+            plan_id=admitted.plan_id,
+            node_id=node_id,
+            expected=PlanNodeState.RUNNING,
+            target=PlanNodeState.SUCCEEDED,
+        )
+    replacement = PlanNode(
+        local_id="revised-follow-up",
+        kind=PlanNodeKind.AGENT,
+        objective="Revised follow-up",
+        depends_on=("discovery",),
+    )
+    revised = ExecutionPlan(
+        schema_version=1,
+        policy_version="adaptive-v1",
+        revision=2,
+        nodes=(plan.nodes[0], plan.nodes[2], replacement),
+    )
+    change = PlanRevision(
+        expected_revision=1,
+        added_nodes=(replacement,),
+        replaced_local_ids=("obsolete",),
+        justification="Discovery invalidated the old follow-up",
+        evidence_refs=("artifact:discovery-revision-2",),
+    )
+
+    updated = journal.revise_plan(plan_id=admitted.plan_id, revision=change, plan=revised)
+
+    assert updated.node_ids["discovery"] == admitted.node_ids["discovery"]
+    assert updated.node_states["discovery"] is PlanNodeState.SUCCEEDED
+    assert updated.node_states["unrelated"] is PlanNodeState.SUCCEEDED
+    assert updated.node_states["revised-follow-up"] is PlanNodeState.READY
+    assert "obsolete" not in updated.node_ids
+    with sqlite3.connect(journal.path) as connection:
+        obsolete = connection.execute(
+            "SELECT s.status,n.retired_revision FROM plan_nodes n "
+            "JOIN plan_node_states s ON s.node_id=n.node_id "
+            "WHERE n.node_id=?",
+            (admitted.node_ids["obsolete"],),
+        ).fetchone()
+    assert obsolete == (PlanNodeState.CANCELLED.value, 2)
+    reopened = Journal(journal.path)
+    reopened.migrate()
+    assert reopened.get_plan(admitted.plan_id) == updated
+
+
+def test_plan_revision_rejects_changes_to_completed_node_evidence(tmp_path: Path) -> None:
+    journal = _journal(tmp_path / "journal.sqlite")
+    admitted = journal.admit_plan(run_id=RUN_ID, plan=_plan())
+    inspect_id = admitted.node_ids["inspect"]
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=inspect_id,
+        expected=PlanNodeState.READY,
+        target=PlanNodeState.LAUNCHING,
+    )
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=inspect_id,
+        expected=PlanNodeState.LAUNCHING,
+        target=PlanNodeState.RUNNING,
+    )
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=inspect_id,
+        expected=PlanNodeState.RUNNING,
+        target=PlanNodeState.SUCCEEDED,
+    )
+    changed_inspect = _plan().nodes[0].model_copy(update={"objective": "Different discovery"})
+    revised = _plan().model_copy(
+        update={"revision": 2, "nodes": (changed_inspect, _plan().nodes[1])}
+    )
+    change = PlanRevision(
+        expected_revision=1,
+        justification="Incorrectly trying to rewrite completed evidence",
+        evidence_refs=("artifact:contradiction",),
+    )
+
+    with pytest.raises(FrameworkContractError, match="plan.completed_node_immutable"):
+        journal.revise_plan(plan_id=admitted.plan_id, revision=change, plan=revised)
+
+
+def test_plan_revision_cancellation_blocks_only_the_affected_downstream_closure(
+    tmp_path: Path,
+) -> None:
+    journal = _journal(tmp_path / "journal.sqlite")
+    plan = ExecutionPlan(
+        schema_version=1,
+        policy_version="adaptive-v1",
+        revision=1,
+        nodes=(
+            PlanNode(local_id="changed", kind=PlanNodeKind.AGENT, objective="Changed"),
+            PlanNode(
+                local_id="dependent",
+                kind=PlanNodeKind.AGENT,
+                objective="Dependent",
+                depends_on=("changed",),
+            ),
+            PlanNode(local_id="unrelated", kind=PlanNodeKind.AGENT, objective="Unrelated"),
+        ),
+    )
+    admitted = journal.admit_plan(run_id=RUN_ID, plan=plan)
+    revised = plan.model_copy(update={"revision": 2})
+    change = PlanRevision(
+        expected_revision=1,
+        cancelled_local_ids=("changed",),
+        justification="New evidence invalidated this branch",
+        evidence_refs=("artifact:new-input",),
+    )
+
+    updated = journal.revise_plan(plan_id=admitted.plan_id, revision=change, plan=revised)
+
+    assert updated.node_states == {
+        "changed": PlanNodeState.CANCELLED,
+        "dependent": PlanNodeState.BLOCKED,
+        "unrelated": PlanNodeState.READY,
+    }
+
+
+def test_stale_completion_cannot_settle_a_replaced_plan_node(tmp_path: Path) -> None:
+    journal = _journal(tmp_path / "journal.sqlite")
+    original = ExecutionPlan(
+        schema_version=1,
+        policy_version="adaptive-v1",
+        revision=1,
+        nodes=(PlanNode(local_id="old", kind=PlanNodeKind.AGENT, objective="Old work"),),
+    )
+    admitted = journal.admit_plan(run_id=RUN_ID, plan=original)
+    old_node_id = admitted.node_ids["old"]
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=old_node_id,
+        expected=PlanNodeState.READY,
+        target=PlanNodeState.LAUNCHING,
+    )
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=old_node_id,
+        expected=PlanNodeState.LAUNCHING,
+        target=PlanNodeState.RUNNING,
+    )
+    replacement = PlanNode(local_id="new", kind=PlanNodeKind.AGENT, objective="New work")
+    revised = ExecutionPlan(
+        schema_version=1,
+        policy_version="adaptive-v1",
+        revision=2,
+        nodes=(replacement,),
+    )
+    change = PlanRevision(
+        expected_revision=1,
+        added_nodes=(replacement,),
+        replaced_local_ids=("old",),
+        justification="New input superseded the in-flight work",
+        evidence_refs=("artifact:new-user-input",),
+    )
+
+    journal.revise_plan(plan_id=admitted.plan_id, revision=change, plan=revised)
+
+    with pytest.raises(FrameworkContractError, match="plan.node_stale_revision"):
+        journal.transition_plan_node_state(
+            plan_id=admitted.plan_id,
+            node_id=old_node_id,
+            expected=PlanNodeState.RUNNING,
+            target=PlanNodeState.SUCCEEDED,
+        )
 
 
 def test_plan_node_readiness_requires_verified_prerequisite_success(tmp_path: Path) -> None:

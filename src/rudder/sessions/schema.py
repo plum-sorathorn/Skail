@@ -265,4 +265,10 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
         """,
     ),
+    (
+        13,
+        """
+        ALTER TABLE plan_nodes ADD COLUMN retired_revision INTEGER;
+        """,
+    ),
 )
