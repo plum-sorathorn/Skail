@@ -27,6 +27,7 @@ from rudder.domain.plans import (
     EffectScope,
     ExecutionPlan,
     PlanNode,
+    PlanNodeKind,
     PlanNodeState,
     PlanRevision,
 )
@@ -1323,6 +1324,7 @@ class Journal:
                     "plan.revision_conflict", "plan revision compare-and-set failed"
                 )
             previous = ExecutionPlan.model_validate_json(current["payload_json"])
+            previous_nodes = {node.local_id: node for node in previous.nodes}
             existing = {
                 row["local_id"]: row
                 for row in connection.execute(
@@ -1354,6 +1356,18 @@ class Journal:
                     "plan.revision_delta_invalid",
                     "plan revision does not describe the active-plan delta",
                 )
+            for local_id in replaced_ids:
+                previous_node = previous_nodes[local_id]
+                if previous_node.kind is PlanNodeKind.AGENT:
+                    lineage = previous_node.task_lineage or previous_node.local_id
+                    if not any(
+                        node.kind is PlanNodeKind.AGENT and node.task_lineage == lineage
+                        for node in declared_added.values()
+                    ):
+                        raise FrameworkContractError(
+                            "plan.replacement_lineage_required",
+                            "replacement agent must retain the replaced node lineage",
+                        )
             terminal = {
                 PlanNodeState.SUCCEEDED,
                 PlanNodeState.FAILED,
@@ -1371,6 +1385,11 @@ class Journal:
                     raise FrameworkContractError(
                         code, "active plan node payload cannot be rewritten"
                     )
+            if not added_ids and not replaced_ids and not cancelled_ids:
+                raise FrameworkContractError(
+                    "plan.revision_no_progress",
+                    "plan revision must change executable work",
+                )
             for local_id in replaced_ids | cancelled_ids:
                 if PlanNodeState(existing[local_id]["status"]) in terminal:
                     raise FrameworkContractError(

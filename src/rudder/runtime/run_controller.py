@@ -724,7 +724,10 @@ class RunController:
                     "source_revisions": (
                         *request.source_revisions,
                         f"plan:{persisted.plan_id}:revision:{persisted.plan.revision}",
-                    )
+                    ),
+                    "attempt_lineage": (
+                        f"plan:{persisted.plan_id}:{node.task_lineage or node.local_id}"
+                    ),
                 }
             )
             profile = builtin_profiles()[request.profile]
@@ -741,6 +744,7 @@ class RunController:
             planned.append((node, ready.node_id, spec, profile, new_attempt_id()))
         if not planned:
             return
+        self.registry.load_from_journal(self.journal, str(self.session_id))
         self.registry.register_many(tuple(item[2] for item in planned))
 
         now = datetime.now(UTC)
@@ -1715,6 +1719,7 @@ class RunController:
         )
 
     def restore_interrupted(self) -> bool:
+        self.registry.load_from_journal(self.journal, str(self.session_id))
         snapshot = self.journal.get_session_snapshot(str(self.session_id))
         blocked_runs = [run for run in snapshot.runs if run.status == "blocked"]
         if not blocked_runs:
@@ -2455,6 +2460,7 @@ def _task_request_for_plan_node(node: PlanNode) -> TaskRequest:
                 "success_criteria": node.acceptance_criteria,
                 "prerequisite_artifacts": node.artifact_refs,
                 "source_revisions": node.inputs,
+                "attempt_lineage": node.task_lineage or node.local_id,
             }
         )
     except ValueError as error:

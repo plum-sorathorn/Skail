@@ -292,6 +292,7 @@ def test_plan_revision_preserves_completed_nodes_and_retires_only_replaced_work(
         kind=PlanNodeKind.AGENT,
         objective="Revised follow-up",
         depends_on=("discovery",),
+        task_lineage="obsolete",
     )
     revised = ExecutionPlan(
         schema_version=1,
@@ -363,6 +364,52 @@ def test_plan_revision_rejects_changes_to_completed_node_evidence(tmp_path: Path
         journal.revise_plan(plan_id=admitted.plan_id, revision=change, plan=revised)
 
 
+def test_replacing_an_agent_requires_its_existing_attempt_lineage(tmp_path: Path) -> None:
+    journal = _journal(tmp_path / "journal.sqlite")
+    original = ExecutionPlan(
+        schema_version=1,
+        policy_version="adaptive-v1",
+        revision=1,
+        nodes=(PlanNode(local_id="old", kind=PlanNodeKind.AGENT, objective="Old work"),),
+    )
+    admitted = journal.admit_plan(run_id=RUN_ID, plan=original)
+    replacement = PlanNode(
+        local_id="new",
+        kind=PlanNodeKind.AGENT,
+        objective="New work",
+    )
+    revised = ExecutionPlan(
+        schema_version=1,
+        policy_version="adaptive-v1",
+        revision=2,
+        nodes=(replacement,),
+    )
+    change = PlanRevision(
+        expected_revision=1,
+        added_nodes=(replacement,),
+        replaced_local_ids=("old",),
+        justification="Rename the affected worker",
+        evidence_refs=("artifact:replacement",),
+    )
+
+    with pytest.raises(FrameworkContractError, match="plan.replacement_lineage_required"):
+        journal.revise_plan(plan_id=admitted.plan_id, revision=change, plan=revised)
+
+
+def test_plan_revision_rejects_no_progress_loop(tmp_path: Path) -> None:
+    journal = _journal(tmp_path / "journal.sqlite")
+    admitted = journal.admit_plan(run_id=RUN_ID, plan=_plan())
+    revised = _plan().model_copy(update={"revision": 2})
+    change = PlanRevision(
+        expected_revision=1,
+        justification="Repeat the same plan without changed work",
+        evidence_refs=("artifact:unchanged",),
+    )
+
+    with pytest.raises(FrameworkContractError, match="plan.revision_no_progress"):
+        journal.revise_plan(plan_id=admitted.plan_id, revision=change, plan=revised)
+
+
 def test_plan_revision_cancellation_blocks_only_the_affected_downstream_closure(
     tmp_path: Path,
 ) -> None:
@@ -422,7 +469,12 @@ def test_stale_completion_cannot_settle_a_replaced_plan_node(tmp_path: Path) -> 
         expected=PlanNodeState.LAUNCHING,
         target=PlanNodeState.RUNNING,
     )
-    replacement = PlanNode(local_id="new", kind=PlanNodeKind.AGENT, objective="New work")
+    replacement = PlanNode(
+        local_id="new",
+        kind=PlanNodeKind.AGENT,
+        objective="New work",
+        task_lineage="old",
+    )
     revised = ExecutionPlan(
         schema_version=1,
         policy_version="adaptive-v1",

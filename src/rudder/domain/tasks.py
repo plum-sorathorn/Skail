@@ -119,6 +119,7 @@ class TaskRequest(BaseModel):
     priority: int = Field(default=0, ge=-100, le=100)
     prerequisite_artifacts: tuple[str, ...] = ()
     source_revisions: tuple[str, ...] = ()
+    attempt_lineage: str | None = None
 
     @field_serializer("budget_usd")
     def serialize_budget(self, value: Decimal | None) -> str | None:

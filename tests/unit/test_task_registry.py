@@ -66,6 +66,30 @@ def test_registry_rejects_duplicate_normalized_fingerprints_in_one_batch(tmp_pat
         TaskRegistry().register_many((first, duplicate))
 
 
+def test_explicit_attempt_lineage_preserves_retry_identity_across_renamed_work(tmp_path) -> None:
+    validator = _validator(tmp_path)
+    run_id = new_run_id()
+    original = validator.create_spec(
+        TaskRequest(description="Inspect parser", attempt_lineage="plan:parser:review"),
+        run_id=run_id,
+        parent_task_id=None,
+        parent_depth=0,
+        workspace_revision="git:abc123",
+    )
+    replacement = validator.create_spec(
+        TaskRequest(
+            description="Inspect parser after discovery",
+            attempt_lineage="plan:parser:review",
+        ),
+        run_id=run_id,
+        parent_task_id=None,
+        parent_depth=0,
+        workspace_revision="git:abc123",
+    )
+
+    assert replacement.fingerprint == original.fingerprint
+
+
 def test_registry_tracks_dependencies_and_compare_and_set_task_state(tmp_path) -> None:
     validator = _validator(tmp_path)
     registry = TaskRegistry()

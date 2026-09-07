@@ -135,6 +135,11 @@ class TaskValidator:
                     self._normalize_context_revision(value)
                     for value in request.source_revisions
                 ),
+                "attempt_lineage": (
+                    None
+                    if request.attempt_lineage is None
+                    else self._normalize_context_revision(request.attempt_lineage)
+                ),
             }
         )
 
@@ -200,9 +205,12 @@ def task_fingerprint(
     parent_task_id: TaskId | None,
     workspace_revision: str,
 ) -> str:
+    request_payload = request.model_dump(mode="json")
+    if request.attempt_lineage is not None:
+        request_payload = {"attempt_lineage": request.attempt_lineage}
     payload = {
         "parent_task_id": None if parent_task_id is None else str(parent_task_id),
-        "request": request.model_dump(mode="json"),
+        "request": request_payload,
         "workspace_revision": workspace_revision.strip(),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)

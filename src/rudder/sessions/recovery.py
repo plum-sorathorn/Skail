@@ -21,6 +21,7 @@ class RecoveryResult:
     interrupted_call_keys: tuple[str, ...]
     pending_approval_ids: tuple[str, ...]
     released_reservation_ids: tuple[str, ...]
+    ambiguous_call_ids: tuple[str, ...]
 
 
 def recover_session(
@@ -56,6 +57,15 @@ def _recover_locked(
             "WHERE r.session_id=? AND a.status IN ('assigned','running')",
             (session_id,),
         ).fetchall()
+        ambiguous_rows = connection.execute(
+            "SELECT p.call_id,t.task_id FROM provider_calls p "
+            "JOIN attempts a ON a.attempt_id=p.attempt_id "
+            "JOIN tasks t ON t.task_id=a.task_id "
+            "JOIN runs r ON r.run_id=t.run_id "
+            "WHERE r.session_id=? AND p.status IN ('started','ambiguous') ORDER BY p.rowid",
+            (session_id,),
+        ).fetchall()
+        ambiguous_task_ids = {row["task_id"] for row in ambiguous_rows}
         protected_task_ids: set[str] = set()
         orphan_task_ids: set[str] = set()
         for row in rows:
@@ -91,6 +101,8 @@ def _recover_locked(
                 (row["task_id"],),
             )
         for task_id in orphan_task_ids:
+            if task_id in ambiguous_task_ids:
+                continue
             released.extend(
                 row[0]
                 for row in connection.execute(
@@ -114,7 +126,15 @@ def _recover_locked(
         )
     journal.reconcile_plan_node_executions()
     snapshot = journal.get_session_snapshot(session_id)
-    return RecoveryResult(True, None, snapshot, tuple(interrupted), pending, tuple(released))
+    return RecoveryResult(
+        True,
+        None,
+        snapshot,
+        tuple(interrupted),
+        pending,
+        tuple(released),
+        tuple(row["call_id"] for row in ambiguous_rows),
+    )
 
 
 def _same_storage_file(first: Path, second: Path) -> bool:
@@ -136,4 +156,5 @@ def _failure(code: str, summary: str) -> RecoveryResult:
         interrupted_call_keys=(),
         pending_approval_ids=(),
         released_reservation_ids=(),
+        ambiguous_call_ids=(),
     )

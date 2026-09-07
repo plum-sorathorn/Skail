@@ -465,6 +465,83 @@ def test_recovery_interrupts_an_assigned_attempt_that_never_reached_checkpoint(
     assert result.snapshot.attempts[0].status == "interrupted"
 
 
+def test_recovery_holds_ambiguous_call_reservation_and_reports_it(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "rudder.sqlite")
+    checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
+    _seed_run(journal)
+    journal.create_task(
+        task_id="ambiguous-task",
+        run_id="run-1",
+        description="Provider response was lost",
+        status="running",
+        idempotency_key="ambiguous-task-key",
+        created_at=NOW,
+    )
+    journal.create_attempt(
+        attempt_id="ambiguous-attempt",
+        task_id="ambiguous-task",
+        number=1,
+        status="running",
+        idempotency_key="ambiguous-attempt-key",
+        created_at=NOW,
+    )
+    journal.create_reservation(
+        reservation_id="ambiguous-reservation",
+        run_id="run-1",
+        task_id="ambiguous-task",
+        amount_usd=Decimal("0.30"),
+        status="reserved",
+        idempotency_key="ambiguous-reservation-key",
+        created_at=NOW,
+    )
+    with journal._connect() as connection:
+        connection.execute(
+            "INSERT INTO assignments VALUES (?,?,?,?,?,?,?,?)",
+            (
+                "ambiguous-assignment",
+                "ambiguous-attempt",
+                "fake",
+                "model",
+                "0.30",
+                "ambiguous-assignment-key",
+                "{}",
+                NOW.isoformat(),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO provider_calls VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "ambiguous-call",
+                "ambiguous-assignment",
+                "ambiguous-attempt",
+                "ambiguous-execution",
+                1,
+                "ambiguous",
+                None,
+                None,
+                None,
+                None,
+                "response lost after send",
+                NOW.isoformat(),
+                NOW.isoformat(),
+            ),
+        )
+    _record_real_checkpoint(
+        checkpoints,
+        session_id="session-1",
+        idempotency_key="unrelated-live-key",
+        status="committed",
+        payload={},
+    )
+
+    result = recover_session(journal=journal, checkpoints=checkpoints, session_id="session-1")
+
+    assert result.ambiguous_call_ids == ("ambiguous-call",)
+    assert result.snapshot is not None
+    assert result.snapshot.attempts[0].status is AttemptStatus.INTERRUPTED
+    assert result.snapshot.budget_reservations[0].status == "reserved"
+
+
 def test_stale_checkpoint_reference_is_rejected_before_journal_mutation(
     tmp_path: Path,
 ) -> None:
