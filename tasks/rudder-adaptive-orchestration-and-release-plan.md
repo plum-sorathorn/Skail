@@ -553,11 +553,32 @@ existing 14 zero-node JSON warning remains). Next: Phase 10 independent graph an
 
 **Owner:** `gpt-5.6-sol`, high, fresh review context. **Depends on:** 09.
 
+**Status:** incomplete. Phase 10a completed the independent audit at `7db893d` and found ten
+critical/high production-path defects. The checkpoint is split into repair slices 10b-10h and a
+final recheck 10i; Phase 11 remains blocked. See
+[the Phase 10 review record](rudder-phase-10-graph-accounting-review.md).
+
 Review phases 01-09 against actual CLI/TUI/controller behavior. Trace first-call assignment, every reservation owner, post-commit events, decision enforcement, task compatibility, graph launch/recovery, and cancellation boundaries. Attempt a cycle, mixed direct/task bypass, stale revision, resumed approval, and task rename to reset attempts.
 
 Return severity, concrete reproduction, affected invariant, and minimal fix. Tests must exercise production paths rather than helper-only behavior. Have the original phase owner fix findings in separately scoped follow-up commits and check in after each; this checkpoint remains open until required fixes and regression checks pass.
 
 **Acceptance:** no unresolved critical/high correctness or accounting issue; review evidence distinguishes passing checks from untested claims. Commit the review record if no code changes are needed: `docs(review): record adaptive graph correctness checkpoint`.
+
+#### Phase 10a — Audit adaptive graph and accounting boundaries
+
+**Status:** complete. **Scope:** fresh production-path review and deterministic reproductions only;
+no runtime repair is included in this slice.
+
+**Handoff (completed 2026-09-07):** The audit reproduced ignored discovery checkpoints, dropped
+plan dispatch after interrupt/crash resume, stranded terminal/cancellation reservations and task
+state, trust/approval bypasses, false successful terminal states, a second compatibility-task
+scheduler, non-atomic lifecycle events, and evaluator scripts that no longer cross the required
+execution-decision gate. The focused graph, assignment, recovery, approval, event, and lineage suite
+passed 115 tests, while the complete offline suite reported 578 passed, 2 failed, and 2 skipped; the
+two failures are the stale evaluator contract recorded as P10-004. Ruff, mypy (104 source files),
+and fake-provider smoke passed. No live-provider or external action ran. The review record defines
+the required test-first repair sequence. Next: Phase 10b, execute discovery checkpoints and admit
+evidence-backed revisions.
 
 ### Phase 11 — Snapshot and isolate writer workspaces
 
