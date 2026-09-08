@@ -186,6 +186,12 @@ and assert the real command effect plus consumption of the exact approval record
 
 ### P10-008 — High — Compatibility `task` still uses a second scheduler path
 
+**Resolution:** fixed by Phase 10d. Compatibility `task` batches now create a canonical persisted
+plan before task/attempt assignment, bind every compatibility task to its plan node, record node
+execution before the compiled child lifecycle starts, and settle the same node from the canonical
+task result path. A production regression proves the standard task surface leaves one succeeded
+plan node rather than an untracked child lifecycle.
+
 **Production-path reproduction:** execute a valid direct-mode compatibility `task` call and inspect
 `Journal.plans_for_run()`. The child task/attempt executes, but no single-node `ExecutionPlan` exists;
 `_admit_task_batch()` directly creates task, attempt, scheduler, and assignment state.

@@ -1388,6 +1388,37 @@ class RunController:
         except TaskValidationError:
             return
 
+        compatibility_plan = self.journal.admit_plan(
+            run_id=str(run_id),
+            plan=ExecutionPlan(
+                schema_version=1,
+                policy_version="adaptive-v1",
+                revision=1,
+                nodes=tuple(
+                    PlanNode(
+                        local_id=f"compat-task-{index}",
+                        kind=PlanNodeKind.AGENT,
+                        objective=spec.request.description,
+                        acceptance_criteria=spec.request.success_criteria,
+                        effect_scope=(
+                            EffectScope.WORKSPACE_WRITE
+                            if profile.write_capable
+                            else EffectScope.READ
+                        ),
+                        task_features={"profile": profile.name},
+                        task_lineage=f"compat:{spec.task_id}",
+                    )
+                    for index, (spec, _, profile, _) in enumerate(planned, start=1)
+                ),
+            ),
+            event_observer=self.events.publish_persisted_nowait,
+            authorized_effects=frozenset(
+                {EffectScope.READ, EffectScope.WORKSPACE_WRITE}
+                if controls.write_allowed is not False
+                else {EffectScope.READ}
+            ),
+        )
+
         for spec, _, _, _ in planned:
             for dependency in spec.request.depends_on:
                 dependency_key = str(dependency)
@@ -1406,7 +1437,9 @@ class RunController:
 
         now = datetime.now(UTC)
         requests: list[AssignmentRequest] = []
-        for spec, description, profile, attempt_id in planned:
+        for index, (spec, description, profile, attempt_id) in enumerate(
+            planned, start=1
+        ):
             self.registry.transition(
                 spec.task_id,
                 expected=TaskStatus.PROPOSED,
@@ -1429,6 +1462,28 @@ class RunController:
                 status="assigned",
                 idempotency_key=f"attempt:{attempt_id}",
                 created_at=now,
+            )
+            local_id = f"compat-task-{index}"
+            node_id = compatibility_plan.node_ids[local_id]
+            self.journal.bind_plan_node_task(
+                node_id=node_id,
+                task_id=str(spec.task_id),
+                attempt_id=str(attempt_id),
+            )
+            self.journal.transition_plan_node_state(
+                plan_id=compatibility_plan.plan_id,
+                node_id=node_id,
+                expected=PlanNodeState.READY,
+                target=PlanNodeState.LAUNCHING,
+                event_observer=self.events.publish_persisted_nowait,
+            )
+            self.journal.begin_plan_node_execution(
+                node_id=node_id,
+                execution_key=f"task:{spec.task_id}",
+            )
+            self._plan_nodes_by_task[str(spec.task_id)] = (
+                compatibility_plan.plan_id,
+                node_id,
             )
             model_policy = spec.request.model_policy
             configured_model = self.profile_models.get(profile.name)

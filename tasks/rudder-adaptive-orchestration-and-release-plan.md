@@ -629,6 +629,16 @@ separate methods, not dead duplicates. The exact implementation commit is record
 user handoff. Next: Phase 10d, route compatibility tasks through canonical persistent
 plan admission.
 
+#### Phase 10d — Route compatibility tasks through canonical plan admission
+
+**Status:** complete. **Depends on:** 10c. **Scope:** P10-008 only.
+
+**Handoff (completed 2026-09-08):** Standard `task` batches now persist a canonical plan, bind
+compatibility task and attempt identities to plan nodes, record execution before the compiled child
+lifecycle, and settle the node from the shared task-result path. The production regression proves
+the compatibility task produces one succeeded persisted node. Next: Phase 10e, make plan/run/task
+terminal state and events truthful and atomic.
+
 ### Phase 11 — Snapshot and isolate writer workspaces
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 10.

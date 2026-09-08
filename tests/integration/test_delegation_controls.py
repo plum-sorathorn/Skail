@@ -856,6 +856,9 @@ async def test_delegation_ask_executes_when_approved(tmp_path: Path) -> None:
         result.child_results[0].verification[0].evidence_ref
     )
     assert result.child_results[0].status == "succeeded", result.child_results[0]
+    plans = journal.plans_for_run(str(result.run_id))
+    assert len(plans) == 1
+    assert plans[0].node_states == {"compat-task-1": PlanNodeState.SUCCEEDED}
 
 
 @pytest.mark.asyncio
