@@ -29,6 +29,7 @@ from evals.schema import (
     PolicySummary,
     RawExecutionRecord,
     ScriptedModelResponse,
+    ScriptedToolCall,
     TaskEvalResult,
 )
 from rudder.agents.lead import LeadControls
@@ -110,6 +111,33 @@ class _FixtureChatModel(BaseChatModel):
     def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> Runnable[Any, AIMessage]:
         del tools, kwargs
         return self
+
+
+def _with_execution_decision(script: ExecutionScript, objective: str) -> ExecutionScript:
+    """Compile the fixture protocol without consulting its scoring oracle."""
+    if not script.responses:
+        return script
+    first = script.responses[0]
+    if any(call.name == "execution_decision" for call in first.tool_calls):
+        return script
+    decision = ScriptedToolCall(
+        name="execution_decision",
+        args={
+            "mode": "direct",
+            "objective": objective,
+            "constraints": [],
+            "reason": "The deterministic fixture performs bounded direct work.",
+        },
+        id="fixture-execution-decision",
+    )
+    return script.model_copy(
+        update={
+            "responses": (
+                first.model_copy(update={"tool_calls": (decision, *first.tool_calls)}),
+                *script.responses[1:],
+            )
+        }
+    )
 
 
 
@@ -525,6 +553,7 @@ class EvaluationRunner:
                     raw_record,
                 )
 
+            script = _with_execution_decision(script, fixture.prompt)
             routing_mode = policy.to_routing_mode()
             runtime_models: dict[str, BaseChatModel] = {}
             for candidate in self.candidates:
