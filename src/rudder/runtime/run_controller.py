@@ -254,10 +254,15 @@ class RunController:
         self._lead_allowance_ids: list[str] = []
         self._plan_revision_evidence: dict[str, frozenset[str]] = {}
         self._plan_revision_checkpoints: dict[str, str] = {}
+        self._restored_decision: Any | None = None
 
     @property
     def pending_interrupt(self) -> dict[str, Any] | None:
         return self._pending_interrupt_payload
+
+    @property
+    def restored_decision(self) -> Any | None:
+        return self._restored_decision
 
     def _record_model_usage(
         self, assignment_id: str, response: object, call_id: str = ""
@@ -597,6 +602,7 @@ class RunController:
         lead_assignment: TaskAssignment,
         lead_task_id: TaskId,
         lead_attempt_id: AttemptId,
+        restored_decision: Any | None = None,
     ) -> Any:
         delegation_approved = delegation_approved or controls.delegation == "auto"
         allow_delegation = controls.delegation in ("auto", "ask")
@@ -696,6 +702,10 @@ class RunController:
         decision_gate = ExecutionDecisionGate(
             admit_plan=admit_plan,
             revise_plan=revise_plan,
+            persist_decision=lambda decision: self.journal.record_execution_decision(
+                run_id=str(run_id), decision=decision
+            ),
+            restored_decision=restored_decision,
         )
 
         def observe_response(response: ModelResponse[Any]) -> None:
@@ -758,6 +768,8 @@ class RunController:
         for ready in self.journal.ready_plan_nodes(persisted.plan_id):
             node = nodes[ready.local_id]
             if node.kind is not PlanNodeKind.AGENT:
+                continue
+            if self.journal.plan_node_task_binding(ready.node_id) is not None:
                 continue
             request = _task_request_for_plan_node(node)
             request = request.model_copy(
@@ -934,6 +946,38 @@ class RunController:
                     binding_constraint="budget_unaffordable",
                 )
             )
+
+    async def _finalize_completion(
+        self,
+        *,
+        run_id: RunId,
+        workspace_revision: str,
+        leases: WorkspaceLeaseManager,
+        gate: ChildRunGate,
+        scheduler: ChildScheduler,
+        controls: LeadControls,
+        delegation_approved: bool,
+        lead_assignment: TaskAssignment,
+        lead_agent: Any,
+        lead_attempt_id: AttemptId,
+        invoke_config: RunnableConfig,
+        recorded_child_results: list[TaskResult],
+    ) -> tuple[dict[str, Any] | None, bool]:
+        """Single coordinator finalization path for initial and resumed runs."""
+        return await self._dispatch_admitted_plan_agents(
+            run_id=run_id,
+            workspace_revision=workspace_revision,
+            leases=leases,
+            gate=gate,
+            scheduler=scheduler,
+            controls=controls,
+            delegation_approved=delegation_approved,
+            lead_assignment=lead_assignment,
+            lead_agent=lead_agent,
+            lead_attempt_id=lead_attempt_id,
+            invoke_config=invoke_config,
+            recorded_child_results=recorded_child_results,
+        )
 
     async def _dispatch_admitted_plan_agents(
         self,
@@ -1843,7 +1887,7 @@ class RunController:
                 pending_interrupt=pending_interrupt,
             )
 
-        checkpoint_state, checkpoint_blocked = await self._dispatch_admitted_plan_agents(
+        checkpoint_state, checkpoint_blocked = await self._finalize_completion(
             run_id=run_id,
             workspace_revision=workspace_revision,
             leases=leases,
@@ -2037,6 +2081,7 @@ class RunController:
                 lead_assignment=persisted_assignment,
                 lead_context_packet=packet,
             )
+            self._restored_decision = self.journal.get_execution_decision(run.run_id)
             allowance_ids = runtime.get("lead_allowance_ids", ())
             if isinstance(allowance_ids, (list, tuple)):
                 self._lead_allowance_ids = [str(value) for value in allowance_ids]
@@ -2064,6 +2109,53 @@ class RunController:
             return True
         return False
 
+    def _rebuild_safe_resume_frontier(
+        self,
+        *,
+        run_id: RunId,
+        scheduler: ChildScheduler,
+    ) -> None:
+        """Reconstruct only persisted READY agent work after a crash/interrupt.
+
+        LAUNCHING/RUNNING/settled/retired/ambiguous provider work is never
+        replayed: ambiguous launches are reconciled to BLOCKED first, and only
+        nodes still persisted as READY are re-admitted through the normal
+        agent admission path (which rebuilds task/attempt/assignment records).
+        Already-admitted LAUNCHING work from this resume is left untouched;
+        only persisted READY nodes are (re-)admitted. Nodes that already have
+        a persisted task binding or execution record are skipped individually
+        so the normal LAUNCHING->RUNNING lifecycle is never re-entered from
+        READY, while independent safe READY nodes still dispatch.
+
+        Already-admitted LAUNCHING dispatches from this resume are excluded
+        from reconciliation so fresh work is never blocked as ambiguous.
+        """
+        admitted_node_ids = frozenset(
+            dispatch.node_id for dispatch in self._planned_node_dispatches
+        )
+        self.journal.reconcile_plan_node_executions(exclude_node_ids=admitted_node_ids)
+        for persisted in self.journal.plans_for_run(str(run_id)):
+            ready = self.journal.ready_plan_nodes(persisted.plan_id)
+            if not ready:
+                continue
+            nodes = {node.local_id: node for node in persisted.plan.nodes}
+            if not any(
+                nodes[snapshot.local_id].kind is PlanNodeKind.AGENT
+                for snapshot in ready
+            ):
+                continue
+            pending = self._pending_run
+            if pending is None:
+                continue
+            self._admit_ready_plan_agents(
+                persisted,
+                run_id=run_id,
+                controls=pending.controls,
+                workspace_revision=pending.workspace_revision,
+                lead_assignment=pending.lead_assignment,
+                scheduler=scheduler,
+            )
+
     async def resume_interrupted(self, answer: str) -> RunResult:
         pending = self._pending_run
         if pending is None:
@@ -2086,6 +2178,10 @@ class RunController:
         )
         async with self.checkpoints.saver(str(self.session_id)) as saver:
             await saver.setup()
+            restored = self._restored_decision
+            if restored is None:
+                restored = self.journal.get_execution_decision(str(pending.run_id))
+                self._restored_decision = restored
             lead_agent = self._build_lead_for_run(
                 run_id=pending.run_id,
                 controls=pending.controls,
@@ -2099,6 +2195,7 @@ class RunController:
                 lead_assignment=pending.lead_assignment,
                 lead_task_id=pending.lead_task_id,
                 lead_attempt_id=pending.lead_attempt_id,
+                restored_decision=restored,
             )
             try:
                 result_state = cast(
@@ -2179,6 +2276,69 @@ class RunController:
                 child_peak_active=gate.peak_active,
                 child_count=len(gate.completed),
                 pending_interrupt=_first_interrupt_payload(result_state),
+            )
+
+        # The resumed lead may have admitted fresh plan work above; rebuild any
+        # persisted READY work from a pre-interrupt crash so both reach one
+        # shared coordinator finalization path before terminal.
+        self._rebuild_safe_resume_frontier(
+            run_id=pending.run_id, scheduler=scheduler
+        )
+        checkpoint_state, checkpoint_blocked = await self._finalize_completion(
+            run_id=pending.run_id,
+            workspace_revision=pending.workspace_revision,
+            leases=leases,
+            gate=gate,
+            scheduler=scheduler,
+            controls=pending.controls,
+            delegation_approved=pending.delegation_approved,
+            lead_assignment=pending.lead_assignment,
+            lead_agent=lead_agent,
+            lead_attempt_id=pending.lead_attempt_id,
+            invoke_config=invoke_config,
+            recorded_child_results=child_results,
+        )
+        if checkpoint_state is not None:
+            messages = cast(list[BaseMessage], checkpoint_state.get("messages", []))
+        if checkpoint_blocked:
+            with self.journal.transaction() as tx:
+                tx.update_attempt_status(
+                    attempt_id=str(pending.lead_attempt_id), status=AttemptStatus.BLOCKED
+                )
+                tx.update_task_status(
+                    task_id=str(pending.lead_task_id), status=TaskStatus.BLOCKED
+                )
+                tx.update_run_status(run_id=str(pending.run_id), status="blocked")
+                tx.update_session_status(session_id=str(self.session_id), status="idle")
+            self._finalize_assignment_budget(pending.lead_assignment)
+            self._release_lead_allowances()
+            self._emit_event(
+                run_id=pending.run_id,
+                type="run.blocked",
+                payload=LifecyclePayload(status="blocked"),
+            )
+            self._pending_run = None
+            self._pending_interrupt_payload = None
+            output_text = ""
+            for message in reversed(messages):
+                if isinstance(message, AIMessage) and message.content:
+                    output_text = (
+                        message.content
+                        if isinstance(message.content, str)
+                        else str(message.content)
+                    )
+                    break
+            return RunResult(
+                run_id=pending.run_id,
+                lead_assignment=pending.lead_assignment,
+                lead_context_packet=pending.lead_context_packet,
+                output=output_text,
+                messages=messages,
+                child_results=child_results,
+                status="blocked",
+                child_wall_seconds=gate.child_wall_seconds,
+                child_peak_active=gate.peak_active,
+                child_count=len(gate.completed),
             )
 
         output_text = ""
@@ -2584,8 +2744,8 @@ class RunController:
             if plan_node is not None and (
                 result.status != "failed" or binding.assignment.attempt_number == 2
             ):
-                self.journal.settle_plan_node_execution(
-                    node_id=plan_node[1], result=result.model_dump(mode="json")
+                self._settle_plan_node(
+                    plan_node[0], plan_node[1], result.model_dump(mode="json")
                 )
 
             self._finalize_assignment_budget(binding.assignment)
@@ -2597,18 +2757,31 @@ class RunController:
             plan_node = self._plan_nodes_by_task.get(str(spec.task_id))
             if plan_node is not None:
                 plan_id, node_id = plan_node
-                if status == "started":
-                    self.journal.transition_plan_node_state(
-                        plan_id=plan_id,
-                        node_id=node_id,
-                        expected=PlanNodeState.LAUNCHING,
-                        target=PlanNodeState.RUNNING,
-                        event_observer=self.events.publish_persisted_nowait,
+                try:
+                    persisted = self.journal.get_plan(plan_id)
+                    local_id = next(
+                        local
+                        for local, value in persisted.node_ids.items()
+                        if value == node_id
                     )
-                elif status in {"blocked", "budget_blocked"}:
-                    self._settle_plan_node(plan_id, node_id, {"status": status})
-                elif status in {"succeeded", "cancelled", "returned_to_lead"}:
-                    self._settle_plan_node(plan_id, node_id, {"status": status})
+                    current = persisted.node_states[local_id]
+                    if status == "started":
+                        if current is PlanNodeState.LAUNCHING:
+                            self.journal.transition_plan_node_state(
+                                plan_id=plan_id,
+                                node_id=node_id,
+                                expected=PlanNodeState.LAUNCHING,
+                                target=PlanNodeState.RUNNING,
+                                event_observer=self.events.publish_persisted_nowait,
+                            )
+                    elif status in {"blocked", "budget_blocked"}:
+                        if current in {PlanNodeState.LAUNCHING, PlanNodeState.RUNNING}:
+                            self._settle_plan_node(plan_id, node_id, {"status": status})
+                    elif status in {"succeeded", "cancelled", "returned_to_lead"}:
+                        if current in {PlanNodeState.LAUNCHING, PlanNodeState.RUNNING}:
+                            self._settle_plan_node(plan_id, node_id, {"status": status})
+                except (KeyError, StopIteration):
+                    pass
             self._emit_event(
                 run_id=run_id,
                 type=f"task.{status}",

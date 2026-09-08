@@ -24,10 +24,15 @@ class ExecutionDecisionGate:
         *,
         admit_plan: Callable[[ExecutionPlan], Any],
         revise_plan: Callable[[PlanRevision, ExecutionPlan], Any] | None = None,
+        persist_decision: Callable[[ExecutionDecision], Any] | None = None,
+        restored_decision: ExecutionDecision | None = None,
     ) -> None:
         self._admit_plan = admit_plan
         self._revise_plan = revise_plan
+        self._persist_decision = persist_decision
         self.decision: ExecutionDecision | None = None
+        if restored_decision is not None:
+            self.decision = restored_decision
         self._repairs_remaining = 1
         self._prepared_decision_ids: set[str] = set()
         self._rejected_tool_codes: dict[str, str] = {}
@@ -87,8 +92,18 @@ class ExecutionDecisionGate:
             raise DecisionAdmissionError("decision.already_recorded")
         if self.decision is not None and self.decision.plan is not None:
             if candidate.revision is None:
+                if (
+                    candidate.plan is not None
+                    and candidate.plan.revision != self.decision.plan.revision
+                ):
+                    raise DecisionAdmissionError("decision.revision_conflict")
                 raise DecisionAdmissionError("decision.already_recorded")
-            if candidate.revision.expected_revision != self.decision.plan.revision:
+            expected = candidate.revision.expected_revision
+            current = self.decision.plan.revision
+            if expected != current or (
+                candidate.plan is not None
+                and candidate.plan.revision != expected + 1
+            ):
                 raise DecisionAdmissionError("decision.revision_conflict")
         self._record(candidate)
         return candidate
@@ -102,6 +117,9 @@ class ExecutionDecisionGate:
         try:
             return ExecutionDecision.model_validate(value)
         except ValidationError as exc:
+            message = str(exc)
+            if "revision_mismatch" in message or "revision_required" in message:
+                raise DecisionAdmissionError("decision.revision_conflict") from exc
             self._consume_repair()
             raise DecisionAdmissionError("decision.plan_invalid") from exc
 
@@ -118,6 +136,13 @@ class ExecutionDecisionGate:
                 self._consume_repair()
                 raise DecisionAdmissionError("decision.plan_refused") from exc
         self.decision = decision
+        if self._persist_decision is not None:
+            self._persist_decision(decision)
+
+    def restore(self, decision: ExecutionDecision) -> None:
+        """Reload a persisted accepted decision without admitting a plan twice."""
+        parsed = ExecutionDecision.model_validate(decision.model_dump(mode="json"))
+        self.decision = parsed
 
     def _consume_repair(self) -> None:
         if self._repairs_remaining == 0:

@@ -554,8 +554,8 @@ existing 14 zero-node JSON warning remains). Next: Phase 10 independent graph an
 **Owner:** `gpt-5.6-sol`, high, fresh review context. **Depends on:** 09.
 
 **Status:** incomplete. Phase 10a completed the independent audit at `7db893d` and found ten
-critical/high production-path defects. The checkpoint is split into repair slices 10b-10h and a
-final recheck 10i; Phase 11 remains blocked. See
+critical/high production-path defects. Phase 10b (P10-001) and Phase 10c (P10-002 + P10-007)
+are complete; remaining slices 10d-10i are pending. Phase 11 remains blocked. See
 [the Phase 10 review record](rudder-phase-10-graph-accounting-review.md).
 
 Review phases 01-09 against actual CLI/TUI/controller behavior. Trace first-call assignment, every reservation owner, post-commit events, decision enforcement, task compatibility, graph launch/recovery, and cancellation boundaries. Attempt a cycle, mixed direct/task bypass, stale revision, resumed approval, and task rename to reset attempts.
@@ -600,6 +600,32 @@ failures remain the Phase 10a evaluator decision-contract defects assigned to Ph
 new Phase 10b regressions pass. Graphify was updated after the source and documentation changes.
 The exact implementation commit is recorded at the user handoff. Next: Phase 10c, restore decision
 state and dispatch safe planned work after interrupt/crash resume.
+
+#### Phase 10c — Restore decision state and dispatch safe planned work after resume
+
+**Status:** complete. **Depends on:** 10b. **Scope:** P10-002 + P10-007 only; persisted
+execution decisions (migration 13 `execution_decisions` table, `record_execution_decision` /
+`get_execution_decision`), decision persist/restore hook in the coordinator, shared
+initial/resumed finalization path, per-node READY re-admission with ambiguous
+LAUNCHING/RUNNING held as BLOCKED, and lead assignment preserved across interrupt/resume.
+No 10d-10i scope.
+
+**Handoff (completed 2026-09-08):** Question-interrupt resume dispatches the admitted plan
+once, approval-interrupt resume runs the approved command once, a restarted controller
+restores the persisted decision, recovery dispatches persisted READY work (including
+independent READY work beside a bound sibling) while never replaying launched or settled
+work, and stale revisions are rejected. Focused suite
+`tests/integration/test_phase10c_resume_dispatch.py`: 7 passed. Affected suites
+(crash_recovery, command_injection, execution_decisions, plan_persistence, assignment,
+recovery, task_graph): 86 passed. Ruff passed; mypy passed (104 source files);
+fake-provider smoke passed. Full suite: 587 passed, 2 failed (the two known Phase 10h
+evaluator failures: `test_evaluation_runner_runs_deterministic_fake_suite`,
+`test_oracle_mutation_changes_scoring_without_changing_execution_record`), 2 skipped.
+`rtk git diff --check` clean; graphify updated (2804 nodes). The two `self._record`
+calls in `decisions.py` (`_admit_transition`, `_validate_and_record`) are legitimate
+separate methods, not dead duplicates. The exact implementation commit is recorded at the
+user handoff. Next: Phase 10d, route compatibility tasks through canonical persistent
+plan admission.
 
 ### Phase 11 — Snapshot and isolate writer workspaces
 

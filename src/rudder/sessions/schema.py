@@ -269,6 +269,12 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         13,
         """
         ALTER TABLE plan_nodes ADD COLUMN retired_revision INTEGER;
+        CREATE TABLE IF NOT EXISTS execution_decisions (
+            run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         """,
     ),
 )

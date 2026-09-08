@@ -54,6 +54,17 @@ has ready/waiting/launching/running checkpoint work. Add a production `RunContro
 
 ### P10-002 — Critical — A plan admitted after interrupt resume is never dispatched
 
+**Resolution:** fixed by Phase 10c on 2026-09-08. Initial and resumed completion share one
+finalization path that dispatches admitted plan work before terminal state, persisted safe
+`READY` work is reconstructed on recovery with per-node re-admission, ambiguous
+LAUNCHING/RUNNING nodes are held as BLOCKED rather than replayed, and lead assignment is
+preserved across interrupt/resume. Production regressions prove question-interrupt resume
+dispatches the plan once, recovery dispatches persisted READY work (including independent
+READY work beside a bound sibling), and launched or settled work is never replayed. The
+remaining Phase 10 findings are unchanged. Focused/affected verification passed 93 tests
+(7 focused + 86 affected); the full offline suite reported 587 passed, 2 failed
+(the Phase 10h evaluator failures), and 2 skipped.
+
 **Production-path reproduction:** the first lead call asks a durable user question. After
 `resume_interrupted("yes")`, the resumed lead records a valid planned decision and returns a final
 message. The controller returns `completed`; the child model has zero calls; the child task remains
@@ -149,6 +160,12 @@ run.
 
 ### P10-007 — High — Exact-command approval resume can claim completion without execution
 
+**Resolution:** fixed by Phase 10c on 2026-09-08. The accepted execution decision is
+persisted (migration 13) and restored before checkpoint resume, so approval-interrupt
+resume runs the approved command once with the exact approval record consumed. The
+production regression asserts the real command effect plus consumption of the exact
+approval key. The remaining Phase 10 findings are unchanged.
+
 **Production-path reproduction:** the lead records a direct decision and calls an approval-worthy
 `pwsh` command. After approving the exact persisted request and resuming, the run returns
 `completed` with scripted completion prose, but the command's marker file is absent and the one-shot
@@ -232,7 +249,7 @@ provider-live, paid, OAuth, push, publish, tag, remote rename, or legacy operati
 
 1. **Phase 10b (complete 2026-09-07):** execute discovery checkpoints and admit evidence-backed
    revisions.
-2. **Phase 10c:** restore decision state and dispatch safe planned work after interrupt/crash resume.
+2. **Phase 10c (complete 2026-09-08):** restored decision state and dispatched safe planned work after interrupt/crash resume (P10-002 + P10-007).
 3. **Phase 10d:** route compatibility tasks through canonical persistent plan admission.
 4. **Phase 10e:** make plan/run/task terminal state and events truthful and atomic.
 5. **Phase 10f:** reconcile cancellation, failure, and every reservation owner.

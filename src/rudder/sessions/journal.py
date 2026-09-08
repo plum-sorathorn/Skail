@@ -1086,8 +1086,14 @@ class Journal:
                 (payload, _now(), node_id),
             )
 
-    def reconcile_plan_node_executions(self) -> tuple[PlanNodeSnapshot, ...]:
-        """Finish durable settlements and block ambiguous launches without replaying them."""
+    def reconcile_plan_node_executions(
+        self, *, exclude_node_ids: frozenset[str] = frozenset()
+    ) -> tuple[PlanNodeSnapshot, ...]:
+        """Finish durable settlements and block ambiguous launches without replaying them.
+
+        Nodes in ``exclude_node_ids`` (already admitted by this resume) are left
+        untouched so fresh LAUNCHING work is never reconciled to BLOCKED.
+        """
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT n.plan_id,n.node_id,s.status,e.status AS execution_status,e.result_json "
@@ -1098,6 +1104,8 @@ class Journal:
             ).fetchall()
         reconciled: list[PlanNodeSnapshot] = []
         for row in rows:
+            if row["node_id"] in exclude_node_ids:
+                continue
             state = PlanNodeState(row["status"])
             if row["execution_status"] == "settled" and row["result_json"] is not None:
                 result = json.loads(row["result_json"])
@@ -1500,6 +1508,41 @@ class Journal:
                 "SELECT plan_id FROM execution_plans WHERE run_id=? ORDER BY rowid", (run_id,)
             ).fetchall()
         return tuple(self.get_plan(row["plan_id"]) for row in ids)
+
+    def record_execution_decision(self, *, run_id: str, decision: Any) -> None:
+        """Persist the accepted execution decision for crash/interrupt recovery."""
+        from rudder.domain.decisions import ExecutionDecision as _ExecutionDecision
+
+        payload = decision.model_dump(mode="json") if isinstance(
+            decision, _ExecutionDecision
+        ) else dict(decision)
+        payload_json = json.dumps(
+            self.redactor.scrub(payload), sort_keys=True, separators=(",", ":")
+        )
+        now = _now()
+        with self.transaction() as transaction:
+            transaction.connection.execute(
+                "INSERT INTO execution_decisions(run_id,payload_json,created_at,updated_at) "
+                "VALUES (?,?,?,?) ON CONFLICT(run_id) DO UPDATE SET "
+                "payload_json=excluded.payload_json,updated_at=excluded.updated_at",
+                (run_id, payload_json, now, now),
+            )
+
+    def get_execution_decision(self, run_id: str) -> Any | None:
+        """Reload the accepted execution decision, or None when never accepted."""
+        from rudder.domain.decisions import ExecutionDecision as _ExecutionDecision
+
+        with self._connect() as connection:
+            try:
+                row = connection.execute(
+                    "SELECT payload_json FROM execution_decisions WHERE run_id=?",
+                    (run_id,),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                return None
+        if row is None:
+            return None
+        return _ExecutionDecision.model_validate_json(row["payload_json"])
 
     def get_session_snapshot(self, session_id: str) -> SessionSnapshot:
         with self._connect() as connection:
