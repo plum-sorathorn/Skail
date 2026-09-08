@@ -760,6 +760,19 @@ the canonical mutation boundary through each write. Do not bypass the shared fil
 isolated workers until file-tool confinement is proved. No Phase 12b/12c implementation was
 committed from this review; Phase 12 remains in progress.
 
+**Current blocker (2026-09-08, capture review):** A proposed 12b capture primitive was withdrawn
+after adversarial review. Git's ignored-file view can omit real worktree effects; hard links can
+mutate canonical/external content; final-component link checks do not secure ancestor junctions or
+the check/read race; index state can change after a one-time check; current resource limits allocate
+and enumerate before enforcing the limit; and ordinary artifact files are not immutable/durable.
+The worktree ownership check must also bind the expected branch/administrative record. The current
+child tool boundary additionally binds a worktree path without proving that a write-capable child
+cannot access the canonical workspace or Git common directory, and it retains the shared lease, so
+two isolated writers cannot overlap. Do not enable runtime capture/integration or release that lease
+until a confined, handle-based filesystem/command boundary with stable-scan, artifact-publication,
+and escape fixtures exists. Canonical apply remains separately blocked on the durable per-file
+apply/recovery design above. No 12b/12c implementation was committed from this review.
+
 1. Persist changesets with base/changed-path/content digests and verification references. Check actual effects against declared scope, not just the final prose result.
 2. Serialize canonical-workspace integration. Recheck base inputs and detect user edits since launch before applying; preserve conflicts and request bounded lead judgment.
 3. Apply dependent changes in verified dependency order. Independent filenames are not sufficient if public interfaces or generated assets conflict.
