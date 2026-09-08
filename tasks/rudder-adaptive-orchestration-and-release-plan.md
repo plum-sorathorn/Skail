@@ -773,6 +773,30 @@ until a confined, handle-based filesystem/command boundary with stable-scan, art
 and escape fixtures exists. Canonical apply remains separately blocked on the durable per-file
 apply/recovery design above. No 12b/12c implementation was committed from this review.
 
+#### Phase 12b.1 — Fail closed at isolated-child tool boundaries
+
+**Status:** complete. **Depends on:** 11c. **Scope:** child filesystem/command confinement
+prerequisite only.
+
+Managed-worktree children now pass the canonical workspace as a forbidden host root to their
+filesystem backend. Direct canonical paths are rejected before virtual-path normalization for both
+reads and writes, and an isolated child receives no `execute` tool permission because an arbitrary
+child subprocess cannot be confined by Rudder's current structured-command policy. The shared
+write lease remains active. Deterministic tests prove that direct canonical paths leave the source
+unchanged and that the runtime passes both restrictions to a materialized child.
+
+This is deliberately not a claim of process sandboxing, handle-based traversal, immutable artifact
+publication, or stable capture. Next: Phase 12b.2, introduce a reparse-point-safe bounded stable
+scanner and immutable artifact publication before any changeset capture is enabled.
+
+Verification: `rtk pytest tests\integration\test_filesystem_boundary.py -q` (5 passed, 1
+Windows capability skip); the isolated-child wiring regression passed with `python -m pytest
+tests\integration\test_delegation_controls.py::test_worktree_writer_receives_a_dirty_snapshot_and_records_selection
+-q`; `rtk pytest tests\unit\test_execution_policy.py tests\unit\test_workspaces.py -q` (10
+passed, 1 Windows capability skip); Ruff, mypy, fake-provider smoke, and `rtk git diff --check`
+passed. `rtk pytest -q` exceeded the local 30-second reporting window; its timed-out child
+processes were verified and terminated, so no full-suite pass is claimed from this slice.
+
 1. Persist changesets with base/changed-path/content digests and verification references. Check actual effects against declared scope, not just the final prose result.
 2. Serialize canonical-workspace integration. Recheck base inputs and detect user edits since launch before applying; preserve conflicts and request bounded lead judgment.
 3. Apply dependent changes in verified dependency order. Independent filenames are not sufficient if public interfaces or generated assets conflict.

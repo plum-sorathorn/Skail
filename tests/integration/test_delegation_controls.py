@@ -75,6 +75,7 @@ async def test_worktree_writer_receives_a_dirty_snapshot_and_records_selection(
         ],
     )
     child_roots: list[Path] = []
+    child_options: list[dict[str, object]] = []
 
     class ChildAgent:
         def __init__(self, root: Path) -> None:
@@ -105,6 +106,7 @@ async def test_worktree_writer_receives_a_dirty_snapshot_and_records_selection(
 
     def build_child(*args, **kwargs):
         del args
+        child_options.append(kwargs)
         return ChildAgent(kwargs["workspace"])
 
     monkeypatch.setattr("rudder.runtime.run_controller.build_default_agent", build_child)
@@ -121,6 +123,8 @@ async def test_worktree_writer_receives_a_dirty_snapshot_and_records_selection(
 
     assert controller.workspace_selection.mode is WorkspaceMode.WORKTREE
     assert child_roots and child_roots[0] != workspace
+    assert child_options[0]["forbidden_host_paths"] == (workspace.resolve(),)
+    assert child_options[0]["execute_allowed"] is False
     assert not child_roots[0].exists()
     assert (workspace / "tracked.txt").read_text(encoding="utf-8") == "dirty\n"
     selection_events = [

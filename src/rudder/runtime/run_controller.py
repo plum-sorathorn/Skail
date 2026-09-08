@@ -2997,7 +2997,9 @@ class RunController:
                 execute_allowed=(
                     spec.permission_set.execute
                     and not spec.permission_set.allowed_paths
+                    and isolated_workspace is None
                 ),
+                forbidden_host_paths=(self.workspace,) if isolated_workspace is not None else (),
             )
 
             formatted_prompt = _format_context_packet(packet)

@@ -35,9 +35,14 @@ class PolicyFilesystemBackend(FilesystemBackend):
         task_id: str,
         lease_manager: WorkspaceLeaseManager | None = None,
         allowed_write_paths: tuple[str, ...] = (),
+        forbidden_host_paths: tuple[Path, ...] = (),
     ) -> None:
         super().__init__(root_dir=root_dir, virtual_mode=True)
-        self.boundary = FilesystemBoundary(root_dir, redactor=redactor)
+        self.boundary = FilesystemBoundary(
+            root_dir,
+            redactor=redactor,
+            forbidden_host_paths=forbidden_host_paths,
+        )
         self.task_id = task_id
         self.lease_manager = lease_manager
         self.allowed_write_paths = tuple(
@@ -45,8 +50,8 @@ class PolicyFilesystemBackend(FilesystemBackend):
         )
         self._call_number = 0
 
-    @staticmethod
-    def _relative(path: str) -> str:
+    def _relative(self, path: str) -> str:
+        self.boundary.assert_host_path_allowed(path)
         value = PurePosixPath(path)
         if ".." in value.parts or "~" in value.parts:
             raise PathBoundaryError("virtual path traversal is not permitted")
@@ -108,8 +113,8 @@ class PolicyFilesystemBackend(FilesystemBackend):
         return result
 
     def write(self, file_path: str, content: str) -> WriteResult:
-        relative = self._relative(file_path)
         try:
+            relative = self._relative(file_path)
             self._assert_write_scope(relative)
             with self._lease():
                 self.boundary.write_text(
@@ -126,8 +131,8 @@ class PolicyFilesystemBackend(FilesystemBackend):
         new_string: str,
         replace_all: bool = False,
     ) -> EditResult:
-        relative = self._relative(file_path)
         try:
+            relative = self._relative(file_path)
             self._assert_write_scope(relative)
             path = self.boundary.resolve(relative)
             self.boundary._assert_not_sensitive(path)

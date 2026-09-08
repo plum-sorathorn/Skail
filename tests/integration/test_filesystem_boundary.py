@@ -85,6 +85,26 @@ def test_deepagents_backend_enforces_sensitive_reads_and_records_writes(tmp_path
     )
 
 
+def test_isolated_backend_rejects_direct_canonical_workspace_paths(tmp_path: Path) -> None:
+    canonical = tmp_path / "canonical"
+    isolated = tmp_path / "isolated"
+    canonical.mkdir()
+    isolated.mkdir()
+    secret = canonical / "secret.txt"
+    secret.write_text("canonical", encoding="utf-8")
+    backend = PolicyFilesystemBackend(
+        isolated,
+        redactor=RedactionRegistry(),
+        task_id="task-1",
+        forbidden_host_paths=(canonical,),
+    )
+
+    assert backend.read(str(secret)).error is not None
+    assert backend.write(str(secret), "mutated").error is not None
+    assert "escapes workspace" in (backend.read("..\\canonical\\secret.txt").error or "")
+    assert secret.read_text(encoding="utf-8") == "canonical"
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows junction contract")
 def test_workspace_rejects_windows_junction_escape(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"

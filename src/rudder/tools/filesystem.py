@@ -29,6 +29,7 @@ class FilesystemBoundary:
         workspace: Path,
         *,
         outside_grants: list[Path] | tuple[Path, ...] = (),
+        forbidden_host_paths: list[Path] | tuple[Path, ...] = (),
         redactor: RedactionRegistry | None = None,
         sensitive_patterns: tuple[str, ...] = (
             ".env", "*.pem", "*.key", "id_rsa", ".git", ".rudder",
@@ -36,11 +37,27 @@ class FilesystemBoundary:
     ) -> None:
         self.workspace = workspace.resolve(strict=True)
         self.outside_grants = frozenset(path.resolve(strict=True) for path in outside_grants)
+        self.forbidden_host_paths = tuple(
+            path.resolve(strict=False) for path in forbidden_host_paths
+        )
         self.redactor = redactor or RedactionRegistry()
         self.sensitive_patterns = sensitive_patterns
         self.changes: list[FileChange] = []
 
+    def assert_host_path_allowed(self, raw: str | Path) -> None:
+        supplied = Path(raw)
+        if not supplied.is_absolute():
+            return
+        candidate = supplied.resolve(strict=False)
+        for forbidden in self.forbidden_host_paths:
+            try:
+                candidate.relative_to(forbidden)
+            except ValueError:
+                continue
+            raise PathBoundaryError("path targets a forbidden host workspace")
+
     def resolve(self, raw: str | Path, *, for_write: bool = False) -> Path:
+        self.assert_host_path_allowed(raw)
         supplied = Path(raw)
         candidate = supplied if supplied.is_absolute() else self.workspace / supplied
         candidate = candidate.resolve(strict=not for_write)
