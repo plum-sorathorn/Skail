@@ -461,12 +461,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ConfigValidationError, ValueError) as exc:
         render_print_stderr(f"Configuration error: {exc}")
         return EXIT_USAGE
-    if args.workspace_mode == "worktree":
-        render_print_stderr(
-            "Configuration error: worktree mode is not available in the stable foreground runtime."
-        )
-        return EXIT_USAGE
-
     # 4. Handle stateless subcommands before journal/checkpoint storage init
     if args.subcommand == "smoke":
         return handle_smoke(args)
@@ -584,6 +578,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if has_bootstrap_candidates
                 else None
             ),
+            workspace_mode=args.workspace_mode,
         )
         initial_snapshot = None
         if args.resume_session is not None:
@@ -910,6 +905,7 @@ async def _execute_instruction(
         event_observer=render_jsonl_event if args.json_mode else None,
         invocation_id=invocation_id,
         project_trusted=project_trusted,
+        workspace_mode=getattr(args, "workspace_mode", "shared"),
     )
 
     try:

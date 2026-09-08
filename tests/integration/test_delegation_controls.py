@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event
@@ -12,8 +13,9 @@ from langchain_core.messages import AIMessage
 from rudder.agents.lead import LeadControls
 from rudder.domain.ids import new_session_id
 from rudder.domain.plans import PlanNodeState
-from rudder.domain.tasks import AttemptStatus, TaskResult, TaskStatus
+from rudder.domain.tasks import AttemptStatus, TaskResult, TaskStatus, VerificationResult
 from rudder.runtime.run_controller import RunController
+from rudder.runtime.workspaces import WorkspaceManager, WorkspaceMode
 from rudder.sessions.journal import Journal
 from rudder.tools.execution import ExecutionPolicy, ExecutionResult
 
@@ -22,6 +24,111 @@ def _journal(tmp_path: Path) -> Journal:
     j = Journal(tmp_path / "journal.sqlite")
     j.migrate()
     return j
+
+
+def _git(workspace: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", *args], cwd=workspace, check=True, capture_output=True, text=True
+    )
+
+
+def _repository(tmp_path: Path) -> Path:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _git(workspace, "init")
+    _git(workspace, "config", "user.email", "tests@example.invalid")
+    _git(workspace, "config", "user.name", "Rudder tests")
+    (workspace / "tracked.txt").write_text("base\n", encoding="utf-8")
+    _git(workspace, "add", "tracked.txt")
+    _git(workspace, "commit", "-m", "initial")
+    return workspace
+
+
+@pytest.mark.asyncio
+async def test_worktree_writer_receives_a_dirty_snapshot_and_records_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = _repository(tmp_path)
+    (workspace / "tracked.txt").write_text("dirty\n", encoding="utf-8")
+    journal = _journal(tmp_path / "state")
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Worktree writer", created_at=datetime.now(UTC)
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    ("execution_decision", _direct_decision("Delegate safely"), "decision-1"),
+                    (
+                        "task",
+                        {
+                            "description": "Update the tracked file",
+                            "subagent_type": "implementer",
+                        },
+                        "task-1",
+                    ),
+                ]
+            ),
+            AIMessage(content="The worker completed its isolated task."),
+        ],
+    )
+    child_roots: list[Path] = []
+
+    class ChildAgent:
+        def __init__(self, root: Path) -> None:
+            self.root = root
+
+        async def ainvoke(self, state):
+            del state
+            child_roots.append(self.root)
+            assert (self.root / "tracked.txt").read_text(encoding="utf-8") == "dirty\n"
+            return {
+                "messages": [
+                    AIMessage(
+                        content=TaskResult(
+                            task_id="00000000-0000-4000-8000-000000000001",
+                            status="succeeded",
+                            summary="updated in isolated workspace",
+                            verification=(
+                                VerificationResult(
+                                    criterion="Provide evidence for the completed task",
+                                    passed=True,
+                                    evidence="isolated fixture completed",
+                                ),
+                            ),
+                        ).model_dump_json()
+                    )
+                ]
+            }
+
+    def build_child(*args, **kwargs):
+        del args
+        return ChildAgent(kwargs["workspace"])
+
+    monkeypatch.setattr("rudder.runtime.run_controller.build_default_agent", build_child)
+    controller = RunController(
+        session_id=session_id,
+        workspace=workspace,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": lead_model},
+        workspace_mode="worktree",
+        workspace_manager=WorkspaceManager(tmp_path / "rudder-data"),
+    )
+
+    result = await controller.run_instruction("Delegate this change")
+
+    assert controller.workspace_selection.mode is WorkspaceMode.WORKTREE
+    assert child_roots and child_roots[0] != workspace
+    assert not child_roots[0].exists()
+    assert (workspace / "tracked.txt").read_text(encoding="utf-8") == "dirty\n"
+    selection_events = [
+        event
+        for event in journal.events_after(run_id=str(result.run_id))
+        if event.type == "diagnostic.workspace"
+    ]
+    assert selection_events[-1].payload.details["mode"] == "worktree"
 
 
 @pytest.mark.asyncio

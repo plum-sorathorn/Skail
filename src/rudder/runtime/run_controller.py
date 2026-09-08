@@ -32,6 +32,7 @@ from rudder.agents.task_graph import (
 )
 from rudder.domain.decisions import ExecutionMode
 from rudder.domain.events import (
+    DiagnosticPayload,
     EventEnvelope,
     EventPayload,
     LifecyclePayload,
@@ -102,6 +103,12 @@ from rudder.runtime.redaction import RedactionRegistry
 from rudder.runtime.scheduler import ChildScheduler
 from rudder.runtime.task_registry import TaskRegistry
 from rudder.runtime.task_validation import TaskValidationError, TaskValidator
+from rudder.runtime.workspaces import (
+    WorkspaceManager,
+    WorkspaceMode,
+    WorkspaceSelection,
+    WorkspaceSnapshot,
+)
 from rudder.sessions.checkpoints import CheckpointStore
 from rudder.sessions.journal import Journal, PersistedPlan
 from rudder.tools.approvals import ApprovalStore
@@ -190,6 +197,8 @@ class RunController:
         approvals: ApprovalStore | None = None,
         question_store: QuestionStore | None = None,
         project_trusted: bool = False,
+        workspace_mode: str = "shared",
+        workspace_manager: WorkspaceManager | None = None,
     ) -> None:
         self.session_id = session_id
         self.workspace = workspace
@@ -208,6 +217,14 @@ class RunController:
         self.approvals = approvals
         self.question_store = question_store
         self.project_trusted = project_trusted
+        self.workspace_mode = workspace_mode
+        self.workspace_manager = workspace_manager or WorkspaceManager(
+            self.journal.path.parent / "workspaces"
+        )
+        self.workspace_selection = WorkspaceSelection(
+            WorkspaceMode.SHARED, "workspace.shared_requested"
+        )
+        self._workspace_snapshot: WorkspaceSnapshot | None = None
         self.validator = task_validator or TaskValidator(
             profiles=builtin_profiles(),
             workspace_root=workspace,
@@ -1727,6 +1744,18 @@ class RunController:
         run_id = run_id or new_run_id()
         now = datetime.now(UTC)
 
+        self.workspace_selection = self.workspace_manager.select(
+            self.workspace, self.workspace_mode
+        )
+        self._workspace_snapshot = None
+        if self.workspace_selection.mode is WorkspaceMode.WORKTREE:
+            try:
+                self._workspace_snapshot = self.workspace_manager.capture(self.workspace)
+            except ValueError as error:
+                self.workspace_selection = WorkspaceSelection(WorkspaceMode.SHARED, str(error))
+        if self._workspace_snapshot is not None:
+            workspace_revision = f"snapshot:{self._workspace_snapshot.snapshot_id}"
+
         async def _save_checkpoint(
             boundary: str,
             status: str = "committed",
@@ -1766,6 +1795,22 @@ class RunController:
             run_id=run_id,
             type="run.started",
             payload=LifecyclePayload(status="started"),
+        )
+        self._emit_event(
+            run_id=run_id,
+            type="diagnostic.workspace",
+            payload=DiagnosticPayload(
+                code=self.workspace_selection.reason,
+                summary="Workspace execution mode selected.",
+                details={
+                    "mode": self.workspace_selection.mode.value,
+                    "snapshot_id": (
+                        self._workspace_snapshot.snapshot_id
+                        if self._workspace_snapshot is not None
+                        else None
+                    ),
+                },
+            ),
         )
 
         # 2. Persist lead task and attempt BEFORE assignment
@@ -2914,9 +2959,24 @@ class RunController:
                 redactor=self.redaction,
             )
 
+            isolated_workspace = None
+            child_workspace = self.workspace
+            if profile.write_capable and self._workspace_snapshot is not None:
+                try:
+                    isolated_workspace = self.workspace_manager.materialize(
+                        self._workspace_snapshot, str(spec.task_id)
+                    )
+                except ValueError as error:
+                    return TaskResult(
+                        task_id=spec.task_id,
+                        status="blocked",
+                        summary=str(error),
+                    )
+                child_workspace = isolated_workspace.path
+
             inner_agent = build_default_agent(
                 child_chat_model,
-                workspace=self.workspace,
+                workspace=child_workspace,
                 profile=profile.name,
                 lease_manager=leases,
                 task_id=str(spec.task_id),
@@ -2948,10 +3008,14 @@ class RunController:
             if curr_attempt_id:
                 invoke_state["attempt_id"] = curr_attempt_id
 
-            result_state = cast(
-                dict[str, Any],
-                await inner_agent.ainvoke(invoke_state),
-            )
+            try:
+                result_state = cast(
+                    dict[str, Any],
+                    await inner_agent.ainvoke(invoke_state),
+                )
+            finally:
+                if isolated_workspace is not None:
+                    self.workspace_manager.cleanup(isolated_workspace)
             inner_messages = cast(list[BaseMessage], result_state.get("messages", []))
 
             child_output = ""

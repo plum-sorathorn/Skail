@@ -82,6 +82,7 @@ ALLOWED_EVENT_TYPES = frozenset(
         "invariant.failed",
         "diagnostic.error",
         "diagnostic.warning",
+        "diagnostic.workspace",
     }
 )
 

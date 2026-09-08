@@ -21,6 +21,7 @@ class WorkspaceMode(StrEnum):
 class SnapshotFile:
     digest: str
     size: int
+    deleted: bool = False
 
 
 @dataclass(frozen=True)
@@ -72,13 +73,17 @@ class WorkspaceManager:
             raise ValueError("workspace.snapshot_data_inside_workspace")
 
         files: dict[str, SnapshotFile] = {}
-        paths = self._tracked_paths(root) | self._untracked_paths(root)
+        tracked_paths = self._tracked_paths(root)
+        paths = tracked_paths | self._untracked_paths(root)
         snapshots_root = self._data_root / "workspace-snapshots"
         snapshots_root.mkdir(parents=True, exist_ok=True)
         temporary = Path(tempfile.mkdtemp(prefix="snapshot-", dir=snapshots_root))
         try:
             files_root = temporary / "files"
             for relative_path in sorted(paths):
+                if relative_path in tracked_paths and not (root / relative_path).exists():
+                    files[relative_path] = SnapshotFile(digest="", size=0, deleted=True)
+                    continue
                 source = self._source_path(root, relative_path)
                 content = source.read_bytes()
                 digest = hashlib.sha256(content).hexdigest()
@@ -88,11 +93,15 @@ class WorkspaceManager:
                 files[relative_path] = SnapshotFile(digest=digest, size=len(content))
 
             manifest = {
-                "schema_version": 1,
+                "schema_version": 2,
                 "root": str(root),
                 "head": head,
                 "files": {
-                    path: {"digest": item.digest, "size": item.size}
+                    path: {
+                        "digest": item.digest,
+                        "size": item.size,
+                        "deleted": item.deleted,
+                    }
                     for path, item in sorted(files.items())
                 },
             }
@@ -137,6 +146,10 @@ class WorkspaceManager:
             self._git(path, "reset", "--hard", snapshot.head)
             for relative_path, item in snapshot.files.items():
                 destination = path.joinpath(*PurePosixPath(relative_path).parts)
+                if item.deleted:
+                    if destination.exists():
+                        destination.unlink()
+                    continue
                 source = snapshot.path / "files" / Path(*PurePosixPath(relative_path).parts)
                 if (
                     not source.is_file()
@@ -153,7 +166,14 @@ class WorkspaceManager:
 
     def cleanup(self, workspace: IsolatedWorkspace) -> bool:
         root = self._git_context(workspace.path)[0]
-        if self._git(root, "status", "--porcelain"):
+        expected_path = (
+            self._data_root / "worktrees" / f"{workspace.snapshot_id[:12]}-{workspace.task_id}"
+        ).resolve(strict=False)
+        if root != expected_path or workspace.branch != (
+            f"rudder/{workspace.snapshot_id[:12]}/{workspace.task_id}"
+        ):
+            raise ValueError("workspace.worktree_ownership_invalid")
+        if not self._matches_snapshot(workspace):
             (workspace.path / "retained.json").write_text(
                 json.dumps(
                     {
@@ -169,6 +189,36 @@ class WorkspaceManager:
         common = (workspace.path / original_root).resolve()
         self._git(common.parent, "worktree", "remove", "--force", str(workspace.path))
         self._git(common.parent, "branch", "-D", workspace.branch)
+        return True
+
+    def _matches_snapshot(self, workspace: IsolatedWorkspace) -> bool:
+        manifest_path = (
+            self._data_root / "workspace-snapshots" / workspace.snapshot_id / "manifest.json"
+        )
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            files = manifest["files"]
+        except (OSError, ValueError, KeyError, TypeError):
+            return False
+        if not isinstance(files, dict):
+            return False
+        actual_paths = self._tracked_paths(workspace.path) | self._untracked_paths(workspace.path)
+        if actual_paths != set(files):
+            return False
+        for relative_path, expected in files.items():
+            if not isinstance(expected, dict):
+                return False
+            source = workspace.path.joinpath(*PurePosixPath(relative_path).parts)
+            if expected.get("deleted") is True:
+                if source.exists():
+                    return False
+                continue
+            try:
+                content = self._source_path(workspace.path, relative_path).read_bytes()
+            except ValueError:
+                return False
+            if hashlib.sha256(content).hexdigest() != expected.get("digest"):
+                return False
         return True
 
     def _git_context(self, workspace: Path) -> tuple[Path, str]:

@@ -74,6 +74,21 @@ def test_snapshots_are_content_addressed_and_preserve_their_original_inputs(
     assert (second.path / "files" / "tracked.txt").read_text(encoding="utf-8") == "changed\n"
 
 
+def test_materialized_worktree_preserves_tracked_deletions_from_a_dirty_snapshot(
+    tmp_path: Path,
+) -> None:
+    workspace = _repository(tmp_path)
+    (workspace / "tracked.txt").unlink()
+    manager = WorkspaceManager(tmp_path / "rudder-data")
+
+    snapshot = manager.capture(workspace)
+    isolated = manager.materialize(snapshot, "task-1")
+
+    assert snapshot.files["tracked.txt"].deleted is True
+    assert not (isolated.path / "tracked.txt").exists()
+    assert not (workspace / "tracked.txt").exists()
+
+
 def test_materialized_worktree_uses_snapshot_inputs_and_retains_changes(tmp_path: Path) -> None:
     workspace = _repository(tmp_path)
     (workspace / "tracked.txt").write_text("dirty\n", encoding="utf-8")
