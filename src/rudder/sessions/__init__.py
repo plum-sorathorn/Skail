@@ -12,6 +12,7 @@ from rudder.sessions.journal import (
     Journal,
     JournalBusyError,
     JournalIdempotencyError,
+    PersistedChangeSet,
     SessionSnapshot,
     SessionSummary,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "Journal",
     "JournalBusyError",
     "JournalIdempotencyError",
+    "PersistedChangeSet",
     "RecoveryResult",
     "SessionCompactionInput",
     "SessionExporter",

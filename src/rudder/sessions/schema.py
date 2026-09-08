@@ -277,4 +277,30 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
         """,
     ),
+    (
+        14,
+        """
+        CREATE TABLE change_sets (
+            changeset_id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL REFERENCES tasks(task_id),
+            attempt_id TEXT NOT NULL UNIQUE REFERENCES attempts(attempt_id),
+            snapshot_id TEXT NOT NULL,
+            base_head TEXT NOT NULL,
+            content_digest TEXT NOT NULL,
+            status TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE change_set_operations (
+            operation_id TEXT PRIMARY KEY,
+            changeset_id TEXT NOT NULL REFERENCES change_sets(changeset_id),
+            expected_status TEXT NOT NULL,
+            target_status TEXT NOT NULL,
+            content_digest TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        """,
+    ),
 )

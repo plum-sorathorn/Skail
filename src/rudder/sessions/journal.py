@@ -12,11 +12,13 @@ from pathlib import Path
 from threading import RLock, local
 from typing import Any, Literal
 
+from rudder.domain.changesets import ChangeSet, ChangeSetStatus
 from rudder.domain.events import EventEnvelope, PlanPayload, SecretRedactor
 from rudder.domain.ids import (
     EventId,
     RunId,
     SessionId,
+    ensure_uuid4,
     new_event_id,
     new_plan_id,
     new_plan_node_id,
@@ -96,6 +98,12 @@ class PlanNodeExecution:
     execution_key: str
     status: str
     result: dict[str, Any] | None
+
+
+@dataclass(frozen=True)
+class PersistedChangeSet:
+    changeset: ChangeSet
+    status: ChangeSetStatus
 
 
 def _run_snapshot(row: sqlite3.Row) -> RunSnapshot:
@@ -223,6 +231,103 @@ class JournalTransaction:
         now = _now(created_at)
         self.connection.execute(
             "INSERT INTO sessions VALUES (?,?,?,?,?)", (session_id, title, status, now, now)
+        )
+
+    def record_changeset(
+        self,
+        *,
+        changeset: ChangeSet,
+        idempotency_key: str,
+        created_at: datetime,
+    ) -> None:
+        payload = self.redactor.scrub(changeset.model_dump(mode="json"))
+        if ChangeSet.model_validate(payload).content_digest != changeset.content_digest:
+            raise ValueError("changeset.payload_redacted")
+        payload_json = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        self._insert_idempotent(
+            table="change_sets",
+            key=idempotency_key,
+            columns="changeset_id,task_id,attempt_id,snapshot_id,base_head,content_digest,status,payload_json",
+            values=(
+                changeset.changeset_id,
+                changeset.task_id,
+                changeset.attempt_id,
+                changeset.snapshot_id,
+                changeset.base_head,
+                changeset.content_digest,
+                ChangeSetStatus.CAPTURED.value,
+                payload_json,
+            ),
+            insert_values=(
+                changeset.changeset_id,
+                changeset.task_id,
+                changeset.attempt_id,
+                changeset.snapshot_id,
+                changeset.base_head,
+                changeset.content_digest,
+                ChangeSetStatus.CAPTURED.value,
+                payload_json,
+                idempotency_key,
+                _now(created_at),
+                _now(created_at),
+            ),
+        )
+
+    def transition_changeset_status(
+        self,
+        *,
+        changeset_id: str,
+        expected: ChangeSetStatus,
+        target: ChangeSetStatus,
+        operation_id: str,
+        updated_at: datetime,
+    ) -> None:
+        ensure_uuid4(operation_id)
+        allowed = {
+            ChangeSetStatus.CAPTURED: {ChangeSetStatus.APPLYING, ChangeSetStatus.BLOCKED},
+            ChangeSetStatus.APPLYING: {
+                ChangeSetStatus.IN_DOUBT,
+                ChangeSetStatus.INTEGRATED,
+                ChangeSetStatus.BLOCKED,
+            },
+            ChangeSetStatus.IN_DOUBT: {ChangeSetStatus.INTEGRATED, ChangeSetStatus.BLOCKED},
+        }
+        if target not in allowed.get(expected, set()):
+            raise ValueError("changeset.transition_invalid")
+        row = self.connection.execute(
+            "SELECT changeset_id,expected_status,target_status,content_digest "
+            "FROM change_set_operations WHERE operation_id=?",
+            (operation_id,),
+        ).fetchone()
+        changeset = self.connection.execute(
+            "SELECT content_digest,status FROM change_sets WHERE changeset_id=?",
+            (changeset_id,),
+        ).fetchone()
+        if changeset is None:
+            raise KeyError(changeset_id)
+        values = (changeset_id, expected.value, target.value, changeset["content_digest"])
+        if row is not None:
+            if tuple(row) != values:
+                raise JournalIdempotencyError(
+                    "session.idempotency_conflict",
+                    "changeset operation conflicts with persisted content",
+                    table="change_set_operations",
+                    idempotency_key=operation_id,
+                )
+            return
+        if changeset["status"] != expected.value:
+            raise ValueError("changeset.transition_conflict")
+        self.connection.execute(
+            "UPDATE change_sets SET status=?,updated_at=? WHERE changeset_id=?",
+            (target.value, _now(updated_at), changeset_id),
+        )
+        self.connection.execute(
+            "INSERT INTO change_set_operations VALUES (?,?,?,?,?,?)",
+            (operation_id, *values, _now(updated_at)),
         )
 
     def update_session_status(
@@ -758,6 +863,51 @@ class Journal:
 
     def record_task_result(self, *, task_id: str, payload: dict[str, Any]) -> None:
         self._write("record_task_result", task_id=task_id, payload=payload)
+
+    def record_changeset(
+        self,
+        *,
+        changeset: ChangeSet,
+        idempotency_key: str,
+        created_at: datetime | None = None,
+    ) -> None:
+        self._write(
+            "record_changeset",
+            changeset=changeset,
+            idempotency_key=idempotency_key,
+            created_at=created_at or datetime.now(UTC),
+        )
+
+    def get_changeset(self, changeset_id: str) -> PersistedChangeSet:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT payload_json,status,content_digest FROM change_sets WHERE changeset_id=?",
+                (changeset_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(changeset_id)
+        changeset = ChangeSet.model_validate_json(row["payload_json"])
+        if changeset.content_digest != row["content_digest"]:
+            raise ValueError("changeset.persistence_corrupt")
+        return PersistedChangeSet(changeset=changeset, status=ChangeSetStatus(row["status"]))
+
+    def transition_changeset_status(
+        self,
+        *,
+        changeset_id: str,
+        expected: ChangeSetStatus,
+        target: ChangeSetStatus,
+        operation_id: str,
+        updated_at: datetime | None = None,
+    ) -> None:
+        self._write(
+            "transition_changeset_status",
+            changeset_id=changeset_id,
+            expected=expected,
+            target=target,
+            operation_id=operation_id,
+            updated_at=updated_at or datetime.now(UTC),
+        )
 
     def create_attempt(
         self,

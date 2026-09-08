@@ -719,6 +719,37 @@ Verification: `rtk pytest tests\integration\test_write_leases.py tests\integrati
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 11.
 
+**Status:** In progress. The phase is split because capture, durable artifact storage, safe
+path traversal, and canonical application are separately failure-prone boundaries.
+
+#### Phase 12a — Define durable changeset evidence and transition records
+
+Define the versioned `ChangeSet` contract and journal migration before any runtime collects or
+applies a patch. A captured record binds a task/attempt to a Phase 11 snapshot identity, canonical
+base head, declared scope, regular-file effects, before/after content-image artifact references,
+and a content digest. It rejects future schemas, non-portable paths, case/Unicode collisions,
+unsupported file types, incomplete add/modify/delete evidence, and effects outside the declared
+scope. Journal capture is immutable and idempotent; status transitions require a durable operation
+identity, exact replay content, and legal `captured -> applying -> in_doubt|integrated|blocked`
+transitions. This slice does not scan a worktree, write blobs, or apply a changeset.
+
+#### Phase 12b — Capture verified isolated changesets
+
+Capture actual effects only from the Rudder-owned task worktree bound to its snapshot and attempt.
+Store immutable post-image artifacts before terminal capture, verify typed dirty/deleted/untracked
+base images from the snapshot, enforce declared scope against actual effects, and reject links,
+junctions, reparse points, mode/type changes, unmerged indexes, submodules, and unstable scans.
+Capture failure preserves the isolated worktree and records a reason; it never mutates the canonical
+workspace.
+
+#### Phase 12c — Serialize canonical integration and recovery
+
+Apply captured changesets through one canonical-workspace owner. Recheck every base image and
+verification artifact, record durable apply intent and before/after digests, leave uncertain apply
+outcomes `in_doubt`, and request bounded lead judgment for conflicts. Verify the integrated tree;
+only then mark the changeset integrated and release cleanup. This slice owns deterministic useful
+writer overlap and conflict/cancellation/recovery coverage.
+
 1. Persist changesets with base/changed-path/content digests and verification references. Check actual effects against declared scope, not just the final prose result.
 2. Serialize canonical-workspace integration. Recheck base inputs and detect user edits since launch before applying; preserve conflicts and request bounded lead judgment.
 3. Apply dependent changes in verified dependency order. Independent filenames are not sufficient if public interfaces or generated assets conflict.
@@ -1186,6 +1217,23 @@ Next phase and its dependencies: Phase 09 — Replanning, context, interrupts, a
 ```
 
 ## 10. Definition of completion
+
+### Phase 12a handoff
+
+```text
+Phase: 12a — Define durable changeset evidence and transition records
+Status: complete
+Implementation model: GPT-5 Codex (assigned Terra treated as a recommendation)
+Commit(s): recorded by the phase commit that follows this handoff update
+Behavior delivered: Versioned changeset contracts now bind immutable regular-file image references, snapshot/base provenance, declared scope, and a content digest. They reject unsupported schemas, unsafe/non-portable paths, case/Unicode collisions, non-regular effects, incomplete image evidence, and out-of-scope effects. Migration 14 persists idempotent captured records linked to the producing task/attempt. Durable operation records enforce exact-replay legal transitions without auto-applying a change.
+Acceptance evidence and commands: `rtk pytest tests\unit\test_changesets.py tests\unit\test_journal.py tests\unit\test_workspaces.py tests\integration\test_delegation_controls.py tests\integration\test_write_leases.py tests\integration\test_filesystem_boundary.py -q`; `python -m ruff check src tests scripts evals benchmarks`; `python -m mypy src\rudder`; `python scripts\smoke.py --fake-provider`; `rtk git diff --check`; `graphify update .`; complete diff review.
+Test results and documented skips: focused/affected deterministic checks passed; full offline suite is not claimed because the known runner hang recurred and its exact pytest process tree was terminated after a bounded no-output run. Windows link/junction capability skips remain documented. No live providers, paid evaluation, tagging, pushing, publishing, remote changes, or legacy cleanup were performed.
+Review findings closed/open: adversarial review required recoverable image references, dirty-snapshot provenance, declared-scope enforcement, portable path restrictions, and durable exact-replay operations; these are addressed in the contract/persistence foundation. Worktree scanning/blob storage, snapshot/worktree ownership verification, actual-effect capture, canonical application, conflict handling, and apply crash recovery remain intentionally open for 12b/12c.
+External evidence location and source identity, if applicable: none; all tests use deterministic local SQLite and filesystem fixtures.
+Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, `run_2.md` were not modified or staged.
+Unproven claims or missing evidence: this slice does not claim isolated writer overlap or safe canonical integration.
+Next phase and its dependencies: Phase 12b — Capture verified isolated changesets; depends on completed 12a.
+```
 
 - Numbered implementation phases are complete only with their recorded checks and phase handoffs.
 - Engineering release readiness requires raw-evidence verification and exact-commit Windows/Linux results, not synthetic summaries alone.
