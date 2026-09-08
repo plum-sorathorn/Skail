@@ -687,7 +687,7 @@ closed. Next: Phase 11, snapshot and isolate writer workspaces.
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 10.
 
-**Status:** In progress, split into dependency-ordered slices. Phases 11a and 11b are complete; 11c remains before the phase can be checked off.
+**Status:** Complete. Dependency-ordered slices 11a, 11b, and 11c are complete.
 
 #### Phase 11a — Immutable input snapshots and explicit fallback
 
@@ -696,6 +696,16 @@ Added `WorkspaceManager`, which records a content-addressed immutable manifest a
 #### Phase 11b — Managed worktree materialization and retention
 
 Added task-specific managed worktrees from a verified immutable snapshot. Materialization verifies the source Git base and every copied digest, uses a Rudder-owned task branch, rejects unsafe task/path values, and preserves any worktree with unintegrated changes using durable retention metadata. The final 11c wiring must give admitted isolated children their managed root and expose the selected/fallback workspace mode without weakening shared-workspace leases.
+
+#### Phase 11c — Runtime wiring, cleanup correction, and completion
+
+Commit: `be6893f` `feat(workspaces): run writers from managed snapshots`.
+
+`RunController` now selects a workspace mode once per run, captures a content-addressed snapshot for usable worktree mode, binds that snapshot identity to admitted task revisions, and creates each write-capable child against its task-specific managed root. It persists the selected mode, fallback reason, and snapshot identity in a typed diagnostic event. The CLI now accepts configured or explicit `worktree` mode. The existing shared write lease remains active around every child, so ports, databases, caches, install operations, and unknown external effects remain serialized pending Phase 12 integration policy.
+
+The snapshot manifest now records tracked deletions. Cleanup validates manager ownership and compares the worktree to its snapshot manifest, so a dirty captured input alone does not cause unnecessary retention; changes beyond the snapshot remain recoverable with `retained.json`. Deterministic offline coverage proves dirty input reproduction at a child root distinct from the source workspace, persisted selection evidence, exact dirty-deletion reproduction, safe cleanup, and retention of child changes.
+
+Verification: `rtk pytest tests\integration\test_write_leases.py tests\integration\test_filesystem_boundary.py tests\integration\test_delegation_controls.py tests\unit\test_workspaces.py -q` (34 passed, 2 skipped: symlink/junction capabilities unavailable); `rtk pytest tests\integration\test_delegation_controls.py tests\unit\test_workspaces.py -q` (23 passed, 1 skipped); `python -m ruff check src tests scripts evals benchmarks` (passed); `python -m mypy src\rudder` (passed); `python scripts\smoke.py --fake-provider` (passed); `rtk git diff --check` (passed); `graphify update .` (passed, with the existing 14 zero-AST-source warning). `rtk pytest -q` was given a bounded 60-second run but emitted no test output and was interrupted; a fresh full-suite pass is therefore not claimed. No live providers, paid evaluation, tagging, pushing, publishing, remote changes, or legacy cleanup were performed. Protected `.gitignore` and the four `evals/results/run_1/run_2` JSON/Markdown files were not modified or staged.
 
 1. Add managed worktree/snapshot ownership and immutable base manifests. Capture the relevant current workspace state, including dirty/untracked inputs, without committing, stashing, or altering user changes.
 2. Ensure each admitted isolated writer sees the same intended base and required inputs. Do not substitute a clean HEAD checkout or copy secret-bearing ignored files indiscriminately.
