@@ -1086,6 +1086,24 @@ class Journal:
                 (payload, _now(), node_id),
             )
 
+    def retry_approved_plan_tool(self, *, plan_id: str, node_id: str) -> None:
+        """Return one approval-blocked tool node to READY without replaying an effect."""
+        with self.transaction() as transaction:
+            row = transaction.connection.execute(
+                "SELECT status FROM plan_node_states WHERE node_id=?", (node_id,)
+            ).fetchone()
+            if row is None or row["status"] != PlanNodeState.BLOCKED.value:
+                raise FrameworkContractError(
+                    "plan.node_not_approval_blocked", "plan tool is not blocked"
+                )
+            transaction.connection.execute(
+                "DELETE FROM plan_node_executions WHERE node_id=?", (node_id,)
+            )
+            transaction.connection.execute(
+                "UPDATE plan_node_states SET status=?,updated_at=? WHERE node_id=?",
+                (PlanNodeState.READY.value, _now(), node_id),
+            )
+
     def reconcile_plan_node_executions(
         self, *, exclude_node_ids: frozenset[str] = frozenset()
     ) -> tuple[PlanNodeSnapshot, ...]:

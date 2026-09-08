@@ -318,6 +318,91 @@ async def test_approval_interrupt_resume_runs_approved_command_once(
 
 
 @pytest.mark.asyncio
+async def test_plan_tool_approval_resume_runs_exact_command_once(tmp_path: Path) -> None:
+    journal, checkpoints, questions, approvals = _stores(tmp_path, "plan-tool")
+    session_id = _session(journal)
+    decision = {
+        "mode": "planned",
+        "objective": "Write the plan marker",
+        "constraints": [],
+        "reason": "The command is a bounded plan tool.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "write-marker",
+                    "kind": "tool",
+                    "objective": "Write the marker",
+                    "effect_scope": "workspace_write",
+                    "task_features": {
+                        "tool": "execute",
+                        "command": "pwsh",
+                        "arguments": [
+                            "-Command",
+                            "Set-Content -Path plan-marker.txt -Value approved-once",
+                        ],
+                    },
+                }
+            ],
+        },
+    }
+    controller = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {
+            "lead-model": ScriptedChatModel(
+                model_name="lead-model",
+                responses=[
+                    parallel_tool_call_message(
+                        [("execution_decision", decision, "decision-1")]
+                    ),
+                    AIMessage(content="Plan command queued."),
+                ],
+            )
+        },
+    )
+
+    first = await controller.run_instruction(
+        "Write the plan marker", controls=LeadControls(write_allowed=True)
+    )
+    assert first.interrupted is True
+    interrupt = first.pending_interrupt
+    assert interrupt is not None
+    request = CommandRequest(
+        str(interrupt["command"]),
+        tuple(interrupt["arguments"]),
+        Path(str(interrupt["cwd"])),
+        session_id=str(interrupt["session_id"]),
+        run_id=str(interrupt["run_id"]),
+        task_id=str(interrupt["task_id"]),
+        action_id=str(interrupt["action_id"]),
+    )
+    approvals.decide(request, ApprovalChoice.ALLOW_ONCE)
+
+    restarted = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {"lead-model": ScriptedChatModel(model_name="lead-model", responses=[])},
+    )
+    assert restarted.restore_interrupted() is True
+    result = await restarted.resume_interrupted("approved")
+
+    assert result.status == "completed"
+    assert (tmp_path / "plan-marker.txt").read_text(encoding="utf-8").strip() == "approved-once"
+    assert approvals.is_allowed(request) is False
+
+
+@pytest.mark.asyncio
 async def test_restarted_controller_restores_persisted_decision(
     tmp_path: Path,
 ) -> None:
@@ -623,7 +708,7 @@ async def test_recovery_never_replays_launched_or_settled_work(
     assert resumed.restore_interrupted() is True
     result = await resumed.resume_interrupted("yes")
 
-    assert result.status == "completed"
+    assert result.status == "blocked"
     assert len(child.calls) == 0
     plan = journal.plans_for_run(str(result.run_id))[0]
     assert plan.node_states["launched"] is PlanNodeState.BLOCKED
@@ -859,7 +944,7 @@ async def test_recovery_dispatches_independent_ready_despite_bound_sibling(
     assert resumed.restore_interrupted() is True
     result = await resumed.resume_interrupted("yes")
 
-    assert result.status == "completed"
+    assert result.status == "blocked"
     assert len(child.calls) == 1
     plan = journal.plans_for_run(str(result.run_id))[0]
     assert plan.node_states["bound"] is PlanNodeState.BLOCKED

@@ -553,9 +553,9 @@ existing 14 zero-node JSON warning remains). Next: Phase 10 independent graph an
 
 **Owner:** `gpt-5.6-sol`, high, fresh review context. **Depends on:** 09.
 
-**Status:** incomplete. Phase 10a completed the independent audit at `7db893d` and found ten
-critical/high production-path defects. Phase 10b (P10-001) and Phase 10c (P10-002 + P10-007)
-are complete; remaining slices 10d-10i are pending. Phase 11 remains blocked. See
+**Status:** complete. Phase 10a completed the independent audit at `7db893d` and found ten
+critical/high production-path defects. Phases 10b-10h repaired all findings, and Phase 10i
+reran the production-path review and complete offline verification. See
 [the Phase 10 review record](rudder-phase-10-graph-accounting-review.md).
 
 Review phases 01-09 against actual CLI/TUI/controller behavior. Trace first-call assignment, every reservation owner, post-commit events, decision enforcement, task compatibility, graph launch/recovery, and cancellation boundaries. Attempt a cycle, mixed direct/task bypass, stale revision, resumed approval, and task rename to reset attempts.
@@ -638,6 +638,50 @@ compatibility task and attempt identities to plan nodes, record execution before
 lifecycle, and settle the node from the shared task-result path. The production regression proves
 the compatibility task produces one succeeded persisted node. Next: Phase 10e, make plan/run/task
 terminal state and events truthful and atomic.
+
+#### Phase 10e — Make terminal state and events truthful and atomic
+
+**Status:** complete. **Depends on:** 10d. **Scope:** P10-006, P10-009, and P10-010.
+
+**Handoff (completed 2026-09-08):** Run success now requires every active plan node to succeed;
+pre-call blocked/budget-blocked tasks persist terminal results and states; run/task terminal events
+share the state transaction and publish only after commit. Next: Phase 10f.
+
+#### Phase 10f — Reconcile cancellation, failure, and reservation owners
+
+**Status:** complete. **Depends on:** 10e. **Scope:** P10-003.
+
+**Handoff (completed 2026-09-08):** Coordinator exceptions and cancellation now terminalize the
+run, lead task, and lead attempt atomically. Child budget cleanup releases settled/unstarted funds
+and deliberately retains provider-ambiguous reservations for reconciliation. Next: Phase 10g.
+
+#### Phase 10g — Enforce trust and exact approval for plan tools
+
+**Status:** complete. **Depends on:** 10f. **Scope:** P10-005.
+
+**Handoff (completed 2026-09-08):** Plan tools use actual project trust plus correlated command
+identity. Approval-required commands persist an interrupt, survive controller restart, and execute
+once only after the exact one-shot approval is recorded. Next: Phase 10h.
+
+#### Phase 10h — Migrate the evaluator decision contract
+
+**Status:** complete. **Depends on:** 10g. **Scope:** P10-004.
+
+**Handoff (completed 2026-09-08):** Deterministic evaluation execution now records an independent
+direct decision before operational calls without consulting the oracle. All 13 evaluator unit tests,
+including oracle mutation and write suppression, pass. Next: Phase 10i final review.
+
+#### Phase 10i — Close the graph and accounting review
+
+**Status:** complete. **Depends on:** 10h.
+
+**Handoff (completed 2026-09-08):** The complete Phase 10 delta was rereviewed across decision,
+plan, compatibility-task, recovery, cancellation, trust/approval, budget, event, and evaluator
+boundaries. Focused Phase 10 production paths passed 54 tests. The complete deterministic offline
+suite passed 591 tests with 2 documented Windows symlink skips and no failures. Ruff across source,
+tests, scripts, evals, and benchmarks passed; mypy passed for 104 source files; fake-provider smoke
+passed. No live provider, external service, release tag, push, or publication ran. Phase 10 is
+closed. Next: Phase 11, snapshot and isolate writer workspaces.
 
 ### Phase 11 — Snapshot and isolate writer workspaces
 

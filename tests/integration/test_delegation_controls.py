@@ -12,7 +12,7 @@ from langchain_core.messages import AIMessage
 from rudder.agents.lead import LeadControls
 from rudder.domain.ids import new_session_id
 from rudder.domain.plans import PlanNodeState
-from rudder.domain.tasks import TaskResult
+from rudder.domain.tasks import AttemptStatus, TaskResult, TaskStatus
 from rudder.runtime.run_controller import RunController
 from rudder.sessions.journal import Journal
 from rudder.tools.execution import ExecutionPolicy, ExecutionResult
@@ -559,6 +559,7 @@ async def test_authorized_tool_node_settles_before_releasing_agent_without_a_mod
         profile_models={"implementer": "implementer-model"},
     )
 
+    controller.project_trusted = True
     result = await controller.run_instruction("Run the known check")
 
     plan = journal.plans_for_run(str(result.run_id))[0]
@@ -632,10 +633,11 @@ async def test_tool_and_agent_nodes_share_the_three_child_limit(
         workspace=tmp_path,
         journal=journal,
         models={"lead-model": lead_model, "implementer-model": child_model},
+        project_trusted=True,
     )
     run = asyncio.create_task(controller.run_instruction("Run mixed planned work"))
 
-    assert await asyncio.to_thread(tool_started.wait, 1)
+    assert await asyncio.to_thread(tool_started.wait, 3)
     await barrier.wait_for_started(2)
     release_tool.set()
     for agent in barrier.started:
@@ -690,6 +692,11 @@ async def test_unverified_agent_success_does_not_release_its_plan_dependent(tmp_
         "after_first": PlanNodeState.BLOCKED,
     }
     assert len(child_model.calls) == 1
+    assert result.status == "blocked"
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert snapshot.runs[0].status == "blocked"
+    assert "run.completed" not in {event.type for event in snapshot.events}
+    assert "run.blocked" in {event.type for event in snapshot.events}
 
 
 @pytest.mark.asyncio
@@ -745,6 +752,13 @@ async def test_cancelling_planned_work_marks_inflight_nodes_terminal(tmp_path: P
         "second": PlanNodeState.CANCELLED,
         "after_first": PlanNodeState.BLOCKED,
     }
+    assert snapshot.runs[0].status == "cancelled"
+    lead_task = next(task for task in snapshot.tasks if task.description == "Cancel planned work")
+    assert lead_task.status is TaskStatus.RETURNED_TO_LEAD
+    lead_attempt = next(
+        attempt for attempt in snapshot.attempts if attempt.task_id == lead_task.task_id
+    )
+    assert lead_attempt.status is AttemptStatus.INTERRUPTED
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 # Phase 10 adaptive graph and accounting review
 
-Status: **Phase 10a audit complete; Phase 10 remains blocked by critical/high findings.**
+Status: **Phase 10 complete; all recorded critical/high findings resolved.**
 
 Reviewed: 2026-09-07
 Branch/commit: `rudder` at `7db893d`
@@ -15,9 +15,11 @@ run and node cancellation, approval resume, stale revisions, and attempt lineage
 tests cover cycle rejection, mixed planned/task bypass, stale revisions, exact-command approval
 resume, and renamed-task lineage, but they do not cover the blocking coordinator exits below.
 
-Verdict: **request changes**. Phase 10 cannot pass while a run can report completion without
-executing accepted plan work, cancellation can leave a run and funded attempts live, or the offline
-evaluator cannot execute its own mutation fixtures.
+Final verdict after Phase 10i: **approve**. All ten findings have production-path repairs and
+regression evidence. Required plan work cannot silently report completion, cancellation and
+pre-call failures reconcile durable state and reservation ownership, trust/approval applies to plan
+tools, compatibility tasks enter persisted plans, and evaluator scripts cross the current decision
+gate without consulting their scoring oracle.
 
 The code-review and doubt-driven workflows were applied. A fresh-context adversarial reviewer
 received the Phase 10 contract and repository artifact without the primary reviewer's conclusions.
@@ -88,6 +90,11 @@ dispatches for ordinary crash recovery.
 
 ### P10-003 — High — Planned cancellation and pre-dispatch failure strand funded state
 
+**Resolution:** fixed across Phases 10e/10f. Coordinator dispatch now shares the run terminal
+exception boundary, cancellation/failure atomically terminalizes the lead run/task/attempt, and
+child budget finalization releases settled or unstarted assignments while retaining genuinely
+ambiguous provider calls for reconciliation. Planned task start is durable before execution.
+
 **Production-path reproduction A:** cancel `RunController.run_instruction()` after two planned
 children enter their compiled runtimes. Plan nodes become cancelled/blocked, but the run, lead task,
 and lead attempt remain `running`; the lead, lead-continuation, and child reservations all remain
@@ -116,6 +123,10 @@ cancel-during-plan and lead-fails-before-dispatch regressions.
 
 ### P10-004 — High — The deterministic evaluator no longer crosses the decision gate
 
+**Resolution:** fixed by Phase 10h. Evaluation scripts are compiled with a deterministic direct
+execution decision before operational calls. The decision uses only the fixture prompt and runtime
+protocol, never the scoring oracle; oracle mutation therefore leaves raw execution unchanged.
+
 **Production-path reproduction:** `rtk pytest tests\\unit\\test_eval_runner.py -q` reports
 `11 passed, 2 failed`. Both mutation fixtures finish without writing their oracle target because
 their first scripted response calls `write_file` without first recording `execution_decision`.
@@ -135,6 +146,11 @@ and write-suppression independence proofs.
 
 ### P10-005 — Critical — Plan tool nodes bypass project trust and exact approval
 
+**Resolution:** fixed by Phase 10g. Plan commands now use the controller's real project-trust state
+and a fully correlated session/run/task/action identity. Approval-required nodes create a durable
+interrupt; after exact approval, restart recovery resets only that blocked, never-executed tool node
+and the canonical policy consumes the one-shot approval while executing the command once.
+
 **Production-path reproduction:** admit a tool node for `python -m pytest` in an untrusted
 workspace. `_run_plan_tool_node()` constructs `ExecutionSecurityContext(trusted_project=True)` and
 executes it without a user interrupt. Approval-requiring plan commands have empty
@@ -149,6 +165,10 @@ trust/security context and correlated approval identity. Add untrusted-project a
 approve-then-resume production regressions.
 
 ### P10-006 — High — Required blocked or failed plan nodes still produce run success
+
+**Resolution:** fixed by Phase 10e. Finalization derives success from every active plan node;
+blocked, failed, cancelled, waiting, or otherwise incomplete required work produces an atomic
+`run.blocked` terminal transition rather than `run.completed`.
 
 **Production-path reproduction:** let a planned child return invalid/unverified success evidence.
 The node and its dependent become blocked, yet `RunController` persists the lead task and run as
@@ -205,6 +225,10 @@ prove compatibility behavior is retained.
 
 ### P10-009 — High — Budget-deferred plan nodes retain nonterminal task state
 
+**Resolution:** fixed by Phase 10e. Pre-call blocked and budget-blocked callbacks now atomically
+persist the structured result, terminal attempt/task states, and correlated task event before the
+plan node is settled.
+
 **Production-path reproduction:** use a run budget that funds the lead but not the child frontier.
 The plan node becomes blocked, while its journal task remains `queued` and its attempt remains
 `assigned`.
@@ -219,6 +243,10 @@ pre-call budget block.
 plan-node transition, and correlated events before returning the blocked result.
 
 ### P10-010 — High — Terminal state and terminal event are separate commits
+
+**Resolution:** fixed by Phase 10e. Run completion/blocking and task start/terminal events are now
+appended through the same journal transaction as their corresponding state changes; subscriber
+delivery remains registered after commit.
 
 **Production-path reproduction:** source trace of successful controller completion shows
 run/task/attempt/session status committed first, followed by budget finalization/checkpoint work and
@@ -267,5 +295,7 @@ provider-live, paid, OAuth, push, publish, tag, remote rename, or legacy operati
 8. **Phase 10i:** rerun the complete graph/accounting review and close the checkpoint only if no
    critical/high finding remains.
 
-Each repair is a separate test-first implementation commit and user check-in. Phase 11 remains
-blocked until Phase 10i passes.
+Phase 10i verification passed 54 focused production-path tests and the complete offline suite
+(591 passed, 0 failed, 2 skipped). The skips are the previously documented Windows symlink cases;
+they are not represented as passing. Ruff, mypy, and fake-provider smoke passed. Phase 11 is now
+unblocked.

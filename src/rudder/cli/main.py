@@ -572,6 +572,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             budget_warning_percent=args.budget_warning_percent,
             approvals=approvals,
             question_store=question_store,
+            project_trusted=trusted,
             profile_models=profile_models,
             providers=runtime_models.providers,
             candidates_fn=(runtime_models.routing_snapshot if has_bootstrap_candidates else None),
@@ -613,6 +614,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             question_store=question_store,
             workspace=workspace,
             args=args,
+            project_trusted=trusted,
         )
     )
 
@@ -854,6 +856,7 @@ async def _execute_instruction(
     question_store: QuestionStore,
     workspace: Path,
     args: argparse.Namespace,
+    project_trusted: bool = False,
 ) -> int:
     from rudder.agents.lead import LeadControls
     from rudder.runtime.run_controller import RunController
@@ -906,6 +909,7 @@ async def _execute_instruction(
         ),
         event_observer=render_jsonl_event if args.json_mode else None,
         invocation_id=invocation_id,
+        project_trusted=project_trusted,
     )
 
     try:
