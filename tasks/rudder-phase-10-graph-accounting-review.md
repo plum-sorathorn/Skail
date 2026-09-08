@@ -61,8 +61,11 @@ LAUNCHING/RUNNING nodes are held as BLOCKED rather than replayed, and lead assig
 preserved across interrupt/resume. Production regressions prove question-interrupt resume
 dispatches the plan once, recovery dispatches persisted READY work (including independent
 READY work beside a bound sibling), and launched or settled work is never replayed. The
-remaining Phase 10 findings are unchanged. Focused/affected verification passed 93 tests
-(7 focused + 86 affected); the full offline suite reported 587 passed, 2 failed
+follow-up review found and corrected an omitted ordinary-crash path: `running` runs with a
+persisted planned decision now restore coordinator work without replaying the lead, while
+running direct or undecided calls remain untouched. The remaining Phase 10 findings are
+unchanged. Focused/affected verification passed 112 tests (8 focused + 104 affected); the
+full offline suite reported 588 passed, 2 failed
 (the Phase 10h evaluator failures), and 2 skipped.
 
 **Production-path reproduction:** the first lead call asks a durable user question. After

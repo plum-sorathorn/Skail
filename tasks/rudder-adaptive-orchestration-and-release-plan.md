@@ -614,14 +614,16 @@ No 10d-10i scope.
 once, approval-interrupt resume runs the approved command once, a restarted controller
 restores the persisted decision, recovery dispatches persisted READY work (including
 independent READY work beside a bound sibling) while never replaying launched or settled
-work, and stale revisions are rejected. Focused suite
-`tests/integration/test_phase10c_resume_dispatch.py`: 7 passed. Affected suites
+work, and stale revisions are rejected. Follow-up review corrected ordinary process-crash
+recovery: a `running` run with a persisted planned decision now resumes coordinator work
+without replaying the lead, while running direct/undecided calls remain ineligible. Focused suite
+`tests/integration/test_phase10c_resume_dispatch.py`: 8 passed. Affected suites
 (crash_recovery, command_injection, execution_decisions, plan_persistence, assignment,
-recovery, task_graph): 86 passed. Ruff passed; mypy passed (104 source files);
-fake-provider smoke passed. Full suite: 587 passed, 2 failed (the two known Phase 10h
+recovery, task_graph, CLI E2E): 104 passed. Ruff passed; mypy passed (104 source files);
+fake-provider smoke passed. Full suite: 588 passed, 2 failed (the two known Phase 10h
 evaluator failures: `test_evaluation_runner_runs_deterministic_fake_suite`,
 `test_oracle_mutation_changes_scoring_without_changing_execution_record`), 2 skipped.
-`rtk git diff --check` clean; graphify updated (2804 nodes). The two `self._record`
+`rtk git diff --check` clean; graphify updated (2807 nodes). The two `self._record`
 calls in `decisions.py` (`_admit_transition`, `_validate_and_record`) are legitimate
 separate methods, not dead duplicates. The exact implementation commit is recorded at the
 user handoff. Next: Phase 10d, route compatibility tasks through canonical persistent

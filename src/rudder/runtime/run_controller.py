@@ -255,6 +255,7 @@ class RunController:
         self._plan_revision_evidence: dict[str, frozenset[str]] = {}
         self._plan_revision_checkpoints: dict[str, str] = {}
         self._restored_decision: Any | None = None
+        self._resume_lead_on_recovery = True
 
     @property
     def pending_interrupt(self) -> dict[str, Any] | None:
@@ -1976,10 +1977,20 @@ class RunController:
     def restore_interrupted(self) -> bool:
         self.registry.load_from_journal(self.journal, str(self.session_id))
         snapshot = self.journal.get_session_snapshot(str(self.session_id))
-        blocked_runs = [run for run in snapshot.runs if run.status == "blocked"]
-        if not blocked_runs:
+        recoverable_runs = []
+        for run in snapshot.runs:
+            if run.status == "blocked":
+                recoverable_runs.append(run)
+                continue
+            if run.status != "running":
+                continue
+            decision = self.journal.get_execution_decision(run.run_id)
+            if decision is not None and decision.plan is not None:
+                recoverable_runs.append(run)
+        if not recoverable_runs:
             return False
-        run = blocked_runs[-1]
+        run = recoverable_runs[-1]
+        self._resume_lead_on_recovery = run.status == "blocked"
         run_tasks = [task for task in snapshot.tasks if task.run_id == run.run_id]
         for task in run_tasks:
             attempt = next(
@@ -2171,11 +2182,12 @@ class RunController:
         invoke_config: RunnableConfig = {
             "configurable": {"thread_id": str(self.session_id)}
         }
-        self._emit_event(
-            run_id=pending.run_id,
-            type="user.answer",
-            payload=UserPayload(action="answer", content=answer),
-        )
+        if self._resume_lead_on_recovery:
+            self._emit_event(
+                run_id=pending.run_id,
+                type="user.answer",
+                payload=UserPayload(action="answer", content=answer),
+            )
         async with self.checkpoints.saver(str(self.session_id)) as saver:
             await saver.setup()
             restored = self._restored_decision
@@ -2198,9 +2210,13 @@ class RunController:
                 restored_decision=restored,
             )
             try:
-                result_state = cast(
-                    dict[str, Any],
-                    await resume_agent(lead_agent, answer, config=invoke_config),
+                result_state = (
+                    cast(
+                        dict[str, Any],
+                        await resume_agent(lead_agent, answer, config=invoke_config),
+                    )
+                    if self._resume_lead_on_recovery
+                    else {"messages": []}
                 )
             except BaseException as exc:
                 cancelled = isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError))
@@ -2236,7 +2252,7 @@ class RunController:
                 self._pending_interrupt_payload = None
                 raise
             checkpoint = await saver.aget_tuple(invoke_config)
-            if checkpoint is not None:
+            if self._resume_lead_on_recovery and checkpoint is not None:
                 checkpoint_id = checkpoint.config.get("configurable", {}).get(
                     "checkpoint_id"
                 )

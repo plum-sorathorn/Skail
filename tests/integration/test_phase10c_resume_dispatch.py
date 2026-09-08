@@ -448,6 +448,85 @@ async def test_recovery_dispatches_persisted_ready_work(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_crash_recovery_dispatches_ready_work_from_running_run(
+    tmp_path: Path,
+) -> None:
+    """A process crash leaves a running run recoverable without replaying the lead."""
+    digest = _evidence(tmp_path)
+    journal, checkpoints, questions, approvals = _stores(tmp_path, "running")
+    session_id = _session(journal)
+    controller = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {
+            "lead-model": ScriptedChatModel(
+                model_name="lead-model",
+                responses=[
+                    tool_call_message(
+                        "ask_user",
+                        {"prompt": "Proceed?", "reason": "confirmation"},
+                        call_id="ask-1",
+                    )
+                ],
+            )
+        },
+    )
+    first = await controller.run_instruction(
+        "Survey before reporting", controls=LeadControls(max_children=1)
+    )
+    assert first.status == "blocked"
+    plan = _planned_plan_object(
+        [_agent_plan_node("survey", "Survey the evidence file")]
+    )
+    journal.admit_plan(
+        run_id=str(first.run_id),
+        plan=plan,
+    )
+    journal.record_execution_decision(
+        run_id=str(first.run_id),
+        decision=ExecutionDecision.model_validate(
+            {
+                "mode": "planned",
+                "objective": "Survey before reporting",
+                "constraints": [],
+                "reason": "The work has a persisted execution plan.",
+                "plan": plan.model_dump(mode="json"),
+            }
+        ),
+    )
+    journal.update_run_status(run_id=str(first.run_id), status="running")
+
+    child = ScriptedChatModel(
+        model_name="implementer-model", responses=[_child_success("survey done", digest)]
+    )
+    resumed = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {
+            "lead-model": ScriptedChatModel(model_name="lead-model", responses=[]),
+            "implementer-model": child,
+        },
+        profile_models={"explorer": "implementer-model"},
+    )
+
+    assert resumed.restore_interrupted() is True
+    result = await resumed.resume_interrupted("")
+
+    assert result.status == "completed"
+    assert len(child.calls) == 1
+    plan = journal.plans_for_run(str(result.run_id))[0]
+    assert plan.node_states == {"survey": PlanNodeState.SUCCEEDED}
+
+
+@pytest.mark.asyncio
 async def test_recovery_never_replays_launched_or_settled_work(
     tmp_path: Path,
 ) -> None:
