@@ -750,6 +750,16 @@ outcomes `in_doubt`, and request bounded lead judgment for conflicts. Verify the
 only then mark the changeset integrated and release cleanup. This slice owns deterministic useful
 writer overlap and conflict/cancellation/recovery coverage.
 
+**Current blocker (2026-09-08):** An adversarial review rejected the initial direct-apply design.
+Validating every pre-image before a multi-file apply is not sufficient: a crash or concurrent user
+edit can leave a partial canonical mutation, and `applying` cannot safely be replayed without
+durable per-file intent/result digests. Before 12b/12c implementation resumes, extend the journal
+contract for per-file apply records and recovery that marks incomplete application `in_doubt`; add
+stable worktree capture (including bounded resources and reparse-point-safe traversal); and retain
+the canonical mutation boundary through each write. Do not bypass the shared filesystem lease for
+isolated workers until file-tool confinement is proved. No Phase 12b/12c implementation was
+committed from this review; Phase 12 remains in progress.
+
 1. Persist changesets with base/changed-path/content digests and verification references. Check actual effects against declared scope, not just the final prose result.
 2. Serialize canonical-workspace integration. Recheck base inputs and detect user edits since launch before applying; preserve conflicts and request bounded lead judgment.
 3. Apply dependent changes in verified dependency order. Independent filenames are not sufficient if public interfaces or generated assets conflict.
