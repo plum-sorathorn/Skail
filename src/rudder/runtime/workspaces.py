@@ -39,6 +39,14 @@ class WorkspaceSnapshot:
     mode: WorkspaceMode = WorkspaceMode.WORKTREE
 
 
+@dataclass(frozen=True)
+class IsolatedWorkspace:
+    snapshot_id: str
+    task_id: str
+    path: Path
+    branch: str
+
+
 class WorkspaceManager:
     """Captures non-ignored Git inputs without altering the source workspace."""
 
@@ -104,6 +112,64 @@ class WorkspaceManager:
             if temporary.exists():
                 shutil.rmtree(temporary)
             raise
+
+    def materialize(self, snapshot: WorkspaceSnapshot, task_id: str) -> IsolatedWorkspace:
+        allowed_task_characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
+        if not task_id or any(
+            character not in allowed_task_characters for character in task_id
+        ):
+            raise ValueError("workspace.task_id_invalid")
+        root, head = self._git_context(snapshot.root)
+        if root != snapshot.root or head != snapshot.head:
+            raise ValueError("workspace.snapshot_base_stale")
+        worktrees_root = self._data_root / "worktrees"
+        worktrees_root.mkdir(parents=True, exist_ok=True)
+        path = (worktrees_root / f"{snapshot.snapshot_id[:12]}-{task_id}").resolve(strict=False)
+        try:
+            path.relative_to(worktrees_root.resolve())
+        except ValueError as error:
+            raise ValueError("workspace.worktree_path_invalid") from error
+        if path.exists():
+            raise ValueError("workspace.worktree_exists")
+        branch = f"rudder/{snapshot.snapshot_id[:12]}/{task_id}"
+        self._git(root, "worktree", "add", "--no-checkout", "-b", branch, str(path), snapshot.head)
+        try:
+            self._git(path, "reset", "--hard", snapshot.head)
+            for relative_path, item in snapshot.files.items():
+                destination = path.joinpath(*PurePosixPath(relative_path).parts)
+                source = snapshot.path / "files" / Path(*PurePosixPath(relative_path).parts)
+                if (
+                    not source.is_file()
+                    or hashlib.sha256(source.read_bytes()).hexdigest() != item.digest
+                ):
+                    raise ValueError("workspace.snapshot_corrupt")
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
+            return IsolatedWorkspace(snapshot.snapshot_id, task_id, path, branch)
+        except BaseException:
+            self._git(root, "worktree", "remove", "--force", str(path))
+            self._git(root, "branch", "-D", branch)
+            raise
+
+    def cleanup(self, workspace: IsolatedWorkspace) -> bool:
+        root = self._git_context(workspace.path)[0]
+        if self._git(root, "status", "--porcelain"):
+            (workspace.path / "retained.json").write_text(
+                json.dumps(
+                    {
+                        "reason": "workspace.unintegrated_changes",
+                        "snapshot_id": workspace.snapshot_id,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            return False
+        original_root = self._git(workspace.path, "rev-parse", "--git-common-dir")
+        common = (workspace.path / original_root).resolve()
+        self._git(common.parent, "worktree", "remove", "--force", str(workspace.path))
+        self._git(common.parent, "branch", "-D", workspace.branch)
+        return True
 
     def _git_context(self, workspace: Path) -> tuple[Path, str]:
         root = workspace.resolve(strict=True)

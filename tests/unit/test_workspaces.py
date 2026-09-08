@@ -74,6 +74,21 @@ def test_snapshots_are_content_addressed_and_preserve_their_original_inputs(
     assert (second.path / "files" / "tracked.txt").read_text(encoding="utf-8") == "changed\n"
 
 
+def test_materialized_worktree_uses_snapshot_inputs_and_retains_changes(tmp_path: Path) -> None:
+    workspace = _repository(tmp_path)
+    (workspace / "tracked.txt").write_text("dirty\n", encoding="utf-8")
+    manager = WorkspaceManager(tmp_path / "rudder-data")
+
+    isolated = manager.materialize(manager.capture(workspace), "task-1")
+
+    assert isolated.path != workspace
+    assert (isolated.path / "tracked.txt").read_text(encoding="utf-8") == "dirty\n"
+    (isolated.path / "result.txt").write_text("preserve\n", encoding="utf-8")
+    assert manager.cleanup(isolated) is False
+    assert isolated.path.exists()
+    assert (isolated.path / "retained.json").exists()
+
+
 def test_snapshot_rejects_symlinked_workspace_input(tmp_path: Path) -> None:
     workspace = _repository(tmp_path)
     outside = tmp_path / "outside.txt"

@@ -687,11 +687,15 @@ closed. Next: Phase 11, snapshot and isolate writer workspaces.
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 10.
 
-**Status:** In progress, split into dependency-ordered slices. Phase 11a is complete; 11b remains before the phase can be checked off.
+**Status:** In progress, split into dependency-ordered slices. Phases 11a and 11b are complete; 11c remains before the phase can be checked off.
 
 #### Phase 11a — Immutable input snapshots and explicit fallback
 
 Added `WorkspaceManager`, which records a content-addressed immutable manifest and private copy of all tracked and non-ignored untracked regular files from a canonical Git workspace. It rejects linked inputs and snapshot storage inside the workspace, never stages, stashes, commits, or changes user inputs, and returns `shared` with a durable reason when requested worktree isolation cannot be established. Focused unit/integration coverage proves dirty/untracked reproduction, source preservation, immutable prior snapshots, non-Git fallback, and linked-input rejection where Windows permits symlink creation. The 11b implementation must consume this snapshot when creating managed worktrees, bind its identity to admitted writer tasks, and retain interrupted/unintegrated work.
+
+#### Phase 11b — Managed worktree materialization and retention
+
+Added task-specific managed worktrees from a verified immutable snapshot. Materialization verifies the source Git base and every copied digest, uses a Rudder-owned task branch, rejects unsafe task/path values, and preserves any worktree with unintegrated changes using durable retention metadata. The final 11c wiring must give admitted isolated children their managed root and expose the selected/fallback workspace mode without weakening shared-workspace leases.
 
 1. Add managed worktree/snapshot ownership and immutable base manifests. Capture the relevant current workspace state, including dirty/untracked inputs, without committing, stashing, or altering user changes.
 2. Ensure each admitted isolated writer sees the same intended base and required inputs. Do not substitute a clean HEAD checkout or copy secret-bearing ignored files indiscriminately.
