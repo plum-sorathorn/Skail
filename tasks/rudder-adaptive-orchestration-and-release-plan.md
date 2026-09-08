@@ -822,9 +822,22 @@ Attack the oracle separation, synthetic labels, cost denominator, baseline pinni
 
 **Acceptance:** each active capability claim has tests/evidence or an explicit experimental/unverified label; repository URLs unchanged; docs distinguish engineering release from Q1. Commit `docs(rudder): align adaptive runtime documentation and roadmap`.
 
+### Phase 20a — Rename the product to Skail
+
+**Owner:** `gpt-5.6-terra`, medium. **Depends on:** 20.
+
+1. Make and record one canonical public-name decision before editing: use `Skail` alone, `Skail Harness`, or `Skail CLI` as the full product name. `skail` is the required console command and canonical lowercase identifier. Do not mix the three forms after this decision; use the selected full name only where a product name is needed and `Skail` where the short name is appropriate.
+2. Inventory every tracked product-name reference before changing it, including the distribution/package metadata, console entry point, Python import/package names, CLI/TUI strings, configuration/session paths, documentation, examples, tests, fixtures, scripts, CI/release metadata, repository/community files, and release-plan/handoff text. Replace every reference to `Rudder`, `Rudder Harness`, `rudder`, and former product-name variants with the selected Skail form or `skail` identifier as appropriate. Do not leave compatibility aliases, redirects, deprecated commands, or dual branding.
+3. Rename public installation, invocation, configuration, and export surfaces coherently. Update all import paths and test fixtures in the same change. Preserve existing behavioral contracts, offline/credential-free verification, safety boundaries, persisted-data handling, and the no-proxy/no-daemon invariant; this phase changes identity, not runtime semantics.
+4. Rewrite historical decision and handoff material as retroactive Skail product documentation so no former product name remains in tracked product material. Preserve the historical decision dates, statuses, commit identities, and evidence limitations; do not falsify what was implemented or verified.
+5. Run a case-insensitive whole-repository scan after replacement and fail the phase if it finds a former product name in tracked product material. Permit only explicitly approved external evidence artifacts that cannot be rewritten; list each exception, its reason, and its location in the phase handoff. Update all generated/release metadata from source rather than hand-editing build artifacts.
+6. Verify a clean editable install and built-wheel install expose only `skail`; run focused CLI/TUI, configuration/session migration, packaging, smoke, and full offline suites; run Ruff, mypy, link/content validation, `graphify update .`, and `rtk git diff --check`. Confirm documentation, `--help`, JSONL/event schemas where product-branded, and package metadata use the canonical name consistently.
+
+**Acceptance:** the repository has one selected full product name, `skail` is the only public command/package identity, no former product-name reference remains except documented immutable-evidence exceptions, and the exact renamed candidate passes packaging, CLI/TUI, configuration/session, smoke, static-analysis, and full offline checks. Commit `chore(skail): rename product and public interfaces`.
+
 ### Phase 21 — Final integrated review
 
-**Owner:** `gpt-5.6-sol`, high, fresh review context. **Depends on:** 20.
+**Owner:** `gpt-5.6-sol`, high, fresh review context. **Depends on:** 20a.
 
 Review the complete change since the starting baseline with emphasis on real CLI/TUI paths, security, migrations, model/plan contracts, budget ownership, release recomputation, packaging, and documentation truth. Reuse earlier review records but do not treat them as evidence for later changes. Confirm every old remediation 7-9 bullet has an implementation/test owner in this guide.
 
