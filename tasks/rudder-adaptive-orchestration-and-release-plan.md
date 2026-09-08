@@ -687,6 +687,12 @@ closed. Next: Phase 11, snapshot and isolate writer workspaces.
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 10.
 
+**Status:** In progress, split into dependency-ordered slices. Phase 11a is complete; 11b remains before the phase can be checked off.
+
+#### Phase 11a — Immutable input snapshots and explicit fallback
+
+Added `WorkspaceManager`, which records a content-addressed immutable manifest and private copy of all tracked and non-ignored untracked regular files from a canonical Git workspace. It rejects linked inputs and snapshot storage inside the workspace, never stages, stashes, commits, or changes user inputs, and returns `shared` with a durable reason when requested worktree isolation cannot be established. Focused unit/integration coverage proves dirty/untracked reproduction, source preservation, immutable prior snapshots, non-Git fallback, and linked-input rejection where Windows permits symlink creation. The 11b implementation must consume this snapshot when creating managed worktrees, bind its identity to admitted writer tasks, and retain interrupted/unintegrated work.
+
 1. Add managed worktree/snapshot ownership and immutable base manifests. Capture the relevant current workspace state, including dirty/untracked inputs, without committing, stashing, or altering user changes.
 2. Ensure each admitted isolated writer sees the same intended base and required inputs. Do not substitute a clean HEAD checkout or copy secret-bearing ignored files indiscriminately.
 3. Validate canonical paths, links/junctions, Git metadata ownership, cancellation, cleanup targets, and safe retention. Keep worktrees with unintegrated changes recoverable.
