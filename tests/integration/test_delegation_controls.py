@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import sqlite3
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,7 +14,13 @@ from langchain_core.messages import AIMessage
 from rudder.agents.lead import LeadControls
 from rudder.domain.ids import new_session_id
 from rudder.domain.plans import PlanNodeState
-from rudder.domain.tasks import AttemptStatus, TaskResult, TaskStatus, VerificationResult
+from rudder.domain.tasks import (
+    ArtifactRef,
+    AttemptStatus,
+    TaskResult,
+    TaskStatus,
+    VerificationResult,
+)
 from rudder.runtime.run_controller import RunController
 from rudder.runtime.workspaces import WorkspaceManager, WorkspaceMode
 from rudder.sessions.journal import Journal
@@ -64,7 +71,11 @@ async def test_worktree_writer_receives_a_dirty_snapshot_and_records_selection(
                     (
                         "task",
                         {
-                            "description": "Update the tracked file",
+                            "description": (
+                                '{"description":"Update the tracked file",'
+                                '"success_criteria":["Provide evidence for the completed task"],'
+                                '"write_scope":["tracked.txt"]}'
+                            ),
                             "subagent_type": "implementer",
                         },
                         "task-1",
@@ -78,25 +89,32 @@ async def test_worktree_writer_receives_a_dirty_snapshot_and_records_selection(
     child_options: list[dict[str, object]] = []
 
     class ChildAgent:
-        def __init__(self, root: Path) -> None:
+        def __init__(self, root: Path, task_id: str) -> None:
             self.root = root
+            self.task_id = task_id
 
         async def ainvoke(self, state):
             del state
             child_roots.append(self.root)
             assert (self.root / "tracked.txt").read_text(encoding="utf-8") == "dirty\n"
+            (self.root / "tracked.txt").write_bytes(b"integrated\n")
             return {
                 "messages": [
                     AIMessage(
                         content=TaskResult(
-                            task_id="00000000-0000-4000-8000-000000000001",
+                            task_id=self.task_id,
                             status="succeeded",
                             summary="updated in isolated workspace",
                             verification=(
                                 VerificationResult(
                                     criterion="Provide evidence for the completed task",
                                     passed=True,
-                                    evidence="isolated fixture completed",
+                                    evidence="tracked.txt:1",
+                                    evidence_ref=ArtifactRef(
+                                        kind="file",
+                                        path="tracked.txt",
+                                        digest=hashlib.sha256(b"integrated\n").hexdigest(),
+                                    ),
                                 ),
                             ),
                         ).model_dump_json()
@@ -107,7 +125,7 @@ async def test_worktree_writer_receives_a_dirty_snapshot_and_records_selection(
     def build_child(*args, **kwargs):
         del args
         child_options.append(kwargs)
-        return ChildAgent(kwargs["workspace"])
+        return ChildAgent(kwargs["workspace"], kwargs["task_id"])
 
     monkeypatch.setattr("rudder.runtime.run_controller.build_default_agent", build_child)
     controller = RunController(
@@ -125,14 +143,131 @@ async def test_worktree_writer_receives_a_dirty_snapshot_and_records_selection(
     assert child_roots and child_roots[0] != workspace
     assert child_options[0]["forbidden_host_paths"] == (workspace.resolve(),)
     assert child_options[0]["execute_allowed"] is False
-    assert not child_roots[0].exists()
-    assert (workspace / "tracked.txt").read_text(encoding="utf-8") == "dirty\n"
+    assert result.child_results, result
+    assert result.child_results[0].status == "succeeded", result.child_results
+    assert not child_roots[0].exists(), (
+        (child_roots[0] / "retained.json").read_text(encoding="utf-8")
+        if (child_roots[0] / "retained.json").exists()
+        else "worktree retained without reason"
+    )
+    assert (workspace / "tracked.txt").read_text(encoding="utf-8") == "integrated\n"
+    with sqlite3.connect(journal.path) as connection:
+        changesets = connection.execute("SELECT status FROM change_sets").fetchall()
+    assert changesets == [("integrated",)]
     selection_events = [
         event
         for event in journal.events_after(run_id=str(result.run_id))
         if event.type == "diagnostic.workspace"
     ]
     assert selection_events[-1].payload.details["mode"] == "worktree"
+
+
+@pytest.mark.asyncio
+async def test_disjoint_worktree_writers_overlap_before_serial_integration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = _repository(tmp_path)
+    (workspace / "second.txt").write_bytes(b"second base\n")
+    _git(workspace, "add", "second.txt")
+    _git(workspace, "commit", "-m", "second input")
+    journal = _journal(tmp_path / "state")
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Overlapping writers", created_at=datetime.now(UTC)
+    )
+    requests = []
+    for path in ("tracked.txt", "second.txt"):
+        requests.append(
+            (
+                "task",
+                {
+                    "description": (
+                        '{"description":"Update ' + path + '",'
+                        '"success_criteria":["Provide evidence for the completed task"],'
+                        '"write_scope":["' + path + '"]}'
+                    ),
+                    "subagent_type": "implementer",
+                },
+                f"task-{path}",
+            )
+        )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        _direct_decision("Run disjoint writers"),
+                        "decision-1",
+                    ),
+                    *requests,
+                ]
+            ),
+            AIMessage(content="Both changes were integrated."),
+        ],
+    )
+    barrier = AsyncStartBarrier()
+
+    class ChildAgent:
+        def __init__(self, root: Path, task_id: str, allowed_paths: tuple[str, ...]) -> None:
+            self.root = root
+            self.task_id = task_id
+            self.path = allowed_paths[0]
+
+        async def ainvoke(self, state):
+            del state
+            await barrier.worker(self.path)
+            content = f"integrated {self.path}\n".encode()
+            (self.root / self.path).write_bytes(content)
+            return {
+                "messages": [
+                    AIMessage(
+                        content=TaskResult(
+                            task_id=self.task_id,
+                            status="succeeded",
+                            summary=f"updated {self.path}",
+                            verification=(
+                                VerificationResult(
+                                    criterion="Provide evidence for the completed task",
+                                    passed=True,
+                                    evidence=f"{self.path}:1",
+                                    evidence_ref=ArtifactRef(
+                                        kind="file",
+                                        path=self.path,
+                                        digest=hashlib.sha256(content).hexdigest(),
+                                    ),
+                                ),
+                            ),
+                        ).model_dump_json()
+                    )
+                ]
+            }
+
+    def build_child(*args, **kwargs):
+        del args
+        return ChildAgent(kwargs["workspace"], kwargs["task_id"], kwargs["allowed_write_paths"])
+
+    monkeypatch.setattr("rudder.runtime.run_controller.build_default_agent", build_child)
+    controller = RunController(
+        session_id=session_id,
+        workspace=workspace,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": lead_model},
+        workspace_mode="worktree",
+        workspace_manager=WorkspaceManager(tmp_path / "rudder-data"),
+    )
+
+    operation = asyncio.create_task(controller.run_instruction("Run both changes"))
+    await asyncio.wait_for(barrier.wait_for_started(2), timeout=5)
+    barrier.release("tracked.txt")
+    barrier.release("second.txt")
+    result = await asyncio.wait_for(operation, timeout=10)
+
+    assert set(barrier.started) == {"tracked.txt", "second.txt"}
+    assert all(item.status == "succeeded" for item in result.child_results)
+    assert (workspace / "tracked.txt").read_bytes() == b"integrated tracked.txt\n"
+    assert (workspace / "second.txt").read_bytes() == b"integrated second.txt\n"
 
 
 @pytest.mark.asyncio

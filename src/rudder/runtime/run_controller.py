@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal, cast
+from uuid import uuid4
 
 from deepagents.middleware.subagents import CompiledSubAgent
 from langchain.agents.middleware import ModelResponse
@@ -30,6 +31,7 @@ from rudder.agents.task_graph import (
     build_compiled_profile_subagent,
     decode_task_request,
 )
+from rudder.domain.changesets import ChangeSetStatus
 from rudder.domain.decisions import ExecutionMode
 from rudder.domain.events import (
     DiagnosticPayload,
@@ -89,6 +91,7 @@ from rudder.routing.budget import BudgetLedger
 from rudder.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
 from rudder.routing.requirements import RequirementBuilder, TaskRisk
 from rudder.routing.selector import RouteCandidate, RouteFailure
+from rudder.runtime.changeset_integration import ChangeSetIntegrator
 from rudder.runtime.decisions import (
     ExecutionDecisionGate,
     ExecutionDecisionMiddleware,
@@ -103,6 +106,12 @@ from rudder.runtime.redaction import RedactionRegistry
 from rudder.runtime.scheduler import ChildScheduler
 from rudder.runtime.task_registry import TaskRegistry
 from rudder.runtime.task_validation import TaskValidationError, TaskValidator
+from rudder.runtime.workspace_capture import (
+    ImmutableArtifactStore,
+    StableWorktreeScanner,
+    WorkspaceCaptureError,
+    capture_managed_changeset,
+)
 from rudder.runtime.workspaces import (
     WorkspaceManager,
     WorkspaceMode,
@@ -312,11 +321,15 @@ class RunController:
                 continue
 
     def _validate_evidence_ref(self, reference: ArtifactRef) -> bool:
+        return self._validate_evidence_at(reference, self.workspace)
+
+    @staticmethod
+    def _validate_evidence_at(reference: ArtifactRef, workspace: Path) -> bool:
         if reference.kind not in {"file", "artifact"} or not reference.digest:
             return False
-        candidate = (self.workspace / reference.path).resolve(strict=False)
+        candidate = (workspace / reference.path).resolve(strict=False)
         try:
-            relative = candidate.relative_to(self.workspace.resolve())
+            relative = candidate.relative_to(workspace.resolve())
         except ValueError:
             return False
         if any(part in {".git", ".rudder"} or part == ".env" for part in relative.parts):
@@ -327,12 +340,16 @@ class RunController:
         return digest == reference.digest
 
     def _validate_source_ref(self, reference: str) -> bool:
+        return self._validate_source_at(reference, self.workspace)
+
+    @staticmethod
+    def _validate_source_at(reference: str, workspace: Path) -> bool:
         path_text, separator, line_text = reference.rpartition(":")
         if not separator or not line_text.isdigit():
             return False
-        candidate = (self.workspace / path_text).resolve(strict=False)
+        candidate = (workspace / path_text).resolve(strict=False)
         try:
-            relative = candidate.relative_to(self.workspace.resolve())
+            relative = candidate.relative_to(workspace.resolve())
         except ValueError:
             return False
         if any(part in {".git", ".rudder"} or part == ".env" for part in relative.parts):
@@ -3015,27 +3032,66 @@ class RunController:
                     dict[str, Any],
                     await inner_agent.ainvoke(invoke_state),
                 )
+                inner_messages = cast(list[BaseMessage], result_state.get("messages", []))
+                child_output = ""
+                for msg in reversed(inner_messages):
+                    if isinstance(msg, AIMessage) and msg.content:
+                        child_output = (
+                            msg.content if isinstance(msg.content, str) else str(msg.content)
+                        )
+                        break
+                result = parse_child_result(
+                    child_output,
+                    task_id=spec.task_id,
+                    required_criteria=spec.request.success_criteria,
+                    evidence_validator=lambda reference: self._validate_evidence_at(
+                        reference, child_workspace
+                    ),
+                    model_authored_analysis=not profile.permissions.write,
+                    source_validator=lambda reference: self._validate_source_at(
+                        reference, child_workspace
+                    ),
+                )
+                if isolated_workspace is not None and result.status == "succeeded":
+                    if curr_attempt_id is None or self._workspace_snapshot is None:
+                        raise WorkspaceCaptureError("workspace.capture_identity_missing")
+                    artifacts = ImmutableArtifactStore(
+                        self.journal.path.parent / "workspace-artifacts"
+                    )
+                    async with leases.acquire(f"integrate:{spec.task_id}"):
+                        changeset = capture_managed_changeset(
+                            changeset_id=str(uuid4()),
+                            task_id=str(spec.task_id),
+                            attempt_id=curr_attempt_id,
+                            declared_scope=spec.permission_set.allowed_paths,
+                            snapshot=self._workspace_snapshot,
+                            workspace=isolated_workspace,
+                            manager=self.workspace_manager,
+                            scanner=StableWorktreeScanner(
+                                max_files=10_000,
+                                max_bytes=256 * 1024 * 1024,
+                            ),
+                            artifacts=artifacts,
+                            journal=self.journal,
+                        )
+                        status = ChangeSetIntegrator(
+                            journal=self.journal,
+                            artifacts=artifacts,
+                        ).integrate(changeset.changeset_id, self.workspace)
+                    if status is not ChangeSetStatus.INTEGRATED:
+                        result = TaskResult(
+                            task_id=spec.task_id,
+                            status="blocked",
+                            summary=f"changeset.{status.value}",
+                        )
+                    else:
+                        self.workspace_manager.cleanup_integrated(isolated_workspace)
+                        isolated_workspace = None
+            except WorkspaceCaptureError as error:
+                result = TaskResult(task_id=spec.task_id, status="blocked", summary=str(error))
             finally:
                 if isolated_workspace is not None:
                     self.workspace_manager.cleanup(isolated_workspace)
-            inner_messages = cast(list[BaseMessage], result_state.get("messages", []))
-
-            child_output = ""
-            for msg in reversed(inner_messages):
-                if isinstance(msg, AIMessage) and msg.content:
-                    child_output = (
-                        msg.content if isinstance(msg.content, str) else str(msg.content)
-                    )
-                    break
-
-            result = parse_child_result(
-                child_output,
-                task_id=spec.task_id,
-                required_criteria=spec.request.success_criteria,
-                evidence_validator=self._validate_evidence_ref,
-                model_authored_analysis=not profile.permissions.write,
-                source_validator=self._validate_source_ref,
-            )
             recorded_child_results.append(result)
             return result
 
@@ -3213,6 +3269,7 @@ class RunController:
             task_event=emit_task,
             resolve_spec=self._resolve_planned_spec,
             require_preplanned=True,
+            serialize_writers=self.workspace_selection.mode is not WorkspaceMode.WORKTREE,
         )
 
 

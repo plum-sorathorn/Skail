@@ -38,6 +38,40 @@ def _repository(tmp_path: Path) -> Path:
     return workspace
 
 
+def _seed_changeset_lineage(
+    journal: Journal, *, task_id: str, attempt_id: str, now: datetime
+) -> None:
+    journal.migrate()
+    journal.create_session(
+        session_id="11111111-1111-4111-8111-111111111111",
+        title="test",
+        created_at=now,
+    )
+    journal.create_run(
+        run_id="22222222-2222-4222-8222-222222222222",
+        session_id="11111111-1111-4111-8111-111111111111",
+        status="running",
+        budget_limit_usd=Decimal("1"),
+        created_at=now,
+    )
+    journal.create_task(
+        task_id=task_id,
+        run_id="22222222-2222-4222-8222-222222222222",
+        description="write",
+        status="running",
+        idempotency_key="task",
+        created_at=now,
+    )
+    journal.create_attempt(
+        attempt_id=attempt_id,
+        task_id=task_id,
+        number=1,
+        status="running",
+        idempotency_key="attempt",
+        created_at=now,
+    )
+
+
 def test_scanner_returns_regular_files_below_configured_limits(tmp_path: Path) -> None:
     worktree = tmp_path / "worktree"
     worktree.mkdir()
@@ -208,34 +242,11 @@ def test_managed_capture_authenticates_worktree_and_persists_changeset(tmp_path:
     (isolated.path / "tracked.txt").write_text("after\n", encoding="utf-8")
     journal = Journal(tmp_path / "rudder.sqlite")
     now = datetime(2026, 9, 8, tzinfo=UTC)
-    journal.migrate()
-    journal.create_session(
-        session_id="11111111-1111-4111-8111-111111111111",
-        title="test",
-        created_at=now,
-    )
-    journal.create_run(
-        run_id="22222222-2222-4222-8222-222222222222",
-        session_id="11111111-1111-4111-8111-111111111111",
-        status="running",
-        budget_limit_usd=Decimal("1"),
-        created_at=now,
-    )
-    journal.create_task(
+    _seed_changeset_lineage(
+        journal,
         task_id=isolated.task_id,
-        run_id="22222222-2222-4222-8222-222222222222",
-        description="write",
-        status="running",
-        idempotency_key="task",
-        created_at=now,
-    )
-    journal.create_attempt(
         attempt_id="44444444-4444-4444-8444-444444444444",
-        task_id=isolated.task_id,
-        number=1,
-        status="running",
-        idempotency_key="attempt",
-        created_at=now,
+        now=now,
     )
 
     changeset = capture_managed_changeset(
@@ -255,11 +266,52 @@ def test_managed_capture_authenticates_worktree_and_persists_changeset(tmp_path:
     assert journal.get_changeset(changeset.changeset_id).changeset == changeset
     assert (workspace / "tracked.txt").read_text(encoding="utf-8") == "base\n"
 
+    (workspace / "tracked.txt").write_bytes(b"concurrent user edit\n")
     status = ChangeSetIntegrator(
         journal=journal,
         artifacts=ImmutableArtifactStore(tmp_path / "artifacts"),
     ).integrate(changeset.changeset_id, workspace)
 
-    assert status.value == "integrated"
-    assert journal.get_changeset(changeset.changeset_id).status.value == "integrated"
-    assert (workspace / "tracked.txt").read_text(encoding="utf-8") == "after\n"
+    assert status.value == "blocked"
+    assert journal.get_changeset(changeset.changeset_id).status.value == "blocked"
+    assert (workspace / "tracked.txt").read_bytes() == b"concurrent user edit\n"
+
+
+def test_recovery_marks_unfinished_apply_in_doubt_without_replay(tmp_path: Path) -> None:
+    workspace = _repository(tmp_path)
+    original = (workspace / "tracked.txt").read_bytes()
+    manager = WorkspaceManager(tmp_path / "rudder-data")
+    snapshot = manager.capture(workspace)
+    task_id = "33333333-3333-4333-8333-333333333333"
+    attempt_id = "44444444-4444-4444-8444-444444444444"
+    isolated = manager.materialize(snapshot, task_id)
+    (isolated.path / "tracked.txt").write_bytes(b"after\n")
+    journal = Journal(tmp_path / "rudder.sqlite")
+    now = datetime(2026, 9, 8, tzinfo=UTC)
+    _seed_changeset_lineage(journal, task_id=task_id, attempt_id=attempt_id, now=now)
+    artifacts = ImmutableArtifactStore(tmp_path / "artifacts")
+    changeset = capture_managed_changeset(
+        changeset_id="55555555-5555-4555-8555-555555555555",
+        task_id=task_id,
+        attempt_id=attempt_id,
+        declared_scope=("tracked.txt",),
+        snapshot=snapshot,
+        workspace=isolated,
+        manager=manager,
+        scanner=StableWorktreeScanner(max_files=10, max_bytes=100),
+        artifacts=artifacts,
+        journal=journal,
+        created_at=now,
+    )
+    journal.begin_changeset_apply(
+        changeset=changeset,
+        operation_id="66666666-6666-4666-8666-666666666666",
+        updated_at=now,
+    )
+
+    status = ChangeSetIntegrator(journal=journal, artifacts=artifacts).recover(
+        changeset.changeset_id
+    )
+
+    assert status.value == "in_doubt"
+    assert (workspace / "tracked.txt").read_bytes() == original

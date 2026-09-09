@@ -719,7 +719,7 @@ Verification: `rtk pytest tests\integration\test_write_leases.py tests\integrati
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 11.
 
-**Status:** In progress. The phase is split because capture, durable artifact storage, safe
+**Status:** Complete. The phase was split because capture, durable artifact storage, safe
 path traversal, and canonical application are separately failure-prone boundaries.
 
 #### Phase 12a — Define durable changeset evidence and transition records
@@ -750,7 +750,7 @@ outcomes `in_doubt`, and request bounded lead judgment for conflicts. Verify the
 only then mark the changeset integrated and release cleanup. This slice owns deterministic useful
 writer overlap and conflict/cancellation/recovery coverage.
 
-**Current blocker (2026-09-08):** An adversarial review rejected the initial direct-apply design.
+**Resolved review finding (2026-09-08):** An adversarial review rejected the initial direct-apply design.
 Validating every pre-image before a multi-file apply is not sufficient: a crash or concurrent user
 edit can leave a partial canonical mutation, and `applying` cannot safely be replayed without
 durable per-file intent/result digests. Before 12b/12c implementation resumes, extend the journal
@@ -760,7 +760,7 @@ the canonical mutation boundary through each write. Do not bypass the shared fil
 isolated workers until file-tool confinement is proved. No Phase 12b/12c implementation was
 committed from this review; Phase 12 remains in progress.
 
-**Current blocker (2026-09-08, capture review):** A proposed 12b capture primitive was withdrawn
+**Resolved review finding (2026-09-08, capture review):** A proposed 12b capture primitive was withdrawn
 after adversarial review. Git's ignored-file view can omit real worktree effects; hard links can
 mutate canonical/external content; final-component link checks do not secure ancestor junctions or
 the check/read race; index state can change after a one-time check; current resource limits allocate
@@ -831,9 +831,22 @@ durable per-file intent before the first mutation, records each completed file, 
 tree, and only then marks the changeset integrated. A conflict is blocked before mutation; any
 post-intent failure or restart becomes `in_doubt` rather than being replayed.
 
-This is not yet runtime wiring or a relaxation of the existing child writer lease. Next: Phase
-12c.2 — connect completed write-capable attempts to capture and serialized canonical integration,
-then prove useful isolated-writer overlap and recovery through the controller lifecycle.
+#### Phase 12c.2 — Controller integration and isolated-writer overlap
+
+**Status:** complete. Verified write-capable task results are evaluated against their isolated
+workspace, captured against their admitted task/attempt and declared scope, and integrated under a
+narrow canonical-owner lease. The broad child-duration writer lease remains for shared mode but is
+removed for managed worktrees, allowing disjoint isolated writers to execute concurrently. Every
+canonical pre-image is rechecked before durable per-file intent; conflicts block without overwriting
+the user's file, interrupted apply state recovers as `in_doubt` without replay, and the isolated
+worktree is removed only after final canonical image verification and the durable `integrated`
+transition. Capture and conflict failures remain visible as child results and retain their worktree.
+
+Deterministic controller coverage proves two useful disjoint writers reach a shared barrier before
+serial integration, both verified changes reach the canonical tree, and both changesets become
+integrated. Focused recovery coverage proves concurrent canonical edits are preserved and unfinished
+apply intent is not replayed. Shared writers and canonical plan-tool writers retain their existing
+serialization behavior.
 
 1. Persist changesets with base/changed-path/content digests and verification references. Check actual effects against declared scope, not just the final prose result.
 2. Serialize canonical-workspace integration. Recheck base inputs and detect user edits since launch before applying; preserve conflicts and request bounded lead judgment.
@@ -1318,6 +1331,23 @@ External evidence location and source identity, if applicable: none; all tests u
 Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, `run_2.md` were not modified or staged.
 Unproven claims or missing evidence: this slice does not claim isolated writer overlap or safe canonical integration.
 Next phase and its dependencies: Phase 12b — Capture verified isolated changesets; depends on completed 12a.
+```
+
+### Phase 12 handoff
+
+```text
+Phase: 12 — Integrate changes under one writer (slices 12a–12c.2)
+Status: complete
+Implementation model: available Codex model (assigned Terra treated as a recommendation)
+Commit(s): 12a `52faf30`; 12b.1 `386b3ba`; 12b.2 `cb6859e`; 12b.3/12c.1 `2822840`; 12c.2 recorded by the phase commit following this handoff
+Behavior delivered: Versioned changesets bind task/attempt/snapshot provenance, declared scope, immutable before/after content images, and durable status. Managed capture authenticates worktree ownership and rejects unsafe filesystem/Git states. Verified isolated writers may overlap, while capture and canonical apply serialize through one owner. Durable per-file intent prevents blind replay; canonical conflicts block without overwrite, uncertain recovery becomes in_doubt, final image verification precedes integrated status, and cleanup follows integration only.
+Acceptance evidence and commands: focused capture/controller regressions; affected workspace/task-graph/journal/security suites; complete offline suite bounded runner check; Ruff; mypy; fake-provider smoke; Graphify update; diff check and complete diff review.
+Test results and documented skips: focused controller/capture matrix 11 passed with one Windows link-capability skip; affected Phase 12 matrix 74 passed with three Windows link-capability skips. The complete offline runner again emitted no result in 30 seconds and was interrupted, so a full-suite pass is not claimed. Live providers, paid evaluation, release evidence, tagging, pushing, publishing, remote changes, and legacy cleanup were not run.
+Review findings closed/open: unsafe direct multi-file apply, unstable capture, artifact durability, missing worktree ownership, broad isolated-writer serialization, canonical pre-image conflicts, early cleanup, and uncertain replay findings are closed. No Phase 12 defect remains open; future cross-task semantic verification policy remains governed by dependency planning and the later release-quality evidence phases rather than inferred from filenames.
+External evidence location and source identity, if applicable: none; all Phase 12 evidence is deterministic and local.
+Protected/unrelated files preserved: AGENTS.md, .gitignore, and evals/results/run_1.json, run_1.md, run_2.json, run_2.md were not staged or modified by the phase commits.
+Unproven claims or missing evidence: full-suite success is unrecorded because the local runner remained silent; live quality/cost parity and exact-commit platform release evidence remain later-phase work.
+Next phase and its dependencies: Phase 13 — Validate against the acceptance matrix; depends on completed Phase 12.
 ```
 
 - Numbered implementation phases are complete only with their recorded checks and phase handoffs.

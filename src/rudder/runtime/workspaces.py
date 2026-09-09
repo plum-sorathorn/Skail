@@ -167,22 +167,34 @@ class WorkspaceManager:
     def cleanup(self, workspace: IsolatedWorkspace) -> bool:
         self._validate_workspace_ownership(workspace)
         if not self._matches_snapshot(workspace):
-            (workspace.path / "retained.json").write_text(
-                json.dumps(
-                    {
-                        "reason": "workspace.unintegrated_changes",
-                        "snapshot_id": workspace.snapshot_id,
-                    }
+            retained = workspace.path / "retained.json"
+            if not retained.exists():
+                retained.write_text(
+                    json.dumps(
+                        {
+                            "reason": "workspace.unintegrated_changes",
+                            "snapshot_id": workspace.snapshot_id,
+                        }
+                    )
+                    + "\n",
+                    encoding="utf-8",
                 )
-                + "\n",
-                encoding="utf-8",
-            )
             return False
         original_root = self._git(workspace.path, "rev-parse", "--git-common-dir")
         common = (workspace.path / original_root).resolve()
-        self._git(common.parent, "worktree", "remove", "--force", str(workspace.path))
-        self._git(common.parent, "branch", "-D", workspace.branch)
+        self._remove_worktree(workspace, common.parent)
         return True
+
+    def cleanup_integrated(self, workspace: IsolatedWorkspace) -> None:
+        """Remove an authenticated worktree only after canonical verification succeeded."""
+        self._validate_workspace_ownership(workspace)
+        original_root = self._git(workspace.path, "rev-parse", "--git-common-dir")
+        common = (workspace.path / original_root).resolve()
+        self._remove_worktree(workspace, common.parent)
+
+    def _remove_worktree(self, workspace: IsolatedWorkspace, common_parent: Path) -> None:
+        self._git(common_parent, "worktree", "remove", "--force", str(workspace.path))
+        self._git(common_parent, "branch", "-D", workspace.branch)
 
     def validate_capture_workspace(
         self, snapshot: WorkspaceSnapshot, workspace: IsolatedWorkspace

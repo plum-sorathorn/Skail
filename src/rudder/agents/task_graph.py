@@ -104,6 +104,7 @@ def build_task_graph(
     task_event: Callable[[TaskSpec, str, str | None], None] | None = None,
     resolve_spec: Callable[[str, str], TaskSpec | None] | None = None,
     require_preplanned: bool = False,
+    serialize_writers: bool = True,
 ) -> Any:
     assembler = context_assembler or ContextAssembler()
 
@@ -264,7 +265,7 @@ def build_task_graph(
             return cast(TaskResult, result)
 
         try:
-            if profile.write_capable:
+            if profile.write_capable and serialize_writers:
                 async with leases.acquire(str(spec.task_id)):
                     operation: asyncio.Future[TaskResult] = asyncio.ensure_future(run_with_gate())
                     try:
@@ -404,6 +405,7 @@ def build_compiled_profile_subagent(
     persist_result: Callable[[TaskResult], None] | None = None,
     exhaust_fingerprint: Callable[[TaskSpec], None] | None = None,
     require_preplanned: bool = False,
+    serialize_writers: bool = True,
 ) -> CompiledSubAgent:
     lifecycle = build_task_graph(
         profile=profile,
@@ -420,6 +422,7 @@ def build_compiled_profile_subagent(
         task_event=task_event,
         resolve_spec=resolve_spec,
         require_preplanned=require_preplanned,
+        serialize_writers=serialize_writers,
     )
 
     def validate(state: ProfileTaskState) -> dict[str, Any]:

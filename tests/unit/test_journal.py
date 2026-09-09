@@ -38,6 +38,9 @@ EXPECTED_TABLES = {
     "plan_revisions",
     "plan_node_states",
     "plan_node_task_bindings",
+    "change_sets",
+    "change_set_operations",
+    "change_set_file_operations",
 }
 
 
