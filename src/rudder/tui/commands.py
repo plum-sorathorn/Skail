@@ -10,6 +10,7 @@ HELP_TEXT = """Available Slash Commands:
   /agents                           - Display task tree and agent rail
   /agent <id>                       - Focus one agent's events and route
   /tasks                            - Display active task statuses
+  /plan                             - Display adaptive execution plan and workspaces
   /route [id]                       - Show model route explanation for task or lead
   /budget                           - Display authoritative budget and usage view
   /mode <auto|economy|quality|manual> - Switch routing mode
@@ -30,7 +31,7 @@ class SlashCommandResult:
     # "view", "quit", "cancel", "steer", "message", "resume", "compact", "config", "error"
     action: str
     output_message: str | None = None
-    target_view: str | None = None  # "agents", "route", "budget", "chat"
+    target_view: str | None = None  # "agents", "plan", "route", "budget", "chat"
     target_id: str | None = None
     payload: dict[str, Any] = field(default_factory=dict)
 
@@ -99,6 +100,14 @@ def dispatch_slash_command(
             action="view",
             target_view="agents",
             output_message=f"Total tasks: {task_count}.",
+        )
+
+    if cmd == "plan":
+        return SlashCommandResult(
+            command="plan",
+            action="view",
+            target_view="plan",
+            output_message=f"Plan view active ({len(projection.plan_items)} nodes).",
         )
 
     if cmd == "route":

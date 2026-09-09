@@ -217,6 +217,9 @@ class SessionSnapshot:
     approvals: tuple[ApprovalSnapshot, ...]
     events: tuple[EventEnvelope, ...]
     context_packets: tuple[ContextPacketSnapshot, ...] = ()
+    plans: tuple[PersistedPlan, ...] = ()
+    changesets: tuple[PersistedChangeSet, ...] = ()
+    execution_decisions: tuple[Any, ...] = ()
     title: str = ""
     created_at: str = ""
     updated_at: str = ""
@@ -1913,6 +1916,27 @@ class Journal:
                 f"SELECT envelope_json FROM events WHERE run_id IN ({placeholders}) ORDER BY rowid",
                 run_ids,
             ).fetchall()
+        plans: list[PersistedPlan] = []
+        for run_id in run_ids:
+            plans.extend(self.plans_for_run(run_id))
+        changesets: list[PersistedChangeSet] = []
+        if task_ids:
+            with self._connect() as connection:
+                query = (
+                    f"SELECT changeset_id FROM change_sets "
+                    f"WHERE task_id IN ({task_placeholders}) ORDER BY rowid"
+                )
+                cs_rows = connection.execute(
+                    query,
+                    task_ids,
+                ).fetchall()
+            for cs_row in cs_rows:
+                changesets.append(self.get_changeset(cs_row["changeset_id"]))
+        decisions: list[Any] = []
+        for run_id in run_ids:
+            dec = self.get_execution_decision(run_id)
+            if dec is not None:
+                decisions.append(dec)
         return SessionSnapshot(
             session_id=session["session_id"],
             status=session["status"],
@@ -1977,6 +2001,9 @@ class Journal:
                 )
                 for row in context_packets
             ),
+            plans=tuple(plans),
+            changesets=tuple(changesets),
+            execution_decisions=tuple(decisions),
             title=session["title"],
             created_at=session["created_at"],
             updated_at=session["updated_at"],

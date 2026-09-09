@@ -79,4 +79,24 @@ class RouteView(VerticalScroll):
         )
         table.add_row("Lineage", lineage_text)
 
-        self.mount(Static(Panel(table, title=f"Route: {target_item.task_id}", border_style="blue")))
+        if target_item.evidence_status:
+            ev_str = target_item.evidence_status
+            if target_item.evidence_revision:
+                ev_str += f" (rev: {target_item.evidence_revision})"
+            table.add_row("Evidence Status", ev_str)
+
+        if target_item.shadow_recommendation:
+            table.add_row(
+                "Shadow Strategy",
+                f"[bold magenta][SHADOW][/bold magenta] {target_item.shadow_recommendation}",
+            )
+            if target_item.shadow_reasons:
+                reasons_str = "\n".join(f"• {r}" for r in target_item.shadow_reasons)
+                table.add_row("Shadow Reasons", reasons_str)
+
+        panel_title = f"Route: {target_item.task_id}"
+        if target_item.shadow_recommendation:
+            panel_title += f" [SHADOW: {target_item.shadow_recommendation}]"
+
+        self.mount(Static(Panel(table, title=panel_title, border_style="blue")))
+

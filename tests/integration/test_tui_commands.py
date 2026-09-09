@@ -56,6 +56,11 @@ def test_dispatch_all_required_slash_commands() -> None:
     assert res_tasks.action == "view"
     assert res_tasks.target_view == "agents"
 
+    # /plan
+    res_plan = dispatch_slash_command("/plan", proj)
+    assert res_plan.action == "view"
+    assert res_plan.target_view == "plan"
+
     # /route
     res_route = dispatch_slash_command("/route task-42", proj)
     assert res_route.action == "view"

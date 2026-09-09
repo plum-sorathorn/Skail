@@ -63,6 +63,7 @@ class BudgetView(VerticalScroll):
         summary.add_row("Authoritative Actual", auth_val)
         summary.add_row("Estimated Actual", f"${item.estimated_actual_usd:.4f}")
         summary.add_row("Active Reserves", f"${item.reserved_usd:.4f}")
+        summary.add_row("Unknown Cost", f"${item.unknown_cost_usd:.4f}")
 
         avail_str = (
             f"${item.available_usd:.4f}"

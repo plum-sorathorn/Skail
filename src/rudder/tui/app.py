@@ -29,6 +29,7 @@ from rudder.tui.widgets.budget import BudgetView
 from rudder.tui.widgets.chat import ChatTranscript
 from rudder.tui.widgets.composer import PromptComposer
 from rudder.tui.widgets.interrupts import InterruptWidget
+from rudder.tui.widgets.plan import PlanView
 from rudder.tui.widgets.route import RouteView
 
 
@@ -36,6 +37,7 @@ class RudderApp(App[int]):
     """Main Textual interactive application for Rudder harness."""
 
     TITLE = f"Rudder {__version__}"
+    ENABLE_COMMAND_PALETTE = False
     CSS = """
     Screen {
         layout: vertical;
@@ -78,6 +80,7 @@ class RudderApp(App[int]):
         Binding("ctrl+c", "quit", "Quit", priority=True),
         Binding("ctrl+b", "view_budget", "Budget"),
         Binding("ctrl+a", "view_agents", "Agents"),
+        Binding("ctrl+p", "view_plan", "Plan", priority=True),
         Binding("ctrl+r", "view_route", "Route"),
         Binding("ctrl+t", "view_chat", "Chat"),
         Binding("f1", "show_help", "Help"),
@@ -111,6 +114,9 @@ class RudderApp(App[int]):
         self.initial_snapshot = initial_snapshot
         self.simulated: bool = False
         self._active_worker: Any = None
+        self._mounted: bool = False
+        if self.controller is not None:
+            self.controller.subscribe_events(self.apply_event)
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -123,6 +129,8 @@ class RudderApp(App[int]):
                 with TabbedContent(initial="tab-agents", id="tabs"):
                     with TabPane("Agents", id="tab-agents"):
                         yield AgentRail(id="agent-rail")
+                    with TabPane("Plan", id="tab-plan"):
+                        yield PlanView(id="plan-view")
                     with TabPane("Route", id="tab-route"):
                         yield RouteView(id="route-view")
                     with TabPane("Budget", id="tab-budget"):
@@ -131,8 +139,7 @@ class RudderApp(App[int]):
         yield Footer()
 
     def on_mount(self) -> None:
-        if self.controller is not None:
-            self.controller.subscribe_events(self.apply_event)
+        self._mounted = True
         if self.initial_snapshot is not None:
             self.projection.apply_snapshot(self.initial_snapshot)
         if self.controller is not None and self.controller.pending_interrupt is not None:
@@ -164,6 +171,8 @@ class RudderApp(App[int]):
         text = Text()
         text.append(f"Model: {f.lead_model} ", style="bold cyan")
         text.append(f"| Mode: {f.routing_mode} ", style="green")
+        if f.active_mode != "direct":
+            text.append(f"[{f.active_mode}] ", style="bold magenta")
         text.append(f"| Cost: ${f.session_cost_usd:.4f}", style="yellow")
         if f.budget_limit_usd is not None:
             text.append(f" / ${f.budget_limit_usd:.2f}", style="dim yellow")
@@ -171,6 +180,9 @@ class RudderApp(App[int]):
         return text
 
     def update_views(self) -> None:
+        if not self._mounted:
+            return
+
         chat = self.query_one("#chat-transcript", ChatTranscript)
         chat.update_items(self.projection.transcript_items)
 
@@ -178,6 +190,14 @@ class RudderApp(App[int]):
         rail.update_items(
             self.projection.agent_rail_items,
             focused_id=self.projection.focused_agent_id,
+        )
+
+        plan_view = self.query_one("#plan-view", PlanView)
+        plan_view.update_plan(
+            self.projection.plan_items,
+            plan_id=self.projection.current_plan_id,
+            revision=self.projection.current_plan_revision,
+            integrations=self.projection.workspace_integrations,
         )
 
         route_view = self.query_one("#route-view", RouteView)
@@ -200,11 +220,13 @@ class RudderApp(App[int]):
 
     def apply_snapshot(self, snapshot: SessionSnapshot) -> None:
         self.projection.apply_snapshot(snapshot)
-        self.update_views()
+        if self._mounted:
+            self.update_views()
 
     def apply_event(self, event: EventEnvelope) -> None:
         self.projection.apply_event(event)
-        self.update_views()
+        if self._mounted:
+            self.update_views()
 
     async def _execute_prompt(self, text: str) -> None:
         if self.controller is None:
@@ -329,7 +351,7 @@ class RudderApp(App[int]):
             if result.action == "view" and result.target_view:
                 tabs = self.query_one("#tabs", TabbedContent)
                 tab_id = f"tab-{result.target_view}"
-                if tab_id in ("tab-agents", "tab-route", "tab-budget"):
+                if tab_id in ("tab-agents", "tab-plan", "tab-route", "tab-budget"):
                     tabs.active = tab_id
             elif result.action == "cancel":
                 if self._active_worker is not None:
@@ -518,6 +540,9 @@ class RudderApp(App[int]):
 
     def action_view_agents(self) -> None:
         self.query_one("#tabs", TabbedContent).active = "tab-agents"
+
+    def action_view_plan(self) -> None:
+        self.query_one("#tabs", TabbedContent).active = "tab-plan"
 
     def action_view_route(self) -> None:
         self.query_one("#tabs", TabbedContent).active = "tab-route"

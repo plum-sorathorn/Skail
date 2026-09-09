@@ -68,13 +68,21 @@ class AgentRail(VerticalScroll):
 
             # Distinct status styling
             st_text = Text()
-            st = item.status.lower()
-            if st == "running":
+            st = item.status.lower().strip()
+            if st in ("executing", "running", "started"):
                 st_text.append(st, style="bold cyan")
+            elif st == "planned":
+                st_text.append(st, style="blue")
             elif st == "queued":
                 st_text.append(st, style="dim")
-            elif st == "succeeded":
+            elif st in ("waiting_approval", "waiting approval", "awaiting_approval"):
+                st_text.append(st, style="bold yellow")
+            elif st == "verified":
                 st_text.append(st, style="bold green")
+            elif st == "integrated":
+                st_text.append(st, style="bold magenta")
+            elif st in ("complete", "succeeded"):
+                st_text.append(st, style="green")
             elif st == "failed":
                 st_text.append(st, style="bold red")
             elif st == "blocked":
