@@ -303,4 +303,18 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
         """,
     ),
+    (
+        15,
+        """
+        CREATE TABLE change_set_file_operations (
+            changeset_id TEXT NOT NULL REFERENCES change_sets(changeset_id),
+            path TEXT NOT NULL,
+            before_digest TEXT,
+            after_digest TEXT,
+            status TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (changeset_id, path)
+        );
+        """,
+    ),
 )

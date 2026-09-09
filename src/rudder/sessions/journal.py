@@ -330,6 +330,40 @@ class JournalTransaction:
             (operation_id, *values, _now(updated_at)),
         )
 
+    def begin_changeset_apply(
+        self, *, changeset: ChangeSet, operation_id: str, updated_at: datetime
+    ) -> None:
+        self.transition_changeset_status(
+            changeset_id=changeset.changeset_id,
+            expected=ChangeSetStatus.CAPTURED,
+            target=ChangeSetStatus.APPLYING,
+            operation_id=operation_id,
+            updated_at=updated_at,
+        )
+        for item in changeset.paths:
+            self.connection.execute(
+                "INSERT INTO change_set_file_operations VALUES (?,?,?,?,?,?)",
+                (
+                    changeset.changeset_id,
+                    item.path,
+                    item.before.digest if item.before else None,
+                    item.after.digest if item.after else None,
+                    "intended",
+                    _now(updated_at),
+                ),
+            )
+
+    def mark_changeset_file_applied(
+        self, *, changeset_id: str, path: str, updated_at: datetime
+    ) -> None:
+        cursor = self.connection.execute(
+            "UPDATE change_set_file_operations SET status=?,updated_at=? "
+            "WHERE changeset_id=? AND path=? AND status='intended'",
+            ("applied", _now(updated_at), changeset_id, path),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("changeset.file_operation_conflict")
+
     def update_session_status(
         self, session_id: str, status: str, updated_at: datetime | None = None
     ) -> None:
@@ -906,6 +940,26 @@ class Journal:
             expected=expected,
             target=target,
             operation_id=operation_id,
+            updated_at=updated_at or datetime.now(UTC),
+        )
+
+    def begin_changeset_apply(
+        self, *, changeset: ChangeSet, operation_id: str, updated_at: datetime | None = None
+    ) -> None:
+        self._write(
+            "begin_changeset_apply",
+            changeset=changeset,
+            operation_id=operation_id,
+            updated_at=updated_at or datetime.now(UTC),
+        )
+
+    def mark_changeset_file_applied(
+        self, *, changeset_id: str, path: str, updated_at: datetime | None = None
+    ) -> None:
+        self._write(
+            "mark_changeset_file_applied",
+            changeset_id=changeset_id,
+            path=path,
             updated_at=updated_at or datetime.now(UTC),
         )
 

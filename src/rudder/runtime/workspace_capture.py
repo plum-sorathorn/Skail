@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import stat
 from dataclasses import dataclass
-from pathlib import Path
+from datetime import UTC, datetime
+from pathlib import Path, PurePosixPath
+
+from rudder.domain.changesets import ChangeSet, ChangeSetPath, ContentImage
+from rudder.runtime.workspaces import IsolatedWorkspace, WorkspaceManager, WorkspaceSnapshot
+from rudder.sessions.journal import Journal
 
 
 class WorkspaceCaptureError(ValueError):
@@ -18,6 +24,7 @@ class ScannedWorkspaceFile:
     path: str
     digest: str
     size: int
+    artifact_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -59,8 +66,25 @@ class ImmutableArtifactStore:
                 raise
         return PublishedArtifact(digest=digest, size=len(content), path=path)
 
+    def read(self, image: ContentImage) -> bytes:
+        if image.artifact_ref != f"sha256:{image.digest}":
+            raise WorkspaceCaptureError("workspace.artifact_corrupt")
+        path = self._root / "sha256" / image.digest
+        try:
+            content = self._read_existing(path)
+        except OSError as error:
+            raise WorkspaceCaptureError("workspace.artifact_corrupt") from error
+        if len(content) != image.size or hashlib.sha256(content).hexdigest() != image.digest:
+            raise WorkspaceCaptureError("workspace.artifact_corrupt")
+        return content
+
     @staticmethod
     def _verify_existing(path: Path, expected: bytes) -> None:
+        if ImmutableArtifactStore._read_existing(path) != expected:
+            raise WorkspaceCaptureError("workspace.artifact_corrupt")
+
+    @staticmethod
+    def _read_existing(path: Path) -> bytes:
         try:
             metadata = path.lstat()
         except OSError as error:
@@ -72,11 +96,9 @@ class ImmutableArtifactStore:
         ):
             raise WorkspaceCaptureError("workspace.artifact_corrupt")
         try:
-            actual = path.read_bytes()
+            return path.read_bytes()
         except OSError as error:
             raise WorkspaceCaptureError("workspace.artifact_corrupt") from error
-        if actual != expected:
-            raise WorkspaceCaptureError("workspace.artifact_corrupt")
 
 
 class StableWorktreeScanner:
@@ -88,7 +110,9 @@ class StableWorktreeScanner:
         self._max_files = max_files
         self._max_bytes = max_bytes
 
-    def scan(self, worktree: Path) -> tuple[ScannedWorkspaceFile, ...]:
+    def scan(
+        self, worktree: Path, *, artifacts: ImmutableArtifactStore | None = None
+    ) -> tuple[ScannedWorkspaceFile, ...]:
         self._assert_safe_directory(worktree)
         root = worktree.resolve(strict=True)
         if not root.is_dir():
@@ -129,6 +153,9 @@ class StableWorktreeScanner:
                         path=relative,
                         digest=hashlib.sha256(content).hexdigest(),
                         size=len(content),
+                        artifact_ref=(
+                            None if artifacts is None else artifacts.publish(content).reference
+                        ),
                     )
                 )
                 total_bytes += len(content)
@@ -200,3 +227,125 @@ class StableWorktreeScanner:
             and expected.st_size == actual.st_size
             and expected.st_mtime_ns == actual.st_mtime_ns
         )
+
+
+def capture_changeset(
+    *,
+    changeset_id: str,
+    task_id: str,
+    attempt_id: str,
+    snapshot_id: str,
+    snapshot_path: Path,
+    base_head: str,
+    declared_scope: tuple[str, ...],
+    worktree: Path,
+    scanner: StableWorktreeScanner,
+    artifacts: ImmutableArtifactStore,
+) -> ChangeSet:
+    """Create evidence from one stable worktree scan without touching its canonical source."""
+    manifest_path = snapshot_path / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        original_files = manifest["files"]
+    except (OSError, TypeError, ValueError, KeyError) as error:
+        raise WorkspaceCaptureError("workspace.capture_snapshot_invalid") from error
+    if manifest.get("snapshot_id") != snapshot_id or manifest.get("head") != base_head:
+        raise WorkspaceCaptureError("workspace.capture_snapshot_invalid")
+    if not isinstance(original_files, dict):
+        raise WorkspaceCaptureError("workspace.capture_snapshot_invalid")
+    current_files = {item.path: item for item in scanner.scan(worktree, artifacts=artifacts)}
+    paths: list[ChangeSetPath] = []
+    for path in sorted(set(original_files) | set(current_files)):
+        original = original_files.get(path)
+        current = current_files.get(path)
+        if original is not None and not isinstance(original, dict):
+            raise WorkspaceCaptureError("workspace.capture_snapshot_invalid")
+        if original is not None and original.get("deleted") is True:
+            original = None
+        if original is not None:
+            try:
+                before_content = (
+                    snapshot_path / "files" / Path(*PurePosixPath(path).parts)
+                ).read_bytes()
+            except OSError as error:
+                raise WorkspaceCaptureError("workspace.capture_snapshot_invalid") from error
+            if (
+                not isinstance(original.get("digest"), str)
+                or original.get("digest") != hashlib.sha256(before_content).hexdigest()
+                or original.get("size") != len(before_content)
+            ):
+                raise WorkspaceCaptureError("workspace.capture_snapshot_invalid")
+            before = ContentImage(
+                digest=hashlib.sha256(before_content).hexdigest(),
+                size=len(before_content),
+                artifact_ref=artifacts.publish(before_content).reference,
+            )
+        else:
+            before = None
+        after = (
+            None
+            if current is None
+            else ContentImage(
+                digest=current.digest,
+                size=current.size,
+                artifact_ref=current.artifact_ref or "",
+            )
+        )
+        if before is None and after is None:
+            continue
+        if before is not None and after is not None and before.digest == after.digest:
+            continue
+        effect = "added" if before is None else "deleted" if after is None else "modified"
+        paths.append(ChangeSetPath(path=path, effect=effect, before=before, after=after))
+    if not paths:
+        raise WorkspaceCaptureError("workspace.capture_no_changes")
+    return ChangeSet(
+        schema_version=1,
+        changeset_id=changeset_id,
+        task_id=task_id,
+        attempt_id=attempt_id,
+        snapshot_id=snapshot_id,
+        base_head=base_head,
+        declared_scope=declared_scope,
+        paths=tuple(paths),
+    )
+
+
+def capture_managed_changeset(
+    *,
+    changeset_id: str,
+    task_id: str,
+    attempt_id: str,
+    declared_scope: tuple[str, ...],
+    snapshot: WorkspaceSnapshot,
+    workspace: IsolatedWorkspace,
+    manager: WorkspaceManager,
+    scanner: StableWorktreeScanner,
+    artifacts: ImmutableArtifactStore,
+    journal: Journal,
+    created_at: datetime | None = None,
+) -> ChangeSet:
+    """Capture one authenticated isolated worktree and persist its immutable evidence."""
+    try:
+        manager.validate_capture_workspace(snapshot, workspace)
+        changeset = capture_changeset(
+            changeset_id=changeset_id,
+            task_id=task_id,
+            attempt_id=attempt_id,
+            snapshot_id=snapshot.snapshot_id,
+            snapshot_path=snapshot.path,
+            base_head=snapshot.head,
+            declared_scope=declared_scope,
+            worktree=workspace.path,
+            scanner=scanner,
+            artifacts=artifacts,
+        )
+        journal.record_changeset(
+            changeset=changeset,
+            idempotency_key=f"changeset:{attempt_id}",
+            created_at=created_at or datetime.now(UTC),
+        )
+        return changeset
+    except (ValueError, WorkspaceCaptureError) as error:
+        manager.retain(workspace, str(error))
+        raise WorkspaceCaptureError(str(error)) from error

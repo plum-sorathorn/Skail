@@ -820,6 +820,21 @@ phase commit and wider verification record in the user handoff follow this track
 Next: Phase 12b.3 — bind these primitives to managed-worktree ownership and capture post-images
 without enabling canonical integration; retain isolated worktrees on every capture failure.
 
+#### Phase 12b.3 / 12c.1 — Authenticated capture and durable apply intent
+
+**Status:** complete. Managed capture now authenticates the exact Rudder-owned worktree path,
+branch, snapshot manifest, base head, clean index, and non-submodule state before scanning. It
+validates snapshot pre-images, publishes immutable before/after artifacts, records an idempotent
+changeset against the producing task and attempt, and retains the worktree with a reason on any
+failure. Canonical integration has a narrow serial primitive: it rechecks every pre-image, writes a
+durable per-file intent before the first mutation, records each completed file, verifies the final
+tree, and only then marks the changeset integrated. A conflict is blocked before mutation; any
+post-intent failure or restart becomes `in_doubt` rather than being replayed.
+
+This is not yet runtime wiring or a relaxation of the existing child writer lease. Next: Phase
+12c.2 — connect completed write-capable attempts to capture and serialized canonical integration,
+then prove useful isolated-writer overlap and recovery through the controller lifecycle.
+
 1. Persist changesets with base/changed-path/content digests and verification references. Check actual effects against declared scope, not just the final prose result.
 2. Serialize canonical-workspace integration. Recheck base inputs and detect user edits since launch before applying; preserve conflicts and request bounded lead judgment.
 3. Apply dependent changes in verified dependency order. Independent filenames are not sufficient if public interfaces or generated assets conflict.

@@ -165,14 +165,7 @@ class WorkspaceManager:
             raise
 
     def cleanup(self, workspace: IsolatedWorkspace) -> bool:
-        root = self._git_context(workspace.path)[0]
-        expected_path = (
-            self._data_root / "worktrees" / f"{workspace.snapshot_id[:12]}-{workspace.task_id}"
-        ).resolve(strict=False)
-        if root != expected_path or workspace.branch != (
-            f"rudder/{workspace.snapshot_id[:12]}/{workspace.task_id}"
-        ):
-            raise ValueError("workspace.worktree_ownership_invalid")
+        self._validate_workspace_ownership(workspace)
         if not self._matches_snapshot(workspace):
             (workspace.path / "retained.json").write_text(
                 json.dumps(
@@ -190,6 +183,54 @@ class WorkspaceManager:
         self._git(common.parent, "worktree", "remove", "--force", str(workspace.path))
         self._git(common.parent, "branch", "-D", workspace.branch)
         return True
+
+    def validate_capture_workspace(
+        self, snapshot: WorkspaceSnapshot, workspace: IsolatedWorkspace
+    ) -> None:
+        """Fail closed unless this is the exact managed worktree for the snapshot."""
+        self._validate_workspace_ownership(workspace)
+        if (
+            workspace.snapshot_id != snapshot.snapshot_id
+            or snapshot.path != self._data_root / "workspace-snapshots" / snapshot.snapshot_id
+            or snapshot.root != self._git_context(snapshot.root)[0]
+        ):
+            raise ValueError("workspace.capture_ownership_invalid")
+        manifest = snapshot.path / "manifest.json"
+        try:
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError) as error:
+            raise ValueError("workspace.capture_ownership_invalid") from error
+        if (
+            payload.get("snapshot_id") != snapshot.snapshot_id
+            or payload.get("head") != snapshot.head
+        ):
+            raise ValueError("workspace.capture_ownership_invalid")
+        if self._git(workspace.path, "branch", "--show-current") != workspace.branch:
+            raise ValueError("workspace.capture_ownership_invalid")
+        if self._git(workspace.path, "ls-files", "--unmerged"):
+            raise ValueError("workspace.capture_unmerged_index")
+        staged = self._git(workspace.path, "ls-files", "--stage", "-z")
+        if any(entry.startswith("160000 ") for entry in staged.split("\0") if entry):
+            raise ValueError("workspace.capture_submodule")
+        if " mode change " in self._git(workspace.path, "diff", "--summary", "HEAD"):
+            raise ValueError("workspace.capture_mode_change")
+
+    def retain(self, workspace: IsolatedWorkspace, reason: str) -> None:
+        self._validate_workspace_ownership(workspace)
+        (workspace.path / "retained.json").write_text(
+            json.dumps({"reason": reason, "snapshot_id": workspace.snapshot_id}) + "\n",
+            encoding="utf-8",
+        )
+
+    def _validate_workspace_ownership(self, workspace: IsolatedWorkspace) -> None:
+        root = self._git_context(workspace.path)[0]
+        expected_path = (
+            self._data_root / "worktrees" / f"{workspace.snapshot_id[:12]}-{workspace.task_id}"
+        ).resolve(strict=False)
+        if root != expected_path or workspace.branch != (
+            f"rudder/{workspace.snapshot_id[:12]}/{workspace.task_id}"
+        ):
+            raise ValueError("workspace.worktree_ownership_invalid")
 
     def _matches_snapshot(self, workspace: IsolatedWorkspace) -> bool:
         manifest_path = (
