@@ -953,6 +953,21 @@ instead of inferred aggregate rows.
 repetition combination exactly once, has one stable execution-order value per run, and preserves
 the same identity on the raw and scored records.
 
+#### Phase 15c — Compute complete paired speedup gates
+
+**Status:** complete. **Scope:** deterministic paired timing statistics and gate evidence only;
+no workload expansion, provider call, routing-policy change, or production qualification.
+
+The evaluator now computes median full-controller wall time separately for every parallel
+fixture/seed/policy repetition set. It derives each fixture's paired speedup from those medians and
+the seed result from the median fixture speedups. A parallel gate requires a complete pair for every
+configured fixture and seed, at least 15% speedup for every seed, and no more than ten percentage
+points of cross-seed spread. The existing aggregate auto/serial wall medians remain informational and
+cannot satisfy the paired gate.
+
+**Acceptance:** a seed below 15%, a missing repetition, or cross-seed spread above ten percentage
+points fails the parallel gate even when aggregate policy medians look favorable.
+
 1. Use real controller controls for fixed economy, fixed quality, auto, serial, and no-delegation baselines. Fixed baselines pin concrete model identities; changing a routing-mode enum alone is not a fixed baseline. Record executed assignments.
 2. Add fixed-model orchestration and new-policy synthetic comparisons to separate model effects from graph effects. Preserve immutable pre-redesign diagnostics/source references; do not maintain a second old runtime inside production solely for comparisons.
 3. Extend frozen workloads with direct answers, adaptive discovery, non-barrier dependency execution, recovery, and isolated integration. Compare equivalent useful work and the same effects. Do not compare different tasks merely to favor parallel execution.

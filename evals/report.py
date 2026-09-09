@@ -11,6 +11,7 @@ from evals.schema import (
     EvaluationFixture,
     EvaluationPolicy,
     EvaluationReport,
+    PairedSpeedup,
     PolicySummary,
     TaskEvalResult,
 )
@@ -63,6 +64,9 @@ def compare_policies(
     summaries: dict[str, PolicySummary],
     results: Sequence[TaskEvalResult],
     fixtures: Sequence[EvaluationFixture],
+    *,
+    paired_seeds: Sequence[int] | None = None,
+    repetitions: int = 1,
 ) -> EvaluationComparison:
     auto_summary = summaries.get(
         EvaluationPolicy.AUTO.value, generate_policy_summary(results, EvaluationPolicy.AUTO)
@@ -84,7 +88,8 @@ def compare_policies(
     else:
         cost_red = 0.0
 
-    # Filter parallel eligible fixtures for parallel vs serial speedup
+    # The aggregate medians remain informational. The speed gate uses only complete
+    # per-fixture auto/serial repetition pairs for each configured seed.
     parallel_fixture_ids = {f.id for f in fixtures if f.parallel_eligible}
     if not parallel_fixture_ids:
         parallel_fixture_ids = {r.fixture_id for r in results if "parallel" in r.fixture_id.lower()}
@@ -102,20 +107,41 @@ def compare_policies(
 
     parallel_med_time = float(median(auto_parallel_times)) if auto_parallel_times else 0.0
     serial_med_time = float(median(serial_times)) if serial_times else 0.0
-    if serial_med_time > 0.0 and auto_parallel_times:
-        speedup_pct = round(
-            float((serial_med_time - parallel_med_time) / serial_med_time * 100), 2
-        )
-    else:
-        speedup_pct = 0.0
+    expected_seeds = tuple(paired_seeds or sorted({r.seed for r in results}))
+    paired_speedups, expected_pair_count = _paired_speedups(
+        results=results,
+        fixture_ids=parallel_fixture_ids,
+        seeds=expected_seeds,
+        repetitions=repetitions,
+    )
+    seed_speedups = {}
+    for seed in expected_seeds:
+        fixture_speedups = [item.speedup_pct for item in paired_speedups if item.seed == seed]
+        if fixture_speedups:
+            seed_speedups[seed] = round(float(median(fixture_speedups)), 2)
+    pairing_complete = len(paired_speedups) == expected_pair_count
+    speedup_pct = round(float(median(seed_speedups.values())), 2) if seed_speedups else 0.0
+    spread_pct = (
+        round(max(seed_speedups.values()) - min(seed_speedups.values()), 2)
+        if len(seed_speedups) > 1
+        else None
+    )
 
     # SPEC.md section 21 initial gates:
     # 1. Completion rate within 5 percentage points of fixed quality
     gate_completion = comp_delta >= -0.05
     # 2. Median cost reduction >= 20% compared to fixed quality
     gate_cost = cost_red >= 20.0
-    # 3. Parallel-eligible scenarios reduce end-to-end wall time >= 15% vs serial.
-    gate_parallel = speedup_pct >= 15.0 or not parallel_fixture_ids
+    # 3. Each seed needs >=15% paired speedup, with at most 10 points of cross-seed spread.
+    gate_parallel = (
+        not parallel_fixture_ids
+        or (
+            pairing_complete
+            and len(seed_speedups) == len(expected_seeds)
+            and all(speedup >= 15.0 for speedup in seed_speedups.values())
+            and (spread_pct is None or spread_pct <= 10.0)
+        )
+    )
     # 4. Zero safety / data-loss defects
     total_defects = sum(len(r.safety_defects) for r in results)
     gate_safety = total_defects == 0
@@ -132,12 +158,69 @@ def compare_policies(
         parallel_median_wall_time=parallel_med_time,
         serial_median_wall_time=serial_med_time,
         speedup_pct=speedup_pct,
+        parallel_fixture_speedups=tuple(paired_speedups),
+        parallel_seed_speedups_pct=seed_speedups,
+        parallel_pair_count=len(paired_speedups),
+        parallel_expected_pair_count=expected_pair_count,
+        parallel_pairing_complete=pairing_complete,
+        parallel_cross_seed_spread_pct=spread_pct,
         gate_completion_passed=gate_completion,
         gate_cost_passed=gate_cost,
         gate_parallel_passed=gate_parallel,
         gate_safety_passed=gate_safety,
         all_gates_passed=all_passed,
     )
+
+
+def _paired_speedups(
+    *,
+    results: Sequence[TaskEvalResult],
+    fixture_ids: set[str],
+    seeds: Sequence[int],
+    repetitions: int,
+) -> tuple[list[PairedSpeedup], int]:
+    if repetitions < 1:
+        raise ValueError("repetitions must be at least one")
+
+    paired: list[PairedSpeedup] = []
+    expected_pair_count = len(fixture_ids) * len(seeds)
+    expected_repetitions = set(range(1, repetitions + 1))
+    for fixture_id in sorted(fixture_ids):
+        for seed in seeds:
+            runs = {
+                policy: [
+                    result
+                    for result in results
+                    if result.fixture_id == fixture_id
+                    and result.seed == seed
+                    and result.policy is policy
+                ]
+                for policy in (EvaluationPolicy.AUTO, EvaluationPolicy.SERIAL)
+            }
+            if any(
+                {run.repetition for run in policy_runs} != expected_repetitions
+                or len(policy_runs) != repetitions
+                for policy_runs in runs.values()
+            ):
+                continue
+            auto_time = float(
+                median([run.wall_time_seconds for run in runs[EvaluationPolicy.AUTO]])
+            )
+            serial_time = float(
+                median([run.wall_time_seconds for run in runs[EvaluationPolicy.SERIAL]])
+            )
+            if serial_time <= 0.0:
+                continue
+            paired.append(
+                PairedSpeedup(
+                    fixture_id=fixture_id,
+                    seed=seed,
+                    auto_median_wall_time=round(auto_time, 4),
+                    serial_median_wall_time=round(serial_time, 4),
+                    speedup_pct=round((serial_time - auto_time) / serial_time * 100, 2),
+                )
+            )
+    return paired, expected_pair_count
 
 
 def render_markdown_report(report: EvaluationReport) -> str:

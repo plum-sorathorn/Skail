@@ -541,7 +541,13 @@ class EvaluationRunner:
         summaries: dict[str, PolicySummary] = {
             pol.value: generate_policy_summary(results, pol) for pol in self.policies
         }
-        comparison = compare_policies(summaries, results, self.fixtures)
+        comparison = compare_policies(
+            summaries,
+            results,
+            self.fixtures,
+            paired_seeds=self.paired_seeds,
+            repetitions=self.repetitions,
+        )
 
         return EvaluationReport(
             run_id=run_id,

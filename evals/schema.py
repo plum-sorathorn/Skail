@@ -244,6 +244,18 @@ class PolicySummary(BaseModel):
     safety_defect_count: int
 
 
+class PairedSpeedup(BaseModel):
+    """One complete auto/serial timing pair for a parallel fixture and seed."""
+
+    model_config = ConfigDict(frozen=True)
+
+    fixture_id: str
+    seed: int
+    auto_median_wall_time: float
+    serial_median_wall_time: float
+    speedup_pct: float
+
+
 class EvaluationComparison(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -256,6 +268,12 @@ class EvaluationComparison(BaseModel):
     parallel_median_wall_time: float
     serial_median_wall_time: float
     speedup_pct: float
+    parallel_fixture_speedups: tuple[PairedSpeedup, ...] = ()
+    parallel_seed_speedups_pct: dict[int, float] = Field(default_factory=dict)
+    parallel_pair_count: int = 0
+    parallel_expected_pair_count: int = 0
+    parallel_pairing_complete: bool = False
+    parallel_cross_seed_spread_pct: float | None = None
     gate_completion_passed: bool
     gate_cost_passed: bool
     gate_parallel_passed: bool
