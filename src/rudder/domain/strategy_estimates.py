@@ -98,6 +98,18 @@ class RouteEstimate(BaseModel):
     reasons: tuple[str, ...]
 
 
+class ShadowStrategyDecision(BaseModel):
+    """A non-executing recommendation derived from one evidence snapshot."""
+
+    model_config = ConfigDict(frozen=True)
+
+    evidence_revision: str = Field(min_length=1)
+    active_strategy: Strategy
+    recommended_strategy: Strategy
+    estimates: tuple[RouteEstimate, ...]
+    reasons: tuple[str, ...]
+
+
 def summarize_observations(
     observations: tuple[OutcomeObservation, ...],
     scope: StrategyObservationScope,
@@ -105,15 +117,7 @@ def summarize_observations(
     strategy: Strategy,
 ) -> StrategyObservationSummary:
     """Summarize exactly one versioned strategy cell without treating failures as free."""
-    matching = tuple(
-        observation
-        for observation in observations
-        if observation.strategy is strategy
-        and observation.work_family == scope.work_family
-        and observation.provider_revision == scope.provider_revision
-        and observation.harness_revision == scope.harness_revision
-        and observation.authority is scope.authority
-    )
+    matching = _matching_observations(observations, scope, strategy=strategy)
     sample_count = len(matching)
     success_count = sum(observation.succeeded for observation in matching)
     failure_count = sample_count - success_count
@@ -137,4 +141,113 @@ def summarize_observations(
             None if success_count == 0 else observed_cost / success_count
         ),
         median_latency_ms=median_latency,
+    )
+
+
+def _matching_observations(
+    observations: tuple[OutcomeObservation, ...],
+    scope: StrategyObservationScope,
+    *,
+    strategy: Strategy,
+) -> tuple[OutcomeObservation, ...]:
+    return tuple(
+        observation
+        for observation in observations
+        if observation.strategy is strategy
+        and observation.work_family == scope.work_family
+        and observation.provider_revision == scope.provider_revision
+        and observation.harness_revision == scope.harness_revision
+        and observation.authority is scope.authority
+    )
+
+
+def strategy_route_estimates(
+    snapshot: StrategyObservationSnapshot,
+) -> tuple[RouteEstimate, ...]:
+    """Derive conservative, deterministic estimates without changing execution policy."""
+    estimates: list[RouteEstimate] = []
+    for strategy in Strategy:
+        summary = summarize_observations(snapshot.observations, snapshot.scope, strategy=strategy)
+        costs = tuple(
+            observation.observed_cost_usd
+            for observation in _matching_observations(
+                snapshot.observations, snapshot.scope, strategy=strategy
+            )
+        )
+        compatible = (
+            summary.sample_count >= 2 and summary.expected_cost_per_completed_usd is not None
+        )
+        reasons = (
+            ("empirical_completed_work_cost",)
+            if compatible
+            else ("insufficient_evidence",)
+        )
+        estimates.append(
+            RouteEstimate(
+                evidence_revision=snapshot.evidence_revision,
+                authority=snapshot.scope.authority,
+                compatible=compatible,
+                expected_total_spend_usd=summary.expected_cost_per_completed_usd,
+                cost_uncertainty_usd=(None if not costs else max(costs) - min(costs)),
+                success_evidence=summary,
+                expected_latency_ms=summary.median_latency_ms,
+                strategy=strategy,
+                reasons=reasons,
+            )
+        )
+    return tuple(estimates)
+
+
+def shadow_strategy_decision(
+    snapshot: StrategyObservationSnapshot,
+    *,
+    active_strategy: Strategy,
+) -> ShadowStrategyDecision:
+    """Recommend only a better-supported, lower-cost strategy; never execute it."""
+    estimates = strategy_route_estimates(snapshot)
+    active = next(estimate for estimate in estimates if estimate.strategy is active_strategy)
+    if not active.compatible:
+        return ShadowStrategyDecision(
+            evidence_revision=snapshot.evidence_revision,
+            active_strategy=active_strategy,
+            recommended_strategy=active_strategy,
+            estimates=estimates,
+            reasons=("active_strategy_retained_due_to_insufficient_evidence",),
+        )
+
+    assert active.expected_total_spend_usd is not None
+    assert active.cost_uncertainty_usd is not None
+    candidates = tuple(
+        estimate
+        for estimate in estimates
+        if estimate.strategy is not active_strategy
+        and estimate.compatible
+        and estimate.expected_total_spend_usd is not None
+        and estimate.cost_uncertainty_usd is not None
+        and estimate.expected_total_spend_usd < active.expected_total_spend_usd
+        and estimate.cost_uncertainty_usd <= active.cost_uncertainty_usd
+    )
+    if not candidates:
+        return ShadowStrategyDecision(
+            evidence_revision=snapshot.evidence_revision,
+            active_strategy=active_strategy,
+            recommended_strategy=active_strategy,
+            estimates=estimates,
+            reasons=("active_strategy_retained_due_to_uncertainty",),
+        )
+
+    recommendation = min(
+        candidates,
+        key=lambda estimate: (
+            estimate.expected_total_spend_usd,
+            estimate.cost_uncertainty_usd,
+            estimate.strategy.value,
+        ),
+    )
+    return ShadowStrategyDecision(
+        evidence_revision=snapshot.evidence_revision,
+        active_strategy=active_strategy,
+        recommended_strategy=recommendation.strategy,
+        estimates=estimates,
+        reasons=("shadow_candidate_has_lower_reliable_completed_work_cost",),
     )

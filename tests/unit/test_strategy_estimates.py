@@ -5,8 +5,12 @@ from rudder.domain.strategy_estimates import (
     ObservationAuthority,
     OutcomeObservation,
     RouteEstimate,
+    ShadowStrategyDecision,
     Strategy,
     StrategyObservationScope,
+    observation_snapshot,
+    shadow_strategy_decision,
+    strategy_route_estimates,
     summarize_observations,
 )
 
@@ -14,6 +18,7 @@ from rudder.domain.strategy_estimates import (
 def _observation(
     observation_id: str,
     *,
+    strategy: Strategy = Strategy.ONE_WORKER,
     succeeded: bool,
     cost: str,
     provider_revision: str = "provider-v1",
@@ -23,7 +28,7 @@ def _observation(
     return OutcomeObservation(
         observation_id=observation_id,
         work_family="python-edit",
-        strategy=Strategy.ONE_WORKER,
+        strategy=strategy,
         provider_revision=provider_revision,
         harness_revision=harness_revision,
         authority=authority,
@@ -126,3 +131,80 @@ def test_route_estimate_carries_evidence_authority_uncertainty_and_reasons() -> 
 
     assert estimate.reasons == ("cold_start",)
     assert estimate.success_evidence.sample_count == 0
+
+
+def test_shadow_strategy_prefers_reliable_completed_work_cost_over_cheap_failures() -> None:
+    scope = StrategyObservationScope(
+        work_family="python-edit",
+        provider_revision="provider-v1",
+        harness_revision="harness-v1",
+        authority=ObservationAuthority.LOCAL,
+    )
+    snapshot = observation_snapshot(
+        scope,
+        (
+            _observation("direct-success", strategy=Strategy.DIRECT, succeeded=True, cost="0.10"),
+            _observation(
+                "direct-failure-1", strategy=Strategy.DIRECT, succeeded=False, cost="0.50"
+            ),
+            _observation(
+                "direct-failure-2", strategy=Strategy.DIRECT, succeeded=False, cost="0.50"
+            ),
+            _observation("worker-success-1", succeeded=True, cost="0.40"),
+            _observation("worker-success-2", succeeded=True, cost="0.40"),
+        ),
+    )
+
+    decision = shadow_strategy_decision(snapshot, active_strategy=Strategy.DIRECT)
+
+    assert isinstance(decision, ShadowStrategyDecision)
+    assert decision.recommended_strategy is Strategy.ONE_WORKER
+    assert decision.reasons == ("shadow_candidate_has_lower_reliable_completed_work_cost",)
+
+
+def test_shadow_strategy_keeps_active_strategy_when_evidence_is_insufficient() -> None:
+    scope = StrategyObservationScope(
+        work_family="python-edit",
+        provider_revision="provider-v1",
+        harness_revision="harness-v1",
+        authority=ObservationAuthority.LOCAL,
+    )
+    snapshot = observation_snapshot(
+        scope,
+        (
+            _observation("direct", strategy=Strategy.DIRECT, succeeded=True, cost="0.10"),
+            _observation("worker", succeeded=True, cost="0.01"),
+        ),
+    )
+
+    decision = shadow_strategy_decision(snapshot, active_strategy=Strategy.DIRECT)
+
+    assert decision.recommended_strategy is Strategy.DIRECT
+    assert decision.reasons == ("active_strategy_retained_due_to_insufficient_evidence",)
+
+
+def test_strategy_estimate_does_not_mix_uncertainty_from_another_evidence_cell() -> None:
+    scope = StrategyObservationScope(
+        work_family="python-edit",
+        provider_revision="provider-v1",
+        harness_revision="harness-v1",
+        authority=ObservationAuthority.LOCAL,
+    )
+    snapshot = observation_snapshot(
+        scope,
+        (
+            _observation("direct-1", strategy=Strategy.DIRECT, succeeded=True, cost="0.10"),
+            _observation("direct-2", strategy=Strategy.DIRECT, succeeded=True, cost="0.10"),
+            _observation(
+                "other-cell",
+                strategy=Strategy.DIRECT,
+                succeeded=True,
+                cost="9.00",
+                provider_revision="provider-v2",
+            ),
+        ),
+    )
+
+    direct = strategy_route_estimates(snapshot)[0]
+
+    assert direct.cost_uncertainty_usd == Decimal("0.00")
