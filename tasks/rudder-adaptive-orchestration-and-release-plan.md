@@ -874,6 +874,18 @@ revision/authority, compatibility, expected spend and uncertainty, success evide
 strategy, and reasons. The next slice persists these immutable records and produces bounded
 snapshots without network I/O.
 
+#### Phase 13b — Persist outcome observations and deterministic snapshots
+
+**Status:** complete. **Scope:** migration-owned immutable local observation records and bounded,
+stable SQLite snapshots only. This slice does not rank strategies, alter `auto`, or create shadow
+execution.
+
+**Handoff (completed 2026-09-09):** Commit `b9044ac` adds migration 16 and a
+journal boundary that persists immutable, idempotent outcome observations. Conflicting replays
+fail closed. Snapshot reads use only the local journal, exact version/authority scope, stable
+ordering, a bounded limit, and a content-derived evidence revision. The next slice summarizes
+persisted cells into strategy candidates and conservative shadow decisions.
+
 1. Implement strategy estimates and workload evidence from section 5. Compare direct, one-worker, and feasible parallel plans, including setup, checking, recovery, and integration costs. Do not create extra candidate plans by repeatedly querying models.
 2. Store observation provenance/authority and model/harness revisions. Compute empirical summaries offline from immutable outcomes; selection uses a deterministic snapshot without network I/O.
 3. Add shadow decisions and explanations while the active conservative policy continues execution. Shadow mode makes no extra provider calls and causes no speculative file effects.
