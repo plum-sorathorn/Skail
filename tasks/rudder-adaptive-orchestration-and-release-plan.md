@@ -886,6 +886,18 @@ fail closed. Snapshot reads use only the local journal, exact version/authority 
 ordering, a bounded limit, and a content-derived evidence revision. The next slice summarizes
 persisted cells into strategy candidates and conservative shadow decisions.
 
+#### Phase 13c — Derive snapshot-bound strategy estimates and shadow decisions
+
+**Status:** complete. **Scope:** deterministic, offline estimates from one persisted observation
+snapshot and non-executing shadow recommendations only. This slice does not alter the active
+routing policy, issue provider calls, or create speculative effects.
+
+**Handoff (completed 2026-09-09):** Commit `e910a4b` adds exact-cell estimates that retain
+failed-work spend, require at least two observations and one successful completion, and expose
+cost uncertainty. A shadow decision keeps the active strategy when evidence is insufficient or a
+cheaper candidate is more uncertain; otherwise it recommends the lower reliable completed-work
+cost. The recommendation is a pure value object and is not connected to execution.
+
 1. Implement strategy estimates and workload evidence from section 5. Compare direct, one-worker, and feasible parallel plans, including setup, checking, recovery, and integration costs. Do not create extra candidate plans by repeatedly querying models.
 2. Store observation provenance/authority and model/harness revisions. Compute empirical summaries offline from immutable outcomes; selection uses a deterministic snapshot without network I/O.
 3. Add shadow decisions and explanations while the active conservative policy continues execution. Shadow mode makes no extra provider calls and causes no speculative file effects.
