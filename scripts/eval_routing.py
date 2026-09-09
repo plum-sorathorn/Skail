@@ -139,12 +139,13 @@ def main() -> int:
             parser.error("--paired-runtime fixes the policy matrix; omit --policies")
         if args.seed != 42:
             parser.error("--paired-runtime fixes seeds 42 and 100; omit --seed")
-        runner = EvaluationRunner.paired_runtime(fixtures=fixtures)
+        runner = EvaluationRunner.paired_runtime(fixtures=fixtures, command=tuple(sys.argv))
     else:
         runner = EvaluationRunner(
             fixtures=fixtures,
             policies=policies,
             seed=args.seed,
+            command=tuple(sys.argv),
         )
 
     report = runner.run()

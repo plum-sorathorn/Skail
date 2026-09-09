@@ -982,6 +982,27 @@ report, and `scripts/eval_routing.py --paired-runtime` exposes the same offline-
 cell, and its report retains the profile identity. The next slice must add the remaining workload and
 raw-provenance requirements without treating this small executable profile as release evidence.
 
+#### Phase 15e — Retain complete synthetic economics and report provenance
+
+**Status:** complete. **Scope:** offline evidence accounting and replay metadata only; this does not
+promote an economic route or qualify a live provider.
+
+Policy summaries now retain all spend, including failed work, and expose the required cost per
+independently successful task. Zero-success policies report that ratio as unavailable rather than
+zero. Reports bind the source commit and working-tree digest, frozen fixture/catalog/policy digests,
+platform and dependency versions, timestamp, and invoking command. Raw records continue to be
+captured before oracle scoring; their persisted assignments and usage records remain independent of
+oracle mutations.
+
+**Acceptance:** failed-work cost is included in the success denominator, zero successes do not
+manufacture free work, and local report provenance is populated by the real controller evaluator.
+The full offline suite is run with an explicit bounded process and terminal result, so a silent output
+wrapper is not mistaken for an infinite loop.
+
+**Phase 15 status:** complete for deterministic offline engineering evidence. Synthetic reports and
+their gates remain non-qualifying for real-provider quality or savings; Phase 16 independently
+reviews the evidence and Phase 17 validates candidate release evidence.
+
 1. Use real controller controls for fixed economy, fixed quality, auto, serial, and no-delegation baselines. Fixed baselines pin concrete model identities; changing a routing-mode enum alone is not a fixed baseline. Record executed assignments.
 2. Add fixed-model orchestration and new-policy synthetic comparisons to separate model effects from graph effects. Preserve immutable pre-redesign diagnostics/source references; do not maintain a second old runtime inside production solely for comparisons.
 3. Extend frozen workloads with direct answers, adaptive discovery, non-barrier dependency execution, recovery, and isolated integration. Compare equivalent useful work and the same effects. Do not compare different tasks merely to favor parallel execution.

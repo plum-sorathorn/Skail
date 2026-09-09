@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib.metadata
 import json
+import platform
 import random
 import subprocess
 import time
@@ -24,6 +26,7 @@ from evals.schema import (
     EvaluationFixture,
     EvaluationPolicy,
     EvaluationPolicyControls,
+    EvaluationProvenance,
     EvaluationReport,
     ExecutedAssignment,
     ExecutionScript,
@@ -46,6 +49,64 @@ from rudder.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
 from rudder.routing.selector import RouteCandidate
 from rudder.runtime.run_controller import RunController  # type: ignore[import-untyped]
 from rudder.sessions.journal import Journal, SessionSnapshot  # type: ignore[import-untyped]
+
+
+def _digest(value: object) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _git_value(*args: str) -> str:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unavailable"
+    return completed.stdout.strip() or "unavailable"
+
+
+def _evaluation_provenance(
+    *,
+    fixtures: Sequence[EvaluationFixture],
+    catalog_revision: str,
+    candidates: Sequence[RouteCandidate],
+    policy_controls: dict[str, EvaluationPolicyControls],
+    command: tuple[str, ...],
+) -> EvaluationProvenance:
+    source_tree = _git_value("rev-parse", "HEAD^{tree}")
+    dependencies = {
+        name: importlib.metadata.version(name)
+        for name in ("deepagents", "langchain", "langchain-core", "langgraph", "pydantic")
+    }
+    return EvaluationProvenance(
+        source_commit=_git_value("rev-parse", "HEAD"),
+        source_digest=_digest(
+            {
+                "tree": source_tree,
+                "working_diff": _git_value("diff", "--binary", "--no-ext-diff", "HEAD"),
+            }
+        ),
+        fixture_digest=_digest([fixture.model_dump(mode="json") for fixture in fixtures]),
+        catalog_digest=_digest(
+            {
+                "catalog_revision": catalog_revision,
+                "candidates": [candidate.model_dump(mode="json") for candidate in candidates],
+            }
+        ),
+        policy_digest=_digest(
+            {name: controls.model_dump(mode="json") for name, controls in policy_controls.items()}
+        ),
+        operating_system=platform.platform(),
+        python_version=platform.python_version(),
+        dependency_versions=dependencies,
+        command=command,
+    )
 
 
 class _FixtureChatModel(BaseChatModel):
@@ -493,6 +554,7 @@ class EvaluationRunner:
         paired_seeds: tuple[int, ...] | None = None,
         repetitions: int = 1,
         runtime_writes_enabled: bool = True,
+        command: tuple[str, ...] = ("EvaluationRunner.run",),
     ) -> None:
         self.fixtures = list(fixtures)
         self.policies = list(policies)
@@ -506,6 +568,7 @@ class EvaluationRunner:
             raise ValueError("repetitions must be at least one")
         self.repetitions = repetitions
         self.runtime_writes_enabled = runtime_writes_enabled
+        self.command = command
         self._run_profile_id: str | None = None
 
     @classmethod
@@ -516,6 +579,7 @@ class EvaluationRunner:
         candidates: tuple[RouteCandidate, ...] | None = None,
         base_workspace: Path | None = None,
         runtime_writes_enabled: bool = True,
+        command: tuple[str, ...] = ("EvaluationRunner.run",),
     ) -> EvaluationRunner:
         """Build the plan-required, deterministic paired runtime matrix."""
         profile = CANONICAL_PAIRED_RUNTIME_PROFILE
@@ -527,6 +591,7 @@ class EvaluationRunner:
             paired_seeds=profile.paired_seeds,
             repetitions=profile.repetitions,
             runtime_writes_enabled=runtime_writes_enabled,
+            command=command,
         )
         runner._run_profile_id = profile.id
         return runner
@@ -538,6 +603,13 @@ class EvaluationRunner:
         raw_records: list[RawExecutionRecord] = []
 
         policy_controls = {policy.value: policy.controls() for policy in self.policies}
+        provenance = _evaluation_provenance(
+            fixtures=self.fixtures,
+            catalog_revision=catalog_revision,
+            candidates=self.candidates,
+            policy_controls=policy_controls,
+            command=self.command,
+        )
         cases: list[tuple[EvaluationFixture, EvaluationPolicy, int, int]] = []
         for seed in self.paired_seeds:
             for repetition in range(1, self.repetitions + 1):
@@ -586,6 +658,7 @@ class EvaluationRunner:
             comparison=comparison,
             paired_seeds=self.paired_seeds,
             repetitions=self.repetitions,
+            provenance=provenance,
             results=tuple(results),
             raw_records=tuple(raw_records),
         )
@@ -696,7 +769,10 @@ class EvaluationRunner:
                             policy_controls.lead_model or self.candidates[0].profile.model
                         ),
                         default_child_model=policy_controls.child_model or child_model_name,
-                        fixed_profile_models=_fixed_profile_models(policy_controls.child_model),
+                        fixed_profile_models={
+                            "explorer": child_model_name,
+                            **_fixed_profile_models(policy_controls.child_model),
+                        },
                         budget_limit_usd=Decimal("100.00"),
                         catalog_revision=catalog_revision,
                         providers={

@@ -261,6 +261,8 @@ class PolicySummary(BaseModel):
     completion_rate: float
     oracle_pass_rate: float
     total_cost_usd: Decimal
+    failed_work_cost_usd: Decimal = Decimal("0.00")
+    cost_per_successful_task_usd: Decimal | None = None
     median_cost_usd: Decimal
     mean_cost_usd: Decimal
     median_wall_time_seconds: float
@@ -306,6 +308,22 @@ class EvaluationComparison(BaseModel):
     all_gates_passed: bool
 
 
+class EvaluationProvenance(BaseModel):
+    """Immutable local facts needed to reproduce an offline evaluation report."""
+
+    model_config = ConfigDict(frozen=True)
+
+    source_commit: str
+    source_digest: str
+    fixture_digest: str
+    catalog_digest: str
+    policy_digest: str
+    operating_system: str
+    python_version: str
+    dependency_versions: dict[str, str]
+    command: tuple[str, ...]
+
+
 class EvaluationReport(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -317,6 +335,7 @@ class EvaluationReport(BaseModel):
     run_profile_id: str | None = None
     paired_seeds: tuple[int, ...] = (42,)
     repetitions: int = 1
+    provenance: EvaluationProvenance | None = None
     policy_controls: dict[str, EvaluationPolicyControls] = Field(default_factory=dict)
     policy_summaries: dict[str, PolicySummary]
     comparison: EvaluationComparison | None = None

@@ -30,6 +30,8 @@ def generate_policy_summary(
             completion_rate=0.0,
             oracle_pass_rate=0.0,
             total_cost_usd=Decimal("0.00"),
+            failed_work_cost_usd=Decimal("0.00"),
+            cost_per_successful_task_usd=None,
             median_cost_usd=Decimal("0.00"),
             mean_cost_usd=Decimal("0.00"),
             median_wall_time_seconds=0.0,
@@ -42,6 +44,10 @@ def generate_policy_summary(
     oracle_pass_count = sum(1 for r in policy_results if r.passed_oracle)
     costs = [r.total_cost_usd for r in policy_results]
     total_cost = sum(costs, Decimal("0.00"))
+    failed_work_cost = sum(
+        (result.total_cost_usd for result in policy_results if not result.completed),
+        Decimal("0.00"),
+    )
     wall_times = [r.wall_time_seconds for r in policy_results]
 
     return PolicySummary(
@@ -51,6 +57,10 @@ def generate_policy_summary(
         completion_rate=round(completed_count / total_runs, 4),
         oracle_pass_rate=round(oracle_pass_count / total_runs, 4),
         total_cost_usd=total_cost,
+        failed_work_cost_usd=failed_work_cost,
+        cost_per_successful_task_usd=(
+            total_cost / completed_count if completed_count else None
+        ),
         median_cost_usd=Decimal(str(round(float(median(costs)), 4))),
         mean_cost_usd=Decimal(str(round(float(total_cost / total_runs), 4))),
         median_wall_time_seconds=round(float(median(wall_times)), 4),
@@ -281,16 +291,23 @@ def render_markdown_report(report: EvaluationReport) -> str:
             "## Policy Comparison Summary",
             "",
             "| Policy | Runs | Completion | Oracle Pass | Median Cost | "
-            "Median Time | Escalations | Defects |",
-            "|---|---|---|---|---|---|---|---|",
+            "Median Time | Cost / Success | Failed Spend | Escalations | Defects |",
+            "|---|---|---|---|---|---|---|---|---|---|",
         ]
     )
 
     for pol_name, summary in report.policy_summaries.items():
+        cost_per_success = (
+            str(summary.cost_per_successful_task_usd)
+            if summary.cost_per_successful_task_usd is not None
+            else "unavailable"
+        )
         lines.append(
             f"| `{pol_name}` | {summary.total_runs} | {summary.completion_rate:.1%} | "
             f"{summary.oracle_pass_rate:.1%} | ${summary.median_cost_usd} | "
-            f"{summary.median_wall_time_seconds:.2f}s | {summary.total_escalations} | "
+            f"{summary.median_wall_time_seconds:.2f}s | "
+            f"${cost_per_success} | "
+            f"${summary.failed_work_cost_usd} | {summary.total_escalations} | "
             f"{summary.safety_defect_count} |"
         )
     lines.append("")

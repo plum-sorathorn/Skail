@@ -39,6 +39,10 @@ release evidence.
 - The `--paired-runtime` evaluator entry point selects the frozen `paired-runtime-v1` profile:
   all baseline policies, seeds 42 and 100, and five repetitions. It remains synthetic offline
   evidence and does not itself certify a speedup or economic qualification.
+- Each report binds the source commit and working-tree digest, fixture/catalog/policy digests,
+  platform and dependency versions, timestamp, and the exact invoking command. Policy summaries
+  report failed-work spend separately and divide all measured spend by independently completed
+  tasks; a policy with zero successful tasks reports cost per success as unavailable.
 
 ## Required evidence before release
 
