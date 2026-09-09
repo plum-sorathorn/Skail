@@ -797,6 +797,29 @@ passed, 1 Windows capability skip); Ruff, mypy, fake-provider smoke, and `rtk gi
 passed. `rtk pytest -q` exceeded the local 30-second reporting window; its timed-out child
 processes were verified and terminated, so no full-suite pass is claimed from this slice.
 
+#### Phase 12b.2 — Stable capture primitives and immutable artifact publication
+
+**Status:** complete. **Depends on:** 12b.1. **Scope:** a fail-closed scanner and artifact
+publication primitives only; no runtime changeset capture, canonical integration, or writer-lease
+relaxation.
+
+`StableWorktreeScanner` enumerates worktree files with configured file and byte bounds checked
+before reads, excludes Git administrative metadata, rejects links, reparse points, hard links, and
+non-regular entries, and verifies file identity, size, and timestamps through an open descriptor
+before and after reading. `ImmutableArtifactStore` publishes content-addressed SHA-256 images with
+exclusive creation, fsync, read-only permissions, and rejection of a pre-existing corrupt artifact.
+The implementation does not yet bind a scanner result to an admitted task/attempt or enable
+changeset capture. The shared writer lease remains required, and command confinement remains the
+next prerequisite for any isolated concurrent execution.
+
+Verification: `rtk pytest tests\unit\test_workspace_capture_primitives.py -q` (5 passed, 1
+symlink-capability skip). The new deterministic coverage exercises bounded normal scanning,
+hard-link and symlink rejection, create-once artifact reuse, and corrupt artifact refusal. The
+phase commit and wider verification record in the user handoff follow this tracker update.
+
+Next: Phase 12b.3 — bind these primitives to managed-worktree ownership and capture post-images
+without enabling canonical integration; retain isolated worktrees on every capture failure.
+
 1. Persist changesets with base/changed-path/content digests and verification references. Check actual effects against declared scope, not just the final prose result.
 2. Serialize canonical-workspace integration. Recheck base inputs and detect user edits since launch before applying; preserve conflicts and request bounded lead judgment.
 3. Apply dependent changes in verified dependency order. Independent filenames are not sufficient if public interfaces or generated assets conflict.
