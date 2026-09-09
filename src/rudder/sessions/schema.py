@@ -317,4 +317,25 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
         """,
     ),
+    (
+        16,
+        """
+        CREATE TABLE strategy_observations (
+            observation_id TEXT PRIMARY KEY,
+            work_family TEXT NOT NULL,
+            provider_revision TEXT NOT NULL,
+            harness_revision TEXT NOT NULL,
+            authority TEXT NOT NULL,
+            strategy TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL UNIQUE
+        );
+        CREATE INDEX strategy_observations_scope_order
+            ON strategy_observations(
+                work_family, provider_revision, harness_revision, authority, recorded_at,
+                observation_id
+            );
+        """,
+    ),
 )

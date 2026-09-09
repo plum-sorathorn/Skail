@@ -10,6 +10,12 @@ import pytest
 
 from rudder.domain.events import DiagnosticPayload, EventEnvelope, SecretRedactor, TaskPayload
 from rudder.domain.ids import EventId, RunId, SessionId, TaskId
+from rudder.domain.strategy_estimates import (
+    ObservationAuthority,
+    OutcomeObservation,
+    Strategy,
+    StrategyObservationScope,
+)
 from rudder.sessions import Journal, JournalIdempotencyError, SessionSnapshot
 from rudder.sessions import migrations as journal_migrations
 
@@ -41,6 +47,7 @@ EXPECTED_TABLES = {
     "change_sets",
     "change_set_operations",
     "change_set_file_operations",
+    "strategy_observations",
 }
 
 
@@ -67,6 +74,40 @@ def _seed_session(journal: Journal) -> None:
         budget_limit_usd=Decimal("2.00"),
         created_at=NOW,
     )
+
+
+def test_strategy_observations_are_idempotent_and_return_a_bounded_stable_snapshot(
+    tmp_path: Path,
+) -> None:
+    journal = Journal(tmp_path / "rudder.sqlite")
+    journal.migrate()
+    scope = StrategyObservationScope(
+        work_family="python-edit",
+        provider_revision="provider-v1",
+        harness_revision="harness-v1",
+        authority=ObservationAuthority.LOCAL,
+    )
+    observation = OutcomeObservation(
+        observation_id="observation-1",
+        strategy=Strategy.DIRECT,
+        succeeded=True,
+        observed_cost_usd=Decimal("0.10"),
+        latency_ms=25,
+        recorded_at=NOW,
+        **scope.model_dump(),
+    )
+
+    journal.record_outcome_observation(observation, idempotency_key="observation-key-1")
+    journal.record_outcome_observation(observation, idempotency_key="observation-key-1")
+    snapshot = journal.strategy_observation_snapshot(scope, limit=1)
+
+    assert snapshot.observations == (observation,)
+    assert snapshot.evidence_revision
+    with pytest.raises(JournalIdempotencyError):
+        journal.record_outcome_observation(
+            observation.model_copy(update={"succeeded": False}),
+            idempotency_key="observation-key-1",
+        )
 
 
 def test_migrations_create_the_complete_schema_and_are_idempotent(tmp_path: Path) -> None:

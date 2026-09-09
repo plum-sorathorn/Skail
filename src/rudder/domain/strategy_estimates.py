@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -55,6 +57,29 @@ class StrategyObservationSummary(BaseModel):
     success_rate: Decimal | None
     expected_cost_per_completed_usd: Decimal | None
     median_latency_ms: Decimal | None
+
+
+class StrategyObservationSnapshot(BaseModel):
+    """A bounded, deterministic view of one persisted observation cell."""
+
+    model_config = ConfigDict(frozen=True)
+
+    scope: StrategyObservationScope
+    observations: tuple[OutcomeObservation, ...]
+    evidence_revision: str = Field(min_length=1)
+
+
+def observation_snapshot(
+    scope: StrategyObservationScope,
+    observations: tuple[OutcomeObservation, ...],
+) -> StrategyObservationSnapshot:
+    payload = [observation.model_dump(mode="json") for observation in observations]
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return StrategyObservationSnapshot(
+        scope=scope,
+        observations=observations,
+        evidence_revision=hashlib.sha256(encoded.encode()).hexdigest(),
+    )
 
 
 class RouteEstimate(BaseModel):

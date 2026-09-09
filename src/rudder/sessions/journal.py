@@ -33,6 +33,12 @@ from rudder.domain.plans import (
     PlanNodeState,
     PlanRevision,
 )
+from rudder.domain.strategy_estimates import (
+    OutcomeObservation,
+    StrategyObservationScope,
+    StrategyObservationSnapshot,
+    observation_snapshot,
+)
 from rudder.domain.tasks import AttemptStatus, TaskStatus
 from rudder.runtime.errors import FrameworkContractError
 from rudder.sessions.migrations import apply_migrations
@@ -718,6 +724,70 @@ class Journal:
             except BaseException:
                 connection.rollback()
                 raise
+
+    def record_outcome_observation(
+        self, observation: OutcomeObservation, *, idempotency_key: str
+    ) -> None:
+        payload_json = json.dumps(
+            self.redactor.scrub(observation.model_dump(mode="json")),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        values = (
+            observation.observation_id,
+            observation.work_family,
+            observation.provider_revision,
+            observation.harness_revision,
+            observation.authority.value,
+            observation.strategy.value,
+            _now(observation.recorded_at),
+            payload_json,
+            idempotency_key,
+        )
+        with self.transaction() as transaction:
+            try:
+                transaction.connection.execute(
+                    "INSERT INTO strategy_observations VALUES (?,?,?,?,?,?,?,?,?)", values
+                )
+            except sqlite3.IntegrityError as exc:
+                existing = transaction.connection.execute(
+                    "SELECT observation_id,work_family,provider_revision,harness_revision,"
+                    "authority,"
+                    "strategy,recorded_at,payload_json,idempotency_key FROM strategy_observations "
+                    "WHERE idempotency_key=?",
+                    (idempotency_key,),
+                ).fetchone()
+                if existing is not None and tuple(existing) == values:
+                    return
+                raise JournalIdempotencyError(
+                    "session.idempotency_conflict",
+                    "outcome observation replay conflicts with persisted content",
+                    table="strategy_observations",
+                    idempotency_key=idempotency_key,
+                ) from exc
+
+    def strategy_observation_snapshot(
+        self, scope: StrategyObservationScope, *, limit: int = 500
+    ) -> StrategyObservationSnapshot:
+        if not 1 <= limit <= 1_000:
+            raise ValueError("strategy observation snapshot limit must be between 1 and 1000")
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT payload_json FROM strategy_observations WHERE work_family=? "
+                "AND provider_revision=? AND harness_revision=? AND authority=? "
+                "ORDER BY recorded_at,observation_id LIMIT ?",
+                (
+                    scope.work_family,
+                    scope.provider_revision,
+                    scope.harness_revision,
+                    scope.authority.value,
+                    limit,
+                ),
+            ).fetchall()
+        observations = tuple(
+            OutcomeObservation.model_validate(json.loads(row["payload_json"])) for row in rows
+        )
+        return observation_snapshot(scope, observations)
 
     @staticmethod
     def _backfill_plan_node_states(connection: sqlite3.Connection) -> None:
