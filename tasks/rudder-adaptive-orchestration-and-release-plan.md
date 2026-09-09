@@ -968,6 +968,20 @@ cannot satisfy the paired gate.
 **Acceptance:** a seed below 15%, a missing repetition, or cross-seed spread above ten percentage
 points fails the parallel gate even when aggregate policy medians look favorable.
 
+#### Phase 15d — Freeze the canonical paired-runtime profile
+
+**Status:** complete. **Scope:** deterministic profile selection and executable entry point only;
+no workload expansion, live provider call, speedup claim, or routing-policy change.
+
+`paired-runtime-v1` is an immutable evaluation contract for the required matrix: all five policy
+controls, seeds 42 and 100, and five repetitions. `EvaluationRunner.paired_runtime()` applies those
+controls without changing ordinary configurable runner defaults, records the profile identity on the
+report, and `scripts/eval_routing.py --paired-runtime` exposes the same offline-only execution path.
+
+**Acceptance:** the profile cannot be mutated, a profile run contains every policy/seed/repetition
+cell, and its report retains the profile identity. The next slice must add the remaining workload and
+raw-provenance requirements without treating this small executable profile as release evidence.
+
 1. Use real controller controls for fixed economy, fixed quality, auto, serial, and no-delegation baselines. Fixed baselines pin concrete model identities; changing a routing-mode enum alone is not a fixed baseline. Record executed assignments.
 2. Add fixed-model orchestration and new-policy synthetic comparisons to separate model effects from graph effects. Preserve immutable pre-redesign diagnostics/source references; do not maintain a second old runtime inside production solely for comparisons.
 3. Extend frozen workloads with direct answers, adaptive discovery, non-barrier dependency execution, recovery, and isolated integration. Compare equivalent useful work and the same effects. Do not compare different tasks merely to favor parallel execution.

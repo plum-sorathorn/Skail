@@ -154,6 +154,31 @@ class EvaluationPolicyControls(BaseModel):
     max_children: int = Field(default=3, ge=1, le=3)
 
 
+class EvaluationRunProfile(BaseModel):
+    """Frozen controls for a named, reproducible evaluation run."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    policies: tuple[EvaluationPolicy, ...]
+    paired_seeds: tuple[int, ...]
+    repetitions: int = Field(ge=1)
+
+
+CANONICAL_PAIRED_RUNTIME_PROFILE = EvaluationRunProfile(
+    id="paired-runtime-v1",
+    policies=(
+        EvaluationPolicy.AUTO,
+        EvaluationPolicy.ECONOMY,
+        EvaluationPolicy.QUALITY,
+        EvaluationPolicy.SERIAL,
+        EvaluationPolicy.NO_DELEGATION,
+    ),
+    paired_seeds=(42, 100),
+    repetitions=5,
+)
+
+
 class ContextEvalMetrics(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -289,6 +314,7 @@ class EvaluationReport(BaseModel):
     catalog_revision: str
     provider_mode: str
     fixture_count: int
+    run_profile_id: str | None = None
     paired_seeds: tuple[int, ...] = (42,)
     repetitions: int = 1
     policy_controls: dict[str, EvaluationPolicyControls] = Field(default_factory=dict)

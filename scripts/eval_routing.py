@@ -104,6 +104,11 @@ def main() -> int:
         help="Random seed for reproducibility",
     )
     parser.add_argument(
+        "--paired-runtime",
+        action="store_true",
+        help="Run the frozen Phase 15 paired-runtime profile (seeds 42,100; five repetitions)",
+    )
+    parser.add_argument(
         "--output",
         type=str,
         default=None,
@@ -129,11 +134,18 @@ def main() -> int:
         from evals.fixtures_loader import load_fixtures  # type: ignore[import-not-found]
         fixtures = load_fixtures(Path(args.fixtures))
 
-    runner = EvaluationRunner(
-        fixtures=fixtures,
-        policies=policies,
-        seed=args.seed,
-    )
+    if args.paired_runtime:
+        if args.policies.strip().lower() != "all":
+            parser.error("--paired-runtime fixes the policy matrix; omit --policies")
+        if args.seed != 42:
+            parser.error("--paired-runtime fixes seeds 42 and 100; omit --seed")
+        runner = EvaluationRunner.paired_runtime(fixtures=fixtures)
+    else:
+        runner = EvaluationRunner(
+            fixtures=fixtures,
+            policies=policies,
+            seed=args.seed,
+        )
 
     report = runner.run()
     md = render_markdown_report(report)

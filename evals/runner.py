@@ -19,6 +19,7 @@ from langchain_core.runnables import Runnable
 
 from evals.report import compare_policies, generate_policy_summary
 from evals.schema import (
+    CANONICAL_PAIRED_RUNTIME_PROFILE,
     ContextEvalMetrics,
     EvaluationFixture,
     EvaluationPolicy,
@@ -505,6 +506,30 @@ class EvaluationRunner:
             raise ValueError("repetitions must be at least one")
         self.repetitions = repetitions
         self.runtime_writes_enabled = runtime_writes_enabled
+        self._run_profile_id: str | None = None
+
+    @classmethod
+    def paired_runtime(
+        cls,
+        *,
+        fixtures: Sequence[EvaluationFixture],
+        candidates: tuple[RouteCandidate, ...] | None = None,
+        base_workspace: Path | None = None,
+        runtime_writes_enabled: bool = True,
+    ) -> EvaluationRunner:
+        """Build the plan-required, deterministic paired runtime matrix."""
+        profile = CANONICAL_PAIRED_RUNTIME_PROFILE
+        runner = cls(
+            fixtures=fixtures,
+            policies=profile.policies,
+            candidates=candidates,
+            base_workspace=base_workspace,
+            paired_seeds=profile.paired_seeds,
+            repetitions=profile.repetitions,
+            runtime_writes_enabled=runtime_writes_enabled,
+        )
+        runner._run_profile_id = profile.id
+        return runner
 
     def run(self, *, catalog_revision: str = "eval-v1") -> EvaluationReport:
         import uuid
@@ -554,6 +579,7 @@ class EvaluationRunner:
             timestamp=datetime.now(UTC),
             catalog_revision=catalog_revision,
             provider_mode="fake",
+            run_profile_id=self._run_profile_id,
             fixture_count=len(self.fixtures),
             policy_controls=policy_controls,
             policy_summaries=summaries,
