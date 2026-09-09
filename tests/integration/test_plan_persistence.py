@@ -641,7 +641,8 @@ def test_node_state_migration_backfills_an_existing_admitted_plan(
 ) -> None:
     database = tmp_path / "legacy.sqlite"
     migrations = journal_migrations.MIGRATIONS
-    monkeypatch.setattr(journal_migrations, "MIGRATIONS", migrations[:-1])
+    legacy_migrations = tuple(migration for migration in migrations if migration[0] < 13)
+    monkeypatch.setattr(journal_migrations, "MIGRATIONS", legacy_migrations)
     _journal(database)
     plan = _plan()
     plan_id = "11111111-1111-4111-8111-111111111111"
