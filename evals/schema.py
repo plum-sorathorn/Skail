@@ -171,6 +171,9 @@ class TaskEvalResult(BaseModel):
 
     fixture_id: str
     policy: EvaluationPolicy
+    seed: int = 42
+    repetition: int = 1
+    execution_order: int = 0
     completed: bool
     passed_oracle: bool
     wall_time_seconds: float
@@ -211,6 +214,9 @@ class RawExecutionRecord(BaseModel):
 
     fixture_id: str
     policy: EvaluationPolicy
+    seed: int = 42
+    repetition: int = 1
+    execution_order: int = 0
     evidence_class: Literal["synthetic_offline"] = "synthetic_offline"
     script_digest: str
     run_status: str | None = None
@@ -265,6 +271,8 @@ class EvaluationReport(BaseModel):
     catalog_revision: str
     provider_mode: str
     fixture_count: int
+    paired_seeds: tuple[int, ...] = (42,)
+    repetitions: int = 1
     policy_controls: dict[str, EvaluationPolicyControls] = Field(default_factory=dict)
     policy_summaries: dict[str, PolicySummary]
     comparison: EvaluationComparison | None = None

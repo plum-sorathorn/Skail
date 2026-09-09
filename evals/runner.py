@@ -489,6 +489,8 @@ class EvaluationRunner:
         candidates: tuple[RouteCandidate, ...] | None = None,
         base_workspace: Path | None = None,
         seed: int = 42,
+        paired_seeds: tuple[int, ...] | None = None,
+        repetitions: int = 1,
         runtime_writes_enabled: bool = True,
     ) -> None:
         self.fixtures = list(fixtures)
@@ -496,6 +498,12 @@ class EvaluationRunner:
         self.candidates = candidates or _default_eval_candidates()
         self.base_workspace = base_workspace
         self.seed = seed
+        self.paired_seeds = (seed,) if paired_seeds is None else paired_seeds
+        if not self.paired_seeds:
+            raise ValueError("paired_seeds must not be empty")
+        if repetitions < 1:
+            raise ValueError("repetitions must be at least one")
+        self.repetitions = repetitions
         self.runtime_writes_enabled = runtime_writes_enabled
 
     def run(self, *, catalog_revision: str = "eval-v1") -> EvaluationReport:
@@ -505,17 +513,30 @@ class EvaluationRunner:
         raw_records: list[RawExecutionRecord] = []
 
         policy_controls = {policy.value: policy.controls() for policy in self.policies}
-        cases = [(fixture, policy) for fixture in self.fixtures for policy in self.policies]
-        random.Random(self.seed).shuffle(cases)
-        for fixture, policy in cases:
+        cases: list[tuple[EvaluationFixture, EvaluationPolicy, int, int]] = []
+        for seed in self.paired_seeds:
+            for repetition in range(1, self.repetitions + 1):
+                seeded_cases = [
+                    (fixture, policy, seed, repetition)
+                    for fixture in self.fixtures
+                    for policy in self.policies
+                ]
+                random.Random(f"{seed}:{repetition}").shuffle(seeded_cases)
+                cases.extend(seeded_cases)
+        for execution_order, (fixture, policy, seed, repetition) in enumerate(cases):
             res, raw_record = self._run_fixture_policy(
                 fixture=fixture,
                 policy=policy,
                 policy_controls=policy_controls[policy.value],
                 catalog_revision=catalog_revision,
             )
-            results.append(res)
-            raw_records.append(raw_record)
+            identity = {
+                "seed": seed,
+                "repetition": repetition,
+                "execution_order": execution_order,
+            }
+            results.append(res.model_copy(update=identity))
+            raw_records.append(raw_record.model_copy(update=identity))
 
         summaries: dict[str, PolicySummary] = {
             pol.value: generate_policy_summary(results, pol) for pol in self.policies
@@ -531,6 +552,8 @@ class EvaluationRunner:
             policy_controls=policy_controls,
             policy_summaries=summaries,
             comparison=comparison,
+            paired_seeds=self.paired_seeds,
+            repetitions=self.repetitions,
             results=tuple(results),
             raw_records=tuple(raw_records),
         )

@@ -925,6 +925,34 @@ cost. The recommendation is a pure value object and is not connected to executio
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 14. **Completes:** old remediation 8.
 
+This phase is split so fixed baselines and frozen paired-run identity are proven before the
+statistical gates consume them. The next slice must compute the required per-fixture paired
+medians from these raw records; it must not treat aggregate policy summaries as paired evidence.
+
+#### Phase 15a — Pin fixed model baselines and capture executed assignments
+
+**Status:** complete. **Commit:** `63bc24c`.
+
+Fixed economy and quality baselines now pass explicit fixed lead and child model identities through
+the real controller, and raw records capture the controller-persisted assignment lineage. Focused
+offline tests prove both direct and delegated assignments use the configured fixed model rather
+than merely changing a routing-mode enum.
+
+#### Phase 15b — Freeze paired-run matrix identity
+
+**Status:** complete. **Scope:** deterministic offline matrix execution identity only; no paired
+statistics, release gate decision, live qualification, or routing-policy change.
+
+Each evaluation result and immutable pre-oracle raw record now carries its seed, one-based
+repetition, and stable execution order. The runner accepts explicit paired seeds and repetition
+count, executes every fixture/policy pair once per matrix cell in deterministic seeded order, and
+records those controls on the report. This gives the following statistics slice raw pair identities
+instead of inferred aggregate rows.
+
+**Acceptance:** a two-seed, two-repetition fixture matrix contains every fixture/policy/seed/
+repetition combination exactly once, has one stable execution-order value per run, and preserves
+the same identity on the raw and scored records.
+
 1. Use real controller controls for fixed economy, fixed quality, auto, serial, and no-delegation baselines. Fixed baselines pin concrete model identities; changing a routing-mode enum alone is not a fixed baseline. Record executed assignments.
 2. Add fixed-model orchestration and new-policy synthetic comparisons to separate model effects from graph effects. Preserve immutable pre-redesign diagnostics/source references; do not maintain a second old runtime inside production solely for comparisons.
 3. Extend frozen workloads with direct answers, adaptive discovery, non-barrier dependency execution, recovery, and isolated integration. Compare equivalent useful work and the same effects. Do not compare different tasks merely to favor parallel execution.
