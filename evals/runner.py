@@ -22,7 +22,9 @@ from evals.schema import (
     ContextEvalMetrics,
     EvaluationFixture,
     EvaluationPolicy,
+    EvaluationPolicyControls,
     EvaluationReport,
+    ExecutedAssignment,
     ExecutionScript,
     OracleSpec,
     OracleType,
@@ -33,6 +35,7 @@ from evals.schema import (
     TaskEvalResult,
 )
 from rudder.agents.lead import LeadControls
+from rudder.agents.profiles import builtin_profiles
 from rudder.domain.ids import new_session_id
 from rudder.domain.routing import TaskAssignment
 from rudder.providers.fake import FakeProviderAdapter
@@ -40,8 +43,8 @@ from rudder.providers.models import CapabilityVector, ModelProfile, ProviderSupp
 from rudder.routing.assignment import RoutingSnapshot, config_revision
 from rudder.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
 from rudder.routing.selector import RouteCandidate
-from rudder.runtime.run_controller import RunController
-from rudder.sessions.journal import Journal, SessionSnapshot
+from rudder.runtime.run_controller import RunController  # type: ignore[import-untyped]
+from rudder.sessions.journal import Journal, SessionSnapshot  # type: ignore[import-untyped]
 
 
 class _FixtureChatModel(BaseChatModel):
@@ -140,6 +143,10 @@ def _with_execution_decision(script: ExecutionScript, objective: str) -> Executi
     )
 
 
+
+
+def _fixed_profile_models(model: str | None) -> dict[str, str]:
+    return {} if model is None else {name: model for name in builtin_profiles()}
 
 
 def _default_eval_candidates() -> tuple[RouteCandidate, ...]:
@@ -365,6 +372,15 @@ def _runtime_integrity_defects(snapshot: SessionSnapshot) -> list[str]:
     return defects
 
 
+def _token_count(value: object) -> int:
+    if not isinstance(value, (int, float, str)):
+        return 0
+    try:
+        return max(int(value), 0)
+    except ValueError:
+        return 0
+
+
 def _context_metrics(snapshot: SessionSnapshot) -> ContextEvalMetrics:
     estimated = 0
     selected = 0
@@ -374,13 +390,13 @@ def _context_metrics(snapshot: SessionSnapshot) -> ContextEvalMetrics:
     handoff_bytes = 0
     for packet in snapshot.context_packets:
         payload = packet.payload
-        estimated += int(payload.get("estimated_tokens", 0))
+        estimated += _token_count(payload.get("estimated_tokens", 0))
         packet_omissions = payload.get("omissions", ())
         omissions += len(packet_omissions) if isinstance(packet_omissions, list) else 0
         for component in payload.get("components", ()):
             if not isinstance(component, dict):
                 continue
-            tokens = int(component.get("estimated_tokens", 0))
+            tokens = _token_count(component.get("estimated_tokens", 0))
             disposition = component.get("disposition", "selected")
             if disposition == "selected":
                 selected += tokens
@@ -416,6 +432,7 @@ def _raw_execution_record(
     run_status: str | None,
     error: str | None,
     usage_records: tuple[Decimal, ...],
+    assignments: tuple[TaskAssignment, ...],
 ) -> RawExecutionRecord:
     script_json = json.dumps(
         script.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
@@ -440,6 +457,19 @@ def _raw_execution_record(
         error=error,
         usage_cost_usd=sum(usage_records, Decimal("0.00")),
         usage_records=usage_records,
+        assignments=tuple(
+            ExecutedAssignment(
+                attempt_number=assignment.attempt_number,
+                provider=assignment.provider,
+                model=assignment.model,
+                routing_mode=assignment.routing_mode,
+                capability_floor=assignment.capability_floor,
+                estimated_attempt_cost_usd=assignment.estimated_attempt_cost_usd,
+                explanation=assignment.explanation,
+                catalog_revision=assignment.catalog_revision,
+            )
+            for assignment in assignments
+        ),
         workspace_files=workspace_files,
     )
 
@@ -474,12 +504,14 @@ class EvaluationRunner:
         results: list[TaskEvalResult] = []
         raw_records: list[RawExecutionRecord] = []
 
+        policy_controls = {policy.value: policy.controls() for policy in self.policies}
         cases = [(fixture, policy) for fixture in self.fixtures for policy in self.policies]
         random.Random(self.seed).shuffle(cases)
         for fixture, policy in cases:
             res, raw_record = self._run_fixture_policy(
                 fixture=fixture,
                 policy=policy,
+                policy_controls=policy_controls[policy.value],
                 catalog_revision=catalog_revision,
             )
             results.append(res)
@@ -496,6 +528,7 @@ class EvaluationRunner:
             catalog_revision=catalog_revision,
             provider_mode="fake",
             fixture_count=len(self.fixtures),
+            policy_controls=policy_controls,
             policy_summaries=summaries,
             comparison=comparison,
             results=tuple(results),
@@ -507,6 +540,7 @@ class EvaluationRunner:
         *,
         fixture: EvaluationFixture,
         policy: EvaluationPolicy,
+        policy_controls: EvaluationPolicyControls,
         catalog_revision: str,
     ) -> tuple[TaskEvalResult, RawExecutionRecord]:
         import tempfile
@@ -554,7 +588,7 @@ class EvaluationRunner:
                 )
 
             script = _with_execution_decision(script, fixture.prompt)
-            routing_mode = policy.to_routing_mode()
+            routing_mode = policy_controls.routing_mode
             runtime_models: dict[str, BaseChatModel] = {}
             for candidate in self.candidates:
                 model = _FixtureChatModel(
@@ -587,9 +621,10 @@ class EvaluationRunner:
                 created_at=datetime.now(UTC),
             )
             controls = LeadControls(
-                delegation="off" if policy is EvaluationPolicy.NO_DELEGATION else "auto",
+                delegation=policy_controls.delegation,
+                model=policy_controls.lead_model,
                 write_allowed=self.runtime_writes_enabled,
-                max_children=1 if policy is EvaluationPolicy.SERIAL else 3,
+                max_children=policy_controls.max_children,
                 routing_mode=routing_mode,
                 risk=fixture.risk,
             )
@@ -602,8 +637,11 @@ class EvaluationRunner:
                         workspace=workspace,
                         journal=journal,
                         models=runtime_models,
-                        default_lead_model=self.candidates[0].profile.model,
-                        default_child_model=child_model_name,
+                        default_lead_model=(
+                            policy_controls.lead_model or self.candidates[0].profile.model
+                        ),
+                        default_child_model=policy_controls.child_model or child_model_name,
+                        fixed_profile_models=_fixed_profile_models(policy_controls.child_model),
                         budget_limit_usd=Decimal("100.00"),
                         catalog_revision=catalog_revision,
                         providers={
@@ -641,6 +679,7 @@ class EvaluationRunner:
                 run_status=None if run_result is None else run_result.status,
                 error=error_msg,
                 usage_records=tuple(usage.amount_usd for usage in snapshot.usage_records),
+                assignments=tuple(assignments),
             )
             passed_oracle, oracle_error = evaluate_oracle(workspace, fixture.oracle)
             completed = bool(

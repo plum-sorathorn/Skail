@@ -114,18 +114,44 @@ class EvaluationPolicy(StrEnum):
     SERIAL = "serial"
     NO_DELEGATION = "no_delegation"
 
-    def to_routing_mode(self) -> RoutingMode:
+    def controls(self) -> EvaluationPolicyControls:
         match self:
-            case EvaluationPolicy.AUTO:
-                return RoutingMode.AUTO
             case EvaluationPolicy.ECONOMY:
-                return RoutingMode.ECONOMY
+                return EvaluationPolicyControls(
+                    routing_mode=RoutingMode.ECONOMY,
+                    lead_model="eval-provider:eval-mini",
+                    child_model="eval-provider:eval-mini",
+                )
             case EvaluationPolicy.QUALITY:
-                return RoutingMode.QUALITY
+                return EvaluationPolicyControls(
+                    routing_mode=RoutingMode.QUALITY,
+                    lead_model="eval-provider:eval-flagship",
+                    child_model="eval-provider:eval-flagship",
+                )
             case EvaluationPolicy.SERIAL:
-                return RoutingMode.AUTO
+                return EvaluationPolicyControls(
+                    routing_mode=RoutingMode.AUTO,
+                    max_children=1,
+                )
             case EvaluationPolicy.NO_DELEGATION:
-                return RoutingMode.AUTO
+                return EvaluationPolicyControls(
+                    routing_mode=RoutingMode.AUTO,
+                    delegation="off",
+                )
+            case EvaluationPolicy.AUTO:
+                return EvaluationPolicyControls(routing_mode=RoutingMode.AUTO)
+
+
+class EvaluationPolicyControls(BaseModel):
+    """Deterministic controller inputs used for one evaluation-policy run."""
+
+    model_config = ConfigDict(frozen=True)
+
+    routing_mode: RoutingMode
+    lead_model: str | None = None
+    child_model: str | None = None
+    delegation: Literal["auto", "off"] = "auto"
+    max_children: int = Field(default=3, ge=1, le=3)
 
 
 class ContextEvalMetrics(BaseModel):
@@ -163,6 +189,21 @@ class TaskEvalResult(BaseModel):
     child_count: int = 0
 
 
+class ExecutedAssignment(BaseModel):
+    """Stable assignment facts captured from the controller's persisted journal."""
+
+    model_config = ConfigDict(frozen=True)
+
+    attempt_number: Literal[1, 2]
+    provider: str
+    model: str
+    routing_mode: RoutingMode
+    capability_floor: float | None
+    estimated_attempt_cost_usd: Decimal
+    explanation: tuple[str, ...]
+    catalog_revision: str
+
+
 class RawExecutionRecord(BaseModel):
     """Immutable execution evidence captured before oracle scoring and summaries."""
 
@@ -176,6 +217,7 @@ class RawExecutionRecord(BaseModel):
     error: str | None = None
     usage_cost_usd: Decimal
     usage_records: tuple[Decimal, ...] = ()
+    assignments: tuple[ExecutedAssignment, ...] = ()
     workspace_files: tuple[tuple[str, str], ...] = ()
 
 
@@ -223,6 +265,7 @@ class EvaluationReport(BaseModel):
     catalog_revision: str
     provider_mode: str
     fixture_count: int
+    policy_controls: dict[str, EvaluationPolicyControls] = Field(default_factory=dict)
     policy_summaries: dict[str, PolicySummary]
     comparison: EvaluationComparison | None = None
     results: tuple[TaskEvalResult, ...] = ()

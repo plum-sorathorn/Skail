@@ -25,7 +25,7 @@ from evals.schema import (
 from rudder.domain.ids import new_assignment_id, new_reservation_id, new_task_id
 from rudder.domain.routing import RoutingMode, TaskAssignment
 from rudder.routing.requirements import RequirementBuilder, TaskRisk
-from rudder.routing.selector import select_model
+from rudder.routing.selector import RouteFailure, select_model
 
 
 def _execution_script(*, target: str, content: str) -> ExecutionScript:
@@ -350,8 +350,106 @@ def test_default_candidates_include_manual_child_pin() -> None:
         role="explorer", risk=TaskRisk.ROUTINE, mode=RoutingMode.MANUAL
     )
     selection = select_model(candidates, reqs, manual_model=("fake", "explorer"))
+    assert not isinstance(selection, RouteFailure)
     assert selection.candidate.profile.model == "explorer"
     assert not selection.candidate.profile.auto_eligible
+
+
+def test_fixed_model_baselines_pin_models_and_record_executed_assignments() -> None:
+    fixture = EvaluationFixture(
+        id="fixed-baseline",
+        title="Fixed baseline",
+        category="routine",
+        role="implementer",
+        risk=TaskRisk.ROUTINE,
+        prompt="Write baseline.txt",
+        execution=_execution_script(target="baseline.txt", content="baseline\n"),
+        oracle=OracleSpec(type=OracleType.FILE_EXISTS, target="baseline.txt"),
+    )
+
+    report = EvaluationRunner(
+        fixtures=[fixture],
+        policies=(EvaluationPolicy.ECONOMY, EvaluationPolicy.QUALITY),
+    ).run()
+
+    expected_models = {
+        EvaluationPolicy.ECONOMY: "eval-provider:eval-mini",
+        EvaluationPolicy.QUALITY: "eval-provider:eval-flagship",
+    }
+    for policy, expected_model in expected_models.items():
+        controls = report.policy_controls[policy.value]
+        assert controls.lead_model == expected_model
+        assert controls.child_model == expected_model
+
+        raw_record = next(record for record in report.raw_records if record.policy is policy)
+        assert raw_record.assignments
+        assert {
+            f"{assignment.provider}:{assignment.model}"
+            for assignment in raw_record.assignments
+        } == {expected_model}
+        assert {assignment.routing_mode for assignment in raw_record.assignments} == {
+            RoutingMode.MANUAL
+        }
+
+
+def test_fixed_model_baseline_records_delegated_assignment_lineage() -> None:
+    fixture = EvaluationFixture(
+        id="fixed-child-baseline",
+        title="Fixed child baseline",
+        category="routine",
+        role="implementer",
+        risk=TaskRisk.ROUTINE,
+        prompt="Ask an explorer to inspect the workspace",
+        initial_files={"input.txt": "input\n"},
+        execution=ExecutionScript(
+            responses=(
+                ScriptedModelResponse(
+                    content="Delegating the inspection.",
+                    tool_calls=(
+                        ScriptedToolCall(
+                            name="task",
+                            args={
+                                "description": "Inspect the workspace",
+                                "subagent_type": "explorer",
+                            },
+                            id="delegated-inspection",
+                        ),
+                    ),
+                    usage=ScriptedUsage(
+                        input_tokens=11,
+                        output_tokens=7,
+                        cost_usd=Decimal("0.012"),
+                    ),
+                ),
+            ),
+            final_response=ScriptedModelResponse(
+                content=(
+                    '{"status":"succeeded","summary":"Inspection completed.",'
+                    '"verification":[{"criterion":"inspection","passed":true,'
+                    '"evidence":"input.txt:1"}]}'
+                ),
+                usage=ScriptedUsage(
+                    input_tokens=13,
+                    output_tokens=5,
+                    cost_usd=Decimal("0.008"),
+                ),
+            ),
+        ),
+        oracle=OracleSpec(type=OracleType.MULTI_ASSERT),
+    )
+
+    report = EvaluationRunner(
+        fixtures=[fixture],
+        policies=(EvaluationPolicy.ECONOMY,),
+    ).run()
+
+    assignments = report.raw_records[0].assignments
+    assert len(assignments) > 1
+    assert assignments[0].model == "eval-mini"
+    assert assignments[1].model == "eval-mini"
+    assert assignments[0].routing_mode is RoutingMode.MANUAL
+    assert assignments[1].routing_mode is RoutingMode.MANUAL
+    assert assignments[-1].model == "eval-mini"
 
 
 def test_parallel_gate_uses_end_to_end_wall_time_not_child_only_timing() -> None:
@@ -364,29 +462,34 @@ def test_parallel_gate_uses_end_to_end_wall_time_not_child_only_timing() -> None
         parallel_eligible=True,
         oracle=OracleSpec(type=OracleType.FILE_EXISTS, target="done.txt"),
     )
-    common = {
-        "fixture_id": fixture.id,
-        "completed": True,
-        "passed_oracle": True,
-        "total_cost_usd": Decimal("1.00"),
-        "models_used": ("model",),
-        "assignments_count": 1,
-        "escalations_count": 0,
-        "interrupts_count": 0,
-        "child_count": 3,
-    }
     results = [
         TaskEvalResult(
+            fixture_id=fixture.id,
             policy=EvaluationPolicy.AUTO,
+            completed=True,
+            passed_oracle=True,
             wall_time_seconds=1.0,
+            total_cost_usd=Decimal("1.00"),
+            models_used=("model",),
+            assignments_count=1,
+            escalations_count=0,
+            interrupts_count=0,
             child_wall_seconds=0.2,
-            **common,
+            child_count=3,
         ),
         TaskEvalResult(
+            fixture_id=fixture.id,
             policy=EvaluationPolicy.SERIAL,
+            completed=True,
+            passed_oracle=True,
             wall_time_seconds=0.9,
+            total_cost_usd=Decimal("1.00"),
+            models_used=("model",),
+            assignments_count=1,
+            escalations_count=0,
+            interrupts_count=0,
             child_wall_seconds=0.6,
-            **common,
+            child_count=3,
         ),
     ]
     summaries = {

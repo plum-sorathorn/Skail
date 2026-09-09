@@ -193,6 +193,7 @@ class RunController:
         budget_warning_percent: int = 80,
         child_assigner: AssignChildAttempt | None = None,
         profile_models: Mapping[str, str] | None = None,
+        fixed_profile_models: Mapping[str, str] | None = None,
         ledger: BudgetLedger | None = None,
         assignment_service: AssignmentService | None = None,
         persisted_registry: PersistedAssignmentRegistry | None = None,
@@ -216,6 +217,7 @@ class RunController:
         self.default_lead_model = default_lead_model
         self.default_child_model = default_child_model
         self.profile_models = dict(profile_models or {})
+        self.fixed_profile_models = dict(fixed_profile_models or {})
         self.redaction = redaction or RedactionRegistry()
         self.redactor = redactor or self.redaction
         self.checkpoints = checkpoints
@@ -702,7 +704,7 @@ class RunController:
             redactor=self.redaction,
         )
         authorized_effects = {EffectScope.READ}
-        if controls.write_allowed is not False:
+        if controls.write_allowed in (None, True):
             authorized_effects.add(EffectScope.WORKSPACE_WRITE)
 
         def validate_plan(plan: ExecutionPlan) -> None:
@@ -710,7 +712,7 @@ class RunController:
                 if node.kind is PlanNodeKind.AGENT:
                     request = _task_request_for_plan_node(node)
                     profile = builtin_profiles()[request.profile]
-                    if controls.write_allowed is False and profile.write_capable:
+                    if controls.write_allowed in {False} and profile.write_capable:
                         raise TaskValidationError("plan.node_write_disallowed")
                     self.validator.normalize(request, parent_depth=0)
                 elif node.kind is PlanNodeKind.TOOL:
@@ -917,7 +919,9 @@ class RunController:
                 payload=TaskPayload(status="queued", profile=profile.name),
                 task_id=spec.task_id,
             )
-            configured_model = self.profile_models.get(profile.name)
+            configured_model = self.fixed_profile_models.get(
+                profile.name, self.profile_models.get(profile.name)
+            )
             policy = spec.request.model_policy
             if policy is not None and policy.model is not None:
                 configured_model = (
@@ -1327,7 +1331,7 @@ class RunController:
             self.workspace,
             ExecutionSecurityContext(
                 trusted_project=self.project_trusted,
-                workspace_write_allowed=controls.write_allowed is not False,
+                workspace_write_allowed=controls.write_allowed in (None, True),
                 write_lease_held=node.effect_scope is not EffectScope.READ,
             ),
         )
@@ -1456,7 +1460,7 @@ class RunController:
             profile = builtin_profiles().get(profile_name)
             if profile is None:
                 continue
-            if controls.write_allowed is False and profile.write_capable:
+            if controls.write_allowed in {False} and profile.write_capable:
                 continue
             try:
                 request = decode_task_request(description, profile=profile_name)
@@ -1501,7 +1505,7 @@ class RunController:
         )
         authorized_effects = frozenset(
             {EffectScope.READ, EffectScope.WORKSPACE_WRITE}
-            if controls.write_allowed is not False
+            if controls.write_allowed in (None, True)
             else {EffectScope.READ}
         )
         if existing_plan is None:
@@ -1605,7 +1609,9 @@ class RunController:
                 node_id,
             )
             model_policy = spec.request.model_policy
-            configured_model = self.profile_models.get(profile.name)
+            configured_model = self.fixed_profile_models.get(
+                profile.name, self.profile_models.get(profile.name)
+            )
             if model_policy is not None and model_policy.model is not None:
                 configured_model = (
                     f"{model_policy.provider}:{model_policy.model}"
@@ -2821,8 +2827,8 @@ class RunController:
             )
 
             model_policy = spec.request.model_policy
-            configured_model = None
-            if number == 1:
+            configured_model = self.fixed_profile_models.get(profile.name)
+            if configured_model is None and number == 1:
                 if model_policy is not None and model_policy.model is not None:
                     configured_model = (
                         f"{model_policy.provider}:{model_policy.model}"
@@ -3171,7 +3177,8 @@ class RunController:
                         if current in {PlanNodeState.LAUNCHING, PlanNodeState.RUNNING}:
                             self._settle_plan_node(plan_id, node_id, {"status": status})
                 except (KeyError, StopIteration):
-                    pass
+                    # A concurrently settled or replaced node needs only the task lifecycle event.
+                    event_persisted = False
             persisted_attempt_id = attempt_id
             if persisted_attempt_id is None and plan_node is not None:
                 binding = self.journal.plan_node_task_binding(plan_node[1])
