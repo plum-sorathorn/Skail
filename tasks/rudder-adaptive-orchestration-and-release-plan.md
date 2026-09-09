@@ -860,6 +860,20 @@ serialization behavior.
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 12.
 
+#### Phase 13a — Define version-scoped outcome estimate contracts
+
+**Status:** complete. **Scope:** immutable per-outcome evidence, versioned observation cells,
+deterministic descriptive summaries, and the `RouteEstimate` contract only. This slice does not
+persist observations, change `auto`, execute shadow strategies, or qualify a production route.
+
+**Handoff (completed 2026-09-09):** Commit `0917514` adds frozen outcome
+observations keyed by work family, provider revision, harness revision, and authority. Pure
+aggregation rejects implicit cross-cell pooling, includes unsuccessful strategy spend in cost per
+completed outcome, and represents empty cells as unknown. `RouteEstimate` now carries evidence
+revision/authority, compatibility, expected spend and uncertainty, success evidence, latency,
+strategy, and reasons. The next slice persists these immutable records and produces bounded
+snapshots without network I/O.
+
 1. Implement strategy estimates and workload evidence from section 5. Compare direct, one-worker, and feasible parallel plans, including setup, checking, recovery, and integration costs. Do not create extra candidate plans by repeatedly querying models.
 2. Store observation provenance/authority and model/harness revisions. Compute empirical summaries offline from immutable outcomes; selection uses a deterministic snapshot without network I/O.
 3. Add shadow decisions and explanations while the active conservative policy continues execution. Shadow mode makes no extra provider calls and causes no speculative file effects.
