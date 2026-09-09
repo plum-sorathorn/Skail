@@ -999,10 +999,12 @@ manufacture free work, and local report provenance is populated by the real cont
 The full offline suite is run with an explicit bounded process and terminal result, so a silent output
 wrapper is not mistaken for an infinite loop.
 
-**Phase 15 status:** active. The next slice, **15f — bound all-policy fixture execution and repair
-fixed-model child replay**, must retain a failed timeout record rather than permit a synthetic
-multi-child evaluation to run indefinitely. Synthetic reports and their gates remain non-qualifying
-for real-provider quality or savings.
+**Phase 15 status:** complete. **15f — bound all-policy fixture execution and repair fixed-model
+child replay** makes every synthetic matrix cell finite and retains a timeout as a failed raw record.
+The Windows in-process filesystem lock now waits for a competing writer instead of returning
+`Permission denied`, so the real-controller parallel fixture completes its three serialized writes
+with three active children. The frozen 100-cell profile terminates normally; its synthetic cost and
+speed gates remain failed and non-qualifying for real-provider quality or savings.
 
 1. Use real controller controls for fixed economy, fixed quality, auto, serial, and no-delegation baselines. Fixed baselines pin concrete model identities; changing a routing-mode enum alone is not a fixed baseline. Record executed assignments.
 2. Add fixed-model orchestration and new-policy synthetic comparisons to separate model effects from graph effects. Preserve immutable pre-redesign diagnostics/source references; do not maintain a second old runtime inside production solely for comparisons.

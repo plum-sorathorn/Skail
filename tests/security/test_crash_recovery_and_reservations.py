@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -114,3 +116,34 @@ def test_session_file_lock_prevents_concurrent_process_mutation(tmp_path: Path) 
     # Once the first lock exits, acquiring lock succeeds cleanly
     with process_file_lock(lock_file, timeout_sec=0.1):
         pass
+
+
+def test_session_file_lock_waits_for_an_in_process_writer(tmp_path: Path) -> None:
+    lock_file = tmp_path / "session.lock"
+    first_acquired = threading.Event()
+    release_first = threading.Event()
+    second_acquired = threading.Event()
+
+    def first_writer() -> None:
+        with process_file_lock(lock_file):
+            first_acquired.set()
+            assert release_first.wait(timeout=1)
+
+    def second_writer() -> None:
+        assert first_acquired.wait(timeout=1)
+        with process_file_lock(lock_file):
+            second_acquired.set()
+
+    first = threading.Thread(target=first_writer)
+    second = threading.Thread(target=second_writer)
+    first.start()
+    second.start()
+    assert first_acquired.wait(timeout=1)
+    time.sleep(0.05)
+    assert not second_acquired.is_set()
+    release_first.set()
+    first.join(timeout=1)
+    second.join(timeout=1)
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert second_acquired.is_set()

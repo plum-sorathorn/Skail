@@ -25,17 +25,13 @@ def process_file_lock(path: Path, timeout_sec: float | None = None) -> Iterator[
 
 def _acquire_lock(handle: BinaryIO, timeout_sec: float | None = None) -> None:
     handle.seek(0)
-    if timeout_sec is None:
-        _lock(handle, non_blocking=False)
-        return
-
     start_time = time.monotonic()
     while True:
         try:
             _lock(handle, non_blocking=True)
             return
         except OSError as exc:
-            if time.monotonic() - start_time >= timeout_sec:
+            if timeout_sec is not None and time.monotonic() - start_time >= timeout_sec:
                 raise FileLockBusyError("failed to acquire file lock within timeout") from exc
             time.sleep(0.01)
 

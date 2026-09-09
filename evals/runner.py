@@ -555,6 +555,7 @@ class EvaluationRunner:
         repetitions: int = 1,
         runtime_writes_enabled: bool = True,
         command: tuple[str, ...] = ("EvaluationRunner.run",),
+        cell_timeout_seconds: float = 15.0,
     ) -> None:
         self.fixtures = list(fixtures)
         self.policies = list(policies)
@@ -569,6 +570,9 @@ class EvaluationRunner:
         self.repetitions = repetitions
         self.runtime_writes_enabled = runtime_writes_enabled
         self.command = command
+        if cell_timeout_seconds <= 0:
+            raise ValueError("cell_timeout_seconds must be positive")
+        self.cell_timeout_seconds = cell_timeout_seconds
         self._run_profile_id: str | None = None
 
     @classmethod
@@ -730,10 +734,21 @@ class EvaluationRunner:
                 ] = model
 
             child_model_name = "fake:explorer"
+            child_response = script.child_response or script.final_response
+            if not child_response.content.lstrip().startswith("{"):
+                child_response = child_response.model_copy(
+                    update={
+                        "content": (
+                            '{"status":"succeeded","summary":"Fixture child completed.",'
+                            '"verification":[{"criterion":"fixture child","passed":true,'
+                            '"evidence":"deterministic fixture"}]}'
+                        )
+                    }
+                )
             child_model = _FixtureChatModel(
                 model_name="explorer",
                 final_response=script.final_response,
-                child_response=script.child_response,
+                child_response=child_response,
                 is_child=True,
                 child_delay=0.45,
             )
@@ -759,8 +774,7 @@ class EvaluationRunner:
             started = time.perf_counter()
             error_msg: str | None = None
             try:
-                run_result = asyncio.run(
-                    RunController(
+                controller = RunController(
                         session_id=session_id,
                         workspace=workspace,
                         journal=journal,
@@ -787,11 +801,19 @@ class EvaluationRunner:
                             health_revision="eval-health-v1",
                             candidates=self.candidates,
                         ),
-                    ).run_instruction(fixture.prompt, controls=controls)
+                    )
+                run_result = asyncio.run(
+                    asyncio.wait_for(
+                        controller.run_instruction(fixture.prompt, controls=controls),
+                        timeout=self.cell_timeout_seconds,
+                    )
                 )
+            except TimeoutError:
+                run_result = None
+                error_msg = f"runtime execution timed out after {self.cell_timeout_seconds:.1f}s"
             except Exception as exc:
                 run_result = None
-                error_msg = f"runtime execution failed: {exc}"
+                error_msg = f"runtime execution failed ({type(exc).__name__}): {exc}"
             elapsed = time.perf_counter() - started
             snapshot = journal.get_session_snapshot(str(session_id))
             assignments = [

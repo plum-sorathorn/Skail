@@ -127,3 +127,16 @@ def test_parallel_fixture_completes_the_same_serialized_writes_under_auto() -> N
 
     assert report.results[0].passed_oracle
     assert report.results[0].child_peak_active == 3
+
+
+def test_runtime_timeout_retains_a_failed_cell_record() -> None:
+    fixture = next(fixture for fixture in load_fixtures() if fixture.id == "par-01")
+
+    report = EvaluationRunner(
+        fixtures=[fixture],
+        policies=[EvaluationPolicy.AUTO],
+        cell_timeout_seconds=0.001,
+    ).run()
+
+    assert not report.results[0].completed
+    assert report.raw_records[0].error == "runtime execution timed out after 0.0s"
