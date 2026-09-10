@@ -1,7 +1,7 @@
 # Rudder Evaluation & Routing Gates
 
 Status: Release sign-off withheld
-Date: 2026-09-04
+Date: 2026-09-10
 Tracker: [v0.1.0 release remediation](../../tasks/rudder-v0.1.0-release-remediation.md)
 
 The previous report is invalid for release sign-off. Its scripted execution was coupled to
@@ -48,6 +48,10 @@ release evidence.
   fixture/seed pairs, measuring 24.38% and 23.79% seed speedups with a 0.59-point spread. The
   synthetic cost reduction remained 0%; this evidence qualifies the offline orchestration check
   only and does not establish live-provider savings.
+- Phase 16 corrected the synthetic cost gate to use total spend per independently successful task,
+  including failed work; median per-run cost is diagnostic only. Offline reports now encode
+  `production_qualified = false`, and manifest 1.1.2 states explicitly that the visible curated
+  synthetic corpus is not held out. See the [Phase 16 review](PHASE_16_REVIEW.md).
 
 ## Required evidence before release
 

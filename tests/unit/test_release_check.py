@@ -85,6 +85,10 @@ def test_release_eval_validation_requires_exact_fresh_policy_coverage() -> None:
     with pytest.raises(AssertionError, match="fresh"):
         validate_eval_report(stale, expected_fixture_ids={"fixture-1"})
 
+    future = _report(timestamp=datetime.now(UTC) + timedelta(hours=1))
+    with pytest.raises(AssertionError, match="future"):
+        validate_eval_report(future, expected_fixture_ids={"fixture-1"})
+
 
 def test_release_eval_validation_recomputes_outcome_requirements() -> None:
     failed_result = _report().results[0].model_copy(update={"passed_oracle": False})

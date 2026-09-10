@@ -40,12 +40,16 @@ def generate_policy_summary(
             safety_defect_count=0,
         )
 
-    completed_count = sum(1 for r in policy_results if r.completed)
+    completed_count = sum(1 for r in policy_results if r.completed and r.passed_oracle)
     oracle_pass_count = sum(1 for r in policy_results if r.passed_oracle)
     costs = [r.total_cost_usd for r in policy_results]
     total_cost = sum(costs, Decimal("0.00"))
     failed_work_cost = sum(
-        (result.total_cost_usd for result in policy_results if not result.completed),
+        (
+            result.total_cost_usd
+            for result in policy_results
+            if not (result.completed and result.passed_oracle)
+        ),
         Decimal("0.00"),
     )
     wall_times = [r.wall_time_seconds for r in policy_results]
@@ -91,9 +95,20 @@ def compare_policies(
 
     auto_med_cost = auto_summary.median_cost_usd
     qual_med_cost = quality_summary.median_cost_usd
-    if qual_med_cost > Decimal("0.00"):
+    auto_cost_per_success = auto_summary.cost_per_successful_task_usd
+    quality_cost_per_success = quality_summary.cost_per_successful_task_usd
+    if (
+        auto_cost_per_success is not None
+        and quality_cost_per_success is not None
+        and quality_cost_per_success > Decimal("0.00")
+    ):
         cost_red = round(
-            float((qual_med_cost - auto_med_cost) / qual_med_cost * 100), 2
+            float(
+                (quality_cost_per_success - auto_cost_per_success)
+                / quality_cost_per_success
+                * 100
+            ),
+            2,
         )
     else:
         cost_red = 0.0
@@ -140,7 +155,7 @@ def compare_policies(
     # SPEC.md section 21 initial gates:
     # 1. Completion rate within 5 percentage points of fixed quality
     gate_completion = comp_delta >= -0.05
-    # 2. Median cost reduction >= 20% compared to fixed quality
+    # 2. Total spend per independently successful task is at least 20% below fixed quality.
     gate_cost = cost_red >= 20.0
     # 3. Each seed needs >=15% paired speedup, with at most 10 points of cross-seed spread.
     gate_parallel = (
@@ -241,12 +256,20 @@ def render_markdown_report(report: EvaluationReport) -> str:
         f"- **Timestamp**: `{report.timestamp.isoformat()}`",
         f"- **Catalog Revision**: `{report.catalog_revision}`",
         f"- **Provider Mode**: `{report.provider_mode}`",
+        f"- **Evidence Class**: `{report.evidence_class}`",
+        "- **Qualification**: Offline engineering evidence only; "
+        "not production economic qualification",
         f"- **Total Fixtures**: `{report.fixture_count}`",
         "",
     ]
 
     if report.comparison is not None:
         comp = report.comparison
+        overall_status = (
+            "SYNTHETIC GATES PASSED — NOT PRODUCTION QUALIFIED"
+            if comp.all_gates_passed
+            else "SYNTHETIC GATES FAILED"
+        )
         lines.extend(
             [
                 "## SPEC.md Section 21 Acceptance Gates",
@@ -259,7 +282,8 @@ def render_markdown_report(report: EvaluationReport) -> str:
                     f"{'PASS' if comp.gate_completion_passed else 'FAIL'} |"
                 ),
                 (
-                    f"| **Cost Reduction** | Median cost reduction >= 20% vs Quality | "
+                    "| **Cost Reduction** | Cost per successful task reduction >= 20% "
+                    "vs Quality | "
                     f"{comp.cost_reduction_pct:.1f}% | "
                     f"{'PASS' if comp.gate_cost_passed else 'FAIL'} |"
                 ),
@@ -279,8 +303,8 @@ def render_markdown_report(report: EvaluationReport) -> str:
                     f"defects | {'PASS' if comp.gate_safety_passed else 'FAIL'} |"
                 ),
                 (
-                    f"| **Overall Result** | All stable release gates pass | — | "
-                    f"**{'ALL GATES PASSED' if comp.all_gates_passed else 'GATES FAILED'}** |"
+                    f"| **Overall Result** | All synthetic engineering gates pass | — | "
+                    f"**{overall_status}** |"
                 ),
                 "",
             ]

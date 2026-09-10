@@ -303,6 +303,8 @@ def test_eval_fixtures_manifest_freeze_and_digests() -> None:
     assert manifest_sec.get("date")
     assert manifest_sec.get("approved") is True
     assert manifest_sec.get("fixture_count") >= 50
+    assert manifest_sec.get("evidence_class") == "synthetic_offline"
+    assert manifest_sec.get("held_out") is False
 
     digests = data.get("digests", {})
     assert digests, "Manifest missing [digests] section"

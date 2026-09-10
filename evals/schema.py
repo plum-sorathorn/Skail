@@ -331,6 +331,8 @@ class EvaluationReport(BaseModel):
     timestamp: datetime
     catalog_revision: str
     provider_mode: str
+    evidence_class: Literal["synthetic_offline"] = "synthetic_offline"
+    production_qualified: Literal[False] = False
     fixture_count: int
     run_profile_id: str | None = None
     paired_seeds: tuple[int, ...] = (42,)

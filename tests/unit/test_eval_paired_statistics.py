@@ -127,3 +127,53 @@ def test_paired_parallel_gate_rejects_excessive_cross_seed_spread() -> None:
     assert comparison.parallel_pairing_complete
     assert comparison.parallel_cross_seed_spread_pct == 15.0
     assert not comparison.gate_parallel_passed
+
+
+def test_cost_gate_uses_total_spend_per_success_including_failed_work() -> None:
+    fixture = EvaluationFixture(
+        id="parallel-fixture",
+        title="Completed-work economics fixture",
+        category="routine",
+        prompt="Complete the same useful work",
+        oracle=OracleSpec(type=OracleType.MULTI_ASSERT),
+    )
+    auto_success = _result(
+        policy=EvaluationPolicy.AUTO,
+        seed=42,
+        repetition=1,
+        wall_time_seconds=1.0,
+    ).model_copy(update={"total_cost_usd": Decimal("0.10")})
+    auto_failure = _result(
+        policy=EvaluationPolicy.AUTO,
+        seed=42,
+        repetition=2,
+        wall_time_seconds=1.0,
+    ).model_copy(
+        update={
+            "completed": False,
+            "passed_oracle": False,
+            "total_cost_usd": Decimal("1.00"),
+        }
+    )
+    quality_results = [
+        _result(
+            policy=EvaluationPolicy.QUALITY,
+            seed=42,
+            repetition=repetition,
+            wall_time_seconds=1.0,
+        )
+        for repetition in (1, 2)
+    ]
+    results = [auto_success, auto_failure, *quality_results]
+    summaries = {
+        policy.value: generate_policy_summary(results, policy)
+        for policy in (EvaluationPolicy.AUTO, EvaluationPolicy.QUALITY)
+    }
+
+    comparison = compare_policies(summaries, results, [fixture])
+
+    assert comparison.auto_median_cost_usd == Decimal("0.55")
+    assert summaries["auto"].cost_per_successful_task_usd == Decimal("1.10")
+    assert summaries["quality"].cost_per_successful_task_usd == Decimal("1.00")
+    assert comparison.cost_reduction_pct == -10.0
+    assert not comparison.gate_cost_passed

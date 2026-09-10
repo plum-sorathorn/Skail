@@ -1,8 +1,10 @@
 [manifest]
-version = "1.1.1"
+version = "1.1.2"
 date = "2026-09-10"
 fixture_count = 54
 approved = true
+evidence_class = "synthetic_offline"
+held_out = false
 categories = [
   "trivial",
   "routine",

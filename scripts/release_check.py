@@ -27,7 +27,11 @@ def validate_eval_report(
         else EvaluationReport.model_validate(report)
     )
     current = now or datetime.now(UTC)
-    if parsed.timestamp.tzinfo is None or current - parsed.timestamp > max_age:
+    if parsed.timestamp.tzinfo is None:
+        raise AssertionError("evaluation report must be fresh and timezone-aware")
+    if parsed.timestamp > current:
+        raise AssertionError("evaluation report timestamp cannot be in the future")
+    if current - parsed.timestamp > max_age:
         raise AssertionError("evaluation report must be fresh and timezone-aware")
     if parsed.provider_mode != "fake":
         raise AssertionError("offline release evaluation must use fake provider mode")

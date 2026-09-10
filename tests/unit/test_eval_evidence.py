@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+from pydantic import ValidationError
+
 from evals.fixtures_loader import load_fixtures
-from evals.report import generate_policy_summary
+from evals.report import generate_policy_summary, render_markdown_report
 from evals.runner import EvaluationRunner
 from evals.schema import (
     EvaluationFixture,
     EvaluationPolicy,
+    EvaluationReport,
     ExecutionScript,
     OracleSpec,
     OracleType,
@@ -52,6 +56,20 @@ def test_policy_summary_marks_cost_per_success_unavailable_without_successes() -
 
     assert summary.failed_work_cost_usd == Decimal("1.00")
     assert summary.cost_per_successful_task_usd is None
+
+
+def test_policy_summary_requires_oracle_backed_completion_for_economics() -> None:
+    oracle_failure = _result(completed=True, cost="1.00").model_copy(
+        update={"passed_oracle": False}
+    )
+    summary = generate_policy_summary(
+        [oracle_failure, _result(completed=True, cost="2.00")],
+        EvaluationPolicy.AUTO,
+    )
+
+    assert summary.completed_count == 1
+    assert summary.failed_work_cost_usd == Decimal("1.00")
+    assert summary.cost_per_successful_task_usd == Decimal("3.00")
 
 
 def test_report_captures_replayable_local_provenance() -> None:
@@ -106,7 +124,11 @@ def test_report_retains_the_invoking_command_in_provenance() -> None:
         execution=ExecutionScript(
             final_response=ScriptedModelResponse(
                 content="done",
-                usage=ScriptedUsage(input_tokens=1, output_tokens=1, cost_usd=Decimal("0.00")),
+                usage=ScriptedUsage(
+                    input_tokens=1,
+                    output_tokens=1,
+                    cost_usd=Decimal("0.00"),
+                ),
             )
         ),
         oracle=OracleSpec(type=OracleType.MULTI_ASSERT),
@@ -120,6 +142,36 @@ def test_report_retains_the_invoking_command_in_provenance() -> None:
 
     assert report.provenance is not None
     assert report.provenance.command == ("python", "scripts/eval_routing.py", "--paired-runtime")
+
+
+def test_synthetic_report_cannot_claim_production_qualification() -> None:
+    fixture = EvaluationFixture(
+        id="synthetic-boundary",
+        title="Synthetic qualification boundary",
+        category="trivial",
+        prompt="No-op",
+        execution=ExecutionScript(
+            final_response=ScriptedModelResponse(
+                content="done",
+                usage=ScriptedUsage(
+                    input_tokens=1,
+                    output_tokens=1,
+                    cost_usd=Decimal("0.00"),
+                ),
+            )
+        ),
+        oracle=OracleSpec(type=OracleType.MULTI_ASSERT),
+    )
+    report = EvaluationRunner(fixtures=[fixture], policies=[EvaluationPolicy.AUTO]).run()
+    payload = report.model_dump()
+    payload["production_qualified"] = True
+
+    with pytest.raises(ValidationError, match="production_qualified"):
+        EvaluationReport.model_validate(payload)
+
+    rendered = render_markdown_report(report)
+    assert "synthetic_offline" in rendered
+    assert "not production economic qualification" in rendered
 
 
 def test_parallel_fixture_completes_the_same_serialized_writes_under_auto_and_serial() -> None:

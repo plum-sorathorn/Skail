@@ -201,8 +201,8 @@ Every row starts unchecked. Dependencies refer to this guide, not the old phase 
 | [ ] | 12 | Terra | 11 | Serialized verified integration |
 | [ ] | 13 | Terra | 12 | Outcome-based strategy routing in shadow mode |
 | [ ] | 14 | Gemini Flash | 13 | Replayable plan/route/workspace TUI |
-| [ ] | 15 | Terra | 14 | Honest paired evaluation and timing |
-| [ ] | 16 | Sol | 15 | Independent economics/isolation review |
+| [x] | 15 | Terra | 14 | Honest paired evaluation and timing |
+| [x] | 16 | Sol | 15 | Independent economics/isolation review |
 | [ ] | 17 | Terra | 16 | Raw-evidence release verifier |
 | [ ] | 18 | Luna | 17 | Packaging and exact-commit CI wiring |
 | [ ] | 19 | Terra | 18 | Startup/rendering/security performance checks |
@@ -1026,6 +1026,33 @@ cost reduction was 0%, so that gate remains failed and no live-provider savings 
 Attack the oracle separation, synthetic labels, cost denominator, baseline pinning, qualification trust, stale evidence, workspace snapshots, external resource isolation, integration replay, and completion reserves. Recompute a small report independently from raw observations. Verify oracle mutation and write suppression actually fail through the controller. Inspect held-out/frozen workload handling for selection bias.
 
 **Acceptance:** no critical/high open issue; simulated quality cannot enable a production route; the reviewer can explain exactly which savings claims remain unproven. Authors repair findings before closure. Commit `docs(review): record routing economics and workspace checkpoint`.
+
+**Phase 16 status:** complete. The independent review found no critical issue and closed every high
+finding. Synthetic cost reduction now uses total spend per oracle-backed successful task, including
+failed spend, rather than median per-run cost. Offline reports encode
+`production_qualified = false`, report output labels synthetic evidence explicitly, future-dated
+reports fail freshness validation, and manifest 1.1.2 records that the visible frozen corpus is not
+held out. Controller-level oracle mutation/write suppression, fixed assignments, snapshots,
+serialized integration and replay, external approval, and completion reserves passed focused
+checks. The full offline suite completed without an infinite loop. The durable review record is
+[Phase 16 Economics and Isolation Review](../docs/rudder/PHASE_16_REVIEW.md).
+
+#### Phase 16 handoff
+
+```text
+Phase: 16 — Independent economics and isolation review
+Status: complete
+Implementation model: available Codex model with a separate fresh-context read-only reviewer (assigned Sol treated as a recommendation)
+Commit(s): recorded by the phase commit that follows this handoff update
+Behavior delivered: Cost gates use total spend per oracle-backed successful task and retain failed spend. Synthetic reports have an enforced unqualified evidence boundary and truthful output labels. The manifest states that the curated offline corpus is frozen but not held out. Future-dated reports fail freshness validation. The review revalidated controller oracle/write suppression, fixed assignment identity, workspace snapshots, serialized integration and fail-closed replay, external-effect approval, and lead continuation reserves.
+Acceptance evidence and commands: `python scripts\eval_routing.py --output $env:TEMP\rudder-phase16-small-final.json` produced ten synthetic controller cells and correctly exited nonzero because cost/timing gates failed; a separate Python calculation reproduced two successes, `$0.004` total cost, and `$0.002` cost per success for every policy and verified the fixed manual assignments. A one-fixture `paired-runtime-v1` run retained 50/50 cells; an independent calculation reproduced seed speedups 40.97% and 38.40% with 2.57-point spread while cost remained failed. `rtk pytest tests\contract\test_eval_fixtures.py tests\unit\test_eval_evidence.py tests\unit\test_eval_paired_profile.py tests\unit\test_eval_paired_statistics.py tests\unit\test_eval_runner.py tests\unit\test_release_check.py tests\unit\test_strategy_estimates.py tests\unit\test_model_catalog.py tests\unit\test_workspaces.py tests\unit\test_workspace_capture_primitives.py tests\unit\test_budget.py tests\integration\test_assignment.py tests\integration\test_headless_core.py tests\security\test_command_injection_and_approvals.py tests\security\test_workspace_boundaries.py -q` (114 passed, 3 skipped); `rtk pytest -q` (653 passed, 4 skipped, terminal result in approximately 3.5 minutes); `python -m ruff check src tests scripts evals benchmarks` (passed); `python -m mypy src\rudder` (passed, 110 files); `python scripts\smoke.py --fake-provider` (passed); `graphify update .`; `rtk git diff --check`; complete staged and unstaged diff review.
+Test results and documented skips: all required deterministic checks passed. Four full-suite skips are local Windows hard-link, symbolic-link, and junction capability probes; the affected review matrix contained three of them. Live providers, paid evaluation, external cross-model CLI review, release tagging, pushing, publishing, remote changes, and legacy cleanup were not run. The cross-model review was skipped because no external-provider/OAuth/spend authorization was given; the fresh-context internal reviewer was read-only.
+Review findings closed/open: closed findings cover the wrong economics denominator, non-oracle-backed completion rows, representable synthetic qualification, future timestamps, and ambiguous held-out status. No critical/high finding remains. Phase 17 still owns the known medium gap that the legacy release checker trusts serialized scored/comparison fields instead of recomputing every gate from bound raw evidence.
+External evidence location and source identity, if applicable: none required; all Phase 16 evidence is deterministic and local. Temporary reports were written outside the checkout under `$env:TEMP`.
+Protected/unrelated files preserved: pre-existing user edits in AGENTS.md, evals/runner.py, src/rudder/runtime/run_controller.py, and tests/unit/test_eval_runner.py were not staged or modified by Phase 16. `.gitignore` and evals/results/run_1.json, run_1.md, run_2.json, and run_2.md were not modified or staged.
+Unproven claims or missing evidence: real-provider quality parity, at least 20% lower live aggregate cost per successful request, held-out qualification, production promotion, exact-candidate Windows/Linux readiness, publication, and tag eligibility remain unproven.
+Next phase and its dependencies: Phase 17 — Independently validate raw release evidence; depends on completed Phase 16.
+```
 
 ### Phase 17 — Independently validate raw release evidence
 
