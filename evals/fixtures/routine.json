@@ -282,7 +282,7 @@
     "oracle": {
       "type": "file_contains",
       "target": "text_utils.py",
-      "expected": "def slugify(text):"
+      "expected": "def slugify(text: str) -> str:"
     },
     "route_invariants": {
       "min_floor": 0.35
@@ -403,7 +403,7 @@
     "oracle": {
       "type": "file_contains",
       "target": "cfg.py",
-      "expected": "def load_config(path):"
+      "expected": "def load_config(path: str) -> dict:"
     },
     "route_invariants": {
       "min_floor": 0.35

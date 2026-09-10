@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable
 
@@ -133,6 +133,15 @@ class _FixtureChatModel(BaseChatModel):
             response_metadata={"rudder_cost_usd": str(response.usage.cost_usd)},
         )
 
+    def _is_child_call(self, messages: Sequence[BaseMessage]) -> bool:
+        if self.is_child:
+            return True
+        return any(
+            isinstance(message, HumanMessage)
+            and isinstance(message.content, str)
+            and message.content.lstrip().startswith("<context_packet")
+            for message in messages
+        )
     def _generate(
         self,
         messages: list[BaseMessage],
@@ -140,9 +149,10 @@ class _FixtureChatModel(BaseChatModel):
         run_manager: Any = None,
         **kwargs: Any,
     ) -> ChatResult:
-        del messages, stop, run_manager, kwargs
-        if self.is_child and self.child_delay > 0:
-            time.sleep(self.child_delay)
+        del stop, run_manager, kwargs
+        if self._is_child_call(messages):
+            if self.child_delay > 0:
+                time.sleep(self.child_delay)
             response = self.child_response or self.final_response
             return ChatResult(
                 generations=[ChatGeneration(message=self._message(response))]
@@ -161,8 +171,9 @@ class _FixtureChatModel(BaseChatModel):
         run_manager: Any = None,
         **kwargs: Any,
     ) -> ChatResult:
-        if self.is_child and self.child_delay > 0:
-            await asyncio.sleep(self.child_delay)
+        if self._is_child_call(messages):
+            if self.child_delay > 0:
+                await asyncio.sleep(self.child_delay)
             response = self.child_response or self.final_response
             return ChatResult(
                 generations=[ChatGeneration(message=self._message(response))]
@@ -721,12 +732,15 @@ class EvaluationRunner:
 
             script = _with_execution_decision(script, fixture.prompt)
             routing_mode = policy_controls.routing_mode
+            child_response = script.child_response or script.final_response
             runtime_models: dict[str, BaseChatModel] = {}
             for candidate in self.candidates:
                 model = _FixtureChatModel(
                     model_name=candidate.profile.model,
                     responses=script.responses,
                     final_response=script.final_response,
+                    child_response=child_response,
+                    child_delay=0.45,
                 )
                 runtime_models[candidate.profile.model] = model
                 runtime_models[
@@ -734,17 +748,6 @@ class EvaluationRunner:
                 ] = model
 
             child_model_name = "fake:explorer"
-            child_response = script.child_response or script.final_response
-            if not child_response.content.lstrip().startswith("{"):
-                child_response = child_response.model_copy(
-                    update={
-                        "content": (
-                            '{"status":"succeeded","summary":"Fixture child completed.",'
-                            '"verification":[{"criterion":"fixture child","passed":true,'
-                            '"evidence":"deterministic fixture"}]}'
-                        )
-                    }
-                )
             child_model = _FixtureChatModel(
                 model_name="explorer",
                 final_response=script.final_response,

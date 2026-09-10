@@ -16,6 +16,8 @@ from evals.schema import (
     ScriptedUsage,
     TaskEvalResult,
 )
+from rudder.agents.result_evaluator import parse_child_result
+from rudder.domain.ids import new_task_id
 
 
 def _result(*, completed: bool, cost: str) -> TaskEvalResult:
@@ -120,13 +122,60 @@ def test_report_retains_the_invoking_command_in_provenance() -> None:
     assert report.provenance.command == ("python", "scripts/eval_routing.py", "--paired-runtime")
 
 
-def test_parallel_fixture_completes_the_same_serialized_writes_under_auto() -> None:
+def test_parallel_fixture_completes_the_same_serialized_writes_under_auto_and_serial() -> None:
     fixture = next(fixture for fixture in load_fixtures() if fixture.id == "par-01")
 
-    report = EvaluationRunner(fixtures=[fixture], policies=[EvaluationPolicy.AUTO]).run()
+    report = EvaluationRunner(
+        fixtures=[fixture],
+        policies=[
+            EvaluationPolicy.AUTO,
+            EvaluationPolicy.ECONOMY,
+            EvaluationPolicy.QUALITY,
+            EvaluationPolicy.SERIAL,
+        ],
+    ).run()
 
-    assert report.results[0].passed_oracle
-    assert report.results[0].child_peak_active == 3
+    assert all(result.completed and result.passed_oracle for result in report.results)
+    peak_by_policy = {result.policy: result.child_peak_active for result in report.results}
+    assert peak_by_policy == {
+        EvaluationPolicy.AUTO: 3,
+        EvaluationPolicy.ECONOMY: 3,
+        EvaluationPolicy.QUALITY: 3,
+        EvaluationPolicy.SERIAL: 1,
+    }
+
+
+def test_parallel_fixture_child_results_satisfy_the_explorer_evidence_contract() -> None:
+    fixtures = [fixture for fixture in load_fixtures() if fixture.category == "parallel"]
+
+    for fixture in fixtures:
+        assert fixture.execution is not None
+        assert fixture.execution.child_response is not None
+        result = parse_child_result(
+            fixture.execution.child_response.content,
+            task_id=new_task_id(),
+            required_criteria=("Provide evidence for the completed task",),
+            model_authored_analysis=True,
+            source_validator=lambda reference, fixture=fixture: (
+                reference.rsplit(":", 1)[0] in fixture.initial_files
+            ),
+        )
+        assert result.status == "succeeded", fixture.id
+
+
+def test_direct_write_fixture_oracles_match_the_scripted_effect() -> None:
+    fixtures = {fixture.id: fixture for fixture in load_fixtures()}
+
+    for fixture_id in ("rout-05", "rout-07"):
+        fixture = fixtures[fixture_id]
+        assert fixture.execution is not None
+        write = next(
+            call
+            for response in fixture.execution.responses
+            for call in response.tool_calls
+            if call.name == "write_file"
+        )
+        assert fixture.oracle.expected in str(write.args["content"]), fixture_id
 
 
 def test_runtime_timeout_retains_a_failed_cell_record() -> None:

@@ -43,6 +43,11 @@ release evidence.
   platform and dependency versions, timestamp, and the exact invoking command. Policy summaries
   report failed-work spend separately and divide all measured spend by independently completed
   tasks; a policy with zero successful tasks reports cost per success as unavailable.
+- Phase 15's final Windows offline verification completed all 270 cells across the 54-fixture,
+  five-policy workload. Its frozen six-fixture parallel matrix completed all 300 cells and all 12
+  fixture/seed pairs, measuring 24.38% and 23.79% seed speedups with a 0.59-point spread. The
+  synthetic cost reduction remained 0%; this evidence qualifies the offline orchestration check
+  only and does not establish live-provider savings.
 
 ## Required evidence before release
 

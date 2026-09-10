@@ -6,7 +6,9 @@
     "role": "lead",
     "risk": "routine",
     "prompt": "Implement vector_math.py, matrix_math.py, and tensor_math.py in parallel",
-    "initial_files": {},
+    "initial_files": {
+      "task_context.md": "Parallel fixture requirements.\n"
+    },
     "allowed_tools": [
       "task",
       "write_file"
@@ -93,7 +95,7 @@
         }
       },
       "child_response": {
-        "content": "Architecture exploration complete for math operations.",
+        "content": "{\"status\":\"succeeded\",\"summary\":\"Architecture exploration complete for math operations.\",\"verification\":[{\"criterion\":\"Provide evidence for the completed task\",\"passed\":true,\"evidence\":\"task_context.md:1\"}]}",
         "tool_calls": [],
         "usage": {
           "input_tokens": 10,
@@ -139,7 +141,9 @@
     "role": "lead",
     "risk": "bounded",
     "prompt": "Implement json_export.py and csv_export.py concurrently for data models",
-    "initial_files": {},
+    "initial_files": {
+      "task_context.md": "Parallel fixture requirements.\n"
+    },
     "allowed_tools": [
       "task",
       "write_file"
@@ -210,7 +214,7 @@
         }
       },
       "child_response": {
-        "content": "Serialization format exploration complete.",
+        "content": "{\"status\":\"succeeded\",\"summary\":\"Serialization format exploration complete.\",\"verification\":[{\"criterion\":\"Provide evidence for the completed task\",\"passed\":true,\"evidence\":\"task_context.md:1\"}]}",
         "tool_calls": [],
         "usage": {
           "input_tokens": 10,
@@ -252,7 +256,9 @@
     "role": "lead",
     "risk": "bounded",
     "prompt": "Build users_api.py and orders_api.py as independent service routers",
-    "initial_files": {},
+    "initial_files": {
+      "task_context.md": "Parallel fixture requirements.\n"
+    },
     "allowed_tools": [
       "task",
       "write_file"
@@ -323,7 +329,7 @@
         }
       },
       "child_response": {
-        "content": "API endpoint research complete.",
+        "content": "{\"status\":\"succeeded\",\"summary\":\"API endpoint research complete.\",\"verification\":[{\"criterion\":\"Provide evidence for the completed task\",\"passed\":true,\"evidence\":\"task_context.md:1\"}]}",
         "tool_calls": [],
         "usage": {
           "input_tokens": 10,
@@ -365,7 +371,9 @@
     "role": "lead",
     "risk": "routine",
     "prompt": "Create test_unit.py and test_integration.py concurrently",
-    "initial_files": {},
+    "initial_files": {
+      "task_context.md": "Parallel fixture requirements.\n"
+    },
     "allowed_tools": [
       "task",
       "write_file"
@@ -436,7 +444,7 @@
         }
       },
       "child_response": {
-        "content": "Test workflow analysis complete.",
+        "content": "{\"status\":\"succeeded\",\"summary\":\"Test workflow analysis complete.\",\"verification\":[{\"criterion\":\"Provide evidence for the completed task\",\"passed\":true,\"evidence\":\"task_context.md:1\"}]}",
         "tool_calls": [],
         "usage": {
           "input_tokens": 10,
@@ -478,7 +486,9 @@
     "role": "lead",
     "risk": "bounded",
     "prompt": "Implement posix_shell.py and windows_shell.py concurrently",
-    "initial_files": {},
+    "initial_files": {
+      "task_context.md": "Parallel fixture requirements.\n"
+    },
     "allowed_tools": [
       "task",
       "write_file"
@@ -549,7 +559,7 @@
         }
       },
       "child_response": {
-        "content": "Shell primitives exploration complete.",
+        "content": "{\"status\":\"succeeded\",\"summary\":\"Shell primitives exploration complete.\",\"verification\":[{\"criterion\":\"Provide evidence for the completed task\",\"passed\":true,\"evidence\":\"task_context.md:1\"}]}",
         "tool_calls": [],
         "usage": {
           "input_tokens": 10,
@@ -591,7 +601,9 @@
     "role": "lead",
     "risk": "complex",
     "prompt": "Implement html_conv.py, md_conv.py, and rst_conv.py concurrently",
-    "initial_files": {},
+    "initial_files": {
+      "task_context.md": "Parallel fixture requirements.\n"
+    },
     "allowed_tools": [
       "task",
       "write_file"
@@ -678,7 +690,7 @@
         }
       },
       "child_response": {
-        "content": "Document converter exploration complete.",
+        "content": "{\"status\":\"succeeded\",\"summary\":\"Document converter exploration complete.\",\"verification\":[{\"criterion\":\"Provide evidence for the completed task\",\"passed\":true,\"evidence\":\"task_context.md:1\"}]}",
         "tool_calls": [],
         "usage": {
           "input_tokens": 10,
