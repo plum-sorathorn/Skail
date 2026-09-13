@@ -81,6 +81,7 @@ def compare_policies(
     *,
     paired_seeds: Sequence[int] | None = None,
     repetitions: int = 1,
+    parallel_fixture_ids: set[str] | None = None,
 ) -> EvaluationComparison:
     auto_summary = summaries.get(
         EvaluationPolicy.AUTO.value, generate_policy_summary(results, EvaluationPolicy.AUTO)
@@ -115,9 +116,12 @@ def compare_policies(
 
     # The aggregate medians remain informational. The speed gate uses only complete
     # per-fixture auto/serial repetition pairs for each configured seed.
-    parallel_fixture_ids = {f.id for f in fixtures if f.parallel_eligible}
-    if not parallel_fixture_ids:
-        parallel_fixture_ids = {r.fixture_id for r in results if "parallel" in r.fixture_id.lower()}
+    if parallel_fixture_ids is None:
+        parallel_fixture_ids = {f.id for f in fixtures if f.parallel_eligible}
+        if not parallel_fixture_ids:
+            parallel_fixture_ids = {
+                r.fixture_id for r in results if "parallel" in r.fixture_id.lower()
+            }
 
     auto_parallel_times = [
         r.wall_time_seconds

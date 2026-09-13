@@ -1058,6 +1058,10 @@ Next phase and its dependencies: Phase 17 — Independently validate raw release
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 16. **Begins:** old remediation 9.
 
+**Phase 17 status:** in progress through dependency-ordered slices. Slice 17a is complete; 17b
+owns immutable provenance/platform binding, numeric-domain validation, expected-failure separation,
+and clean-environment entry-point/package verification.
+
 1. Recompute completion, costs, per-fixture medians, paired speedups, repetition coverage, and gates from raw records. Serialized summaries are convenience data and must agree with recomputation; never trust `all_gates_passed`.
 2. Reject forged summary values, future/naive timestamps, nonfinite or invalid negative values, missing/duplicate pairs or invocation records, mismatched source/fixture/catalog/policy digests, insufficient repetitions, fewer than 50 approved fixtures, unresolved usage, and missing required platform evidence.
 3. Validate declared expected-failure contract outcomes separately from economic successes. Retain unexpected failures in summaries and fail engineering gates where required; do not blanket-drop failure fixtures to achieve 100%.
@@ -1066,6 +1070,23 @@ Next phase and its dependencies: Phase 17 — Independently validate raw release
 6. Make release/evaluation scripts function via direct invocation and supported module entry points from a clean environment. Keep helper modules in their intended package boundary; do not accidentally ship the evaluation corpus in the wheel.
 
 **Acceptance:** raw evidence independently determines pass/fail; source and platform mismatches fail closed; unsupported live claims cannot pass. Commit `fix(release): recompute gates from bound raw evidence`.
+
+#### Phase 17a handoff
+
+```text
+Phase: 17a — Bind raw invocations and recompute serialized evaluation gates
+Status: complete
+Implementation model: available Codex model (assigned Terra treated as a recommendation)
+Commit(s): recorded by the phase commit that follows this handoff update
+Behavior delivered: Release validation now requires the complete fixture/policy/seed/repetition matrix in both scored results and raw execution records, rejects duplicate or missing invocations, binds raw usage totals and execution order to each scored result, and independently regenerates policy summaries and the complete comparison/gate object. Serialized summaries, individual gate flags, and all_gates_passed are convenience fields only and must exactly match recomputation. Parallel eligibility is supplied from the independently loaded fixture manifest instead of inferred from serialized comparison data.
+Acceptance evidence and commands: RED `rtk pytest tests\unit\test_release_check.py -q` (1 passed, 4 failed); GREEN `rtk pytest tests\unit\test_release_check.py tests\unit\test_eval_evidence.py tests\unit\test_eval_paired_profile.py tests\unit\test_eval_paired_statistics.py tests\unit\test_eval_paired_matrix.py tests\unit\test_eval_runner.py tests\contract\test_eval_fixtures.py -q` (48 passed); `rtk pytest -q` (657 passed, 4 skipped); final Ruff, mypy, fake-provider smoke, Graphify update, diff check, and staged review recorded by the phase completion report.
+Test results and documented skips: deterministic focused, affected, and complete offline checks passed. Four full-suite skips are the existing local Windows hard-link, symbolic-link, and junction capability probes. Live providers, paid evaluation, cross-model CLI review, release tagging, pushing, publishing, remote changes, and legacy cleanup were not run.
+Review findings closed/open: closed findings cover trusted aggregate summaries, forged all_gates_passed, edited aggregate/raw costs, duplicate raw invocations, missing paired repetitions, execution-order mismatch, and explicit-empty parallel fixture handling. Slice 17b must still bind immutable source/fixture/catalog/policy identities and platform artifacts, validate numeric domains and timestamps comprehensively, recompute expected-failure classification from independent fixtures, and verify direct/module entry points plus wheel exclusion.
+External evidence location and source identity, if applicable: none required for 17a; all evidence is deterministic and local.
+Protected/unrelated files preserved: pre-existing edits in AGENTS.md, README.md, evals/runner.py, src/rudder/runtime/run_controller.py, and tests/unit/test_eval_runner.py were not modified or staged by this slice. .gitignore and evals/results/run_1.json, run_1.md, run_2.json, and run_2.md were not modified or staged.
+Unproven claims or missing evidence: 17a binds execution identities/costs and recomputes serialized aggregates from scored outcomes; it does not yet certify immutable artifact provenance, cross-platform exact-candidate evidence, expected-failure semantics, live quality/cost qualification, or production promotion.
+Next phase and its dependencies: Phase 17b — Validate provenance, numeric domains, expected failures, platforms, and entry points; depends on completed 17a.
+```
 
 ### Phase 18 — Fresh packaging and exact-commit CI wiring
 

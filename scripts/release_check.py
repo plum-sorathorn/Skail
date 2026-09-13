@@ -6,9 +6,11 @@ import sys
 import tempfile
 import zipfile
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 from evals.fixtures_loader import load_fixtures
+from evals.report import compare_policies, generate_policy_summary
 from evals.schema import EvaluationPolicy, EvaluationReport
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +20,7 @@ def validate_eval_report(
     report: EvaluationReport | dict[str, object],
     *,
     expected_fixture_ids: set[str],
+    expected_parallel_fixture_ids: set[str] | None = None,
     now: datetime | None = None,
     max_age: timedelta = timedelta(minutes=15),
 ) -> EvaluationReport:
@@ -36,14 +39,24 @@ def validate_eval_report(
     if parsed.provider_mode != "fake":
         raise AssertionError("offline release evaluation must use fake provider mode")
     policies = set(EvaluationPolicy)
-    expected_pairs = {
-        (fixture_id, policy)
+    expected_identities = {
+        (fixture_id, policy, seed, repetition)
         for fixture_id in expected_fixture_ids
         for policy in policies
+        for seed in parsed.paired_seeds
+        for repetition in range(1, parsed.repetitions + 1)
     }
-    actual_pairs = [(result.fixture_id, result.policy) for result in parsed.results]
-    if len(actual_pairs) != len(set(actual_pairs)) or set(actual_pairs) != expected_pairs:
-        raise AssertionError("evaluation fixture-policy coverage is incomplete or duplicated")
+    actual_identities = [
+        (result.fixture_id, result.policy, result.seed, result.repetition)
+        for result in parsed.results
+    ]
+    if (
+        len(actual_identities) != len(set(actual_identities))
+        or set(actual_identities) != expected_identities
+    ):
+        raise AssertionError(
+            "evaluation fixture-policy-seed-repetition coverage is incomplete or duplicated"
+        )
     if parsed.fixture_count != len(expected_fixture_ids):
         raise AssertionError("evaluation fixture count does not match the manifest")
     if set(parsed.policy_summaries) != {policy.value for policy in policies}:
@@ -56,16 +69,44 @@ def validate_eval_report(
         raise AssertionError("evaluation contains safety or runtime-integrity defects")
     if any(result.assignments_count < 1 for result in parsed.results):
         raise AssertionError("evaluation result is missing a persisted assignment")
+    raw_identities = [
+        (record.fixture_id, record.policy, record.seed, record.repetition)
+        for record in parsed.raw_records
+    ]
+    if (
+        len(raw_identities) != len(set(raw_identities))
+        or set(raw_identities) != expected_identities
+    ):
+        raise AssertionError("raw invocation coverage is incomplete or duplicated")
+    raw_by_identity = dict(zip(raw_identities, parsed.raw_records, strict=True))
+    if any(
+        raw_by_identity[identity].usage_cost_usd != result.total_cost_usd
+        or sum(raw_by_identity[identity].usage_records, start=Decimal("0.00"))
+        != raw_by_identity[identity].usage_cost_usd
+        or raw_by_identity[identity].execution_order != result.execution_order
+        for identity, result in zip(actual_identities, parsed.results, strict=True)
+    ):
+        raise AssertionError("scored results do not match raw execution identity or costs")
+
+    recomputed_summaries = {
+        policy.value: generate_policy_summary(parsed.results, policy) for policy in policies
+    }
+    if parsed.policy_summaries != recomputed_summaries:
+        raise AssertionError("serialized policy summaries do not match raw recomputation")
     comparison = parsed.comparison
     if comparison is None:
         raise AssertionError("evaluation comparison is missing")
-    recomputed = (
-        comparison.completion_delta >= -0.05
-        and comparison.cost_reduction_pct >= 20.0
-        and comparison.speedup_pct >= 15.0
-        and sum(len(result.safety_defects) for result in parsed.results) == 0
+    recomputed_comparison = compare_policies(
+        recomputed_summaries,
+        parsed.results,
+        (),
+        paired_seeds=parsed.paired_seeds,
+        repetitions=parsed.repetitions,
+        parallel_fixture_ids=expected_parallel_fixture_ids or set(),
     )
-    if not recomputed or not comparison.all_gates_passed:
+    if comparison != recomputed_comparison:
+        raise AssertionError("serialized comparison does not match raw recomputation")
+    if not recomputed_comparison.all_gates_passed:
         raise AssertionError("evaluation acceptance gates did not pass")
     return parsed
 
@@ -189,6 +230,7 @@ def check_evals() -> None:
     print("[8/8] Running and validating fresh evaluation results...")
     fixtures = load_fixtures(ROOT / "evals" / "manifest.toml")
     expected_ids = {fixture.id for fixture in fixtures}
+    parallel_ids = {fixture.id for fixture in fixtures if fixture.parallel_eligible}
     reports: list[EvaluationReport] = []
     with tempfile.TemporaryDirectory(prefix="rudder-release-eval-") as directory:
         for seed in (42, 100):
@@ -211,7 +253,13 @@ def check_evals() -> None:
             if proc.returncode != 0:
                 raise RuntimeError(f"Evaluation seed {seed} failed:\n{proc.stderr or proc.stdout}")
             report = EvaluationReport.model_validate_json(output.read_text(encoding="utf-8"))
-            reports.append(validate_eval_report(report, expected_fixture_ids=expected_ids))
+            reports.append(
+                validate_eval_report(
+                    report,
+                    expected_fixture_ids=expected_ids,
+                    expected_parallel_fixture_ids=parallel_ids,
+                )
+            )
     speedups = [report.comparison.speedup_pct for report in reports if report.comparison]
     if max(speedups) - min(speedups) > 10.0:
         raise AssertionError("parallel speedup variance exceeds 10 percentage points")
