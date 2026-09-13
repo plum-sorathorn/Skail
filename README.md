@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-**Rudder Harness** (distribution: `rudder-harness`) is a native, budget-aware multi-agent coding harness for Python 3.12+. It launches directly from the console as `rudder` without proxy servers, daemons, plugin planes, or hook shims.
+**Rudder Harness** (distribution: `rudder-harness`) is a native, budget-aware multi-agent coding harness. It launches directly from the console as `rudder` without proxy servers, daemons, plugin planes, or hook shims.
 
 > **Just prompt; Rudder will orchestrate.**
 

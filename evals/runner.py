@@ -142,6 +142,7 @@ class _FixtureChatModel(BaseChatModel):
             and message.content.lstrip().startswith("<context_packet")
             for message in messages
         )
+
     def _generate(
         self,
         messages: list[BaseMessage],
@@ -154,9 +155,7 @@ class _FixtureChatModel(BaseChatModel):
             if self.child_delay > 0:
                 time.sleep(self.child_delay)
             response = self.child_response or self.final_response
-            return ChatResult(
-                generations=[ChatGeneration(message=self._message(response))]
-            )
+            return ChatResult(generations=[ChatGeneration(message=self._message(response))])
         if self._cursor < len(self.responses):
             response = self.responses[self._cursor]
             self._cursor += 1
@@ -175,9 +174,7 @@ class _FixtureChatModel(BaseChatModel):
             if self.child_delay > 0:
                 await asyncio.sleep(self.child_delay)
             response = self.child_response or self.final_response
-            return ChatResult(
-                generations=[ChatGeneration(message=self._message(response))]
-            )
+            return ChatResult(generations=[ChatGeneration(message=self._message(response))])
         return self._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
     @property
@@ -214,8 +211,6 @@ def _with_execution_decision(script: ExecutionScript, objective: str) -> Executi
             )
         }
     )
-
-
 
 
 def _fixed_profile_models(model: str | None) -> dict[str, str]:
@@ -507,9 +502,7 @@ def _raw_execution_record(
     usage_records: tuple[Decimal, ...],
     assignments: tuple[TaskAssignment, ...],
 ) -> RawExecutionRecord:
-    script_json = json.dumps(
-        script.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
-    )
+    script_json = json.dumps(script.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
     workspace_files = tuple(
         sorted(
             (
@@ -613,6 +606,7 @@ class EvaluationRunner:
 
     def run(self, *, catalog_revision: str = "eval-v1") -> EvaluationReport:
         import uuid
+
         run_id = f"eval-{uuid.uuid4().hex[:8]}"
         results: list[TaskEvalResult] = []
         raw_records: list[RawExecutionRecord] = []
@@ -666,14 +660,14 @@ class EvaluationRunner:
             timestamp=datetime.now(UTC),
             catalog_revision=catalog_revision,
             provider_mode="fake",
-            run_profile_id=self._run_profile_id,
             fixture_count=len(self.fixtures),
-            policy_controls=policy_controls,
-            policy_summaries=summaries,
-            comparison=comparison,
+            run_profile_id=self._run_profile_id,
             paired_seeds=self.paired_seeds,
             repetitions=self.repetitions,
             provenance=provenance,
+            policy_controls=policy_controls,
+            policy_summaries=summaries,
+            comparison=comparison,
             results=tuple(results),
             raw_records=tuple(raw_records),
         )
@@ -687,6 +681,7 @@ class EvaluationRunner:
         catalog_revision: str,
     ) -> tuple[TaskEvalResult, RawExecutionRecord]:
         import tempfile
+
         workspace_parent = None
         if self.base_workspace is not None:
             self.base_workspace.mkdir(parents=True, exist_ok=True)
@@ -743,9 +738,7 @@ class EvaluationRunner:
                     child_delay=0.45,
                 )
                 runtime_models[candidate.profile.model] = model
-                runtime_models[
-                    f"{candidate.profile.provider}:{candidate.profile.model}"
-                ] = model
+                runtime_models[f"{candidate.profile.provider}:{candidate.profile.model}"] = model
 
             child_model_name = "fake:explorer"
             child_model = _FixtureChatModel(
@@ -778,33 +771,31 @@ class EvaluationRunner:
             error_msg: str | None = None
             try:
                 controller = RunController(
-                        session_id=session_id,
-                        workspace=workspace,
-                        journal=journal,
-                        models=runtime_models,
-                        default_lead_model=(
-                            policy_controls.lead_model or self.candidates[0].profile.model
-                        ),
-                        default_child_model=policy_controls.child_model or child_model_name,
-                        fixed_profile_models={
-                            "explorer": child_model_name,
-                            **_fixed_profile_models(policy_controls.child_model),
-                        },
-                        budget_limit_usd=Decimal("100.00"),
+                    session_id=session_id,
+                    workspace=workspace,
+                    journal=journal,
+                    models=runtime_models,
+                    default_lead_model=(
+                        policy_controls.lead_model or self.candidates[0].profile.model
+                    ),
+                    default_child_model=policy_controls.child_model or child_model_name,
+                    fixed_profile_models={
+                        "explorer": child_model_name,
+                        **_fixed_profile_models(policy_controls.child_model),
+                    },
+                    budget_limit_usd=Decimal("100.00"),
+                    catalog_revision=catalog_revision,
+                    providers={
+                        "eval-provider": FakeProviderAdapter(),
+                        "fake": FakeProviderAdapter(),
+                    },
+                    candidates_fn=lambda: RoutingSnapshot(
                         catalog_revision=catalog_revision,
-                        providers={
-                            "eval-provider": FakeProviderAdapter(),
-                            "fake": FakeProviderAdapter(),
-                        },
-                        candidates_fn=lambda: RoutingSnapshot(
-                            catalog_revision=catalog_revision,
-                            config_revision=config_revision(
-                                {"routing": {"mode": routing_mode.value}}
-                            ),
-                            health_revision="eval-health-v1",
-                            candidates=self.candidates,
-                        ),
-                    )
+                        config_revision=config_revision({"routing": {"mode": routing_mode.value}}),
+                        health_revision="eval-health-v1",
+                        candidates=self.candidates,
+                    ),
+                )
                 run_result = asyncio.run(
                     asyncio.wait_for(
                         controller.run_instruction(fixture.prompt, controls=controls),
@@ -839,9 +830,7 @@ class EvaluationRunner:
             )
             passed_oracle, oracle_error = evaluate_oracle(workspace, fixture.oracle)
             completed = bool(
-                run_result is not None
-                and run_result.status == "completed"
-                and passed_oracle
+                run_result is not None and run_result.status == "completed" and passed_oracle
             )
             if error_msg is None and not passed_oracle:
                 error_msg = oracle_error

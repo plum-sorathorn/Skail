@@ -1,45 +1,49 @@
-# Rudder — AGENTS.md
+# Repository Guidelines
 
-Rudder Harness is a native, budget-aware multi-agent coding harness for Python 3.12+. The console command
-is `rudder`; the distribution name is `rudder-harness`.
+Rudder is a Python 3.12+ native, budget-aware multi-agent coding harness. The console command is
+`rudder`; the distribution is `rudder-harness`.
 
-## Commands
+## Project Structure
 
-- Install: `python -m pip install -e ".[dev]"`
-- Test: `rtk pytest`
-- Focused tests: `rtk pytest tests\unit -q`
-- Lint: `python -m ruff check src tests scripts`
-- Type check: `python -m mypy src\rudder`
-- Smoke: `python scripts\smoke.py --fake-provider`
-- Build: `python -m build`
-- Graph update: `graphify update .`
+- `src/rudder/`: runtime, agents, routing, providers, sessions, tools, CLI, and TUI code.
+- `tests/`: unit, contract, integration, end-to-end, and security tests.
+- `evals/`: deterministic evaluation schemas, fixtures, and reports.
+- `docs/rudder/`: specification, architecture, feature contracts, and release documentation.
+- `tasks/plan.md`: implementation phases and acceptance criteria.
+- `scripts/`: smoke, evaluation, and release checks. `legacy/autoconduck/` is inert.
 
-## Product invariants
+## Development Commands
 
-- Rudder launches the harness directly; no proxy, daemon, plugin plane, hooks, shims, OMA, or SLM.
-- The lead is capable of direct work and delegates only for leverage.
-- Delegation uses DeepAgents' standard `task` surface and Rudder-owned compiled lifecycle graphs.
-- Every lead run and child attempt has a persisted model assignment before its first call.
-- A healthy attempt keeps one model. A delegated task has at most two attempts.
-- Child concurrency is configurable from one to three, with three as the hard maximum.
-- Shell access is write-capable. Shared-workspace writers, including the lead, never overlap.
-- Budgets distinguish authoritative actual, estimated actual, reserved, and available amounts.
-- Filesystem, shell, tool, trust, and approval boundaries are enforced in code, never only prompts.
-- LangGraph checkpoints and Rudder's journal are separate and reconciled explicitly.
-- `legacy/autoconduck/` is inert. Runtime code under `src/rudder/` must never import or address it.
-- Unknown models are manually selectable but excluded from automatic routing without evidence.
+```powershell
+python -m pip install -e ".[dev]"   # editable install
+rtk pytest -q                       # offline test suite
+rtk pytest tests\unit -q            # focused unit tests
+python -m ruff check src tests scripts evals
+python -m mypy src\rudder
+python scripts\smoke.py --fake-provider
+python -m build
+```
 
-## Workflow
+Use the fake provider by default. Live-provider tests are opt-in and require named credentials.
 
-Read the applicable accepted ADR, `docs/rudder/SPEC.md`, and relevant architecture/feature sections
-before implementation. Query Graphify before unfamiliar exploration. Work through `tasks/plan.md`
-in dependency order, use tests before behavior changes, run focused and affected suites, then run
-`graphify update .` and review the complete diff before each phase commit.
+## Code Style and Testing
 
-Use `apply_patch` for source edits. Preserve user changes and keep changes phase-scoped. Prefix Git,
-build, test, and high-output inspection commands with `rtk`, falling back to the raw command only if
-RTK cannot spawn it. Use PowerShell syntax on Windows.
+Use Python type hints, four-space indentation, `snake_case` functions/modules, and `PascalCase`
+classes. Ruff enforces a 100-character line limit; mypy runs in strict mode. Add or update tests
+before changing behavior, then run focused and affected suites plus the full offline suite.
 
-The default suite must remain offline and credential-free. Never place secrets in prompts, events,
-logs, exceptions, fixtures, exports, or checkpoints. Live-provider validation is opt-in and must not
-be represented as completed without real credentials and results.
+## Architecture and Safety
+
+Keep framework/provider types behind adapters. Preserve direct launch, immutable per-attempt model
+assignments, at most two child attempts, and a hard maximum of three concurrent children. Shared
+workspace writers must not overlap. Enforce filesystem, shell, trust, approval, and secret-redaction
+boundaries in code; never rely on prompts alone. Do not import or address `legacy/autoconduck/`.
+
+## Contributions
+
+Read the relevant specification, architecture section, feature contract, and accepted ADR before
+editing. Query Graphify before unfamiliar exploration, use `apply_patch`, and run `graphify update .`
+after changes. Review the complete diff before committing. Follow the existing Conventional Commit
+style, for example `fix(workspaces): confine child tool roots` or `docs(plan): record a blocker`.
+Pull requests should explain the change, list verification commands, identify risks or follow-ups,
+and update relevant documentation or contracts.

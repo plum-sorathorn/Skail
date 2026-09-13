@@ -228,9 +228,11 @@ def test_oracle_mutation_changes_scoring_without_changing_execution_record() -> 
 
     passing = EvaluationRunner(fixtures=[fixture], policies=policy).run()
     failing = EvaluationRunner(
-        fixtures=[fixture.model_copy(
-            update={"oracle": fixture.oracle.model_copy(update={"expected": "different"})}
-        )],
+        fixtures=[
+            fixture.model_copy(
+                update={"oracle": fixture.oracle.model_copy(update={"expected": "different"})}
+            )
+        ],
         policies=policy,
     ).run()
 
@@ -301,6 +303,8 @@ def test_missing_execution_script_cannot_be_scored_as_completed() -> None:
     assert not report.results[0].completed
     assert not report.results[0].passed_oracle
     assert report.raw_records[0].error == "fixture execution script is required"
+
+
 def test_child_run_gate_records_concurrent_timing() -> None:
     import asyncio
 
@@ -384,8 +388,7 @@ def test_fixed_model_baselines_pin_models_and_record_executed_assignments() -> N
         raw_record = next(record for record in report.raw_records if record.policy is policy)
         assert raw_record.assignments
         assert {
-            f"{assignment.provider}:{assignment.model}"
-            for assignment in raw_record.assignments
+            f"{assignment.provider}:{assignment.model}" for assignment in raw_record.assignments
         } == {expected_model}
         assert {assignment.routing_mode for assignment in raw_record.assignments} == {
             RoutingMode.MANUAL

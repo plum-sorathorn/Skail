@@ -295,9 +295,7 @@ class RunController:
     def restored_decision(self) -> Any | None:
         return self._restored_decision
 
-    def _record_model_usage(
-        self, assignment_id: str, response: object, call_id: str = ""
-    ) -> None:
+    def _record_model_usage(self, assignment_id: str, response: object, call_id: str = "") -> None:
         self.usage_settler.record_call(assignment_id, response, call_id=call_id)
 
     def _finalize_child_budgets(self, run_id: RunId, lead_task_id: TaskId) -> None:
@@ -433,9 +431,7 @@ class RunController:
             estimate = estimate_attempt_cost(
                 AttemptEstimateInput(
                     context_tokens=packet.estimated_tokens,
-                    tool_result_tokens=(
-                        _TOOL_RESULT_ALLOWANCE_TOKENS if profile.tools else 0
-                    ),
+                    tool_result_tokens=(_TOOL_RESULT_ALLOWANCE_TOKENS if profile.tools else 0),
                     output_tokens=output_allowance,
                     expected_calls=profile.expected_calls,
                     input_usd_per_million=candidate.profile.input_usd_per_million,
@@ -487,8 +483,10 @@ class RunController:
             is_lead = model_name == clean_lead_model
             if for_lead and not is_lead and len(self.models) > 1:
                 continue
-            if not for_lead and is_lead and (
-                len(self.models) > 1 or clean_child_model != clean_lead_model
+            if (
+                not for_lead
+                and is_lead
+                and (len(self.models) > 1 or clean_child_model != clean_lead_model)
             ):
                 continue
             profile = ModelProfile(
@@ -688,9 +686,7 @@ class RunController:
         lead_model_key = f"{lead_assignment.provider}:{lead_assignment.model}"
         lead_chat_model = self._all_models.get(lead_model_key)
         if lead_chat_model is None:
-            raise ValueError(
-                f"model {lead_assignment.model} is not available in registered models"
-            )
+            raise ValueError(f"model {lead_assignment.model} is not available in registered models")
         assignments, active = self.persisted_registry.runtime_bindings()
         lead_middleware = TaskBoundModelMiddleware(
             self._all_models,
@@ -1081,8 +1077,10 @@ class RunController:
                     self.journal.begin_plan_node_execution(
                         node_id=ready.node_id, execution_key=f"tool:{ready.node_id}"
                     )
+
                     async def execute_tool(
-                        *, plan_id: str = persisted.plan_id,
+                        *,
+                        plan_id: str = persisted.plan_id,
                         node_id: str = ready.node_id,
                         plan_node: PlanNode = node,
                     ) -> None:
@@ -1310,9 +1308,7 @@ class RunController:
                 status="blocked",
                 summary="plan.tool_features_invalid",
             )
-        if features.get("tool") != "execute" or not isinstance(
-            features.get("command"), str
-        ):
+        if features.get("tool") != "execute" or not isinstance(features.get("command"), str):
             return TaskResult(
                 task_id=TaskId(node_id),
                 status="blocked",
@@ -1378,7 +1374,8 @@ class RunController:
                     "action_id": request.action_id,
                 }
             return TaskResult(
-                task_id=TaskId(node_id), status=status,
+                task_id=TaskId(node_id),
+                status=status,
                 summary=f"tool execute {result.status}",
                 verification_authority="runtime",
             )
@@ -1400,14 +1397,19 @@ class RunController:
         }.get(status if isinstance(status, str) else "", PlanNodeState.FAILED)
         if state is PlanNodeState.LAUNCHING and target is not PlanNodeState.BLOCKED:
             self.journal.transition_plan_node_state(
-                plan_id=plan_id, node_id=node_id,
-                expected=PlanNodeState.LAUNCHING, target=PlanNodeState.RUNNING,
+                plan_id=plan_id,
+                node_id=node_id,
+                expected=PlanNodeState.LAUNCHING,
+                target=PlanNodeState.RUNNING,
                 event_observer=self.events.publish_persisted_nowait,
             )
             state = PlanNodeState.RUNNING
         if state in {PlanNodeState.LAUNCHING, PlanNodeState.RUNNING}:
             self.journal.transition_plan_node_state(
-                plan_id=plan_id, node_id=node_id, expected=state, target=target,
+                plan_id=plan_id,
+                node_id=node_id,
+                expected=state,
+                target=target,
                 event_observer=self.events.publish_persisted_nowait,
             )
 
@@ -1418,9 +1420,7 @@ class RunController:
             self.journal.update_attempt_status(
                 attempt_id=binding.attempt_id, status=AttemptStatus.CANCELLED
             )
-            self.journal.update_task_status(
-                task_id=binding.task_id, status=TaskStatus.CANCELLED
-            )
+            self.journal.update_task_status(task_id=binding.task_id, status=TaskStatus.CANCELLED)
 
     def _admit_task_batch(
         self,
@@ -1492,16 +1492,12 @@ class RunController:
                 objective=spec.request.description,
                 acceptance_criteria=spec.request.success_criteria,
                 effect_scope=(
-                    EffectScope.WORKSPACE_WRITE
-                    if profile.write_capable
-                    else EffectScope.READ
+                    EffectScope.WORKSPACE_WRITE if profile.write_capable else EffectScope.READ
                 ),
                 task_features={"profile": profile.name},
                 task_lineage=f"compat:{spec.task_id}",
             )
-            for index, (spec, _, profile, _) in enumerate(
-                planned, start=first_index
-            )
+            for index, (spec, _, profile, _) in enumerate(planned, start=first_index)
         )
         authorized_effects = frozenset(
             {EffectScope.READ, EffectScope.WORKSPACE_WRITE}
@@ -1528,9 +1524,7 @@ class RunController:
                     expected_revision=existing_plan.plan.revision,
                     added_nodes=added_nodes,
                     justification="Admit standard task calls through the canonical plan.",
-                    evidence_refs=tuple(
-                        f"tool-call:{call['id']}" for call in calls
-                    ),
+                    evidence_refs=tuple(f"tool-call:{call['id']}" for call in calls),
                 ),
                 plan=existing_plan.plan.model_copy(
                     update={
@@ -1865,9 +1859,7 @@ class RunController:
         if ":" in lead_model_name:
             lead_provider, lead_model = lead_model_name.split(":", 1)
 
-        lead_mode = (
-            RoutingMode.MANUAL if active_controls.model else active_controls.routing_mode
-        )
+        lead_mode = RoutingMode.MANUAL if active_controls.model else active_controls.routing_mode
         lead_profile = builtin_profiles()["lead"]
         lead_reqs = self._requirements.build(
             role=lead_profile.role,
@@ -2001,9 +1993,7 @@ class RunController:
             task_status = TaskStatus.RETURNED_TO_LEAD if is_cancelled else TaskStatus.FAILED
             terminal_type = "run.cancelled" if is_cancelled else "run.failed"
             with self.journal.transaction() as tx:
-                tx.update_attempt_status(
-                    attempt_id=str(lead_attempt_id), status=attempt_status
-                )
+                tx.update_attempt_status(attempt_id=str(lead_attempt_id), status=attempt_status)
                 tx.update_task_status(task_id=str(lead_task_id), status=task_status)
                 tx.update_run_status(run_id=str(run_id), status=run_status)
                 tx.update_session_status(session_id=str(self.session_id), status="idle")
@@ -2118,15 +2108,11 @@ class RunController:
             with self.journal.transaction() as tx:
                 tx.update_attempt_status(
                     attempt_id=str(lead_attempt_id),
-                    status=(
-                        AttemptStatus.INTERRUPTED if cancelled else AttemptStatus.FAILED
-                    ),
+                    status=(AttemptStatus.INTERRUPTED if cancelled else AttemptStatus.FAILED),
                 )
                 tx.update_task_status(
                     task_id=str(lead_task_id),
-                    status=(
-                        TaskStatus.RETURNED_TO_LEAD if cancelled else TaskStatus.FAILED
-                    ),
+                    status=(TaskStatus.RETURNED_TO_LEAD if cancelled else TaskStatus.FAILED),
                 )
                 tx.update_run_status(run_id=str(run_id), status=run_status)
                 tx.update_session_status(session_id=str(self.session_id), status="idle")
@@ -2169,9 +2155,7 @@ class RunController:
                 )
                 with self.journal.transaction() as tx:
                     tx.update_run_status(run_id=str(run_id), status="blocked")
-                    tx.update_session_status(
-                        session_id=str(self.session_id), status="interrupted"
-                    )
+                    tx.update_session_status(session_id=str(self.session_id), status="interrupted")
                     self._append_event(
                         tx,
                         run_id=run_id,
@@ -2333,8 +2317,7 @@ class RunController:
                     version=int(payload["version"]),
                     task_id=run.run_id,
                     components=tuple(
-                        ContextComponent(**component)
-                        for component in payload.get("components", ())
+                        ContextComponent(**component) for component in payload.get("components", ())
                     ),
                     estimated_tokens=int(payload.get("estimated_tokens", 0)),
                     omissions=tuple(payload.get("omissions", ())),
@@ -2400,9 +2383,7 @@ class RunController:
                     dict(interrupt) if isinstance(interrupt, Mapping) else None
                 )
             if self._pending_interrupt_payload is None and self.question_store is not None:
-                questions = self.question_store.pending(
-                    f"{self.session_id}:{run.run_id}:lead"
-                )
+                questions = self.question_store.pending(f"{self.session_id}:{run.run_id}:lead")
                 if not questions:
                     questions = self.question_store.pending("lead")
                 if questions:
@@ -2448,10 +2429,7 @@ class RunController:
             if not ready:
                 continue
             nodes = {node.local_id: node for node in persisted.plan.nodes}
-            if not any(
-                nodes[snapshot.local_id].kind is PlanNodeKind.AGENT
-                for snapshot in ready
-            ):
+            if not any(nodes[snapshot.local_id].kind is PlanNodeKind.AGENT for snapshot in ready):
                 continue
             pending = self._pending_run
             if pending is None:
@@ -2487,9 +2465,7 @@ class RunController:
         gate = ChildRunGate(max_children)
         scheduler = ChildScheduler(max_children=max_children)
         child_results: list[TaskResult] = []
-        invoke_config: RunnableConfig = {
-            "configurable": {"thread_id": str(self.session_id)}
-        }
+        invoke_config: RunnableConfig = {"configurable": {"thread_id": str(self.session_id)}}
         if self._resume_lead_on_recovery:
             self._emit_event(
                 run_id=pending.run_id,
@@ -2531,15 +2507,11 @@ class RunController:
                 with self.journal.transaction() as tx:
                     tx.update_attempt_status(
                         attempt_id=str(pending.lead_attempt_id),
-                        status=(
-                            AttemptStatus.INTERRUPTED if cancelled else AttemptStatus.FAILED
-                        ),
+                        status=(AttemptStatus.INTERRUPTED if cancelled else AttemptStatus.FAILED),
                     )
                     tx.update_task_status(
                         task_id=str(pending.lead_task_id),
-                        status=(
-                            TaskStatus.RETURNED_TO_LEAD if cancelled else TaskStatus.FAILED
-                        ),
+                        status=(TaskStatus.RETURNED_TO_LEAD if cancelled else TaskStatus.FAILED),
                     )
                     tx.update_run_status(
                         run_id=str(pending.run_id),
@@ -2550,9 +2522,7 @@ class RunController:
                         tx,
                         run_id=pending.run_id,
                         type="run.cancelled" if cancelled else "run.failed",
-                        payload=LifecyclePayload(
-                            status="cancelled" if cancelled else "failed"
-                        ),
+                        payload=LifecyclePayload(status="cancelled" if cancelled else "failed"),
                     )
                 self._finalize_child_budgets(pending.run_id, pending.lead_task_id)
                 self._finalize_assignment_budget(pending.lead_assignment)
@@ -2562,24 +2532,18 @@ class RunController:
                 raise
             checkpoint = await saver.aget_tuple(invoke_config)
             if self._resume_lead_on_recovery and checkpoint is not None:
-                checkpoint_id = checkpoint.config.get("configurable", {}).get(
-                    "checkpoint_id"
-                )
+                checkpoint_id = checkpoint.config.get("configurable", {}).get("checkpoint_id")
                 if checkpoint_id:
                     self.checkpoints.record(
                         session_id=str(self.session_id),
                         checkpoint_id=checkpoint_id,
                         idempotency_key=f"run:{pending.run_id}:resumed",
                         status=(
-                            "interrupted"
-                            if result_state.get("__interrupt__")
-                            else "committed"
+                            "interrupted" if result_state.get("__interrupt__") else "committed"
                         ),
                         payload={"run_id": str(pending.run_id), "boundary": "resumed"},
                         created_at=datetime.now(UTC),
-                        live_idempotency_keys=(
-                            f"attempt:{pending.lead_attempt_id}",
-                        ),
+                        live_idempotency_keys=(f"attempt:{pending.lead_attempt_id}",),
                     )
 
         messages = cast(list[BaseMessage], result_state.get("messages", []))
@@ -2606,9 +2570,7 @@ class RunController:
         # The resumed lead may have admitted fresh plan work above; rebuild any
         # persisted READY work from a pre-interrupt crash so both reach one
         # shared coordinator finalization path before terminal.
-        self._rebuild_safe_resume_frontier(
-            run_id=pending.run_id, scheduler=scheduler
-        )
+        self._rebuild_safe_resume_frontier(run_id=pending.run_id, scheduler=scheduler)
         checkpoint_state, checkpoint_blocked = await self._finalize_completion(
             run_id=pending.run_id,
             workspace_revision=pending.workspace_revision,
@@ -2630,9 +2592,7 @@ class RunController:
                 tx.update_attempt_status(
                     attempt_id=str(pending.lead_attempt_id), status=AttemptStatus.BLOCKED
                 )
-                tx.update_task_status(
-                    task_id=str(pending.lead_task_id), status=TaskStatus.BLOCKED
-                )
+                tx.update_task_status(task_id=str(pending.lead_task_id), status=TaskStatus.BLOCKED)
                 tx.update_run_status(run_id=str(pending.run_id), status="blocked")
                 tx.update_session_status(session_id=str(self.session_id), status="idle")
                 self._append_event(
@@ -2678,9 +2638,7 @@ class RunController:
             tx.update_attempt_status(
                 attempt_id=str(pending.lead_attempt_id), status=AttemptStatus.SUCCEEDED
             )
-            tx.update_task_status(
-                task_id=str(pending.lead_task_id), status=TaskStatus.SUCCEEDED
-            )
+            tx.update_task_status(task_id=str(pending.lead_task_id), status=TaskStatus.SUCCEEDED)
             tx.update_run_status(run_id=str(pending.run_id), status="completed")
             tx.update_session_status(session_id=str(self.session_id), status="idle")
             self._append_event(
@@ -2714,9 +2672,7 @@ class RunController:
             tx.update_attempt_status(
                 attempt_id=str(pending.lead_attempt_id), status=AttemptStatus.BLOCKED
             )
-            tx.update_task_status(
-                task_id=str(pending.lead_task_id), status=TaskStatus.BLOCKED
-            )
+            tx.update_task_status(task_id=str(pending.lead_task_id), status=TaskStatus.BLOCKED)
             tx.update_run_status(run_id=str(pending.run_id), status="blocked")
             tx.update_session_status(session_id=str(self.session_id), status="idle")
         assignment_id = str(pending.lead_assignment.assignment_id)
@@ -3122,9 +3078,7 @@ class RunController:
                 tx.record_task_result(
                     task_id=str(result.task_id), payload=result.model_dump(mode="json")
                 )
-                tx.update_attempt_status(
-                    attempt_id=str(binding.attempt_id), status=attempt_status
-                )
+                tx.update_attempt_status(attempt_id=str(binding.attempt_id), status=attempt_status)
                 tx.update_task_status(task_id=str(result.task_id), status=task_status)
                 self._append_event(
                     tx,
@@ -3139,9 +3093,7 @@ class RunController:
             if plan_node is not None and (
                 result.status != "failed" or binding.assignment.attempt_number == 2
             ):
-                self._settle_plan_node(
-                    plan_node[0], plan_node[1], result.model_dump(mode="json")
-                )
+                self._settle_plan_node(plan_node[0], plan_node[1], result.model_dump(mode="json"))
 
             self._finalize_assignment_budget(binding.assignment)
 
@@ -3156,9 +3108,7 @@ class RunController:
                 try:
                     persisted = self.journal.get_plan(plan_id)
                     local_id = next(
-                        local
-                        for local, value in persisted.node_ids.items()
-                        if value == node_id
+                        local for local, value in persisted.node_ids.items() if value == node_id
                     )
                     current = persisted.node_states[local_id]
                     if status == "started":
@@ -3188,9 +3138,7 @@ class RunController:
                     tx.update_attempt_status(
                         attempt_id=persisted_attempt_id, status=AttemptStatus.RUNNING
                     )
-                    tx.update_task_status(
-                        task_id=str(spec.task_id), status=TaskStatus.RUNNING
-                    )
+                    tx.update_task_status(task_id=str(spec.task_id), status=TaskStatus.RUNNING)
                     self._append_event(
                         tx,
                         run_id=run_id,
@@ -3291,9 +3239,7 @@ def _task_request_for_plan_node(node: PlanNode) -> TaskRequest:
     }
     if set(features) - allowed:
         raise TaskValidationError("plan.task_features_invalid")
-    default_profile = (
-        "explorer" if node.effect_scope is EffectScope.READ else "implementer"
-    )
+    default_profile = "explorer" if node.effect_scope is EffectScope.READ else "implementer"
     try:
         request = TaskRequest.model_validate(
             {
