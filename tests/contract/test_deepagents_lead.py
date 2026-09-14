@@ -9,7 +9,7 @@ from langchain_core.tools import tool
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.types import Command
 
-from rudder.runtime.deepagents_adapter import build_lead_agent, stream_events
+from skail.runtime.deepagents_adapter import build_lead_agent, stream_events
 
 
 @tool

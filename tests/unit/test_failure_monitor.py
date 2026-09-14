@@ -1,8 +1,8 @@
 from decimal import Decimal
 
-from rudder.domain.events import SecretRedactor
-from rudder.runtime.failure_monitor import FailureMonitor
-from rudder.tools.assembly import _tool_result_status
+from skail.domain.events import SecretRedactor
+from skail.runtime.failure_monitor import FailureMonitor
+from skail.tools.assembly import _tool_result_status
 
 
 def test_monitor_triggers_only_on_deterministic_repetition() -> None:

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from rudder.domain.strategy_estimates import (
+from skail.domain.strategy_estimates import (
     ObservationAuthority,
     OutcomeObservation,
     RouteEstimate,

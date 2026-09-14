@@ -3,10 +3,10 @@ from __future__ import annotations
 import itertools
 from decimal import Decimal
 
-from rudder.domain.routing import RoutingMode
-from rudder.providers.models import CapabilityVector, ModelProfile
-from rudder.routing.requirements import RequirementBuilder, TaskRisk
-from rudder.routing.selector import RouteCandidate, RouteFailure, RouteSelection, select_model
+from skail.domain.routing import RoutingMode
+from skail.providers.models import CapabilityVector, ModelProfile
+from skail.routing.requirements import RequirementBuilder, TaskRisk
+from skail.routing.selector import RouteCandidate, RouteFailure, RouteSelection, select_model
 
 
 def _candidate(

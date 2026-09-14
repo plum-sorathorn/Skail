@@ -8,11 +8,11 @@ Depends on: [ADR 0002](./0002-framework-version-contract.md)
 
 OpenAI-compatible endpoints differ in streaming tool fragments, structured output, model
 discovery, usage extensions, and error semantics. Treating construction as full support would make
-Rudder's routing and cost claims unreliable.
+Skail's routing and cost claims unreliable.
 
 ## Decision
 
-Rudder reports provider support as separate constructible, contract-tested, automatic-routing,
+Skail reports provider support as separate constructible, contract-tested, automatic-routing,
 and maintained-CI dimensions. Generic compatible models default to manual/unverified. Automatic
 routing requires trusted model capability and pricing evidence.
 
@@ -21,12 +21,12 @@ responses so fragmented tool arguments and gateway usage fields remain observabl
 reports tokens but omits `usage.cost`, token counts are observed but cost remains estimated; zero is
 never presented as an authoritative charge.
 
-DevPass retains a separate Rudder provider/catalog identity but uses the same current LLM Gateway
+DevPass retains a separate Skail provider/catalog identity but uses the same current LLM Gateway
 base URL and bearer credential. Its distinction is plan billing and canonical model namespace, not
 a separate inference endpoint.
 
 `langchain-openai==1.6.0` is pinned as the optional `openai-compatible` integration. Compatible
-construction explicitly disables Responses API inference and provider retry ownership. Rudder's
+construction explicitly disables Responses API inference and provider retry ownership. Skail's
 registry imports optional integrations only when selected and validates options before construction.
 
 ## Evidence

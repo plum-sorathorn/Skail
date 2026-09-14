@@ -9,14 +9,14 @@ from typing import TypedDict
 import pytest
 from langgraph.graph import END, START, StateGraph
 
-from rudder.domain.sessions import (
+from skail.domain.sessions import (
     SessionStatus,
     SessionTransitionError,
     transition_session,
 )
-from rudder.sessions.checkpoints import CheckpointStore
-from rudder.sessions.journal import Journal
-from rudder.sessions.service import SessionLockedError, SessionService
+from skail.sessions.checkpoints import CheckpointStore
+from skail.sessions.journal import Journal
+from skail.sessions.service import SessionLockedError, SessionService
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 

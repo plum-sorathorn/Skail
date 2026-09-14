@@ -1,4 +1,4 @@
-"""Rudder evaluation and benchmarking harness."""
+"""Skail evaluation and benchmarking harness."""
 
 from evals.schema import (
     ContextEvalMetrics,

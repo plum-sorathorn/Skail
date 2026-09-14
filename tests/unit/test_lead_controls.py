@@ -3,8 +3,8 @@ from pathlib import Path
 from fakes.models import ScriptedChatModel
 from langchain_core.messages import AIMessage
 
-from rudder.agents.lead import LeadControls, build_production_lead, delegation_allowed
-from rudder.runtime.leases import WorkspaceLeaseManager
+from skail.agents.lead import LeadControls, build_production_lead, delegation_allowed
+from skail.runtime.leases import WorkspaceLeaseManager
 
 
 def test_delegation_controls_are_runtime_decisions() -> None:

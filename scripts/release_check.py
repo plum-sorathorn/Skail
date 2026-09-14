@@ -252,7 +252,7 @@ def check_quality() -> None:
     )
     _run_checked(
         "[3/8] Running mypy...",
-        [sys.executable, "-m", "mypy", "src/rudder"],
+        [sys.executable, "-m", "mypy", "src/skail"],
     )
     _run_checked(
         "[4/8] Running complete offline test suite...",
@@ -265,13 +265,13 @@ def check_docs() -> None:
     required_docs = [
         ROOT / "README.md",
         ROOT / "LICENSE",
-        ROOT / "docs" / "rudder" / "SPEC.md",
-        ROOT / "docs" / "rudder" / "ARCHITECTURE.md",
-        ROOT / "docs" / "rudder" / "CLI.md",
-        ROOT / "docs" / "rudder" / "FEATURES.md",
-        ROOT / "docs" / "rudder" / "EVALUATION.md",
-        ROOT / "docs" / "rudder" / "THREAT_MODEL.md",
-        ROOT / "docs" / "rudder" / "PERFORMANCE.md",
+        ROOT / "docs" / "skail" / "SPEC.md",
+        ROOT / "docs" / "skail" / "ARCHITECTURE.md",
+        ROOT / "docs" / "skail" / "CLI.md",
+        ROOT / "docs" / "skail" / "FEATURES.md",
+        ROOT / "docs" / "skail" / "EVALUATION.md",
+        ROOT / "docs" / "skail" / "THREAT_MODEL.md",
+        ROOT / "docs" / "skail" / "PERFORMANCE.md",
         ROOT / "evals" / "manifest.toml",
     ]
     for doc in required_docs:
@@ -282,7 +282,7 @@ def check_docs() -> None:
 
 def check_wheel_contents() -> None:
     print("[6/8] Building and verifying a fresh wheel...")
-    with tempfile.TemporaryDirectory(prefix="rudder-release-build-") as directory:
+    with tempfile.TemporaryDirectory(prefix="skail-release-build-") as directory:
         dist_dir = Path(directory)
         subprocess.run(
             [sys.executable, "-m", "build", "--outdir", str(dist_dir)],
@@ -304,13 +304,13 @@ def check_wheel_contents() -> None:
                     raise AssertionError(f"Development-only content packaged in wheel: {name}")
                 if name.startswith("legacy/"):
                     raise AssertionError(f"Forbidden legacy content packaged in wheel: {name}")
-                if "autoconduck" in name.lower() and not name.startswith("rudder_harness-"):
-                    raise AssertionError(f"Forbidden legacy autoconduck reference in wheel: {name}")
+                if "skail" in name.lower() and not name.startswith("skail_harness-"):
+                    raise AssertionError(f"Forbidden legacy skail reference in wheel: {name}")
 
-            rudder_files = [n for n in namelist if n.startswith("rudder/")]
-            if not rudder_files:
-                raise AssertionError("Wheel contains no rudder package files!")
-            print(f"  -> Verified {len(rudder_files)} package files; 0 legacy files.")
+            skail_files = [n for n in namelist if n.startswith("skail/")]
+            if not skail_files:
+                raise AssertionError("Wheel contains no skail package files!")
+            print(f"  -> Verified {len(skail_files)} package files; 0 legacy files.")
 
 
 def check_smoke() -> None:
@@ -340,7 +340,7 @@ def check_evals() -> None:
     expected_catalog_digest = catalog_digest("eval-v1", default_eval_candidates())
     expected_controls = {policy.value: policy.controls() for policy in EvaluationPolicy}
     expected_policy_digest = policy_digest(expected_controls)
-    with tempfile.TemporaryDirectory(prefix="rudder-release-eval-") as directory:
+    with tempfile.TemporaryDirectory(prefix="skail-release-eval-") as directory:
         output = Path(directory) / "paired-runtime-report.json"
         proc = subprocess.run(
             [
@@ -375,9 +375,9 @@ def check_evals() -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Verify a Rudder release candidate")
+    parser = argparse.ArgumentParser(description="Verify a Skail release candidate")
     parser.parse_args(argv)
-    print("=== Rudder Release Candidate Verification ===")
+    print("=== Skail Release Candidate Verification ===")
     try:
         check_clean_worktree()
         check_quality()

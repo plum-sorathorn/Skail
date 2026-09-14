@@ -4,23 +4,23 @@ from decimal import Decimal
 
 import pytest
 
-from rudder.agents.profiles import builtin_profiles
-from rudder.agents.task_graph import (
+from skail.agents.profiles import builtin_profiles
+from skail.agents.task_graph import (
     AttemptBinding,
     build_task_graph,
 )
-from rudder.domain.ids import (
+from skail.domain.ids import (
     ReservationId,
     new_assignment_id,
     new_attempt_id,
     new_run_id,
 )
-from rudder.domain.routing import RoutingMode, TaskAssignment
-from rudder.domain.tasks import TaskRequest, TaskResult, VerificationResult
-from rudder.routing.selector import RouteFailure
-from rudder.runtime.deepagents_adapter import ChildRunGate
-from rudder.runtime.leases import WorkspaceLeaseManager
-from rudder.runtime.task_validation import TaskValidator
+from skail.domain.routing import RoutingMode, TaskAssignment
+from skail.domain.tasks import TaskRequest, TaskResult, VerificationResult
+from skail.routing.selector import RouteFailure
+from skail.runtime.deepagents_adapter import ChildRunGate
+from skail.runtime.leases import WorkspaceLeaseManager
+from skail.runtime.task_validation import TaskValidator
 
 
 def _spec(tmp_path):

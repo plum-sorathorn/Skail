@@ -11,20 +11,20 @@ from fakes.barriers import AsyncStartBarrier
 from fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_call_message
 from langchain_core.messages import AIMessage
 
-from rudder.agents.lead import LeadControls
-from rudder.domain.ids import new_session_id
-from rudder.domain.plans import PlanNodeState
-from rudder.domain.tasks import (
+from skail.agents.lead import LeadControls
+from skail.domain.ids import new_session_id
+from skail.domain.plans import PlanNodeState
+from skail.domain.tasks import (
     ArtifactRef,
     AttemptStatus,
     TaskResult,
     TaskStatus,
     VerificationResult,
 )
-from rudder.runtime.run_controller import RunController
-from rudder.runtime.workspaces import WorkspaceManager, WorkspaceMode
-from rudder.sessions.journal import Journal
-from rudder.tools.execution import ExecutionPolicy, ExecutionResult
+from skail.runtime.run_controller import RunController
+from skail.runtime.workspaces import WorkspaceManager, WorkspaceMode
+from skail.sessions.journal import Journal
+from skail.tools.execution import ExecutionPolicy, ExecutionResult
 
 
 def _journal(tmp_path: Path) -> Journal:
@@ -44,7 +44,7 @@ def _repository(tmp_path: Path) -> Path:
     workspace.mkdir()
     _git(workspace, "init")
     _git(workspace, "config", "user.email", "tests@example.invalid")
-    _git(workspace, "config", "user.name", "Rudder tests")
+    _git(workspace, "config", "user.name", "Skail tests")
     (workspace / "tracked.txt").write_text("base\n", encoding="utf-8")
     _git(workspace, "add", "tracked.txt")
     _git(workspace, "commit", "-m", "initial")
@@ -127,14 +127,14 @@ async def test_worktree_writer_receives_a_dirty_snapshot_and_records_selection(
         child_options.append(kwargs)
         return ChildAgent(kwargs["workspace"], kwargs["task_id"])
 
-    monkeypatch.setattr("rudder.runtime.run_controller.build_default_agent", build_child)
+    monkeypatch.setattr("skail.runtime.run_controller.build_default_agent", build_child)
     controller = RunController(
         session_id=session_id,
         workspace=workspace,
         journal=journal,
         models={"lead-model": lead_model, "implementer-model": lead_model},
         workspace_mode="worktree",
-        workspace_manager=WorkspaceManager(tmp_path / "rudder-data"),
+        workspace_manager=WorkspaceManager(tmp_path / "skail-data"),
     )
 
     result = await controller.run_instruction("Delegate this change")
@@ -248,14 +248,14 @@ async def test_disjoint_worktree_writers_overlap_before_serial_integration(
         del args
         return ChildAgent(kwargs["workspace"], kwargs["task_id"], kwargs["allowed_write_paths"])
 
-    monkeypatch.setattr("rudder.runtime.run_controller.build_default_agent", build_child)
+    monkeypatch.setattr("skail.runtime.run_controller.build_default_agent", build_child)
     controller = RunController(
         session_id=session_id,
         workspace=workspace,
         journal=journal,
         models={"lead-model": lead_model, "implementer-model": lead_model},
         workspace_mode="worktree",
-        workspace_manager=WorkspaceManager(tmp_path / "rudder-data"),
+        workspace_manager=WorkspaceManager(tmp_path / "skail-data"),
     )
 
     operation = asyncio.create_task(controller.run_instruction("Run both changes"))

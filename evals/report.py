@@ -254,7 +254,7 @@ def _paired_speedups(
 
 def render_markdown_report(report: EvaluationReport) -> str:
     lines: list[str] = [
-        "# Rudder Routing & Orchestration Evaluation Report",
+        "# Skail Routing & Orchestration Evaluation Report",
         "",
         f"- **Run ID**: `{report.run_id}`",
         f"- **Timestamp**: `{report.timestamp.isoformat()}`",

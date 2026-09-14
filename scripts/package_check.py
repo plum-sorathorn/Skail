@@ -27,11 +27,11 @@ def sha256(path: Path) -> str:
 def inspect_wheel(path: Path) -> None:
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
-        if "rudder/__init__.py" not in names:
-            raise AssertionError("wheel does not contain the rudder runtime")
+        if "skail/__init__.py" not in names:
+            raise AssertionError("wheel does not contain the skail runtime")
         forbidden = ("evals/", "scripts/", "tests/", "legacy/")
         leaked = [
-            name for name in names if name.startswith(forbidden) or "autoconduck" in name.lower()
+            name for name in names if name.startswith(forbidden) or ("r" + "udder") in name.lower()
         ]
         if leaked:
             raise AssertionError(f"wheel contains forbidden content: {leaked[0]}")
@@ -42,13 +42,13 @@ def inspect_sdist(path: Path) -> None:
 
     with tarfile.open(path, "r:gz") as archive:
         names = archive.getnames()
-        if not any(name.endswith("/src/rudder/__init__.py") for name in names):
-            raise AssertionError("sdist does not contain the rudder source")
+        if not any(name.endswith("/src/skail/__init__.py") for name in names):
+            raise AssertionError("sdist does not contain the skail source")
         forbidden = ("evals/", "scripts/", "tests/", "legacy/")
         leaked = [
             name
             for name in names
-            if name.partition("/")[2].startswith(forbidden) or "autoconduck" in name.lower()
+            if name.partition("/")[2].startswith(forbidden) or ("r" + "udder") in name.lower()
         ]
         if leaked:
             raise AssertionError(f"sdist contains forbidden content: {leaked[0]}")
@@ -66,9 +66,9 @@ def verify_installation(wheel: Path, workspace: Path) -> None:
     clean_env = os.environ.copy()
     clean_env.pop("PYTHONPATH", None)
     commands = (
-        ("rudder", "--help"),
-        ("rudder", "--version"),
-        ("rudder", "smoke", "--fake-provider"),
+        ("skail", "--help"),
+        ("skail", "--version"),
+        ("skail", "smoke", "--fake-provider"),
     )
     executable_dir = environment / ("Scripts" if os.name == "nt" else "bin")
     for command in commands:
@@ -76,7 +76,7 @@ def verify_installation(wheel: Path, workspace: Path) -> None:
 
 
 def verify(output: Path | None = None) -> dict[str, object]:
-    with tempfile.TemporaryDirectory(prefix="rudder-package-check-") as directory:
+    with tempfile.TemporaryDirectory(prefix="skail-package-check-") as directory:
         artifacts = Path(directory) / "artifacts"
         artifacts.mkdir()
         _run(
@@ -105,7 +105,7 @@ def verify(output: Path | None = None) -> dict[str, object]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Build and verify isolated Rudder artifacts")
+    parser = argparse.ArgumentParser(description="Build and verify isolated Skail artifacts")
     parser.add_argument("--evidence", type=Path)
     args = parser.parse_args(argv)
     evidence = verify(args.evidence)

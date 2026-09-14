@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from rudder.domain.changesets import (
+from skail.domain.changesets import (
     ChangeSet,
     ChangeSetPath,
     ChangeSetStatus,
     ContentImage,
 )
-from rudder.domain.events import SecretRedactor
-from rudder.sessions import Journal, JournalIdempotencyError
+from skail.domain.events import SecretRedactor
+from skail.sessions import Journal, JournalIdempotencyError
 
 NOW = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
 SESSION_ID = "11111111-1111-4111-8111-111111111111"
@@ -118,7 +118,7 @@ def test_changeset_rejects_non_portable_paths_and_non_regular_effects() -> None:
 def test_changeset_is_persisted_idempotently_and_rejects_conflicting_retries(
     tmp_path: Path,
 ) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     journal.migrate()
     _seed_attempt(journal)
     changeset = _changeset()
@@ -138,7 +138,7 @@ def test_changeset_is_persisted_idempotently_and_rejects_conflicting_retries(
 
 
 def test_changeset_transition_replays_only_the_same_durable_operation(tmp_path: Path) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     journal.migrate()
     _seed_attempt(journal)
     journal.record_changeset(changeset=_changeset(), idempotency_key="changeset:attempt")
@@ -170,7 +170,7 @@ def test_changeset_transition_replays_only_the_same_durable_operation(tmp_path: 
 
 
 def test_changeset_rejects_a_payload_that_redaction_would_mutate(tmp_path: Path) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite", redactor=SecretRedactor(["blob:file"]))
+    journal = Journal(tmp_path / "skail.sqlite", redactor=SecretRedactor(["blob:file"]))
     journal.migrate()
     _seed_attempt(journal)
 

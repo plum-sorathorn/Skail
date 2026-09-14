@@ -2,11 +2,11 @@
 
 Status: Accepted
 Date: 2026-09-03
-Depends on: [ADR 0001](./0001-rudder-native-multi-agent-harness.md), [ADR 0002](./0002-framework-version-contract.md)
+Depends on: [ADR 0001](./0001-skail-native-multi-agent-harness.md), [ADR 0002](./0002-framework-version-contract.md)
 
 ## Context
 
-Rudder is a long-running coding harness with tool loops, durable sessions, model routing, and
+Skail is a long-running coding harness with tool loops, durable sessions, model routing, and
 delegated tasks. Its useful information can exceed any model's effective attention budget even
 when it fits in a nominal context window. Unbounded transcripts, duplicate rules, eager repository
 loads, and raw tool output increase cost and can distract or confuse the lead and child agents.
@@ -22,12 +22,12 @@ Relevant source material:
 - LangChain, [Context engineering for agents](https://www.langchain.com/blog/context-engineering-for-agents): organize the lifecycle as write, select, compress, and isolate, then evaluate the effect of policy changes.
 
 These sources guide context quality. They do not grant safety authority to prompts, authorize
-automatic memory harvesting, or replace Rudder's persisted journal, task assignment, or trust
+automatic memory harvesting, or replace Skail's persisted journal, task assignment, or trust
 boundaries.
 
 ## Decision
 
-1. Rudder will assemble a versioned, inspectable context packet before every lead or child model
+1. Skail will assemble a versioned, inspectable context packet before every lead or child model
    attempt. It records components, source labels/revisions, approximate token cost, selection
    rationale, and any omission, truncation, or compression reason. It records references and
    metadata, never registered secrets or unrestricted raw tool output.
@@ -36,15 +36,15 @@ boundaries.
    enforced by runtime policy; it is not repeated as competing natural-language rules.
 3. Workspace code, documentation, skills, memory, previous artifacts, and detailed history load
    progressively through trusted tools. A task receives explicit references and can retrieve
-   additional permitted material just in time; Rudder never eagerly injects an entire repository or
+   additional permitted material just in time; Skail never eagerly injects an entire repository or
    lead transcript.
 4. Context selection is deterministic at the runtime boundary. Relevance may use task-declared
    paths, current write scope, active failure handoff, and explicit user references. Model-authored
    text cannot expand trust, permissions, budget, or selected context beyond those boundaries.
 5. Context writes are deliberate and labelled. Session notes, task handoffs, and compaction summaries
-   have an owner, scope, source revision, and retention rule. Rudder v1 does not infer or silently
+   have an owner, scope, source revision, and retention rule. Skail v1 does not infer or silently
    persist cross-session user memory from conversation content.
-6. Under context pressure, Rudder preserves current objective, user constraints, task/attempt state,
+6. Under context pressure, Skail preserves current objective, user constraints, task/attempt state,
    assignments, budgets, approvals/questions, changed paths and verification, unresolved errors, and
    references to full artifacts/events. It replaces low-value history and verbose tool output with
    bounded summaries and references; original journal records remain available for recovery/export.
@@ -62,7 +62,7 @@ boundaries.
 - Context cost and quality become observable rather than hidden inside prompts.
 - Long sessions and parallel tasks retain decisive state without accumulating full transcripts.
 - Users can inspect why particular instructions or references reached an agent.
-- The policy works across providers because it is Rudder-owned rather than model-prompt-specific.
+- The policy works across providers because it is Skail-owned rather than model-prompt-specific.
 
 ### Trade-offs
 
@@ -81,7 +81,7 @@ making stale information hard to identify.
 
 ### Let models autonomously write durable user memory
 
-Rejected for v1. It conflicts with Rudder's deliberate, inspectable memory definition and expands
+Rejected for v1. It conflicts with Skail's deliberate, inspectable memory definition and expands
 the privacy/trust surface without evidence of value.
 
 ### Add a RAG/vector database now
@@ -93,4 +93,4 @@ the simpler first mechanisms. Indexing is not assumed reliable enough to become 
 
 This ADR authorizes the context-packet, progressive-disclosure, compaction, and evaluation work
 added to Phases 6–8. It does not authorize hosted services, telemetry, automatic semantic memory,
-or a change to Rudder's safety/trust boundaries.
+or a change to Skail's safety/trust boundaries.

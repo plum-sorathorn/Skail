@@ -6,16 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from rudder.cli.main import _build_storage
-from rudder.domain.ids import SessionId, new_session_id
-from rudder.providers.credentials import EnvironmentCredentialResolver
-from rudder.providers.fake import DeterministicFakeChatModel
-from rudder.runtime.redaction import RedactingLogFilter, RedactionRegistry
-from rudder.runtime.run_controller import RunController
-from rudder.sessions.checkpoints import CheckpointStore
-from rudder.sessions.export import export_session
-from rudder.sessions.journal import Journal
-from rudder.sessions.service import SessionService
+from skail.cli.main import _build_storage
+from skail.domain.ids import SessionId, new_session_id
+from skail.providers.credentials import EnvironmentCredentialResolver
+from skail.providers.fake import DeterministicFakeChatModel
+from skail.runtime.redaction import RedactingLogFilter, RedactionRegistry
+from skail.runtime.run_controller import RunController
+from skail.sessions.checkpoints import CheckpointStore
+from skail.sessions.export import export_session
+from skail.sessions.journal import Journal
+from skail.sessions.service import SessionService
 
 
 def test_cli_storage_uses_the_run_scoped_redaction_registry(tmp_path: Path) -> None:
@@ -66,7 +66,7 @@ async def test_resolved_credential_never_leaks_to_persisted_or_displayed_surface
     session_service.create_session(session_id=session_id, title="Canary Session")
 
     # 3. Setup logging with RedactingLogFilter
-    logger = logging.getLogger("rudder.canary.test")
+    logger = logging.getLogger("skail.canary.test")
     log_filter = RedactingLogFilter(redaction)
     logger.addFilter(log_filter)
     log_records: list[str] = []

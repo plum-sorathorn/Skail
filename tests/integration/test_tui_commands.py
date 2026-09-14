@@ -4,21 +4,21 @@ from pathlib import Path
 import pytest
 from langchain_core.messages import AIMessage
 
-from rudder.domain.ids import SessionId, new_session_id
-from rudder.domain.routing import RoutingMode
-from rudder.providers.fake import DeterministicFakeChatModel
-from rudder.runtime.interrupts import QuestionStore
-from rudder.runtime.run_controller import RunController
-from rudder.sessions.checkpoints import CheckpointStore
-from rudder.sessions.journal import Journal
-from rudder.sessions.service import SessionService
-from rudder.tools.approvals import ApprovalStore
-from rudder.tools.execution import CommandRequest
-from rudder.tui.app import RudderApp
-from rudder.tui.commands import dispatch_slash_command, parse_slash_command
-from rudder.tui.projection import InterruptItem, TuiProjection
-from rudder.tui.widgets.composer import PromptComposer
-from rudder.tui.widgets.interrupts import InterruptWidget
+from skail.domain.ids import SessionId, new_session_id
+from skail.domain.routing import RoutingMode
+from skail.providers.fake import DeterministicFakeChatModel
+from skail.runtime.interrupts import QuestionStore
+from skail.runtime.run_controller import RunController
+from skail.sessions.checkpoints import CheckpointStore
+from skail.sessions.journal import Journal
+from skail.sessions.service import SessionService
+from skail.tools.approvals import ApprovalStore
+from skail.tools.execution import CommandRequest
+from skail.tui.app import SkailApp
+from skail.tui.commands import dispatch_slash_command, parse_slash_command
+from skail.tui.projection import InterruptItem, TuiProjection
+from skail.tui.widgets.composer import PromptComposer
+from skail.tui.widgets.interrupts import InterruptWidget
 from tests.fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_call_message
 
 
@@ -140,7 +140,7 @@ async def test_interactive_approval_flow_in_app() -> None:
         status="pending",
     )
 
-    app = RudderApp(projection=proj)
+    app = SkailApp(projection=proj)
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         # Verify interrupt widget is mounted
@@ -174,7 +174,7 @@ async def test_tui_prompt_submission_executes_controller(tmp_path: Path) -> None
 
     fake_model = DeterministicFakeChatModel(
         model_name="lead-model",
-        response_text="Hello from Rudder lead!",
+        response_text="Hello from Skail lead!",
     )
     controller = RunController(
         session_id=sid,
@@ -187,7 +187,7 @@ async def test_tui_prompt_submission_executes_controller(tmp_path: Path) -> None
         budget_limit_usd=Decimal("10.00"),
     )
 
-    app = RudderApp(
+    app = SkailApp(
         controller=controller,
         session_service=session_service,
         session_id=sid,
@@ -210,7 +210,7 @@ async def test_tui_prompt_submission_executes_controller(tmp_path: Path) -> None
         roles = [i.role for i in app.projection.transcript_items]
         assert "user" in roles
         assert "lead" in roles
-        assert any("Hello from Rudder lead!" in i.content for i in app.projection.transcript_items)
+        assert any("Hello from Skail lead!" in i.content for i in app.projection.transcript_items)
         snapshot = journal.get_session_snapshot(str(sid))
         assert snapshot.assignments[0].payload["routing_mode"] == RoutingMode.QUALITY.value
 
@@ -229,7 +229,7 @@ async def test_tui_slash_commands_integration(tmp_path: Path) -> None:
     session = session_service.create_session(title="TUI Slash Session")
     sid = SessionId(session.session_id)
 
-    app = RudderApp(
+    app = SkailApp(
         session_service=session_service,
         session_id=sid,
     )
@@ -271,7 +271,7 @@ async def test_tui_approval_store_and_question_store_integration(tmp_path: Path)
         status="pending",
     )
 
-    app = RudderApp(
+    app = SkailApp(
         projection=proj,
         question_store=q_store,
         approval_store=app_store,
@@ -325,7 +325,7 @@ async def test_tui_answer_resumes_the_interrupted_controller(tmp_path: Path) -> 
         default_child_model="implementer-model",
         question_store=questions,
     )
-    app = RudderApp(
+    app = SkailApp(
         controller=controller,
         session_service=session_service,
         session_id=sid,
@@ -403,7 +403,7 @@ async def test_tui_command_approval_executes_once_and_resumes(tmp_path: Path) ->
         default_child_model="implementer-model",
         approvals=approvals,
     )
-    app = RudderApp(
+    app = SkailApp(
         controller=controller,
         session_service=session_service,
         session_id=sid,
@@ -462,7 +462,7 @@ async def test_tui_rejection_blocks_the_interrupted_run(tmp_path: Path) -> None:
         default_child_model="implementer-model",
         question_store=questions,
     )
-    app = RudderApp(
+    app = SkailApp(
         controller=controller,
         session_service=session_service,
         session_id=sid,

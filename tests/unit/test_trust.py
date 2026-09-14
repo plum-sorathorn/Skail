@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from rudder.config import ProjectTrustStore
-from rudder.domain.security import (
+from skail.config import ProjectTrustStore
+from skail.domain.security import (
     ProjectExtensionKind,
     ProjectTrustLevel,
     WorkspaceIdentity,
@@ -40,7 +40,7 @@ def test_platform_workspace_identity_fixtures_round_trip_deterministically() -> 
 def test_unknown_workspace_starts_untrusted_and_requires_a_decision(tmp_path: Path) -> None:
     store = ProjectTrustStore(tmp_path / "trust.json")
     identity = WorkspaceIdentity(
-        canonical_path="/work/rudder",
+        canonical_path="/work/skail",
         device=2049,
         inode=42,
     )
@@ -79,12 +79,12 @@ def test_trusted_and_denied_decisions_are_explicit_and_persisted(tmp_path: Path)
 def test_replacing_a_workspace_at_the_same_path_requires_a_new_decision(tmp_path: Path) -> None:
     store = ProjectTrustStore(tmp_path / "trust.json")
     original = WorkspaceIdentity(
-        canonical_path="/work/rudder",
+        canonical_path="/work/skail",
         device=2049,
         inode=42,
     )
     replacement = WorkspaceIdentity(
-        canonical_path="/work/rudder",
+        canonical_path="/work/skail",
         device=2049,
         inode=99,
     )
@@ -100,7 +100,7 @@ def test_replacing_a_workspace_at_the_same_path_requires_a_new_decision(tmp_path
 def test_all_project_extensions_are_gated_by_trust(tmp_path: Path) -> None:
     store = ProjectTrustStore(tmp_path / "trust.json")
     identity = WorkspaceIdentity(
-        canonical_path="/work/rudder",
+        canonical_path="/work/skail",
         device=2049,
         inode=42,
     )
@@ -131,7 +131,7 @@ def test_revocation_signals_active_project_tasks_before_their_next_tool_call(
 ) -> None:
     store = ProjectTrustStore(tmp_path / "trust.json")
     identity = WorkspaceIdentity(
-        canonical_path="/work/rudder",
+        canonical_path="/work/skail",
         device=2049,
         inode=42,
     )

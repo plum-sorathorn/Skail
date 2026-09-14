@@ -4,12 +4,12 @@ from decimal import Decimal
 
 import pytest
 
-from rudder.agents.profile_loader import AgentProfile
-from rudder.agents.profiles import builtin_profiles
-from rudder.domain.ids import new_run_id
-from rudder.domain.security import PermissionSet as ProfilePermissionSet
-from rudder.domain.tasks import ModelConstraint, TaskRequest
-from rudder.runtime.task_validation import TaskValidationError, TaskValidator
+from skail.agents.profile_loader import AgentProfile
+from skail.agents.profiles import builtin_profiles
+from skail.domain.ids import new_run_id
+from skail.domain.security import PermissionSet as ProfilePermissionSet
+from skail.domain.tasks import ModelConstraint, TaskRequest
+from skail.runtime.task_validation import TaskValidationError, TaskValidator
 
 
 def _validator(tmp_path, *, max_description_chars: int = 20_000) -> TaskValidator:
@@ -109,7 +109,7 @@ def test_fingerprint_normalizes_request_and_includes_workspace_revision(tmp_path
             description="Inspect   a file",
             profile="implementer",
             success_criteria=("Find  the symbol",),
-            write_scope=("src\\rudder",),
+            write_scope=("src\\skail",),
         ),
         run_id=new_run_id(),
         parent_task_id=None,
@@ -121,7 +121,7 @@ def test_fingerprint_normalizes_request_and_includes_workspace_revision(tmp_path
             description=" Inspect a file ",
             profile="implementer",
             success_criteria=("Find the symbol",),
-            write_scope=("src/rudder",),
+            write_scope=("src/skail",),
         ),
         run_id=new_run_id(),
         parent_task_id=None,

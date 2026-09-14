@@ -3,7 +3,7 @@ from __future__ import annotations
 from fakes.models import ScriptedChatModel, tool_call_message
 from langchain_core.messages import AIMessage
 
-from rudder.tools.assembly import build_default_agent
+from skail.tools.assembly import build_default_agent
 
 
 def test_profile_visibility_filters_deepagents_tools_at_model_boundary(tmp_path) -> None:

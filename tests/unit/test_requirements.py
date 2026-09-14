@@ -4,8 +4,8 @@ import itertools
 
 import pytest
 
-from rudder.domain.routing import RoutingMode
-from rudder.routing.requirements import (
+from skail.domain.routing import RoutingMode
+from skail.routing.requirements import (
     RISK_FLOORS,
     ROLE_FLOORS,
     RequirementBuilder,

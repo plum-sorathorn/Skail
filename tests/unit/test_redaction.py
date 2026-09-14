@@ -4,10 +4,10 @@ import io
 import logging
 from datetime import UTC, datetime
 
-from rudder.agents.context import ContextAssembler
-from rudder.domain.events import DiagnosticPayload, EventEnvelope
-from rudder.domain.ids import EventId, RunId, SessionId
-from rudder.runtime.redaction import RedactingLogFilter, RedactionRegistry
+from skail.agents.context import ContextAssembler
+from skail.domain.events import DiagnosticPayload, EventEnvelope
+from skail.domain.ids import EventId, RunId, SessionId
+from skail.runtime.redaction import RedactingLogFilter, RedactionRegistry
 
 
 def test_registered_secret_is_removed_from_nested_data_and_event_export() -> None:
@@ -36,7 +36,7 @@ def test_redaction_covers_logs_tool_output_exception_chains_and_exports() -> Non
     stream = io.StringIO()
     handler = logging.StreamHandler(stream)
     handler.addFilter(RedactingLogFilter(registry))
-    logger = logging.getLogger("rudder-redaction-test")
+    logger = logging.getLogger("skail-redaction-test")
     logger.handlers = [handler]
     logger.propagate = False
     logger.setLevel(logging.INFO)

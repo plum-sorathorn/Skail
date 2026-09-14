@@ -11,16 +11,16 @@ import pytest
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
 
-from rudder.agents.lead import LeadControls
-from rudder.domain.ids import new_run_id, new_session_id
-from rudder.domain.plans import ExecutionPlan, PlanNode, PlanNodeKind, PlanNodeState
-from rudder.domain.routing import RoutingMode
-from rudder.domain.tasks import AttemptStatus
-from rudder.routing.requirements import TaskRisk
-from rudder.runtime.errors import FrameworkContractError
-from rudder.runtime.interrupts import QuestionStore
-from rudder.runtime.run_controller import RunController
-from rudder.sessions import CheckpointStore, Journal, RecoveryResult, recover_session
+from skail.agents.lead import LeadControls
+from skail.domain.ids import new_run_id, new_session_id
+from skail.domain.plans import ExecutionPlan, PlanNode, PlanNodeKind, PlanNodeState
+from skail.domain.routing import RoutingMode
+from skail.domain.tasks import AttemptStatus
+from skail.routing.requirements import TaskRisk
+from skail.runtime.errors import FrameworkContractError
+from skail.runtime.interrupts import QuestionStore
+from skail.runtime.run_controller import RunController
+from skail.sessions import CheckpointStore, Journal, RecoveryResult, recover_session
 from tests.fakes.models import ScriptedChatModel, tool_call_message
 
 NOW = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
@@ -115,7 +115,7 @@ def _assert_recovery_error(result: RecoveryResult, code: str) -> None:
 def test_reconciliation_interrupts_orphans_without_replaying_terminal_work(
     tmp_path: Path,
 ) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
     assert journal.path.resolve() != checkpoints.path.resolve()
     _seed_run(journal)
@@ -241,7 +241,7 @@ def test_reconciliation_interrupts_orphans_without_replaying_terminal_work(
 
 
 def test_pending_approval_remains_pending_across_repeated_recovery(tmp_path: Path) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
     _seed_run(journal)
     journal.create_approval(
@@ -279,7 +279,7 @@ def test_pending_approval_remains_pending_across_repeated_recovery(tmp_path: Pat
 
 
 def test_recovery_does_not_relaunch_a_node_settled_before_the_crash(tmp_path: Path) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
     session_id = str(new_session_id())
     run_id = str(new_run_id())
@@ -330,7 +330,7 @@ def test_recovery_does_not_relaunch_a_node_settled_before_the_crash(tmp_path: Pa
 def test_missing_checkpoint_returns_structured_error_and_preserves_journal(
     tmp_path: Path,
 ) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     _seed_run(journal)
     before = journal.get_session_snapshot("session-1")
 
@@ -347,7 +347,7 @@ def test_missing_checkpoint_returns_structured_error_and_preserves_journal(
 def test_corrupt_checkpoint_returns_structured_error_and_preserves_journal(
     tmp_path: Path,
 ) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     _seed_run(journal)
     before = journal.get_session_snapshot("session-1")
     checkpoint_path = tmp_path / "checkpoints.sqlite"
@@ -366,7 +366,7 @@ def test_corrupt_checkpoint_returns_structured_error_and_preserves_journal(
 def test_recovery_rejects_a_checkpoint_store_that_reuses_the_journal_path(
     tmp_path: Path,
 ) -> None:
-    database = tmp_path / "rudder.sqlite"
+    database = tmp_path / "skail.sqlite"
     journal = Journal(database)
     _seed_run(journal)
     before = journal.get_session_snapshot("session-1")
@@ -382,7 +382,7 @@ def test_recovery_rejects_a_checkpoint_store_that_reuses_the_journal_path(
 
 
 def test_recovery_rejects_a_hard_link_alias_of_the_journal(tmp_path: Path) -> None:
-    database = tmp_path / "rudder.sqlite"
+    database = tmp_path / "skail.sqlite"
     journal = Journal(database)
     _seed_run(journal)
     alias = tmp_path / "checkpoint-alias.sqlite"
@@ -401,7 +401,7 @@ def test_recovery_rejects_a_hard_link_alias_of_the_journal(tmp_path: Path) -> No
 
 
 def test_recovery_returns_live_tasks_without_an_attempt_to_the_lead(tmp_path: Path) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
     _seed_run(journal)
     journal.create_task(
@@ -430,7 +430,7 @@ def test_recovery_returns_live_tasks_without_an_attempt_to_the_lead(tmp_path: Pa
 def test_recovery_interrupts_an_assigned_attempt_that_never_reached_checkpoint(
     tmp_path: Path,
 ) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
     _seed_run(journal)
     journal.create_task(
@@ -466,7 +466,7 @@ def test_recovery_interrupts_an_assigned_attempt_that_never_reached_checkpoint(
 
 
 def test_recovery_holds_ambiguous_call_reservation_and_reports_it(tmp_path: Path) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
     _seed_run(journal)
     journal.create_task(
@@ -545,7 +545,7 @@ def test_recovery_holds_ambiguous_call_reservation_and_reports_it(tmp_path: Path
 def test_stale_checkpoint_reference_is_rejected_before_journal_mutation(
     tmp_path: Path,
 ) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
     _seed_run(journal)
     _record_real_checkpoint(
@@ -597,7 +597,7 @@ def test_checkpoint_idempotency_rejects_conflicting_metadata(tmp_path: Path) -> 
 
 
 def test_one_checkpoint_can_preserve_multiple_live_child_attempts(tmp_path: Path) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
     _seed_run(journal)
     for index in (1, 2, 3):

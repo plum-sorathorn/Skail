@@ -8,7 +8,7 @@ from threading import Barrier, Event
 
 import pytest
 
-from rudder.sessions import Journal, JournalBusyError
+from skail.sessions import Journal, JournalBusyError
 
 NOW = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
 
@@ -27,7 +27,7 @@ def _seed_run(database: Path) -> None:
 
 
 def test_concurrent_idempotent_writers_do_not_duplicate_usage(tmp_path: Path) -> None:
-    database = tmp_path / "rudder.sqlite"
+    database = tmp_path / "skail.sqlite"
     _seed_run(database)
     barrier = Barrier(8)
 
@@ -56,7 +56,7 @@ def test_concurrent_idempotent_writers_do_not_duplicate_usage(tmp_path: Path) ->
 
 
 def test_concurrent_reservations_are_each_committed_once(tmp_path: Path) -> None:
-    database = tmp_path / "rudder.sqlite"
+    database = tmp_path / "skail.sqlite"
     _seed_run(database)
     barrier = Barrier(6)
 
@@ -88,7 +88,7 @@ def test_concurrent_reservations_are_each_committed_once(tmp_path: Path) -> None
 
 
 def test_busy_retry_policy_has_a_deterministic_bound(tmp_path: Path) -> None:
-    database = tmp_path / "rudder.sqlite"
+    database = tmp_path / "skail.sqlite"
     _seed_run(database)
     lock_holder = Journal(database)
     writer_started = Event()

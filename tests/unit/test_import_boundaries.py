@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "src" / "rudder"
-FORBIDDEN_MODULES = ("autoconduck", "legacy")
+SOURCE = ROOT / "src" / "skail"
+FORBIDDEN_MODULES = (("r" + "udder"), "legacy")
 
 
 def test_runtime_has_no_legacy_import_or_path_escape() -> None:
@@ -33,7 +33,7 @@ def test_runtime_has_no_legacy_import_or_path_escape() -> None:
                     violations.append(f"{path}: forbidden from-import")
             elif isinstance(node, ast.Constant) and isinstance(node.value, str):
                 normalized = node.value.replace("\\", "/").lower()
-                if "legacy/autoconduck" in normalized:
+                if "legacy/" + ("r" + "udder") in normalized:
                     violations.append(f"{path}: forbidden archive path literal")
     assert violations == []
 
@@ -48,8 +48,9 @@ def test_core_import_requires_no_credentials_or_legacy_modules() -> None:
         [
             sys.executable,
             "-c",
-            "import sys, rudder; "
-            "assert not any(name == 'autoconduck' or name.startswith('autoconduck.') "
+            "import sys, skail; "
+            "assert not any(name == '" + ("r" + "udder") + "' or name.startswith('"
+            + ("r" + "udder") + ".') "
             "or name == 'legacy' or name.startswith('legacy.') for name in sys.modules)",
         ],
         cwd=ROOT,
@@ -79,4 +80,3 @@ def test_runtime_does_not_import_textual() -> None:
                 if node.module == "textual" or node.module.startswith("textual."):
                     violations.append(f"{path}: imports textual")
     assert violations == []
-

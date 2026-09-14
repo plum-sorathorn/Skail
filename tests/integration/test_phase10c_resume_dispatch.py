@@ -14,22 +14,22 @@ from pathlib import Path
 import pytest
 from langchain_core.messages import AIMessage
 
-from rudder.agents.lead import LeadControls
-from rudder.domain.decisions import ExecutionDecision
-from rudder.domain.ids import new_run_id, new_session_id
-from rudder.domain.plans import (
+from skail.agents.lead import LeadControls
+from skail.domain.decisions import ExecutionDecision
+from skail.domain.ids import new_run_id, new_session_id
+from skail.domain.plans import (
     ExecutionPlan,
     PlanNode,
     PlanNodeKind,
     PlanNodeState,
 )
-from rudder.runtime.decisions import DecisionAdmissionError, ExecutionDecisionGate
-from rudder.runtime.errors import FrameworkContractError
-from rudder.runtime.interrupts import QuestionStore
-from rudder.runtime.run_controller import RunController
-from rudder.sessions import CheckpointStore, Journal
-from rudder.tools.approvals import ApprovalChoice, ApprovalStore
-from rudder.tools.execution import CommandRequest
+from skail.runtime.decisions import DecisionAdmissionError, ExecutionDecisionGate
+from skail.runtime.errors import FrameworkContractError
+from skail.runtime.interrupts import QuestionStore
+from skail.runtime.run_controller import RunController
+from skail.sessions import CheckpointStore, Journal
+from skail.tools.approvals import ApprovalChoice, ApprovalStore
+from skail.tools.execution import CommandRequest
 from tests.fakes.models import (
     ScriptedChatModel,
     parallel_tool_call_message,
@@ -834,7 +834,7 @@ def test_stale_revision_rejected(tmp_path: Path) -> None:
             PlanNode(local_id="report", kind=PlanNodeKind.AGENT, objective="Report"),
         ),
     )
-    from rudder.domain.plans import PlanRevision as PlanRevisionModel
+    from skail.domain.plans import PlanRevision as PlanRevisionModel
 
     journal.revise_plan(
         plan_id=admitted.plan_id,

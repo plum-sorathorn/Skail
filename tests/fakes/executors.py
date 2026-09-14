@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from rudder.runtime.task_executor import (
+from skail.runtime.task_executor import (
     TaskExecutionResult,
     TaskExecutionStatus,
     TaskHandle,
@@ -12,7 +12,7 @@ from rudder.runtime.task_executor import (
 
 
 class FakeTaskExecutor:
-    """Small deterministic implementation of Rudder's TaskExecutor port."""
+    """Small deterministic implementation of Skail's TaskExecutor port."""
 
     def __init__(self, values: dict[str, Any]) -> None:
         self._values = values

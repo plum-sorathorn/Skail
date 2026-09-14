@@ -11,11 +11,11 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, Too
 from langchain_core.tools import tool
 from pydantic import BaseModel
 
-from rudder.config.models import ProviderConfig
-from rudder.domain.usage import UsageAuthority
-from rudder.providers.base import ModelOptions, ModelProfile, ProviderSupportLevel
-from rudder.providers.errors import ProviderError, ProviderErrorKind
-from rudder.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
+from skail.config.models import ProviderConfig
+from skail.domain.usage import UsageAuthority
+from skail.providers.base import ModelOptions, ModelProfile, ProviderSupportLevel
+from skail.providers.errors import ProviderError, ProviderErrorKind
+from skail.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
 
 
 class StructuredAnswer(BaseModel):
@@ -101,7 +101,7 @@ async def test_llmgateway_uses_canonical_v1_auth_and_chat_streaming() -> None:
 
     combined = _combined(chunks)
     request = transport.last_request
-    assert combined.content == "Hello Rudder"
+    assert combined.content == "Hello Skail"
     assert request.method == "POST"
     assert request.path == "/v1/chat/completions"
     assert request.headers["authorization"] == "Bearer fixture-credential"
@@ -198,7 +198,7 @@ def test_llmgateway_marks_reported_gateway_cost_as_authoritative() -> None:
     response = AIMessage(
         content="done",
         usage_metadata={"input_tokens": 7, "output_tokens": 3, "total_tokens": 10},
-        response_metadata={"rudder_cost_usd": "0.00042"},
+        response_metadata={"skail_cost_usd": "0.00042"},
     )
 
     usage = adapter.normalize_usage(response)

@@ -7,10 +7,10 @@ from fakes.provider import FakeInjectedProviderFailure, FakeProviderAdapter, Fak
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, ValidationError
 
-from rudder.domain.usage import UsageAuthority
-from rudder.providers.base import ModelOptions, ModelProfile, ProviderSupportLevel
-from rudder.providers.errors import ProviderErrorKind
-from rudder.providers.factory import ModelFactory, ModelFactoryKey
+from skail.domain.usage import UsageAuthority
+from skail.providers.base import ModelOptions, ModelProfile, ProviderSupportLevel
+from skail.providers.errors import ProviderErrorKind
+from skail.providers.factory import ModelFactory, ModelFactoryKey
 
 
 class StructuredAnswer(BaseModel):

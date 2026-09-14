@@ -1,5 +1,5 @@
-from rudder.agents.context import ContextAssembler, ContextComponent
-from rudder.domain.events import SecretRedactor
+from skail.agents.context import ContextAssembler, ContextComponent
+from skail.domain.events import SecretRedactor
 
 
 def test_packet_is_bounded_and_does_not_include_unselected_history() -> None:

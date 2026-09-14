@@ -5,33 +5,33 @@ from decimal import Decimal
 import pytest
 from textual.widgets import Input, Static, TabbedContent
 
-from rudder.domain.changesets import ChangeSet, ChangeSetPath, ChangeSetStatus, ContentImage
-from rudder.domain.events import (
+from skail.domain.changesets import ChangeSet, ChangeSetPath, ChangeSetStatus, ContentImage
+from skail.domain.events import (
     BudgetPayload,
     EventEnvelope,
     PlanPayload,
     ToolPayload,
 )
-from rudder.domain.ids import new_event_id, new_run_id, new_session_id, new_task_id
-from rudder.domain.plans import EffectScope, ExecutionPlan, PlanNode, PlanNodeKind, PlanNodeState
-from rudder.sessions.journal import (
+from skail.domain.ids import new_event_id, new_run_id, new_session_id, new_task_id
+from skail.domain.plans import EffectScope, ExecutionPlan, PlanNode, PlanNodeKind, PlanNodeState
+from skail.sessions.journal import (
     PersistedChangeSet,
     PersistedPlan,
     RunSnapshot,
     SessionSnapshot,
     UsageSnapshot,
 )
-from rudder.tui.app import RudderApp
-from rudder.tui.projection import RouteViewItem, TuiProjection
-from rudder.tui.widgets.budget import BudgetView
-from rudder.tui.widgets.chat import TranscriptItemWidget
-from rudder.tui.widgets.plan import PlanView
-from rudder.tui.widgets.route import RouteView
+from skail.tui.app import SkailApp
+from skail.tui.projection import RouteViewItem, TuiProjection
+from skail.tui.widgets.budget import BudgetView
+from skail.tui.widgets.chat import TranscriptItemWidget
+from skail.tui.widgets.plan import PlanView
+from skail.tui.widgets.route import RouteView
 
 
 @pytest.mark.asyncio
 async def test_tui_shell_mounts_and_renders() -> None:
-    app = RudderApp()
+    app = SkailApp()
     async with app.run_test(size=(120, 40)):
         assert app.query_one("#chat-transcript") is not None
         assert app.query_one("#prompt-composer") is not None
@@ -44,7 +44,7 @@ async def test_tui_shell_mounts_and_renders() -> None:
 
 @pytest.mark.asyncio
 async def test_tui_shell_responsive_narrow_fallback() -> None:
-    app = RudderApp()
+    app = SkailApp()
     async with app.run_test(size=(80, 40)):
         # Width 80 < 100 triggers .narrow class
         assert app.query_one("#main-container").has_class("narrow")
@@ -70,7 +70,7 @@ async def test_tui_shell_transcript_collapse_click() -> None:
         )
     )
 
-    app = RudderApp(projection=proj)
+    app = SkailApp(projection=proj)
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         widget = app.query_one(TranscriptItemWidget)
@@ -90,7 +90,7 @@ async def test_tui_shell_transcript_collapse_click() -> None:
 
 @pytest.mark.asyncio
 async def test_tui_shell_keyboard_navigation_and_prompt_submit() -> None:
-    app = RudderApp()
+    app = SkailApp()
     async with app.run_test(size=(120, 40)) as pilot:
         # Check tab navigation keybindings
         await pilot.press("ctrl+b")
@@ -115,7 +115,7 @@ async def test_tui_shell_keyboard_navigation_and_prompt_submit() -> None:
 
 @pytest.mark.asyncio
 async def test_tui_shell_plan_navigation_ctrl_p_and_slash() -> None:
-    app = RudderApp()
+    app = SkailApp()
     async with app.run_test(size=(120, 40)) as pilot:
         # ctrl+p navigates to Plan tab
         await pilot.press("ctrl+p")
@@ -177,7 +177,7 @@ async def test_tui_shell_early_events_before_mount() -> None:
         ),
     ]
 
-    app = RudderApp()
+    app = SkailApp()
     # Apply early events BEFORE mounting
     for ev in early_events:
         app.apply_event(ev)
@@ -198,7 +198,7 @@ async def test_tui_shell_early_events_before_mount() -> None:
 
 @pytest.mark.asyncio
 async def test_tui_shell_real_projection_updates() -> None:
-    app = RudderApp()
+    app = SkailApp()
     sid = new_session_id()
     rid = new_run_id()
     plan_id = "00000000-0000-4000-8000-000000000001"
@@ -337,7 +337,7 @@ async def test_tui_shell_resume_snapshot() -> None:
         changesets=(persisted_cs,),
     )
 
-    app = RudderApp(initial_snapshot=snapshot)
+    app = SkailApp(initial_snapshot=snapshot)
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
 
@@ -377,7 +377,7 @@ async def test_tui_shell_route_shadow_labels() -> None:
         shadow_reasons=["Economy candidate is cheaper with verified completion evidence"],
     )
 
-    app = RudderApp(projection=proj)
+    app = SkailApp(projection=proj)
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.press("ctrl+r")
         await pilot.pause()
@@ -396,7 +396,7 @@ async def test_tui_shell_route_shadow_labels() -> None:
 
 @pytest.mark.asyncio
 async def test_tui_shell_cancellation_preserves_state() -> None:
-    app = RudderApp()
+    app = SkailApp()
     async with app.run_test(size=(120, 40)) as pilot:
         # Submit /cancel command
         inp = app.query_one("#composer-input", Input)

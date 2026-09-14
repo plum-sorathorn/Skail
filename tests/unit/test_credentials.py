@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from rudder.providers.credentials import EnvironmentCredentialResolver
-from rudder.providers.errors import ProviderConfigurationError
-from rudder.providers.factory import ModelFactory, ModelFactoryKey
-from rudder.runtime.redaction import RedactionRegistry
+from skail.providers.credentials import EnvironmentCredentialResolver
+from skail.providers.errors import ProviderConfigurationError
+from skail.providers.factory import ModelFactory, ModelFactoryKey
+from skail.runtime.redaction import RedactionRegistry
 
 
 def test_environment_credential_is_registered_without_repr_leakage() -> None:
-    canary = "rudder-provider-canary"
+    canary = "skail-provider-canary"
     redaction = RedactionRegistry()
     resolver = EnvironmentCredentialResolver(
         redaction, environment={"FIXTURE_API_KEY": canary}

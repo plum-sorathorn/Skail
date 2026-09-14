@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from rudder.runtime.redaction import RedactionRegistry
-from rudder.tools.artifacts import ArtifactStore
-from rudder.tools.assembly import default_registry
-from rudder.tools.registry import SideEffect, ToolMetadata, ToolRegistry
+from skail.runtime.redaction import RedactionRegistry
+from skail.tools.artifacts import ArtifactStore
+from skail.tools.assembly import default_registry
+from skail.tools.registry import SideEffect, ToolMetadata, ToolRegistry
 
 
 def _tool(name: str = "read_file") -> ToolMetadata:

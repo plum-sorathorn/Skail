@@ -10,16 +10,16 @@ from pathlib import Path
 
 import pytest
 
-from rudder.runtime.changeset_integration import ChangeSetIntegrator
-from rudder.runtime.workspace_capture import (
+from skail.runtime.changeset_integration import ChangeSetIntegrator
+from skail.runtime.workspace_capture import (
     ImmutableArtifactStore,
     StableWorktreeScanner,
     WorkspaceCaptureError,
     capture_changeset,
     capture_managed_changeset,
 )
-from rudder.runtime.workspaces import WorkspaceManager
-from rudder.sessions import Journal
+from skail.runtime.workspaces import WorkspaceManager
+from skail.sessions import Journal
 
 
 def _git(workspace: Path, *args: str) -> None:
@@ -31,7 +31,7 @@ def _repository(tmp_path: Path) -> Path:
     workspace.mkdir()
     _git(workspace, "init")
     _git(workspace, "config", "user.email", "tests@example.invalid")
-    _git(workspace, "config", "user.name", "Rudder tests")
+    _git(workspace, "config", "user.name", "Skail tests")
     (workspace / "tracked.txt").write_text("base\n", encoding="utf-8")
     _git(workspace, "add", "tracked.txt")
     _git(workspace, "commit", "-m", "initial")
@@ -236,11 +236,11 @@ def test_capture_changeset_records_added_files_and_rejects_tampered_base(tmp_pat
 
 def test_managed_capture_authenticates_worktree_and_persists_changeset(tmp_path: Path) -> None:
     workspace = _repository(tmp_path)
-    manager = WorkspaceManager(tmp_path / "rudder-data")
+    manager = WorkspaceManager(tmp_path / "skail-data")
     snapshot = manager.capture(workspace)
     isolated = manager.materialize(snapshot, "33333333-3333-4333-8333-333333333333")
     (isolated.path / "tracked.txt").write_text("after\n", encoding="utf-8")
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     now = datetime(2026, 9, 8, tzinfo=UTC)
     _seed_changeset_lineage(
         journal,
@@ -280,13 +280,13 @@ def test_managed_capture_authenticates_worktree_and_persists_changeset(tmp_path:
 def test_recovery_marks_unfinished_apply_in_doubt_without_replay(tmp_path: Path) -> None:
     workspace = _repository(tmp_path)
     original = (workspace / "tracked.txt").read_bytes()
-    manager = WorkspaceManager(tmp_path / "rudder-data")
+    manager = WorkspaceManager(tmp_path / "skail-data")
     snapshot = manager.capture(workspace)
     task_id = "33333333-3333-4333-8333-333333333333"
     attempt_id = "44444444-4444-4444-8444-444444444444"
     isolated = manager.materialize(snapshot, task_id)
     (isolated.path / "tracked.txt").write_bytes(b"after\n")
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     now = datetime(2026, 9, 8, tzinfo=UTC)
     _seed_changeset_lineage(journal, task_id=task_id, attempt_id=attempt_id, now=now)
     artifacts = ImmutableArtifactStore(tmp_path / "artifacts")

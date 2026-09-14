@@ -1,0 +1,13 @@
+{
+  "name": "skail-linux-arm64",
+  "version": "0.5.2",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "python/"
+  ]
+}

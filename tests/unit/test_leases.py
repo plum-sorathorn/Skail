@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from rudder.runtime.leases import WorkspaceLeaseManager, write_capable
-from rudder.tools.registry import SideEffect
+from skail.runtime.leases import WorkspaceLeaseManager, write_capable
+from skail.tools.registry import SideEffect
 
 
 def test_write_classification_treats_execute_and_unknown_as_write_capable() -> None:

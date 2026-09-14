@@ -16,7 +16,7 @@ from evals.schema import (
     OracleType,
     RawExecutionRecord,
 )
-from rudder.routing.selector import RouteCandidate
+from skail.routing.selector import RouteCandidate
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,7 +38,7 @@ def git_value(*args: str) -> str:
         )
     except (OSError, subprocess.SubprocessError):
         return "unavailable"
-    return completed.stdout.strip() or "unavailable"
+    return (completed.stdout or "").strip() or "unavailable"
 
 
 def fixture_digest(fixtures: Sequence[EvaluationFixture]) -> str:

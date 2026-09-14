@@ -7,8 +7,8 @@ import pytest
 from fakes.barriers import AsyncStartBarrier
 from fakes.executors import FakeTaskExecutor
 
-from rudder.runtime.errors import FrameworkContractError
-from rudder.runtime.task_executor import (
+from skail.runtime.errors import FrameworkContractError
+from skail.runtime.task_executor import (
     BackgroundTaskExecutor,
     ForegroundTaskExecutor,
     TaskExecutionStatus,

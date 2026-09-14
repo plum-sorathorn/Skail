@@ -7,9 +7,9 @@ from fakes.provider import FakeInjectedProviderFailure, FakeProviderAdapter, Fak
 from langchain.agents.middleware import ModelRequest
 from langchain_core.messages import AIMessage
 
-from rudder.providers.errors import ProviderError, ProviderErrorKind
-from rudder.providers.fallback import FallbackBinding, ProviderFallbackPolicy
-from rudder.runtime.model_middleware import TaskBoundModelMiddleware
+from skail.providers.errors import ProviderError, ProviderErrorKind
+from skail.providers.fallback import FallbackBinding, ProviderFallbackPolicy
+from skail.runtime.model_middleware import TaskBoundModelMiddleware
 
 
 def _state() -> dict[str, Any]:

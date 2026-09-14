@@ -45,7 +45,7 @@ class ScriptedChatModel(BaseChatModel):
 
     @property
     def _llm_type(self) -> str:
-        return "rudder-scripted-fake"
+        return "skail-scripted-fake"
 
     @property
     def _identifying_params(self) -> dict[str, Any]:

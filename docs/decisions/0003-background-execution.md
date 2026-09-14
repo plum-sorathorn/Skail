@@ -13,9 +13,9 @@ deployment assumptions.
 
 ## Decision
 
-The stable Rudder release uses `ForegroundTaskExecutor`. `BackgroundTaskExecutor` remains an
+The stable Skail release uses `ForegroundTaskExecutor`. `BackgroundTaskExecutor` remains an
 explicit experimental adapter boundary and is disabled by default. Stable callers depend only on
-the Rudder `TaskExecutor` protocol. Background unavailability is a structured error and cannot
+the Skail `TaskExecutor` protocol. Background unavailability is a structured error and cannot
 change foreground behavior.
 
 Whole-run cancellation is supported for foreground work. User-facing individual steering and

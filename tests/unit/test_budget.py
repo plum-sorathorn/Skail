@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from rudder.domain.usage import NormalizedUsage, UsageAuthority
-from rudder.routing.budget import (
+from skail.domain.usage import NormalizedUsage, UsageAuthority
+from skail.routing.budget import (
     BudgetBlockedError,
     BudgetLedger,
     ReservationRequest,
     ReservationStateError,
 )
-from rudder.sessions import Journal, JournalIdempotencyError
+from skail.sessions import Journal, JournalIdempotencyError
 
 NOW = datetime(2026, 9, 2, tzinfo=UTC)
 SESSION_ID = "11111111-1111-4111-8111-111111111111"
@@ -22,7 +22,7 @@ TASK_ID = "33333333-3333-4333-8333-333333333333"
 
 
 def _ledger(tmp_path: Path, limit: str = "1.00") -> BudgetLedger:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     journal.migrate()
     journal.create_session(session_id=SESSION_ID, title="budget", created_at=NOW)
     journal.create_run(

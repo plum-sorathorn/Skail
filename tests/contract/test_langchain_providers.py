@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from rudder.providers.errors import ProviderConfigurationError, ProviderDependencyError
-from rudder.providers.langchain import LangChainModelFactory
-from rudder.providers.registry import LangChainProviderRegistry, ProviderRegistration
+from skail.providers.errors import ProviderConfigurationError, ProviderDependencyError
+from skail.providers.langchain import LangChainModelFactory
+from skail.providers.registry import LangChainProviderRegistry, ProviderRegistration
 
 
 @dataclass(frozen=True)
@@ -175,7 +175,7 @@ def test_missing_optional_package_returns_an_actionable_extra_install_hint() -> 
 
     assert raised.value.provider == "anthropic"
     assert raised.value.package == "langchain-anthropic"
-    assert raised.value.install_hint == 'python -m pip install "rudder-harness[anthropic]"'
+    assert raised.value.install_hint == 'python -m pip install "skail-harness[anthropic]"'
     assert "langchain-anthropic" in str(raised.value)
 
 

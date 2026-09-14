@@ -1,6 +1,6 @@
 # Implementation Plan: Repair OMP Integration and Make Observability Trustworthy
 
-Status: Completed and archived during Rudder specification work on 2026-09-02.
+Status: Completed and archived during Skail specification work on 2026-09-02.
 
 ## Scope
 
@@ -58,9 +58,9 @@ route_target -> selection -> LiteLLM recorder -> canonical stats journal
 
 **Files likely touched:**
 
-- `autoconduck/stats.py`
-- `autoconduck/server/server_chat.py`
-- `autoconduck/server/server_messages.py`
+- `skail/stats.py`
+- `skail/server/server_chat.py`
+- `skail/server/server_messages.py`
 - `tests/test_server_and_apis.py`
 
 **Estimated scope:** M.
@@ -84,9 +84,9 @@ route_target -> selection -> LiteLLM recorder -> canonical stats journal
 
 **Files likely touched:**
 
-- `autoconduck/stats.py`
-- `autoconduck/server/server_router.py`
-- `autoconduck/server/server_meta.py`
+- `skail/stats.py`
+- `skail/server/server_router.py`
+- `skail/server/server_meta.py`
 - `tests/test_server_and_apis.py`
 - `tests/test_tui_components.py`
 
@@ -106,7 +106,7 @@ route_target -> selection -> LiteLLM recorder -> canonical stats journal
 
 - [ ] Installation reports a diagnostic if the file exists but OMP did not load it.
 - [ ] A loaded extension emits identifiable heartbeat/session and tool-result events.
-- [ ] `autoconduck_search` is verified in a running OMP session when RAG is enabled.
+- [ ] `skail_search` is verified in a running OMP session when RAG is enabled.
 - [ ] Disabled plugins remain silent/no-op and never block OMP.
 
 **Verification:**
@@ -118,9 +118,9 @@ route_target -> selection -> LiteLLM recorder -> canonical stats journal
 
 **Files likely touched:**
 
-- `autoconduck/harnesses/omp.py`
-- `autoconduck/server/plugin_routes.py`
-- `autoconduck/plugin/ledger.py`
+- `skail/harnesses/omp.py`
+- `skail/server/plugin_routes.py`
+- `skail/plugin/ledger.py`
 - `tests/test_agent_adapters.py`
 - `tests/test_plugin_shims.py`
 
@@ -145,10 +145,10 @@ route_target -> selection -> LiteLLM recorder -> canonical stats journal
 
 **Files likely touched:**
 
-- `autoconduck/harnesses/omp.py`
-- `autoconduck/server/server_router.py`
-- `autoconduck/server/plugin_routes.py`
-- `autoconduck/plugin/bias.py`
+- `skail/harnesses/omp.py`
+- `skail/server/server_router.py`
+- `skail/server/plugin_routes.py`
+- `skail/plugin/bias.py`
 - `tests/test_plugin_e2e.py`
 
 **Estimated scope:** M.
@@ -177,9 +177,9 @@ route_target -> selection -> LiteLLM recorder -> canonical stats journal
 
 **Files likely touched:**
 
-- `autoconduck/routing/slm_planner.py`
-- `autoconduck/routing/dispatcher.py`
-- `autoconduck/server/server_router.py`
+- `skail/routing/slm_planner.py`
+- `skail/routing/dispatcher.py`
+- `skail/server/server_router.py`
 - `tests/test_slm_planner.py`
 - `tests/test_oma_integration.py`
 
@@ -204,9 +204,9 @@ route_target -> selection -> LiteLLM recorder -> canonical stats journal
 
 **Files likely touched:**
 
-- `autoconduck/server/server_router.py`
-- `autoconduck/plugin/runtime.py`
-- `autoconduck/stats.py`
+- `skail/server/server_router.py`
+- `skail/plugin/runtime.py`
+- `skail/stats.py`
 - `tests/test_oma_integration.py`
 - `tests/test_plugin_runtime.py`
 
@@ -231,10 +231,10 @@ route_target -> selection -> LiteLLM recorder -> canonical stats journal
 
 **Files likely touched:**
 
-- `autoconduck/tui/dashboard.py`
-- `autoconduck/tui/dashboard_widgets.py`
-- `autoconduck/tui/dashboard_screens.py`
-- `autoconduck/server/server_meta.py`
+- `skail/tui/dashboard.py`
+- `skail/tui/dashboard_widgets.py`
+- `skail/tui/dashboard_screens.py`
+- `skail/server/server_meta.py`
 - `tests/test_tui_components.py`
 
 **Estimated scope:** M.

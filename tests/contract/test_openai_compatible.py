@@ -4,9 +4,9 @@ import httpx
 import pytest
 from fakes.provider import ProviderHTTPFixtureTransport
 
-from rudder.config.models import ProviderConfig
-from rudder.providers.base import ModelOptions, ModelProfile, ProviderSupportLevel
-from rudder.providers.openai_compatible import OpenAICompatibleAdapter
+from skail.config.models import ProviderConfig
+from skail.providers.base import ModelOptions, ModelProfile, ProviderSupportLevel
+from skail.providers.openai_compatible import OpenAICompatibleAdapter
 
 
 def _config() -> ProviderConfig:

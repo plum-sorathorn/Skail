@@ -36,21 +36,21 @@ from evals.schema import (
     ScriptedToolCall,
     TaskEvalResult,
 )
-from rudder.agents.lead import LeadControls
-from rudder.agents.profiles import builtin_profiles
-from rudder.domain.ids import new_session_id
-from rudder.domain.routing import TaskAssignment
-from rudder.providers.fake import FakeProviderAdapter
-from rudder.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
-from rudder.routing.assignment import RoutingSnapshot, config_revision
-from rudder.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
-from rudder.routing.selector import RouteCandidate
-from rudder.runtime.run_controller import RunController  # type: ignore[import-untyped]
-from rudder.sessions.journal import Journal, SessionSnapshot  # type: ignore[import-untyped]
+from skail.agents.lead import LeadControls
+from skail.agents.profiles import builtin_profiles
+from skail.domain.ids import new_session_id
+from skail.domain.routing import TaskAssignment
+from skail.providers.fake import FakeProviderAdapter
+from skail.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
+from skail.routing.assignment import RoutingSnapshot, config_revision
+from skail.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
+from skail.routing.selector import RouteCandidate
+from skail.runtime.run_controller import RunController  # type: ignore[import-untyped]
+from skail.sessions.journal import Journal, SessionSnapshot  # type: ignore[import-untyped]
 
 
 class _FixtureChatModel(BaseChatModel):
-    """Offline fixture behavior that exercises Rudder's actual tool boundary."""
+    """Offline fixture behavior that exercises Skail's actual tool boundary."""
 
     model_name: str = "eval-model"
     responses: tuple[ScriptedModelResponse, ...] = ()
@@ -70,7 +70,7 @@ class _FixtureChatModel(BaseChatModel):
                 "output_tokens": response.usage.output_tokens,
                 "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
             },
-            response_metadata={"rudder_cost_usd": str(response.usage.cost_usd)},
+            response_metadata={"skail_cost_usd": str(response.usage.cost_usd)},
         )
 
     def _is_child_call(self, messages: Sequence[BaseMessage]) -> bool:
@@ -119,7 +119,7 @@ class _FixtureChatModel(BaseChatModel):
 
     @property
     def _llm_type(self) -> str:
-        return "rudder-evaluation-fixture"
+        return "skail-evaluation-fixture"
 
     def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> Runnable[Any, AIMessage]:
         del tools, kwargs
@@ -452,8 +452,8 @@ def _raw_execution_record(
             )
             for path in workspace.rglob("*")
             if path.is_file()
-            and ".rudder" not in path.relative_to(workspace).parts
-            and path.name != ".rudder-eval.sqlite"
+            and ".skail" not in path.relative_to(workspace).parts
+            and path.name != ".skail-eval.sqlite"
         )
     )
     workspace_text_files = tuple(
@@ -464,8 +464,8 @@ def _raw_execution_record(
             )
             for path in workspace.rglob("*")
             if path.is_file()
-            and ".rudder" not in path.relative_to(workspace).parts
-            and path.name != ".rudder-eval.sqlite"
+            and ".skail" not in path.relative_to(workspace).parts
+            and path.name != ".skail-eval.sqlite"
         )
     )
     return RawExecutionRecord(
@@ -648,7 +648,7 @@ class EvaluationRunner:
             self.base_workspace.mkdir(parents=True, exist_ok=True)
             workspace_parent = str(self.base_workspace)
         with tempfile.TemporaryDirectory(
-            prefix=f"rudder-eval-{fixture.id}-{policy.value}-",
+            prefix=f"skail-eval-{fixture.id}-{policy.value}-",
             dir=workspace_parent,
         ) as directory:
             workspace = Path(directory)
@@ -713,7 +713,7 @@ class EvaluationRunner:
             runtime_models[child_model_name] = child_model
 
             session_id = new_session_id()
-            journal = Journal(workspace / ".rudder-eval.sqlite")
+            journal = Journal(workspace / ".skail-eval.sqlite")
             journal.migrate()
             journal.create_session(
                 session_id=str(session_id),

@@ -225,7 +225,7 @@ def test_eval_fixtures_adversarial_oracle_mutations(tmp_path: Path) -> None:
 
 
 def test_eval_fixtures_workspace_reset_and_boundary(tmp_path: Path) -> None:
-    from rudder.tools.filesystem import FilesystemBoundary, PathBoundaryError
+    from skail.tools.filesystem import FilesystemBoundary, PathBoundaryError
 
     fixtures_dir = Path(__file__).resolve().parents[2] / "evals" / "fixtures"
     fixtures = load_fixtures(fixtures_dir)

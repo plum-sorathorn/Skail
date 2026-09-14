@@ -1,6 +1,6 @@
 # OMP Integration and Observability Remediation
 
-Status: Completed and archived during Rudder specification work on 2026-09-02.
+Status: Completed and archived during Skail specification work on 2026-09-02.
 
 - [x] 1. Eliminate duplicate completion telemetry and add regression tests.
 - [x] 2. Add versioned session-aware stats events and aggregate views.

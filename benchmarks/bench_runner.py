@@ -21,8 +21,8 @@ from uuid import uuid4
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from rudder.agents.context import ContextAssembler, ContextComponent
-from rudder.domain.events import (
+from skail.agents.context import ContextAssembler, ContextComponent
+from skail.domain.events import (
     EventEnvelope,
     LifecyclePayload,
     ModelPayload,
@@ -30,17 +30,17 @@ from rudder.domain.events import (
     TaskPayload,
     ToolPayload,
 )
-from rudder.domain.ids import new_run_id, new_session_id
-from rudder.runtime.scheduler import ChildScheduler
-from rudder.runtime.workspaces import WorkspaceManager
-from rudder.sessions.journal import Journal
-from rudder.tui.app import RudderApp
-from rudder.tui.projection import TuiProjection
+from skail.domain.ids import new_run_id, new_session_id
+from skail.runtime.scheduler import ChildScheduler
+from skail.runtime.workspaces import WorkspaceManager
+from skail.sessions.journal import Journal
+from skail.tui.app import SkailApp
+from skail.tui.projection import TuiProjection
 
 
 def benchmark_event_persistence(iterations: int = 1000) -> dict[str, float]:
     """Measure SQLite append and query throughput for event stream."""
-    tmp_dir = tempfile.mkdtemp(prefix="rudder-bench-journal-")
+    tmp_dir = tempfile.mkdtemp(prefix="skail-bench-journal-")
     try:
         db_path = Path(tmp_dir) / "journal.sqlite"
         journal = Journal(db_path)
@@ -156,7 +156,7 @@ async def benchmark_tui_rendered_updates(event_count: int = 100) -> dict[str, fl
     session_id = new_session_id()
     run_id = new_run_id()
     child_ids = [str(uuid4()), str(uuid4()), str(uuid4())]
-    app = RudderApp()
+    app = SkailApp()
 
     async with app.run_test(size=(120, 40)) as pilot:
         for sequence, child_id in enumerate(child_ids, start=1):
@@ -218,7 +218,7 @@ def _isolated_cli_environment(home: Path) -> dict[str, str]:
 def _run_cli_timed(command: list[str], environment: dict[str, str]) -> float:
     started = time.perf_counter()
     completed = subprocess.run(
-        [sys.executable, "-m", "rudder.cli.main", *command],
+        [sys.executable, "-m", "skail.cli.main", *command],
         cwd=Path(__file__).resolve().parents[1],
         env=environment,
         check=True,
@@ -232,7 +232,7 @@ def _run_cli_timed(command: list[str], environment: dict[str, str]) -> float:
 
 def benchmark_cli_runtime() -> dict[str, float]:
     """Measure CLI parsing separately from an offline end-to-end fake-provider response."""
-    with tempfile.TemporaryDirectory(prefix="rudder-bench-cli-") as directory:
+    with tempfile.TemporaryDirectory(prefix="skail-bench-cli-") as directory:
         environment = _isolated_cli_environment(Path(directory))
         help_seconds = _run_cli_timed(["--help"], environment)
         first_fake_response_seconds = _run_cli_timed(
@@ -277,13 +277,13 @@ def _git(workspace: Path, *arguments: str) -> None:
 
 def benchmark_workspace_setup() -> dict[str, float]:
     """Measure isolated snapshot and worktree setup using a disposable local Git repository."""
-    with tempfile.TemporaryDirectory(prefix="rudder-bench-workspace-") as directory:
+    with tempfile.TemporaryDirectory(prefix="skail-bench-workspace-") as directory:
         root = Path(directory)
         workspace = root / "workspace"
         workspace.mkdir()
         _git(workspace, "init")
         _git(workspace, "config", "user.email", "benchmark@example.invalid")
-        _git(workspace, "config", "user.name", "Rudder benchmark")
+        _git(workspace, "config", "user.name", "Skail benchmark")
         (workspace / "input.txt").write_text("benchmark\n", encoding="utf-8")
         _git(workspace, "add", "input.txt")
         _git(workspace, "commit", "-m", "benchmark input")
@@ -363,7 +363,7 @@ def validate_benchmarks(results: dict[str, dict[str, float]]) -> list[str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run Rudder performance gates")
+    parser = argparse.ArgumentParser(description="Run Skail performance gates")
     parser.add_argument("--json", action="store_true", help="emit machine-readable results")
     parser.add_argument("--repetitions", type=int, default=1, help="number of raw benchmark runs")
     parser.add_argument(
@@ -390,7 +390,7 @@ def main() -> int:
         print(json.dumps({"results": results, "failures": failures}, sort_keys=True))
         return 1 if failures else 0
 
-    print("=== Rudder Performance Benchmarks ===")
+    print("=== Skail Performance Benchmarks ===")
 
     print("\n1. Event Persistence Throughput (1,000 events):")
     res_persist = results["event_persistence"]

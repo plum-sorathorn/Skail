@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from rudder.domain.ids import new_run_id, new_session_id, new_task_id
-from rudder.domain.usage import NormalizedUsage, UsageAuthority
-from rudder.routing.budget import BudgetLedger, ReservationRequest
-from rudder.runtime.leases import WorkspaceLeaseManager
-from rudder.sessions.journal import Journal
-from rudder.sessions.locking import FileLockBusyError, process_file_lock
+from skail.domain.ids import new_run_id, new_session_id, new_task_id
+from skail.domain.usage import NormalizedUsage, UsageAuthority
+from skail.routing.budget import BudgetLedger, ReservationRequest
+from skail.runtime.leases import WorkspaceLeaseManager
+from skail.sessions.journal import Journal
+from skail.sessions.locking import FileLockBusyError, process_file_lock
 
 
 def test_budget_reservation_and_idempotent_settlement_on_crash_recovery(tmp_path: Path) -> None:

@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Literal, cast
+
+from deepagents.middleware.subagents import CompiledSubAgent
+from langchain.agents.middleware import AgentMiddleware
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.runnables import Runnable
+
+from skail.domain.routing import RoutingMode
+from skail.routing.requirements import TaskRisk
+from skail.runtime.leases import WorkspaceLeaseManager
+from skail.tools.assembly import build_default_agent, default_registry
+from skail.tools.registry import SideEffect, ToolMetadata, ToolRegistry
+
+DelegationMode = Literal["auto", "ask", "off"]
+
+TASK_PACKET_GUIDANCE = """Before any operational tool call, call execution_decision with mode,
+objective, constraints, and reason. Use direct for bounded work, discovery only for read-only
+evidence work with a checkpoint, or planned with a validated finite plan. A final answer needs no
+execution_decision. When delegating, call task(description, subagent_type). The description
+may be plain text or one JSON object with: description, success_criteria, depends_on (persisted task
+IDs), priority, write_scope, model_policy, budget_usd, and background. Preserve the user's criteria,
+dependencies, scope, model constraints, and budget. Never invent dependency IDs. When Skail wakes
+you at a plan checkpoint, call execution_decision again with the full revised plan and revision
+metadata using only the supplied evidence references."""
+
+
+@dataclass(frozen=True)
+class LeadControls:
+    delegation: DelegationMode = "auto"
+    model: str | None = None
+    profile: str | None = None
+    write_allowed: bool | None = None
+    max_children: int = 3
+    routing_mode: RoutingMode = RoutingMode.AUTO
+    risk: TaskRisk = TaskRisk.ROUTINE
+
+
+def delegation_allowed(controls: LeadControls, *, requested: bool) -> bool:
+    if controls.delegation == "off":
+        return False
+    if controls.delegation == "ask":
+        return requested
+    return True
+
+
+def build_production_lead(
+    model: BaseChatModel,
+    *,
+    workspace: Path,
+    controls: LeadControls,
+    subagents: Sequence[CompiledSubAgent] = (),
+    delegation_approved: bool = False,
+    leases: WorkspaceLeaseManager,
+    extra_middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
+    redactor: Any = None,
+    checkpointer: Any = None,
+    approvals: Any = None,
+    question_store: Any = None,
+    runtime_event: Callable[[str, str], None] | None = None,
+    runtime_model_name: str | None = None,
+    model_response_observer: Callable[[Any], None] | None = None,
+    extension_tools: Sequence[Any] = (),
+    session_id: str = "",
+    run_id: str = "",
+) -> Runnable[object, object]:
+    allow_children = controls.delegation in ("auto", "ask")
+    registry = _lead_registry(
+        allow_delegation=controls.delegation != "off",
+        write_allowed=controls.write_allowed is not False,
+    )
+    return cast(
+        Runnable[object, object],
+        build_default_agent(
+            model,
+            workspace=workspace,
+            profile="lead",
+            subagents=list(subagents) if allow_children else [],
+            extension_tools=extension_tools,
+            registry=registry,
+            lease_manager=leases,
+            extra_middleware=extra_middleware,
+            redactor=redactor,
+            checkpointer=checkpointer,
+            approvals=approvals,
+            question_store=question_store,
+            runtime_event=runtime_event,
+            runtime_model_name=runtime_model_name,
+            model_response_observer=model_response_observer,
+            system_prompt=TASK_PACKET_GUIDANCE,
+            session_id=session_id,
+            run_id=run_id,
+            graph_id=f"{session_id}:{run_id}:lead",
+        ),
+    )
+
+
+def _lead_registry(*, allow_delegation: bool, write_allowed: bool) -> ToolRegistry:
+    source = default_registry()
+    tools: list[ToolMetadata] = []
+    for name in source.names:
+        metadata = source.get(name)
+        profiles = metadata.profiles
+        if not write_allowed and metadata.side_effect is not SideEffect.READ_ONLY:
+            profiles = frozenset(item for item in profiles if item != "lead")
+        if not allow_delegation and name == "task":
+            profiles = frozenset(item for item in profiles if item != "lead")
+        tools.append(metadata.model_copy(update={"profiles": profiles}))
+    return ToolRegistry(tools)

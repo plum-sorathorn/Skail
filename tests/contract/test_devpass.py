@@ -4,11 +4,11 @@ import httpx
 import pytest
 from fakes.provider import ProviderHTTPFixtureTransport
 
-from rudder.config.models import ProviderConfig
-from rudder.providers.base import ModelOptions, ModelProfile, ProviderSupportLevel
-from rudder.providers.devpass import DevPassAdapter
-from rudder.providers.errors import ProviderErrorKind
-from rudder.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
+from skail.config.models import ProviderConfig
+from skail.providers.base import ModelOptions, ModelProfile, ProviderSupportLevel
+from skail.providers.devpass import DevPassAdapter
+from skail.providers.errors import ProviderErrorKind
+from skail.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
 
 
 def _devpass_config() -> ProviderConfig:

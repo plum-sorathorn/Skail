@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from rudder.domain.events import SecretRedactor
-from rudder.domain.ids import new_run_id, new_session_id
-from rudder.domain.plans import (
+from skail.domain.events import SecretRedactor
+from skail.domain.ids import new_run_id, new_session_id
+from skail.domain.plans import (
     EffectScope,
     ExecutionPlan,
     PlanNode,
@@ -17,9 +17,9 @@ from rudder.domain.plans import (
     PlanNodeState,
     PlanRevision,
 )
-from rudder.runtime.errors import FrameworkContractError
-from rudder.sessions import migrations as journal_migrations
-from rudder.sessions.journal import Journal
+from skail.runtime.errors import FrameworkContractError
+from skail.sessions import migrations as journal_migrations
+from skail.sessions.journal import Journal
 
 SESSION_ID = str(new_session_id())
 RUN_ID = str(new_run_id())

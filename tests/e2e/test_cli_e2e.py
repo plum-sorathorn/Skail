@@ -6,15 +6,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-from rudder.cli.exit_codes import EXIT_BLOCKED, EXIT_FAILURE, EXIT_OK, EXIT_USAGE
-from rudder.domain.events import EventEnvelope
+from skail.cli.exit_codes import EXIT_BLOCKED, EXIT_FAILURE, EXIT_OK, EXIT_USAGE
+from skail.domain.events import EventEnvelope
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-m", "rudder.cli.main", *args],
+        [sys.executable, "-m", "skail.cli.main", *args],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -33,7 +33,7 @@ def run_cli_isolated(
         "LOCALAPPDATA": str(home / "AppData" / "Local"),
     }
     return subprocess.run(
-        [sys.executable, "-m", "rudder.cli.main", *args],
+        [sys.executable, "-m", "skail.cli.main", *args],
         cwd=home,
         capture_output=True,
         text=True,
@@ -59,7 +59,7 @@ def test_cli_usage_error_on_conflicting_trust_flags() -> None:
     )
 
 
-def test_cli_rejects_old_autoconduck_aliases() -> None:
+def test_cli_rejects_old_skail_aliases() -> None:
     for alias in ("proxy", "serve", "oma", "daemon", "plugin", "slm"):
         result = run_cli(alias)
         assert result.returncode == EXIT_USAGE
@@ -83,7 +83,7 @@ def test_cli_subcommand_config(tmp_path: Path) -> None:
 
     result_path = run_cli("config", "path")
     assert result_path.returncode == EXIT_OK
-    assert ".rudder" in result_path.stdout
+    assert ".skail" in result_path.stdout
 
 
 def test_cli_subcommand_sessions(tmp_path: Path) -> None:
@@ -241,7 +241,7 @@ def test_cli_jsonl_blocked_run_has_one_terminal_event() -> None:
 def test_cli_isolated_subprocess_uses_temporary_home(tmp_path: Path) -> None:
     result = run_cli_isolated(tmp_path, "config", "path")
     assert result.returncode == EXIT_OK
-    assert str(tmp_path / ".rudder") in result.stdout
+    assert str(tmp_path / ".skail") in result.stdout
 
 
 def test_cli_normal_mode_without_fake_provider_fails_when_no_credentials() -> None:
@@ -283,17 +283,17 @@ def test_cli_returns_blocked_exit_code_on_interrupted_run(tmp_path: Path) -> Non
     import asyncio
     from datetime import UTC, datetime, timedelta
 
-    import rudder.cli.main as cli_main
-    from rudder.cli.main import RuntimeModelSet, _execute_instruction
-    from rudder.config.models import RudderConfig
-    from rudder.providers.catalog import ModelCatalog
-    from rudder.providers.fake import FakeProviderAdapter
-    from rudder.runtime.interrupts import QuestionStore
-    from rudder.runtime.redaction import RedactionRegistry
-    from rudder.sessions.checkpoints import CheckpointStore
-    from rudder.sessions.journal import Journal
-    from rudder.sessions.service import SessionService
-    from rudder.tools.approvals import ApprovalStore
+    import skail.cli.main as cli_main
+    from skail.cli.main import RuntimeModelSet, _execute_instruction
+    from skail.config.models import SkailConfig
+    from skail.providers.catalog import ModelCatalog
+    from skail.providers.fake import FakeProviderAdapter
+    from skail.runtime.interrupts import QuestionStore
+    from skail.runtime.redaction import RedactionRegistry
+    from skail.sessions.checkpoints import CheckpointStore
+    from skail.sessions.journal import Journal
+    from skail.sessions.service import SessionService
+    from skail.tools.approvals import ApprovalStore
     from tests.fakes.models import ScriptedChatModel, tool_call_message
 
     journal = Journal(tmp_path / "journal.sqlite")
@@ -338,7 +338,7 @@ def test_cli_returns_blocked_exit_code_on_interrupted_run(tmp_path: Path) -> Non
             catalog=ModelCatalog.from_entries(
                 (), now=datetime.now(UTC), price_max_age=timedelta(days=30)
             ),
-            config=RudderConfig(),
+            config=SkailConfig(),
             redaction=r,
         )
         code = asyncio.run(

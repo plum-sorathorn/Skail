@@ -30,7 +30,7 @@ jobs:
       - name: Lint
         run: python -m ruff check src tests scripts
       - name: Type check
-        run: python -m mypy src/rudder
+        run: python -m mypy src/skail
       - name: Offline tests
         run: python -m pytest tests/unit tests/contract -m "not provider_live" -q
       - name: Fake-provider smoke

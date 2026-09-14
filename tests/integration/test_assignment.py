@@ -10,12 +10,12 @@ from fakes.provider import FakeProviderAdapter
 from langchain.agents.middleware import ModelResponse
 from langchain_core.messages import AIMessage
 
-from rudder.domain.events import EventEnvelope
-from rudder.domain.ids import AttemptId, RunId, SessionId, TaskId
-from rudder.domain.routing import RoutingMode
-from rudder.domain.usage import NormalizedUsage, UsageAuthority
-from rudder.providers.models import CapabilityVector, ModelProfile
-from rudder.routing.assignment import (
+from skail.domain.events import EventEnvelope
+from skail.domain.ids import AttemptId, RunId, SessionId, TaskId
+from skail.domain.routing import RoutingMode
+from skail.domain.usage import NormalizedUsage, UsageAuthority
+from skail.providers.models import CapabilityVector, ModelProfile
+from skail.routing.assignment import (
     AccountingReconciliationRequired,
     AssignmentRequest,
     AssignmentService,
@@ -24,12 +24,12 @@ from rudder.routing.assignment import (
     RoutingSnapshot,
     config_revision,
 )
-from rudder.routing.budget import BudgetLedger
-from rudder.routing.requirements import RequirementBuilder, TaskRisk
-from rudder.routing.selector import RouteCandidate, RouteFailure
-from rudder.runtime.errors import FrameworkContractError
-from rudder.runtime.task_bound import build_persisted_task_subagent
-from rudder.sessions import Journal
+from skail.routing.budget import BudgetLedger
+from skail.routing.requirements import RequirementBuilder, TaskRisk
+from skail.routing.selector import RouteCandidate, RouteFailure
+from skail.runtime.errors import FrameworkContractError
+from skail.runtime.task_bound import build_persisted_task_subagent
+from skail.sessions import Journal
 
 NOW = datetime(2026, 9, 2, tzinfo=UTC)
 SESSION_ID = SessionId("11111111-1111-4111-8111-111111111111")
@@ -39,7 +39,7 @@ ATTEMPT_ID = AttemptId("44444444-4444-4444-8444-444444444444")
 
 
 def _service(tmp_path: Path, *, limit: str = "1.00") -> tuple[AssignmentService, Journal]:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     journal.migrate()
     journal.create_session(session_id=SESSION_ID, title="assignment", created_at=NOW)
     journal.create_run(
@@ -383,7 +383,7 @@ def test_provider_call_ids_are_durable_and_ambiguous_calls_block_replay(
         settler.begin_call(str(assignment.assignment_id))
 
     reconstructed = AssignmentUsageSettler(
-        Journal(tmp_path / "rudder.sqlite"),
+        Journal(tmp_path / "skail.sqlite"),
         service.ledger,
         {"fake": FakeProviderAdapter()},
     )
@@ -481,7 +481,7 @@ def test_restart_allocates_next_call_without_collision(tmp_path: Path) -> None:
     )
 
     restarted = AssignmentUsageSettler(
-        Journal(tmp_path / "rudder.sqlite"), service.ledger, {"fake": adapter}
+        Journal(tmp_path / "skail.sqlite"), service.ledger, {"fake": adapter}
     )
     second = restarted.begin_call(str(assignment.assignment_id))
 
@@ -505,7 +505,7 @@ def test_completed_execution_identity_cannot_be_silently_replayed(tmp_path: Path
     )
 
     restarted = AssignmentUsageSettler(
-        Journal(tmp_path / "rudder.sqlite"), service.ledger, {"fake": adapter}
+        Journal(tmp_path / "skail.sqlite"), service.ledger, {"fake": adapter}
     )
     with pytest.raises(AccountingReconciliationRequired, match="replay"):
         restarted.begin_call(str(assignment.assignment_id), "graph-step-1")

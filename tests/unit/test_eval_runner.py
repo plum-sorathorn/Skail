@@ -22,10 +22,10 @@ from evals.schema import (
     ScriptedUsage,
     TaskEvalResult,
 )
-from rudder.domain.ids import new_assignment_id, new_reservation_id, new_task_id
-from rudder.domain.routing import RoutingMode, TaskAssignment
-from rudder.routing.requirements import RequirementBuilder, TaskRisk
-from rudder.routing.selector import RouteFailure, select_model
+from skail.domain.ids import new_assignment_id, new_reservation_id, new_task_id
+from skail.domain.routing import RoutingMode, TaskAssignment
+from skail.routing.requirements import RequirementBuilder, TaskRisk
+from skail.routing.selector import RouteFailure, select_model
 
 
 def _execution_script(*, target: str, content: str) -> ExecutionScript:
@@ -47,7 +47,7 @@ def _execution_script(*, target: str, content: str) -> ExecutionScript:
             ),
         ),
         final_response=ScriptedModelResponse(
-            content="Fixture work completed through Rudder tools.",
+            content="Fixture work completed through Skail tools.",
             usage=ScriptedUsage(
                 input_tokens=13,
                 output_tokens=5,
@@ -195,7 +195,7 @@ def test_evaluation_runner_runs_deterministic_fake_suite() -> None:
         if result.policy is EvaluationPolicy.QUALITY
     ]
     assert report.comparison is not None
-    # The fixture executor uses real Rudder tools.  This small suite does not
+    # The fixture executor uses real Skail tools.  This small suite does not
     # create a genuine parallel workload, so it must not manufacture a speedup.
     assert not report.comparison.all_gates_passed
 
@@ -206,7 +206,7 @@ def test_evaluation_runner_runs_deterministic_fake_suite() -> None:
 
     # Markdown rendering should produce formatted tables
     md = render_markdown_report(report)
-    assert "Rudder Routing & Orchestration Evaluation Report" in md
+    assert "Skail Routing & Orchestration Evaluation Report" in md
     assert "SPEC.md Section 21 Acceptance Gates" in md
     assert "GATES FAILED" in md
 
@@ -310,7 +310,7 @@ def test_missing_execution_script_cannot_be_scored_as_completed() -> None:
 def test_child_run_gate_records_concurrent_timing() -> None:
     import asyncio
 
-    from rudder.runtime.deepagents_adapter import ChildRunGate
+    from skail.runtime.deepagents_adapter import ChildRunGate
 
     async def scenario() -> ChildRunGate:
         gate = ChildRunGate(max_children=3)

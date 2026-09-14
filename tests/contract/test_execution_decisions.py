@@ -6,13 +6,13 @@ import pytest
 from fakes.models import ScriptedChatModel, parallel_tool_call_message
 from langchain_core.messages import AIMessage, ToolMessage
 
-from rudder.runtime.decisions import (
+from skail.runtime.decisions import (
     DecisionAdmissionError,
     ExecutionDecisionGate,
     ExecutionDecisionMiddleware,
     execution_decision_tool,
 )
-from rudder.tools.assembly import build_default_agent
+from skail.tools.assembly import build_default_agent
 
 
 def _direct_decision() -> dict[str, Any]:

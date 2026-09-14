@@ -3,14 +3,14 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rudder-harness"
+name = "skail-harness"
 version = "0.1.0"
-description = "Rudder Harness, a native budget-aware multi-agent coding harness"
+description = "Skail, a native budget-aware multi-agent coding harness"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{name = "Rudder contributors"}]
+authors = [{name = "Skail contributors"}]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
@@ -43,14 +43,14 @@ openai = ["langchain-openai==1.6.0"]
 anthropic = ["langchain-anthropic==1.7.0"]
 
 [project.scripts]
-rudder = "rudder.cli.main:main"
+skail = "skail.cli.main:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["rudder", "rudder.*"]
+include = ["skail", "skail.*"]
 namespaces = false
 
 [tool.pytest.ini_options]
@@ -70,7 +70,7 @@ markers = [
 
 [tool.mypy]
 python_version = "3.12"
-files = ["src/rudder"]
+files = ["src/skail"]
 strict = true
 exclude = "^legacy/"
 

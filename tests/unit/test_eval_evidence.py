@@ -20,8 +20,8 @@ from evals.schema import (
     ScriptedUsage,
     TaskEvalResult,
 )
-from rudder.agents.result_evaluator import parse_child_result
-from rudder.domain.ids import new_task_id
+from skail.agents.result_evaluator import parse_child_result
+from skail.domain.ids import new_task_id
 
 
 def _result(*, completed: bool, cost: str) -> TaskEvalResult:

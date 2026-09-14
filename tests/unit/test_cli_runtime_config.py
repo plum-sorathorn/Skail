@@ -2,12 +2,12 @@ from argparse import Namespace
 from decimal import Decimal
 from pathlib import Path
 
-import rudder.cli.commands as commands
-from rudder.cli.main import _apply_run_config, _build_runtime_models, _parse_agent_models
-from rudder.config.loader import ResolvedConfig
-from rudder.config.models import ProviderConfig, RudderConfig
-from rudder.providers.catalog_sources import CatalogEntry, CatalogSource
-from rudder.runtime.redaction import RedactionRegistry
+import skail.cli.commands as commands
+from skail.cli.main import _apply_run_config, _build_runtime_models, _parse_agent_models
+from skail.config.loader import ResolvedConfig
+from skail.config.models import ProviderConfig, SkailConfig
+from skail.providers.catalog_sources import CatalogEntry, CatalogSource
+from skail.runtime.redaction import RedactionRegistry
 
 
 def _args(**updates: object) -> Namespace:
@@ -27,7 +27,7 @@ def _args(**updates: object) -> Namespace:
 
 def test_effective_config_populates_unspecified_runtime_flags() -> None:
     args = _args()
-    config = RudderConfig.model_validate(
+    config = SkailConfig.model_validate(
         {
             "routing": {"mode": "quality", "lead_model": "openai:gpt-test"},
             "orchestration": {
@@ -52,7 +52,7 @@ def test_effective_config_populates_unspecified_runtime_flags() -> None:
 def test_explicit_cli_values_override_config_and_agent_pins_are_validated() -> None:
     args = _args(routing_mode="economy", max_agents=1, budget="0.50")
 
-    _apply_run_config(args, RudderConfig())
+    _apply_run_config(args, SkailConfig())
 
     assert args.routing_mode == "economy"
     assert args.max_agents == 1
@@ -67,7 +67,7 @@ def test_runtime_model_construction_uses_configured_provider_and_credential_refe
 ) -> None:
     args = _args(lead_model="llmgateway:test/model")
     args.fake_provider = False
-    config = RudderConfig(
+    config = SkailConfig(
         providers={
             "llmgateway": ProviderConfig(
                 type="openai-compatible",
@@ -137,7 +137,7 @@ def test_runtime_bootstrap_uses_configured_catalog_without_production_defaults(
             },
         },
     )
-    config = RudderConfig(
+    config = SkailConfig(
         providers={
             "llmgateway": ProviderConfig(
                 type="openai-compatible",
@@ -160,7 +160,7 @@ def test_runtime_bootstrap_uses_configured_catalog_without_production_defaults(
 
 
 def test_config_inspection_uses_the_already_resolved_effective_config(monkeypatch) -> None:
-    resolved = ResolvedConfig(config=RudderConfig(), provenance={}, warnings=())
+    resolved = ResolvedConfig(config=SkailConfig(), provenance={}, warnings=())
     rendered: list[str] = []
     def unexpected_load(**_: object) -> object:
         raise AssertionError("config was resolved twice")

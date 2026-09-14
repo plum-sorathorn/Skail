@@ -1,0 +1,13 @@
+{
+  "name": "@skail/oma-sidecar",
+  "version": "0.5.2",
+  "description": "Open-Multi-Agent sidecar package for Skail task orchestration",
+  "main": "runner.js",
+  "private": true,
+  "dependencies": {
+    "@open-multi-agent/core": "^0.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

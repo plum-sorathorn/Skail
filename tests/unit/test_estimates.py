@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from rudder.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
+from skail.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
 
 
 def test_attempt_estimate_includes_context_tools_output_and_expected_calls() -> None:

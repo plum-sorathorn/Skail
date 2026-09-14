@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from rudder.agents.profiles import builtin_profiles
-from rudder.routing.requirements import ROLE_FLOORS
-from rudder.tools.assembly import default_registry
+from skail.agents.profiles import builtin_profiles
+from skail.routing.requirements import ROLE_FLOORS
+from skail.tools.assembly import default_registry
 
 
 def test_builtin_profiles_declare_the_supported_roles_and_role_floors() -> None:

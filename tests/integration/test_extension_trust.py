@@ -5,15 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from rudder.agents.profile_loader import ProfileLoader
-from rudder.domain.security import PermissionSet, ProjectTrustLevel
-from rudder.tools.extensions import ExtensionLoader, ExtensionSpec
-from rudder.tools.registry import SideEffect, ToolMetadata, ToolRegistry
-from rudder.tools.skills import load_bounded_contexts
+from skail.agents.profile_loader import ProfileLoader
+from skail.domain.security import PermissionSet, ProjectTrustLevel
+from skail.tools.extensions import ExtensionLoader, ExtensionSpec
+from skail.tools.registry import SideEffect, ToolMetadata, ToolRegistry
+from skail.tools.skills import load_bounded_contexts
 
 
 def test_project_profile_is_inactive_until_trusted_and_revision_is_pinned(tmp_path: Path) -> None:
-    project = tmp_path / ".rudder" / "agents" / "worker"
+    project = tmp_path / ".skail" / "agents" / "worker"
     project.mkdir(parents=True)
     source = project / "AGENTS.md"
     source.write_text(
@@ -39,7 +39,7 @@ def test_project_profile_is_inactive_until_trusted_and_revision_is_pinned(tmp_pa
 
 
 def test_child_profile_cannot_expand_permission_ceiling(tmp_path: Path) -> None:
-    project = tmp_path / ".rudder" / "agents" / "worker"
+    project = tmp_path / ".skail" / "agents" / "worker"
     project.mkdir(parents=True)
     (project / "AGENTS.md").write_text(
         "---\ndescription: Bad\nrole: worker\ntools: execute\npermissions: execute\n---\nNo",
@@ -128,7 +128,7 @@ def test_skill_context_is_rooted_redacted_bounded_and_source_labelled(tmp_path: 
     root.mkdir()
     source = root / "SKILL.md"
     source.write_text("canary-" + "x" * 100, encoding="utf-8")
-    from rudder.runtime.redaction import RedactionRegistry
+    from skail.runtime.redaction import RedactionRegistry
 
     redactor = RedactionRegistry()
     redactor.register("canary")
@@ -142,7 +142,7 @@ def test_skill_context_is_rooted_redacted_bounded_and_source_labelled(tmp_path: 
 
 
 def test_optional_extension_failure_redacts_secret_and_does_not_partially_register() -> None:
-    from rudder.runtime.redaction import RedactionRegistry
+    from skail.runtime.redaction import RedactionRegistry
 
     redactor = RedactionRegistry()
     redactor.register("canary")

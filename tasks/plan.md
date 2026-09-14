@@ -1,26 +1,26 @@
-# Rudder Implementation Plan
+# Skail Implementation Plan
 
 Status: Historical; superseded as an execution sequence by the adaptive orchestration and release guide.
 Date: 2026-09-02
-Product specification: [../docs/rudder/SPEC.md](../docs/rudder/SPEC.md)
-Architecture: [../docs/rudder/ARCHITECTURE.md](../docs/rudder/ARCHITECTURE.md)
-Feature contracts: [../docs/rudder/FEATURES.md](../docs/rudder/FEATURES.md)
-Repository transition: [../docs/rudder/MIGRATION.md](../docs/rudder/MIGRATION.md)
+Product specification: [../docs/skail/SPEC.md](../docs/skail/SPEC.md)
+Architecture: [../docs/skail/ARCHITECTURE.md](../docs/skail/ARCHITECTURE.md)
+Feature contracts: [../docs/skail/FEATURES.md](../docs/skail/FEATURES.md)
+Repository transition: [../docs/skail/MIGRATION.md](../docs/skail/MIGRATION.md)
 
 > Historical implementation plan. Active work proceeds through the
-> [adaptive orchestration and release guide](rudder-adaptive-orchestration-and-release-plan.md).
-> The [v0.1.0 remediation tracker](rudder-v0.1.0-release-remediation.md) remains an audit record and
+> [adaptive orchestration and release guide](skail-adaptive-orchestration-and-release-plan.md).
+> The [v0.1.0 remediation tracker](skail-v0.1.0-release-remediation.md) remains an audit record and
 > maps its unfinished items to that guide. Completion checkboxes here are not release sign-off.
 
 ## 1. Delivery strategy
 
-Build Rudder in vertical, verifiable slices. Establish the DeepAgents contracts and safety/economic invariants before investing in the full TUI. Every task should end with focused tests and a graph update. No task may silently broaden the approved specification.
+Build Skail in vertical, verifiable slices. Establish the DeepAgents contracts and safety/economic invariants before investing in the full TUI. Every task should end with focused tests and a graph update. No task may silently broaden the approved specification.
 
 The critical sequence is:
 
 ```text
 approve contracts
-  -> isolate legacy and create Rudder skeleton
+  -> isolate legacy and create Skail skeleton
   -> prove DeepAgents composition/model binding
   -> define domain/events/config/storage
   -> providers/catalog
@@ -55,7 +55,7 @@ Optional background agents and worktrees follow the stable synchronous shared-wo
 
 **Decisions required:**
 
-- Python distribution name (`rudder-harness`) while retaining the `rudder` command;
+- Python distribution name (`skail-harness`) while retaining the `skail` command;
 - whether background agents ship experimental or post-stable;
 - initial evaluation fixture composition and numerical gates;
 - environment-only versus optional OS-keyring credentials;
@@ -70,28 +70,28 @@ Optional background agents and worktrees follow the stable synchronous shared-wo
 **Verification:** Review links and `rtk git diff --check`.
 
 **Dependencies:** None.
-**Likely files:** `docs/rudder/SPEC.md`, `docs/decisions/0001-rudder-native-multi-agent-harness.md`.
+**Likely files:** `docs/skail/SPEC.md`, `docs/decisions/0001-skail-native-multi-agent-harness.md`.
 **Size:** S.
 
-### Task 0.2: Preserve AutoConduck and relocate the legacy tree
+### Task 0.2: Preserve Skail and relocate the legacy tree
 
-**Purpose:** Establish a reversible, inert legacy boundary on the new Rudder branch.
+**Purpose:** Establish a reversible, inert legacy boundary on the new Skail branch.
 
 **Steps:**
 
-1. Verify clean/understood Git state and authoritative AutoConduck version.
-2. Create the approved preservation reference and `rudder` branch.
+1. Verify clean/understood Git state and authoritative Skail version.
+2. Create the approved preservation reference and `skail` branch.
 3. Generate and review the exact move manifest described in `MIGRATION.md`.
-4. Move old runtime, tests, scripts, packaging, and product docs into `legacy/autoconduck/` with Git-aware moves.
+4. Move old runtime, tests, scripts, packaging, and product docs into `legacy/skail/` with Git-aware moves.
 5. Add the legacy archive README and ignore/exclusion rules.
 
 **Acceptance:**
 
 - [x] No source file is lost; moves are reviewable in Git.
 - [x] Legacy code has no root console entrypoint or active test collection.
-- [x] `legacy/autoconduck/README.md` marks it reference-only and unmaintained on this branch.
-- [x] AutoConduck user data is untouched.
-- [x] Root Rudder docs and archived plans remain accessible.
+- [x] `legacy/skail/README.md` marks it reference-only and unmaintained on this branch.
+- [x] Skail user data is untouched.
+- [x] Root Skail docs and archived plans remain accessible.
 
 **Verification:** `rtk git status`, `rtk git diff --stat`, reviewed move manifest, and targeted file-existence checks.
 
@@ -99,14 +99,14 @@ Optional background agents and worktrees follow the stable synchronous shared-wo
 **Likely files:** mechanical move across the existing project; exception to the normal five-file task limit.
 **Size:** L, mechanical/high-review.
 
-### Task 0.3: Create the Rudder package and fake-provider smoke
+### Task 0.3: Create the Skail package and fake-provider smoke
 
 **Purpose:** Produce the smallest installable native harness boundary.
 
 **Implementation:**
 
-- root `pyproject.toml` with `src` layout and `rudder` console script;
-- `src/rudder/__init__.py` and `src/rudder/cli/main.py`;
+- root `pyproject.toml` with `src` layout and `skail` console script;
+- `src/skail/__init__.py` and `src/skail/cli/main.py`;
 - a minimal CLI with `--help`, version, and a fake-provider smoke command;
 - root test configuration that excludes `legacy/`;
 - no real DeepAgents orchestration yet.
@@ -114,15 +114,15 @@ Optional background agents and worktrees follow the stable synchronous shared-wo
 **Acceptance:**
 
 - [x] Editable install succeeds in a clean Python 3.12 environment.
-- [x] `rudder --help` and `rudder --version` execute the new package.
-- [x] Built distribution contains no `autoconduck` modules or old commands.
+- [x] `skail --help` and `skail --version` execute the new package.
+- [x] Built distribution contains no `skail` modules or old commands.
 - [x] Tests are not collected from `legacy/`.
 - [x] Core import does not require provider credentials or optional provider SDKs.
 
 **Verification:** build/wheel content test, CLI subprocess test, `python -m pytest tests/unit/test_packaging.py -q`.
 
 **Dependencies:** 0.2.
-**Likely files:** `pyproject.toml`, `src/rudder/__init__.py`, `src/rudder/cli/main.py`, `tests/unit/test_packaging.py`, `README.md`.
+**Likely files:** `pyproject.toml`, `src/skail/__init__.py`, `src/skail/cli/main.py`, `tests/unit/test_packaging.py`, `README.md`.
 **Size:** M.
 
 ### Task 0.4: Establish test, type, and CI skeleton
@@ -144,8 +144,8 @@ Optional background agents and worktrees follow the stable synchronous shared-wo
 
 ### Checkpoint A — Clean product boundary
 
-- [x] Rudder installs and launches independently.
-- [x] AutoConduck exists only under the inert archive or preservation reference.
+- [x] Skail installs and launches independently.
+- [x] Skail exists only under the inert archive or preservation reference.
 - [x] Offline tests run on Windows and Linux.
 - [x] No proxy/plugin/OMA/SLM dependency is present in the root runtime.
 
@@ -167,7 +167,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** `python -m pytest tests/contract/test_deepagents_lead.py -q`.
 
 **Dependencies:** 0.4.
-**Likely files:** `src/rudder/runtime/deepagents_adapter.py`, `tests/contract/test_deepagents_lead.py`, `tests/fakes/models.py`, `pyproject.toml`, `docs/decisions/0002-framework-version-contract.md`.
+**Likely files:** `src/skail/runtime/deepagents_adapter.py`, `tests/contract/test_deepagents_lead.py`, `tests/fakes/models.py`, `pyproject.toml`, `docs/decisions/0002-framework-version-contract.md`.
 **Size:** M.
 
 ### Task 1.2: Prove compiled subagent and pre-call model binding
@@ -187,7 +187,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** `python -m pytest tests/contract/test_compiled_subagent.py -q`.
 
 **Dependencies:** 1.1.
-**Likely files:** `src/rudder/runtime/task_graph_spike.py`, `src/rudder/runtime/model_middleware.py`, `tests/contract/test_compiled_subagent.py`, `tests/fakes/models.py`.
+**Likely files:** `src/skail/runtime/task_graph_spike.py`, `src/skail/runtime/model_middleware.py`, `tests/contract/test_compiled_subagent.py`, `tests/fakes/models.py`.
 **Size:** M.
 
 ### Task 1.3: Prove nested streaming, concurrency, and cancellation
@@ -205,7 +205,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** deterministic barriers rather than timing-only assertions in `tests/contract/test_deepagents_concurrency.py`.
 
 **Dependencies:** 1.2.
-**Likely files:** `src/rudder/runtime/deepagents_adapter.py`, `tests/contract/test_deepagents_concurrency.py`, `tests/fakes/models.py`, `tests/fakes/tools.py`.
+**Likely files:** `src/skail/runtime/deepagents_adapter.py`, `tests/contract/test_deepagents_concurrency.py`, `tests/fakes/models.py`, `tests/fakes/tools.py`.
 **Size:** M.
 
 ### Task 1.4: Decide stable versus experimental background support
@@ -222,13 +222,13 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** fake executor contract suite; preview contract test may be separately marked.
 
 **Dependencies:** 1.3.
-**Likely files:** `src/rudder/runtime/task_executor.py`, `src/rudder/runtime/background_adapter.py`, `tests/contract/test_task_executors.py`, `docs/rudder/SPEC.md`, `docs/decisions/0003-background-execution.md`.
+**Likely files:** `src/skail/runtime/task_executor.py`, `src/skail/runtime/background_adapter.py`, `tests/contract/test_task_executors.py`, `docs/skail/SPEC.md`, `docs/decisions/0003-background-execution.md`.
 **Size:** M.
 
 ### Checkpoint B — Framework feasibility
 
 - [x] Compiled tasks really can bind a model before first child call.
-- [x] Synchronous nested events, checkpoints, and cancellation satisfy Rudder contracts.
+- [x] Synchronous nested events, checkpoints, and cancellation satisfy Skail contracts.
 - [x] Preview functionality is isolated or deferred.
 - [x] Blocking incompatibilities result in a documented design revision before more code.
 
@@ -249,7 +249,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** table-driven unit tests and import-boundary test.
 
 **Dependencies:** Checkpoint B.
-**Likely files:** `src/rudder/domain/ids.py`, `src/rudder/domain/tasks.py`, `src/rudder/domain/routing.py`, `src/rudder/domain/usage.py`, `tests/unit/test_domain.py`.
+**Likely files:** `src/skail/domain/ids.py`, `src/skail/domain/tasks.py`, `src/skail/domain/routing.py`, `src/skail/domain/usage.py`, `tests/unit/test_domain.py`.
 **Size:** M.
 
 ### Task 2.2: Implement the versioned event union
@@ -266,7 +266,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** `python -m pytest tests/unit/test_events.py -q`.
 
 **Dependencies:** 2.1.
-**Likely files:** `src/rudder/domain/events.py`, `src/rudder/runtime/event_bus.py`, `tests/unit/test_events.py`, `tests/unit/test_event_bus.py`.
+**Likely files:** `src/skail/domain/events.py`, `src/skail/runtime/event_bus.py`, `tests/unit/test_events.py`, `tests/unit/test_event_bus.py`.
 **Size:** M.
 
 ### Task 2.3: Implement configuration schema and layered resolution
@@ -284,7 +284,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** fixture matrix in `tests/unit/test_config.py`.
 
 **Dependencies:** 2.1.
-**Likely files:** `src/rudder/config/models.py`, `src/rudder/config/loader.py`, `src/rudder/config/paths.py`, `tests/unit/test_config.py`, `tests/fixtures/config/`.
+**Likely files:** `src/skail/config/models.py`, `src/skail/config/loader.py`, `src/skail/config/paths.py`, `tests/unit/test_config.py`, `tests/fixtures/config/`.
 **Size:** M.
 
 ### Task 2.4: Implement project trust records
@@ -302,10 +302,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** Windows and Linux path fixtures; unit tests for trust transitions.
 
 **Dependencies:** 2.3.
-**Likely files:** `src/rudder/config/trust.py`, `src/rudder/config/loader.py`, `src/rudder/domain/security.py`, `tests/unit/test_trust.py`.
+**Likely files:** `src/skail/config/trust.py`, `src/skail/config/loader.py`, `src/skail/domain/security.py`, `tests/unit/test_trust.py`.
 **Size:** M.
 
-### Task 2.5: Implement Rudder journal and migrations
+### Task 2.5: Implement Skail journal and migrations
 
 **Purpose:** Persist product state separately from LangGraph internals.
 
@@ -320,7 +320,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** temporary-database tests including rollback and concurrent reservation fixtures.
 
 **Dependencies:** 2.1–2.2.
-**Likely files:** `src/rudder/sessions/schema.py`, `src/rudder/sessions/journal.py`, `src/rudder/sessions/migrations.py`, `tests/unit/test_journal.py`, `tests/integration/test_journal_concurrency.py`.
+**Likely files:** `src/skail/sessions/schema.py`, `src/skail/sessions/journal.py`, `src/skail/sessions/migrations.py`, `tests/unit/test_journal.py`, `tests/integration/test_journal_concurrency.py`.
 **Size:** L.
 
 ### Task 2.6: Wrap LangGraph checkpointing and reconciliation
@@ -338,7 +338,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** crash-boundary integration scenarios in `tests/integration/test_recovery.py`.
 
 **Dependencies:** 1.1, 2.5.
-**Likely files:** `src/rudder/sessions/checkpoints.py`, `src/rudder/sessions/recovery.py`, `src/rudder/sessions/journal.py`, `tests/integration/test_recovery.py`.
+**Likely files:** `src/skail/sessions/checkpoints.py`, `src/skail/sessions/recovery.py`, `src/skail/sessions/journal.py`, `tests/integration/test_recovery.py`.
 **Size:** L.
 
 ### Checkpoint C — Durable core contracts
@@ -365,7 +365,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** provider contract suite against the fake adapter.
 
 **Dependencies:** 2.1, 2.3.
-**Likely files:** `src/rudder/providers/base.py`, `src/rudder/providers/factory.py`, `src/rudder/providers/errors.py`, `tests/fakes/provider.py`, `tests/contract/test_provider_contract.py`.
+**Likely files:** `src/skail/providers/base.py`, `src/skail/providers/factory.py`, `src/skail/providers/errors.py`, `tests/fakes/provider.py`, `tests/contract/test_provider_contract.py`.
 **Size:** M.
 
 ### Task 3.2: Implement credential resolution and redaction
@@ -383,12 +383,12 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** canary-secret tests over errors, events, logs, and exports.
 
 **Dependencies:** 2.3, 3.1.
-**Likely files:** `src/rudder/providers/credentials.py`, `src/rudder/runtime/redaction.py`, `tests/unit/test_credentials.py`, `tests/unit/test_redaction.py`.
+**Likely files:** `src/skail/providers/credentials.py`, `src/skail/runtime/redaction.py`, `tests/unit/test_credentials.py`, `tests/unit/test_redaction.py`.
 **Size:** M.
 
 ### Task 3.3: Implement LLM Gateway adapter
 
-**Purpose:** Preserve the highest-priority AutoConduck provider as a first-class Rudder provider.
+**Purpose:** Preserve the highest-priority Skail provider as a first-class Skail provider.
 
 **Acceptance:**
 
@@ -401,7 +401,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** fake HTTP contract suite; optional marked live smoke with user credentials.
 
 **Dependencies:** 3.1–3.2.
-**Likely files:** `src/rudder/providers/llmgateway.py`, `src/rudder/providers/openai_compatible.py`, `tests/contract/test_llmgateway.py`, `tests/fixtures/providers/llmgateway/`.
+**Likely files:** `src/skail/providers/llmgateway.py`, `src/skail/providers/openai_compatible.py`, `tests/contract/test_llmgateway.py`, `tests/fixtures/providers/llmgateway/`.
 **Size:** M.
 
 ### Task 3.4: Implement DevPass and generic OpenAI-compatible adapters
@@ -418,7 +418,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** adapter contract suite with distinct fake endpoints.
 
 **Dependencies:** 3.3.
-**Likely files:** `src/rudder/providers/devpass.py`, `src/rudder/providers/openai_compatible.py`, `tests/contract/test_devpass.py`, `tests/contract/test_openai_compatible.py`.
+**Likely files:** `src/skail/providers/devpass.py`, `src/skail/providers/openai_compatible.py`, `tests/contract/test_devpass.py`, `tests/contract/test_openai_compatible.py`.
 **Size:** M.
 
 ### Task 3.5: Implement LangChain provider registry
@@ -435,7 +435,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** test two representative optional providers with fakes/mocks; no live credentials in default suite.
 
 **Dependencies:** 3.1.
-**Likely files:** `src/rudder/providers/registry.py`, `src/rudder/providers/langchain.py`, `tests/contract/test_langchain_providers.py`, `pyproject.toml`.
+**Likely files:** `src/skail/providers/registry.py`, `src/skail/providers/langchain.py`, `tests/contract/test_langchain_providers.py`, `pyproject.toml`.
 **Size:** M.
 
 ### Task 3.6: Implement evidence-bearing model catalog
@@ -453,7 +453,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** merge precedence, stale data, and auto-eligibility fixture tests.
 
 **Dependencies:** 3.1, 3.3–3.5.
-**Likely files:** `src/rudder/providers/catalog.py`, `src/rudder/providers/models.py`, `src/rudder/providers/catalog_sources.py`, `tests/unit/test_model_catalog.py`, `tests/fixtures/catalog/`.
+**Likely files:** `src/skail/providers/catalog.py`, `src/skail/providers/models.py`, `src/skail/providers/catalog_sources.py`, `tests/unit/test_model_catalog.py`, `tests/fixtures/catalog/`.
 **Size:** L.
 
 ### Checkpoint D — Usable providers
@@ -480,7 +480,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** exhaustive table tests around all floor boundaries.
 
 **Dependencies:** 2.1, 3.6.
-**Likely files:** `src/rudder/routing/requirements.py`, `src/rudder/routing/capabilities.py`, `tests/unit/test_requirements.py`.
+**Likely files:** `src/skail/routing/requirements.py`, `src/skail/routing/capabilities.py`, `tests/unit/test_requirements.py`.
 **Size:** M.
 
 ### Task 4.2: Implement deterministic selector and explanations
@@ -498,7 +498,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** replayable routing fixtures and property tests for determinism.
 
 **Dependencies:** 4.1.
-**Likely files:** `src/rudder/routing/selector.py`, `src/rudder/routing/explain.py`, `tests/unit/test_selector.py`, `tests/fixtures/routing/`.
+**Likely files:** `src/skail/routing/selector.py`, `src/skail/routing/explain.py`, `tests/unit/test_selector.py`, `tests/fixtures/routing/`.
 **Size:** M.
 
 ### Task 4.3: Implement attempt cost estimates
@@ -515,7 +515,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** price fixtures including cached input, missing data, and boundary rounding.
 
 **Dependencies:** 3.6, 4.1.
-**Likely files:** `src/rudder/routing/estimates.py`, `src/rudder/domain/usage.py`, `tests/unit/test_estimates.py`.
+**Likely files:** `src/skail/routing/estimates.py`, `src/skail/domain/usage.py`, `tests/unit/test_estimates.py`.
 **Size:** M.
 
 ### Task 4.4: Implement transactional budget reservations
@@ -533,7 +533,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** barrier-based concurrent database tests and crash/retry cases.
 
 **Dependencies:** 2.5, 4.3.
-**Likely files:** `src/rudder/routing/budget.py`, `src/rudder/sessions/journal.py`, `tests/unit/test_budget.py`, `tests/integration/test_budget_concurrency.py`.
+**Likely files:** `src/skail/routing/budget.py`, `src/skail/sessions/journal.py`, `tests/unit/test_budget.py`, `tests/integration/test_budget_concurrency.py`.
 **Size:** L.
 
 ### Task 4.5: Combine selection and reservation into assignment service
@@ -550,7 +550,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** integration fixtures with concurrent catalog/budget state changes.
 
 **Dependencies:** 4.2–4.4.
-**Likely files:** `src/rudder/routing/assignment.py`, `src/rudder/routing/budget.py`, `src/rudder/runtime/event_bus.py`, `tests/integration/test_assignment.py`.
+**Likely files:** `src/skail/routing/assignment.py`, `src/skail/routing/budget.py`, `src/skail/runtime/event_bus.py`, `tests/integration/test_assignment.py`.
 **Size:** M.
 
 ### Task 4.6: Implement task-bound model middleware and provider fallback
@@ -568,7 +568,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** fake-provider sequences for healthy, rate-limit, outage, auth, malformed, and duplicate callback paths.
 
 **Dependencies:** 1.2, 3.1, 4.5.
-**Likely files:** `src/rudder/runtime/model_middleware.py`, `src/rudder/providers/fallback.py`, `src/rudder/routing/assignment.py`, `tests/integration/test_model_binding.py`, `tests/integration/test_provider_fallback.py`.
+**Likely files:** `src/skail/runtime/model_middleware.py`, `src/skail/providers/fallback.py`, `src/skail/routing/assignment.py`, `tests/integration/test_model_binding.py`, `tests/integration/test_provider_fallback.py`.
 **Size:** L.
 
 ### Checkpoint E — Economic routing
@@ -586,7 +586,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 
 **Acceptance:**
 
-- [x] List/glob/grep/read/write/edit/execute/todos/task/skills/memory and `ask_user` have stable Rudder metadata.
+- [x] List/glob/grep/read/write/edit/execute/todos/task/skills/memory and `ask_user` have stable Skail metadata.
 - [x] Duplicate names and unknown schemas fail at startup.
 - [x] Each tool declares source, version, side effects, approvals, and profile visibility.
 - [x] Large output becomes a redacted artifact plus bounded excerpt.
@@ -594,7 +594,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** registry and output-boundary contract tests.
 
 **Dependencies:** 1.1, 2.2.
-**Likely files:** `src/rudder/tools/registry.py`, `src/rudder/tools/assembly.py`, `src/rudder/tools/artifacts.py`, `tests/unit/test_tool_registry.py`, `tests/contract/test_deepagents_tools.py`.
+**Likely files:** `src/skail/tools/registry.py`, `src/skail/tools/assembly.py`, `src/skail/tools/artifacts.py`, `tests/unit/test_tool_registry.py`, `tests/contract/test_deepagents_tools.py`.
 **Size:** L.
 
 ### Task 5.2: Enforce virtual workspace filesystem boundaries
@@ -611,7 +611,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** platform-specific temp workspace adversarial tests.
 
 **Dependencies:** 5.1.
-**Likely files:** `src/rudder/tools/filesystem.py`, `src/rudder/tools/policy.py`, `tests/integration/test_filesystem_boundary.py`, `tests/unit/test_sensitive_paths.py`.
+**Likely files:** `src/skail/tools/filesystem.py`, `src/skail/tools/policy.py`, `tests/integration/test_filesystem_boundary.py`, `tests/unit/test_sensitive_paths.py`.
 **Size:** L.
 
 ### Task 5.3: Implement command execution policy and approvals
@@ -629,7 +629,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** command policy table tests plus harmless subprocess integration tests on Windows/Linux.
 
 **Dependencies:** 2.4, 5.1–5.2.
-**Likely files:** `src/rudder/tools/execution.py`, `src/rudder/tools/approvals.py`, `src/rudder/domain/security.py`, `tests/unit/test_execution_policy.py`, `tests/integration/test_approvals.py`.
+**Likely files:** `src/skail/tools/execution.py`, `src/skail/tools/approvals.py`, `src/skail/domain/security.py`, `tests/unit/test_execution_policy.py`, `tests/integration/test_approvals.py`.
 **Size:** L.
 
 ### Task 5.4: Implement `ask_user` interrupts
@@ -646,7 +646,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** checkpointed lead and child interrupt scenarios.
 
 **Dependencies:** 2.6, 5.1.
-**Likely files:** `src/rudder/tools/ask_user.py`, `src/rudder/runtime/interrupts.py`, `tests/integration/test_questions.py`.
+**Likely files:** `src/skail/tools/ask_user.py`, `src/skail/runtime/interrupts.py`, `tests/integration/test_questions.py`.
 **Size:** M.
 
 ### Task 5.5: Implement trusted profiles, skills, and memory loading
@@ -664,7 +664,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** trusted/untrusted fixture trees and reload tests.
 
 **Dependencies:** 2.4, 5.1.
-**Likely files:** `src/rudder/agents/profile_loader.py`, `src/rudder/tools/skills.py`, `src/rudder/tools/memory.py`, `tests/unit/test_profile_loader.py`, `tests/integration/test_extension_trust.py`.
+**Likely files:** `src/skail/agents/profile_loader.py`, `src/skail/tools/skills.py`, `src/skail/tools/memory.py`, `tests/unit/test_profile_loader.py`, `tests/integration/test_extension_trust.py`.
 **Size:** L.
 
 ### Task 5.6: Add explicit MCP/custom tool loading boundary
@@ -682,7 +682,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** fake MCP/custom tool fixtures for read, write, unknown, collision, and failure.
 
 **Dependencies:** 5.1, 5.3, 5.5.
-**Likely files:** `src/rudder/tools/extensions.py`, `src/rudder/tools/mcp.py`, `tests/contract/test_extensions.py`, `tests/fixtures/extensions/`.
+**Likely files:** `src/skail/tools/extensions.py`, `src/skail/tools/mcp.py`, `tests/contract/test_extensions.py`, `tests/fixtures/extensions/`.
 **Size:** M.
 
 ### Checkpoint F — Safe useful tools
@@ -709,17 +709,17 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** snapshot/schema tests and cross-check with tool registry.
 
 **Dependencies:** 4.1, 5.1, 5.5.
-**Likely files:** `src/rudder/agents/profiles.py`, `src/rudder/agents/prompts.py`, `tests/unit/test_profiles.py`.
+**Likely files:** `src/skail/agents/profiles.py`, `src/skail/agents/prompts.py`, `tests/unit/test_profiles.py`.
 **Size:** M.
 
 ### Task 6.2: Implement task validation, fingerprint, and registry
 
-**Purpose:** Turn model-authored requests into safe Rudder-owned task specs.
+**Purpose:** Turn model-authored requests into safe Skail-owned task specs.
 
 **Acceptance:**
 
 - [x] Empty/oversized/profile/depth/dependency/scope/background errors are stable.
-- [x] IDs and requirements are generated by Rudder.
+- [x] IDs and requirements are generated by Skail.
 - [x] Dependency cycles are rejected deterministically.
 - [x] Fingerprint includes normalized request and workspace revision.
 - [x] Exhausted fingerprint blocks a third automatic attempt/task loop.
@@ -727,7 +727,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** table and graph-cycle tests.
 
 **Dependencies:** 2.1, 2.5, 6.1.
-**Likely files:** `src/rudder/runtime/task_validation.py`, `src/rudder/runtime/task_registry.py`, `src/rudder/runtime/fingerprint.py`, `tests/unit/test_task_validation.py`, `tests/unit/test_task_registry.py`.
+**Likely files:** `src/skail/runtime/task_validation.py`, `src/skail/runtime/task_registry.py`, `src/skail/runtime/fingerprint.py`, `tests/unit/test_task_validation.py`, `tests/unit/test_task_registry.py`.
 **Size:** M.
 
 ### Task 6.3: Implement scheduler, dependencies, and three-child semaphore
@@ -745,7 +745,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** deterministic barriers and scheduler property tests.
 
 **Dependencies:** 1.3, 4.5, 6.2.
-**Likely files:** `src/rudder/runtime/scheduler.py`, `src/rudder/runtime/task_registry.py`, `tests/unit/test_scheduler.py`, `tests/integration/test_scheduler_concurrency.py`.
+**Likely files:** `src/skail/runtime/scheduler.py`, `src/skail/runtime/task_registry.py`, `tests/unit/test_scheduler.py`, `tests/integration/test_scheduler_concurrency.py`.
 **Size:** L.
 
 ### Task 6.4: Implement shared-workspace write leases
@@ -763,7 +763,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** lead/child and child/child race tests with fake tools.
 
 **Dependencies:** 5.1, 6.3.
-**Likely files:** `src/rudder/runtime/leases.py`, `src/rudder/runtime/scheduler.py`, `src/rudder/tools/assembly.py`, `tests/integration/test_write_leases.py`.
+**Likely files:** `src/skail/runtime/leases.py`, `src/skail/runtime/scheduler.py`, `src/skail/tools/assembly.py`, `tests/integration/test_write_leases.py`.
 **Size:** L.
 
 ### Task 6.5: Implement attempt execution and structured result evaluation
@@ -787,7 +787,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** actual compiled graph with fake profiles/models/tools.
 
 **Dependencies:** 4.6, 5.1–5.4, 6.1–6.4.
-**Likely files:** `src/rudder/agents/task_graph.py`, `src/rudder/agents/context.py`, `src/rudder/agents/result_evaluator.py`, `src/rudder/runtime/task_executor.py`, `tests/integration/test_task_graph.py`, `tests/contract/test_task_result.py`, `tests/unit/test_context_assembly.py`.
+**Likely files:** `src/skail/agents/task_graph.py`, `src/skail/agents/context.py`, `src/skail/agents/result_evaluator.py`, `src/skail/runtime/task_executor.py`, `tests/integration/test_task_graph.py`, `tests/contract/test_task_result.py`, `tests/unit/test_context_assembly.py`.
 **Size:** L.
 
 ### Task 6.6: Implement deterministic failure monitor
@@ -805,7 +805,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** sequence table tests including false-positive controls.
 
 **Dependencies:** 2.2, 5.1, 6.5.
-**Likely files:** `src/rudder/runtime/failure_monitor.py`, `src/rudder/domain/tasks.py`, `tests/unit/test_failure_monitor.py`.
+**Likely files:** `src/skail/runtime/failure_monitor.py`, `src/skail/domain/tasks.py`, `tests/unit/test_failure_monitor.py`.
 **Size:** M.
 
 ### Task 6.7: Implement one escalation and return-to-lead
@@ -823,7 +823,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** task graph sequences for success-first, success-second, fail-twice, blocked, cancel, and provider fallback distinction.
 
 **Dependencies:** 4.5, 6.5–6.6.
-**Likely files:** `src/rudder/agents/task_graph.py`, `src/rudder/runtime/escalation.py`, `src/rudder/runtime/fingerprint.py`, `tests/integration/test_escalation.py`.
+**Likely files:** `src/skail/agents/task_graph.py`, `src/skail/runtime/escalation.py`, `src/skail/runtime/fingerprint.py`, `tests/integration/test_escalation.py`.
 **Size:** M.
 
 ### Task 6.8: Build the production lead graph and delegation controls
@@ -841,10 +841,10 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** scripted integration conversations covering direct, parallel, user-forced, user-forbidden, and failure-return paths.
 
 **Dependencies:** 5.4, 6.1–6.7.
-**Likely files:** `src/rudder/agents/lead.py`, `src/rudder/agents/prompts.py`, `src/rudder/runtime/run_controller.py`, `tests/integration/test_lead.py`, `tests/integration/test_delegation_controls.py`.
+**Likely files:** `src/skail/agents/lead.py`, `src/skail/agents/prompts.py`, `src/skail/runtime/run_controller.py`, `tests/integration/test_lead.py`, `tests/integration/test_delegation_controls.py`.
 **Size:** L.
 
-### Checkpoint G — Headless Rudder core
+### Checkpoint G — Headless Skail core
 
 - [x] A prompt can complete directly or through up to three subagents.
 - [x] Models are fixed by assignment, budgets are enforced, and write overlap is impossible.
@@ -870,7 +870,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** crash/resume/compact/export integration suite.
 
 **Dependencies:** 2.6, 3.2, 6.8.
-**Likely files:** `src/rudder/sessions/service.py`, `src/rudder/sessions/compaction.py`, `src/rudder/sessions/export.py`, `tests/integration/test_sessions.py`, `tests/integration/test_export.py`.
+**Likely files:** `src/skail/sessions/service.py`, `src/skail/sessions/compaction.py`, `src/skail/sessions/export.py`, `tests/integration/test_sessions.py`, `tests/integration/test_export.py`.
 **Size:** L.
 
 ### Task 7.2: Implement CLI command contract and exit codes
@@ -888,7 +888,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** subprocess tests on Windows/Linux with fake provider.
 
 **Dependencies:** 6.8, 7.1.
-**Likely files:** `src/rudder/cli/main.py`, `src/rudder/cli/commands.py`, `src/rudder/cli/render.py`, `tests/e2e/test_cli.py`, `docs/rudder/CLI.md`.
+**Likely files:** `src/skail/cli/main.py`, `src/skail/cli/commands.py`, `src/skail/cli/render.py`, `tests/e2e/test_cli.py`, `docs/skail/CLI.md`.
 **Size:** L.
 
 ### Task 7.3: Build conversation-first TUI shell and event projection
@@ -906,7 +906,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** Textual pilot/component tests and manual Windows smoke.
 
 **Dependencies:** 2.2, 6.8, 7.1.
-**Likely files:** `src/rudder/tui/app.py`, `src/rudder/tui/projection.py`, `src/rudder/tui/widgets/chat.py`, `src/rudder/tui/widgets/composer.py`, `tests/integration/test_tui_shell.py`.
+**Likely files:** `src/skail/tui/app.py`, `src/skail/tui/projection.py`, `src/skail/tui/widgets/chat.py`, `src/skail/tui/widgets/composer.py`, `tests/integration/test_tui_shell.py`.
 **Size:** L.
 
 ### Task 7.4: Add agent rail, route, and budget views
@@ -924,7 +924,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** projection fixtures and component snapshots.
 
 **Dependencies:** 7.3.
-**Likely files:** `src/rudder/tui/widgets/agents.py`, `src/rudder/tui/widgets/route.py`, `src/rudder/tui/widgets/budget.py`, `src/rudder/tui/projection.py`, `tests/integration/test_tui_panels.py`.
+**Likely files:** `src/skail/tui/widgets/agents.py`, `src/skail/tui/widgets/route.py`, `src/skail/tui/widgets/budget.py`, `src/skail/tui/projection.py`, `tests/integration/test_tui_panels.py`.
 **Size:** L.
 
 ### Task 7.5: Add interactive commands, approvals, questions, and steering
@@ -942,7 +942,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** TUI interaction tests plus manual cancellation/resume scenarios.
 
 **Dependencies:** 5.3–5.4, 7.3–7.4, and 1.4 if background is enabled.
-**Likely files:** `src/rudder/tui/commands.py`, `src/rudder/tui/app.py`, `src/rudder/tui/widgets/interrupts.py`, `tests/integration/test_tui_commands.py`, `tests/e2e/test_tui_flow.py`.
+**Likely files:** `src/skail/tui/commands.py`, `src/skail/tui/app.py`, `src/skail/tui/widgets/interrupts.py`, `tests/integration/test_tui_commands.py`, `tests/e2e/test_tui_flow.py`.
 **Size:** L.
 
 ### Checkpoint H — Complete daily-use harness
@@ -1006,7 +1006,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** two clean evaluation runs within documented variance bounds.
 
 **Dependencies:** 8.2.
-**Likely files:** `src/rudder/routing/defaults.py`, `src/rudder/agents/profiles.py`, `evals/results/`, `docs/rudder/EVALUATION.md`.
+**Likely files:** `src/skail/routing/defaults.py`, `src/skail/agents/profiles.py`, `evals/results/`, `docs/skail/EVALUATION.md`.
 **Size:** L/experimental.
 
 ### Task 8.4: Security, recovery, and destructive-action hardening
@@ -1023,7 +1023,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** dedicated security suite and independent code review.
 
 **Dependencies:** 8.1; can run in parallel with 8.2–8.3 after features freeze.
-**Likely files:** `tests/security/`, `docs/rudder/THREAT_MODEL.md`, affected fixes limited per finding.
+**Likely files:** `tests/security/`, `docs/skail/THREAT_MODEL.md`, affected fixes limited per finding.
 **Size:** L.
 
 ### Task 8.5: Performance and context hardening
@@ -1043,7 +1043,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Verification:** reproducible local benchmarks with thresholds documented, not timing-flaky unit assertions.
 
 **Dependencies:** Checkpoint H.
-**Likely files:** `benchmarks/`, `docs/rudder/PERFORMANCE.md`, targeted implementation files based on profiles.
+**Likely files:** `benchmarks/`, `docs/skail/PERFORMANCE.md`, targeted implementation files based on profiles.
 **Size:** M.
 
 ### Task 8.6: Packaging, installation, docs, and release candidate
@@ -1053,8 +1053,8 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Acceptance:**
 
 - [x] Clean installs and uninstall on both platforms.
-- [x] Wheel contains only intended Rudder code/assets.
-- [x] `rudder` first-run, provider auth, models, session, and troubleshooting docs work.
+- [x] Wheel contains only intended Skail code/assets.
+- [x] `skail` first-run, provider auth, models, session, and troubleshooting docs work.
 - [x] Provider support levels and experimental features are labelled.
 - [x] Licenses/notices cover DeepAgents/LangGraph/provider integrations.
 - [x] No old command/config/user-data migration claim exists.
@@ -1065,7 +1065,7 @@ These tasks are intentionally disposable at first. Promote spike code only after
 **Likely files:** `pyproject.toml`, `README.md`, `docs/`, `.github/workflows/release.yml`, `scripts/release_check.py`.
 **Size:** L.
 
-### Final checkpoint — Stable Rudder
+### Final checkpoint — Stable Skail
 
 - [x] All `SPEC.md` acceptance criteria pass.
 - [x] Evaluation gates pass on approved fixtures.

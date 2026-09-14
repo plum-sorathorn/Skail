@@ -10,15 +10,15 @@ from langchain.agents.middleware import ModelRequest, ModelResponse
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 
-from rudder.providers.errors import ProviderError, ProviderErrorKind
-from rudder.providers.fallback import FallbackBinding, ProviderFallbackPolicy
-from rudder.runtime.deepagents_adapter import build_lead_agent
-from rudder.runtime.model_middleware import (
+from skail.providers.errors import ProviderError, ProviderErrorKind
+from skail.providers.fallback import FallbackBinding, ProviderFallbackPolicy
+from skail.runtime.deepagents_adapter import build_lead_agent
+from skail.runtime.model_middleware import (
     AssignmentInvariantError,
     TaskBoundModelMiddleware,
 )
-from rudder.runtime.redaction import RedactionRegistry
-from rudder.runtime.task_graph_spike import SpikeAssignment, build_compiled_task_subagent
+from skail.runtime.redaction import RedactionRegistry
+from skail.runtime.task_graph_spike import SpikeAssignment, build_compiled_task_subagent
 
 
 @tool

@@ -1,0 +1,26 @@
+{
+  "name": "skail",
+  "version": "0.5.2",
+  "description": "Local zero-overhead model router + task orchestrator \u2014 npm shim",
+  "bin": {
+    "skail": "bin/skail.js",
+    "conduck": "bin/skail.js"
+  },
+  "dependencies": {
+    "@open-multi-agent/core": "^0.1.0"
+  },
+  "optionalDependencies": {
+    "skail-darwin-arm64": "0.5.2",
+    "skail-darwin-x64": "0.5.2",
+    "skail-linux-x64": "0.5.2",
+    "skail-linux-arm64": "0.5.2",
+    "skail-win32-x64": "0.5.2"
+  },
+  "files": [
+    "bin/"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}

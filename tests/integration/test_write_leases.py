@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 from fakes.barriers import AsyncStartBarrier
 
-from rudder.domain.events import SecretRedactor
-from rudder.runtime.leases import WorkspaceLeaseManager, write_capable
-from rudder.tools.backend import PolicyFilesystemBackend
-from rudder.tools.registry import SideEffect
+from skail.domain.events import SecretRedactor
+from skail.runtime.leases import WorkspaceLeaseManager, write_capable
+from skail.tools.backend import PolicyFilesystemBackend
+from skail.tools.registry import SideEffect
 
 
 @pytest.mark.asyncio

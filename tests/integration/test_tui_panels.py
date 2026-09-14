@@ -4,16 +4,16 @@ from decimal import Decimal
 
 import pytest
 
-from rudder.tui.app import RudderApp
-from rudder.tui.projection import (
+from skail.tui.app import SkailApp
+from skail.tui.projection import (
     AgentRailItem,
     BudgetViewItem,
     RouteViewItem,
     TuiProjection,
 )
-from rudder.tui.widgets.agents import AgentRail
-from rudder.tui.widgets.budget import BudgetView
-from rudder.tui.widgets.route import RouteView
+from skail.tui.widgets.agents import AgentRail
+from skail.tui.widgets.budget import BudgetView
+from skail.tui.widgets.route import RouteView
 
 
 @pytest.mark.asyncio
@@ -78,7 +78,7 @@ async def test_agent_rail_renders_all_fields_and_distinct_states() -> None:
         ),
     ]
 
-    app = RudderApp(projection=proj)
+    app = SkailApp(projection=proj)
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         rail = app.query_one("#agent-rail", AgentRail)
@@ -106,7 +106,7 @@ async def test_route_view_renders_recorded_decision_and_lineage() -> None:
     )
     proj.focus_agent("task-100")
 
-    app = RudderApp(projection=proj)
+    app = SkailApp(projection=proj)
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         route_view = app.query_one("#route-view", RouteView)
@@ -129,7 +129,7 @@ async def test_budget_view_separates_authoritative_and_estimated() -> None:
         per_agent_costs={"task-1": Decimal("5.00"), "task-2": Decimal("3.50")},
     )
 
-    app = RudderApp(projection=proj)
+    app = SkailApp(projection=proj)
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         budget_view = app.query_one("#budget-view", BudgetView)

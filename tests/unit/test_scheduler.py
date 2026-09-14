@@ -5,7 +5,7 @@ import asyncio
 import pytest
 from fakes.barriers import AsyncStartBarrier
 
-from rudder.runtime.scheduler import ChildScheduler
+from skail.runtime.scheduler import ChildScheduler
 
 
 def test_scheduler_accepts_only_the_stable_child_limit() -> None:

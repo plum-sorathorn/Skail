@@ -1,17 +1,17 @@
-# Rudder Delivery Checklist
+# Skail Delivery Checklist
 
 Status: Historical; active work is tracked in the adaptive orchestration and release guide.
 
 > Historical delivery checklist. Active work and release completion are governed by the
-> [adaptive orchestration and release guide](rudder-adaptive-orchestration-and-release-plan.md).
-> The [v0.1.0 remediation tracker](rudder-v0.1.0-release-remediation.md) remains an audit mapping;
+> [adaptive orchestration and release guide](skail-adaptive-orchestration-and-release-plan.md).
+> The [v0.1.0 remediation tracker](skail-v0.1.0-release-remediation.md) remains an audit mapping;
 > checked items below record prior implementation claims and do not establish release evidence.
 
 ## Approval and boundary
 
 - [x] 0.1 Resolve open specification decisions and accept ADR 0001.
-- [x] 0.2 Create the approved branch/reference and relocate AutoConduck to `legacy/autoconduck/`.
-- [x] 0.3 Create installable Rudder package and fake-provider smoke.
+- [x] 0.2 Create the approved branch/reference and relocate Skail to `legacy/skail/`.
+- [x] 0.3 Create installable Skail package and fake-provider smoke.
 - [x] 0.4 Establish offline Windows/Linux test and CI skeleton.
 - [x] Checkpoint A: clean product boundary.
 
@@ -29,7 +29,7 @@ Status: Historical; active work is tracked in the adaptive orchestration and rel
 - [x] 2.2 Implement versioned event union and event bus.
 - [x] 2.3 Implement typed layered configuration with provenance.
 - [x] 2.4 Implement project trust records and gates.
-- [x] 2.5 Implement Rudder SQLite journal and migrations.
+- [x] 2.5 Implement Skail SQLite journal and migrations.
 - [x] 2.6 Implement LangGraph checkpoint wrapper and reconciliation.
 - [x] Checkpoint C: durable core contracts.
 
@@ -73,7 +73,7 @@ Status: Historical; active work is tracked in the adaptive orchestration and rel
 - [x] 6.6 Implement deterministic failure monitor.
 - [x] 6.7 Implement one escalation then return-to-lead.
 - [x] 6.8 Build capable lead graph and delegation controls.
-- [x] Checkpoint G: headless Rudder core.
+- [x] Checkpoint G: headless Skail core.
 
 ## Sessions and UX
 

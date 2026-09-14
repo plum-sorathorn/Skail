@@ -15,9 +15,9 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 from langchain_core.runnables import Runnable, RunnableLambda
 from pydantic import BaseModel, Field, PrivateAttr
 
-from rudder.domain.usage import NormalizedUsage, UsageAuthority
-from rudder.providers.base import ModelOptions, ModelProfile, ProviderSupportLevel
-from rudder.providers.errors import ProviderError, ProviderErrorKind
+from skail.domain.usage import NormalizedUsage, UsageAuthority
+from skail.providers.base import ModelOptions, ModelProfile, ProviderSupportLevel
+from skail.providers.errors import ProviderError, ProviderErrorKind
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "providers"
 
@@ -166,7 +166,7 @@ class FakeProviderChatModel(BaseChatModel):
 
     @property
     def _llm_type(self) -> str:
-        return "rudder-provider-fake"
+        return "skail-provider-fake"
 
     @property
     def calls(self) -> tuple[tuple[BaseMessage, ...], ...]:
@@ -226,7 +226,7 @@ class FakeProviderChatModel(BaseChatModel):
             content="" if tool_calls else self.response_text,
             tool_calls=tool_calls,
             usage_metadata=self._usage_metadata(),
-            response_metadata={"rudder_cost_usd": str(self.cost_usd)},
+            response_metadata={"skail_cost_usd": str(self.cost_usd)},
         )
         return ChatResult(generations=[ChatGeneration(message=message)])
 
@@ -280,7 +280,7 @@ class FakeProviderAdapter:
     def normalize_usage(self, response: object) -> NormalizedUsage | None:
         if not isinstance(response, BaseMessage) or response.usage_metadata is None:
             return None
-        raw_cost = response.response_metadata.get("rudder_cost_usd", self.model.cost_usd)
+        raw_cost = response.response_metadata.get("skail_cost_usd", self.model.cost_usd)
         return NormalizedUsage(
             input_tokens=response.usage_metadata["input_tokens"],
             output_tokens=response.usage_metadata["output_tokens"],

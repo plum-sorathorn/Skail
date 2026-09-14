@@ -7,8 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from rudder.domain.routing import RoutingMode
-from rudder.routing.requirements import TaskRisk
+from skail.domain.routing import RoutingMode
+from skail.routing.requirements import TaskRisk
 
 
 class OracleType(StrEnum):

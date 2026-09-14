@@ -1,6 +1,6 @@
-from rudder.agents.result_evaluator import evaluate_result, parse_child_result
-from rudder.domain.ids import new_task_id
-from rudder.domain.tasks import ArtifactRef, TaskResult, VerificationResult
+from skail.agents.result_evaluator import evaluate_result, parse_child_result
+from skail.domain.ids import new_task_id
+from skail.domain.tasks import ArtifactRef, TaskResult, VerificationResult
 
 
 def test_success_requires_every_required_verification() -> None:
@@ -131,7 +131,7 @@ def test_analysis_success_requires_concrete_sources_and_is_model_authored() -> N
         summary="Reviewed the scheduler behavior.",
         verification=(
             VerificationResult(
-                criterion="review", passed=True, evidence="src/rudder/runtime/scheduler.py:22"
+                criterion="review", passed=True, evidence="src/skail/runtime/scheduler.py:22"
             ),
         ),
     )
@@ -140,7 +140,7 @@ def test_analysis_success_requires_concrete_sources_and_is_model_authored() -> N
         result,
         required_criteria=("review",),
         model_authored_analysis=True,
-        source_validator=lambda source: source == "src/rudder/runtime/scheduler.py:22",
+        source_validator=lambda source: source == "src/skail/runtime/scheduler.py:22",
     )
 
     assert evaluated.status == "succeeded"

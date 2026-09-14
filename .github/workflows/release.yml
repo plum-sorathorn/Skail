@@ -2,10 +2,10 @@ name: Release CI
 
 on:
   push:
-    branches: [main, rudder]
+    branches: [main, skail]
     tags: ['v*']
   pull_request:
-    branches: [main, rudder]
+    branches: [main, skail]
 
 jobs:
   validate-and-build:
@@ -36,7 +36,7 @@ jobs:
         run: python -m ruff check src tests scripts evals
 
       - name: Type checking
-        run: python -m mypy src/rudder
+        run: python -m mypy src/skail
 
       - name: Run offline test suite
         run: python -m pytest -q
@@ -45,13 +45,13 @@ jobs:
         run: python scripts/smoke.py --fake-provider
 
       - name: Verify isolated package artifacts
-        run: python scripts/package_check.py --evidence "${{ runner.temp }}/rudder-package-evidence.json"
+        run: python scripts/package_check.py --evidence "${{ runner.temp }}/skail-package-evidence.json"
 
       - name: Upload package evidence
         uses: actions/upload-artifact@v4
         with:
-          name: rudder-package-evidence-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: ${{ runner.temp }}/rudder-package-evidence.json
+          name: skail-package-evidence-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: ${{ runner.temp }}/skail-package-evidence.json
           if-no-files-found: error
 
       - name: Run release packaging verification

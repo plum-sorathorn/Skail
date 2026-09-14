@@ -1,0 +1,13 @@
+{
+  "name": "skail-win32-x64",
+  "version": "0.5.2",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "python/"
+  ]
+}

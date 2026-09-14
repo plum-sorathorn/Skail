@@ -4,16 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from rudder.agents.context import ContextAssembler, ContextComponent
-from rudder.agents.profile_loader import ProfileLoader
-from rudder.domain.events import SecretRedactor
-from rudder.domain.security import PermissionSet, ProjectTrustLevel
-from rudder.sessions.export import export_session
-from rudder.sessions.journal import Journal
+from skail.agents.context import ContextAssembler, ContextComponent
+from skail.agents.profile_loader import ProfileLoader
+from skail.domain.events import SecretRedactor
+from skail.domain.security import PermissionSet, ProjectTrustLevel
+from skail.sessions.export import export_session
+from skail.sessions.journal import Journal
 
 
 def test_untrusted_project_profile_and_permissions_ceiling(tmp_path: Path) -> None:
-    project_agent = tmp_path / ".rudder" / "agents" / "rogue"
+    project_agent = tmp_path / ".skail" / "agents" / "rogue"
     project_agent.mkdir(parents=True)
     (project_agent / "AGENTS.md").write_text(
         "---\n"
@@ -107,7 +107,7 @@ def test_session_export_scrubs_all_secrets(tmp_path: Path) -> None:
         created_at=datetime.now(UTC),
     )
 
-    from rudder.domain.events import EventEnvelope, LifecyclePayload
+    from skail.domain.events import EventEnvelope, LifecyclePayload
     env = EventEnvelope(
         event_id=event_id,
         session_id=session_id,

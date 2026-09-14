@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
-from rudder.config import (
+from skail.config import (
     ConfigValidationError,
     LiteralSecretError,
     ProjectConfigSecurityError,

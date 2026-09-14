@@ -8,16 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from rudder.domain.events import DiagnosticPayload, EventEnvelope, SecretRedactor, TaskPayload
-from rudder.domain.ids import EventId, RunId, SessionId, TaskId
-from rudder.domain.strategy_estimates import (
+from skail.domain.events import DiagnosticPayload, EventEnvelope, SecretRedactor, TaskPayload
+from skail.domain.ids import EventId, RunId, SessionId, TaskId
+from skail.domain.strategy_estimates import (
     ObservationAuthority,
     OutcomeObservation,
     Strategy,
     StrategyObservationScope,
 )
-from rudder.sessions import Journal, JournalIdempotencyError, SessionSnapshot
-from rudder.sessions import migrations as journal_migrations
+from skail.sessions import Journal, JournalIdempotencyError, SessionSnapshot
+from skail.sessions import migrations as journal_migrations
 
 NOW = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
 SESSION_ID = "11111111-1111-4111-8111-111111111111"
@@ -79,7 +79,7 @@ def _seed_session(journal: Journal) -> None:
 def test_strategy_observations_are_idempotent_and_return_a_bounded_stable_snapshot(
     tmp_path: Path,
 ) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     journal.migrate()
     scope = StrategyObservationScope(
         work_family="python-edit",
@@ -111,7 +111,7 @@ def test_strategy_observations_are_idempotent_and_return_a_bounded_stable_snapsh
 
 
 def test_migrations_create_the_complete_schema_and_are_idempotent(tmp_path: Path) -> None:
-    database = tmp_path / "rudder.sqlite"
+    database = tmp_path / "skail.sqlite"
     journal = Journal(database)
 
     journal.migrate()
@@ -127,7 +127,7 @@ def test_migrations_create_the_complete_schema_and_are_idempotent(tmp_path: Path
 def test_call_accounting_migration_preserves_existing_sessions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    database = tmp_path / "rudder.sqlite"
+    database = tmp_path / "skail.sqlite"
     original = journal_migrations.MIGRATIONS
     monkeypatch.setattr(journal_migrations, "MIGRATIONS", original[:-1])
     legacy = Journal(database)
@@ -147,7 +147,7 @@ def test_a_failed_migration_leaves_no_partial_schema_changes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    database = tmp_path / "rudder.sqlite"
+    database = tmp_path / "skail.sqlite"
     monkeypatch.setattr(
         journal_migrations,
         "MIGRATIONS",
@@ -169,7 +169,7 @@ def test_a_failed_migration_leaves_no_partial_schema_changes(
 
 
 def test_journal_returns_an_immutable_typed_session_snapshot(tmp_path: Path) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     journal.migrate()
     _seed_session(journal)
     journal.create_task(
@@ -252,7 +252,7 @@ def test_journal_returns_an_immutable_typed_session_snapshot(tmp_path: Path) -> 
 
 
 def test_task_and_budget_changes_commit_or_roll_back_together(tmp_path: Path) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     journal.migrate()
     _seed_session(journal)
 
@@ -308,7 +308,7 @@ def test_task_and_budget_changes_commit_or_roll_back_together(tmp_path: Path) ->
 
 
 def test_conflicting_idempotency_replay_is_rejected(tmp_path: Path) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     journal.migrate()
     _seed_session(journal)
     common = {
@@ -329,7 +329,7 @@ def test_conflicting_idempotency_replay_is_rejected(tmp_path: Path) -> None:
 
 def test_event_journal_persists_only_typed_redacted_envelopes(tmp_path: Path) -> None:
     canary = "canary-must-not-reach-sqlite"
-    journal = Journal(tmp_path / "rudder.sqlite", redactor=SecretRedactor([canary]))
+    journal = Journal(tmp_path / "skail.sqlite", redactor=SecretRedactor([canary]))
     journal.migrate()
     _seed_session(journal)
     event = EventEnvelope(
@@ -352,7 +352,7 @@ def test_event_journal_persists_only_typed_redacted_envelopes(tmp_path: Path) ->
 
 
 def test_one_attempt_preserves_distinct_transport_fallback_assignments(tmp_path: Path) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     journal.migrate()
     _seed_session(journal)
     journal.create_task(
@@ -398,7 +398,7 @@ def test_one_attempt_preserves_distinct_transport_fallback_assignments(tmp_path:
 
 
 def test_task_replay_requires_identical_content(tmp_path: Path) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     journal.migrate()
     _seed_session(journal)
     common = {
@@ -418,7 +418,7 @@ def test_task_replay_requires_identical_content(tmp_path: Path) -> None:
 
 def test_context_packets_are_idempotent_and_redacted(tmp_path: Path) -> None:
     canary = "context-canary-secret"
-    journal = Journal(tmp_path / "rudder.sqlite", redactor=SecretRedactor([canary]))
+    journal = Journal(tmp_path / "skail.sqlite", redactor=SecretRedactor([canary]))
     journal.migrate()
     _seed_session(journal)
     values = {

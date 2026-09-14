@@ -2,7 +2,7 @@
 
 Status: Accepted
 Date: 2026-09-05
-Depends on: [ADR 0001](./0001-rudder-native-multi-agent-harness.md), [ADR 0005](./0005-context-engineering-contract.md)
+Depends on: [ADR 0001](./0001-skail-native-multi-agent-harness.md), [ADR 0005](./0005-context-engineering-contract.md)
 Supersedes: ADR 0001 decision 3 and its rejection of precompiled task DAGs, only as described below
 
 ## Context
@@ -13,7 +13,7 @@ but it makes the lead choose each delegated batch. That adds lead calls between 
 and cannot safely express discovery checkpoints, revisions, isolated writers, or verified
 integration as durable execution state.
 
-Rudder also needs two different evidence boundaries. Deterministic offline fixtures can establish
+Skail also needs two different evidence boundaries. Deterministic offline fixtures can establish
 engineering readiness, but they cannot prove that a cheaper model strategy preserves real coding
 quality or reduces provider spend. Release mechanics must not turn incomplete economic evidence into
 a product claim or treat a tag as permission to rename a repository or remote.
@@ -24,16 +24,16 @@ a product claim or treat a tag as permission to rename a repository or remote.
    direct, discovery, or planned execution. A final answer needs no execution decision. Runtime
    middleware requires a decision before operational tool calls, except for a scoped user question
    needed to obtain intent or authority.
-2. Rudder interprets a versioned `ExecutionPlan` with a fixed coordinator. Plans contain finite,
+2. Skail interprets a versioned `ExecutionPlan` with a fixed coordinator. Plans contain finite,
    typed nodes, dependencies, acceptance criteria, effect and resource scopes, and explicit decision
    checkpoints. Model-authored code and todo prose are never executable plans.
 3. DeepAgents' standard `task` tool remains compatible. A `task` call becomes one validated plan
    task through the same admission, assignment, budget, execution, result, and event services. It is
    not a second scheduler.
 4. The runtime persists plan identity, schema version, policy version, revision, node identity, legal
-   transitions, and revision evidence before dispatch. Rudder owns persistent opaque IDs; model
+   transitions, and revision evidence before dispatch. Skail owns persistent opaque IDs; model
    output uses plan-local names. Completed node identities remain stable across revisions.
-5. Plan, node, revision, route, workspace, change-set, and verification records are Rudder domain
+5. Plan, node, revision, route, workspace, change-set, and verification records are Skail domain
    contracts. Their schema versions are owned by the domain modules that serialize them. Journal
    migrations are owned by `sessions/migrations.py`; event envelope and payload evolution are owned
    by `domain/events.py`. Readers reject unsupported future versions. Migrations preserve prior

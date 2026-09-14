@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from rudder.providers.catalog import CatalogConflictError, ModelCatalog
-from rudder.providers.catalog_sources import CatalogEntry, CatalogSource
-from rudder.providers.models import CapabilityVector, EvidenceRecord, ModelProfile
+from skail.providers.catalog import CatalogConflictError, ModelCatalog
+from skail.providers.catalog_sources import CatalogEntry, CatalogSource
+from skail.providers.models import CapabilityVector, EvidenceRecord, ModelProfile
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "catalog"
 NOW = datetime(2026, 9, 2, tzinfo=UTC)

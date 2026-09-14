@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from rudder.domain.changesets import (
+from skail.domain.changesets import (
     ChangeSet,
     ChangeSetPath,
     ChangeSetStatus,
     ContentImage,
 )
-from rudder.domain.events import (
+from skail.domain.events import (
     BudgetPayload,
     DiagnosticPayload,
     EventEnvelope,
@@ -18,17 +18,17 @@ from rudder.domain.events import (
     ToolPayload,
     UserPayload,
 )
-from rudder.domain.ids import new_event_id, new_run_id, new_session_id, new_task_id
-from rudder.domain.plans import (
+from skail.domain.ids import new_event_id, new_run_id, new_session_id, new_task_id
+from skail.domain.plans import (
     EffectScope,
     ExecutionPlan,
     PlanNode,
     PlanNodeKind,
     PlanNodeState,
 )
-from rudder.domain.sessions import SessionStatus
-from rudder.domain.tasks import AttemptStatus, TaskStatus
-from rudder.sessions.journal import (
+from skail.domain.sessions import SessionStatus
+from skail.domain.tasks import AttemptStatus, TaskStatus
+from skail.sessions.journal import (
     ApprovalSnapshot,
     AssignmentSnapshot,
     AttemptSnapshot,
@@ -40,7 +40,7 @@ from rudder.sessions.journal import (
     TaskSnapshot,
     UsageSnapshot,
 )
-from rudder.tui.projection import TuiProjection
+from skail.tui.projection import TuiProjection
 
 
 def test_projection_initial_state() -> None:

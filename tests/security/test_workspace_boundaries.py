@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from rudder.runtime.redaction import RedactionRegistry
-from rudder.tools.filesystem import FilesystemBoundary, PathBoundaryError
+from skail.runtime.redaction import RedactionRegistry
+from skail.tools.filesystem import FilesystemBoundary, PathBoundaryError
 
 
 def test_adversarial_traversal_attempts_blocked(tmp_path: Path) -> None:

@@ -5,10 +5,10 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from rudder.domain.events import EventEnvelope, LifecyclePayload, SecretRedactor
-from rudder.domain.ids import new_event_id, new_run_id, new_session_id
-from rudder.sessions.export import SessionExporter, export_session
-from rudder.sessions.journal import Journal
+from skail.domain.events import EventEnvelope, LifecyclePayload, SecretRedactor
+from skail.domain.ids import new_event_id, new_run_id, new_session_id
+from skail.sessions.export import SessionExporter, export_session
+from skail.sessions.journal import Journal
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 

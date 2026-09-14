@@ -9,7 +9,7 @@
       "message": {
         "role": "assistant",
         "content": "generic response",
-        "reasoning_content": "provider-specific field that Rudder must not preserve"
+        "reasoning_content": "provider-specific field that Skail must not preserve"
       },
       "finish_reason": "stop"
     }

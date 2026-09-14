@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from rudder.domain.events import (
+from skail.domain.events import (
     REDACTED,
     BudgetPayload,
     CheckpointPayload,
@@ -21,7 +21,7 @@ from rudder.domain.events import (
     ToolPayload,
     UserPayload,
 )
-from rudder.domain.ids import (
+from skail.domain.ids import (
     new_assignment_id,
     new_attempt_id,
     new_event_id,
@@ -171,7 +171,7 @@ def test_event_type_cannot_contradict_its_payload_state() -> None:
 
 
 def test_diagnostic_payload_redacts_nested_secret_fields_before_storage_or_export() -> None:
-    canary = "rudder-canary-secret-value"
+    canary = "skail-canary-secret-value"
     payload = DiagnosticPayload(
         code="provider.protocol_error",
         summary="Provider rejected the request",

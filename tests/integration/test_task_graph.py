@@ -10,14 +10,14 @@ from fakes.barriers import AsyncStartBarrier
 from fakes.models import ScriptedChatModel, parallel_tool_call_message
 from langchain_core.messages import AIMessage
 
-from rudder.agents.profiles import builtin_profiles
-from rudder.agents.task_graph import (
+from skail.agents.profiles import builtin_profiles
+from skail.agents.task_graph import (
     AttemptBinding,
     build_compiled_profile_subagent,
     build_task_graph,
     decode_task_request,
 )
-from rudder.domain.ids import (
+from skail.domain.ids import (
     AssignmentId,
     ReservationId,
     new_assignment_id,
@@ -25,15 +25,15 @@ from rudder.domain.ids import (
     new_run_id,
     new_task_id,
 )
-from rudder.domain.plans import PlanNode, PlanNodeKind
-from rudder.domain.routing import RoutingMode, TaskAssignment
-from rudder.domain.tasks import TaskRequest, TaskResult, VerificationResult
-from rudder.routing.selector import RouteFailure
-from rudder.runtime.deepagents_adapter import ChildRunGate, build_lead_agent
-from rudder.runtime.leases import WorkspaceLeaseManager
-from rudder.runtime.run_controller import _task_request_for_plan_node
-from rudder.runtime.scheduler import ChildScheduler
-from rudder.runtime.task_validation import TaskValidationError, TaskValidator
+from skail.domain.plans import PlanNode, PlanNodeKind
+from skail.domain.routing import RoutingMode, TaskAssignment
+from skail.domain.tasks import TaskRequest, TaskResult, VerificationResult
+from skail.routing.selector import RouteFailure
+from skail.runtime.deepagents_adapter import ChildRunGate, build_lead_agent
+from skail.runtime.leases import WorkspaceLeaseManager
+from skail.runtime.run_controller import _task_request_for_plan_node
+from skail.runtime.scheduler import ChildScheduler
+from skail.runtime.task_validation import TaskValidationError, TaskValidator
 
 
 def _spec(tmp_path, *, profile: str = "implementer"):
@@ -58,7 +58,7 @@ def _assignment(spec, number: int, model: str) -> TaskAssignment:
     )
 
 
-def test_standard_task_description_decodes_structured_rudder_fields() -> None:
+def test_standard_task_description_decodes_structured_skail_fields() -> None:
     dependency = new_task_id()
     request = decode_task_request(
         json.dumps(
@@ -66,7 +66,7 @@ def test_standard_task_description_decodes_structured_rudder_fields() -> None:
                 "description": "Verify the parser",
                 "success_criteria": ["focused test passes"],
                 "depends_on": [str(dependency)],
-                "write_scope": ["src/rudder"],
+                "write_scope": ["src/skail"],
                 "budget_usd": "0.25",
                 "priority": 7,
                 "prerequisite_artifacts": ["artifact:parser-report"],
@@ -79,7 +79,7 @@ def test_standard_task_description_decodes_structured_rudder_fields() -> None:
     assert request.description == "Verify the parser"
     assert request.success_criteria == ("focused test passes",)
     assert request.depends_on == (dependency,)
-    assert request.write_scope == ("src/rudder",)
+    assert request.write_scope == ("src/skail",)
     assert request.budget_usd == Decimal("0.25")
     assert request.priority == 7
     assert request.prerequisite_artifacts == ("artifact:parser-report",)

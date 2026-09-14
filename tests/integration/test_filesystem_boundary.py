@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from rudder.runtime.redaction import RedactionRegistry
-from rudder.tools.backend import CURRENT_TOOL_CALL_ID, PolicyFilesystemBackend
-from rudder.tools.filesystem import FilesystemBoundary, PathBoundaryError
+from skail.runtime.redaction import RedactionRegistry
+from skail.tools.backend import CURRENT_TOOL_CALL_ID, PolicyFilesystemBackend
+from skail.tools.filesystem import FilesystemBoundary, PathBoundaryError
 
 
 def test_workspace_rejects_absolute_traversal_and_symlink_escape(tmp_path: Path) -> None:

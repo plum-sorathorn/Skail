@@ -3,8 +3,8 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from rudder.tools.approvals import ApprovalChoice, ApprovalStore
-from rudder.tools.execution import (
+from skail.tools.approvals import ApprovalChoice, ApprovalStore
+from skail.tools.execution import (
     ActionClass,
     CommandRequest,
     ExecutionPolicy,

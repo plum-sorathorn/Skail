@@ -8,10 +8,10 @@ import pytest
 from fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_call_message
 from langchain_core.messages import AIMessage
 
-from rudder.agents.lead import LeadControls
-from rudder.domain.ids import new_session_id
-from rudder.runtime.run_controller import RunController
-from rudder.sessions.journal import Journal
+from skail.agents.lead import LeadControls
+from skail.domain.ids import new_session_id
+from skail.runtime.run_controller import RunController
+from skail.sessions.journal import Journal
 
 
 def _journal(tmp_path: Path) -> Journal:

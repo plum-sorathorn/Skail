@@ -9,7 +9,7 @@ from uuid import UUID, uuid1
 import pytest
 from pydantic import ValidationError
 
-from rudder.domain.ids import (
+from skail.domain.ids import (
     ReservationId,
     ensure_uuid4,
     new_assignment_id,
@@ -22,8 +22,8 @@ from rudder.domain.ids import (
     new_task_id,
     new_uuid4,
 )
-from rudder.domain.routing import RoutingMode, TaskAssignment
-from rudder.domain.tasks import (
+from skail.domain.routing import RoutingMode, TaskAssignment
+from skail.domain.tasks import (
     AttemptStatus,
     DomainTransitionError,
     TaskRequest,
@@ -31,10 +31,10 @@ from rudder.domain.tasks import (
     transition_attempt,
     transition_task,
 )
-from rudder.domain.usage import NormalizedUsage, UsageAuthority
+from skail.domain.usage import NormalizedUsage, UsageAuthority
 
 ROOT = Path(__file__).resolve().parents[2]
-DOMAIN = ROOT / "src" / "rudder" / "domain"
+DOMAIN = ROOT / "src" / "skail" / "domain"
 
 
 @pytest.mark.parametrize(
@@ -247,8 +247,8 @@ def test_domain_modules_do_not_import_framework_ui_provider_or_database_packages
                 root = module.split(".", maxsplit=1)[0]
                 if (
                     root in forbidden_roots
-                    or module.startswith("rudder.providers")
-                    or module.startswith("rudder.sessions")
+                    or module.startswith("skail.providers")
+                    or module.startswith("skail.sessions")
                 ):
                     violations.append(f"{path.relative_to(ROOT)} imports {module}")
 

@@ -22,8 +22,8 @@ from evals.schema import (
     RawExecutionRecord,
     TaskEvalResult,
 )
-from rudder.domain.routing import RoutingMode
 from scripts.release_check import validate_eval_report
+from skail.domain.routing import RoutingMode
 
 
 def _report(*, timestamp: datetime | None = None) -> EvaluationReport:

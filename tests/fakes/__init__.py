@@ -1,2 +1,2 @@
-"""Deterministic test doubles shared by Rudder contract tests."""
+"""Deterministic test doubles shared by Skail contract tests."""
 

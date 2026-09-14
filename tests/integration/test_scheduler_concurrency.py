@@ -5,8 +5,8 @@ import asyncio
 import pytest
 from fakes.barriers import AsyncStartBarrier
 
-from rudder.domain.tasks import TaskResult
-from rudder.runtime.scheduler import ChildScheduler
+from skail.domain.tasks import TaskResult
+from skail.runtime.scheduler import ChildScheduler
 
 
 @pytest.mark.asyncio

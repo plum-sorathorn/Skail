@@ -4,12 +4,12 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from rudder.sessions.compaction import (
+from skail.sessions.compaction import (
     CompactionResult,
     CompactionService,
     SessionCompactionInput,
 )
-from rudder.sessions.journal import Journal
+from skail.sessions.journal import Journal
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 
@@ -86,7 +86,7 @@ def test_compaction_preserves_all_required_fields_and_records_source_coverage(
         objective="Refactor parser to handle quoted strings",
         constraints=("Do not add external dependencies", "Preserve Windows path handling"),
         terminal_result_summaries={"task-1": "Fixed string unquoting in ast.py"},
-        changed_paths=("src/rudder/parser.py", "tests/unit/test_parser.py"),
+        changed_paths=("src/skail/parser.py", "tests/unit/test_parser.py"),
         verification="tests/unit/test_parser.py passed (12/12)",
         verbose_events=(
             {
@@ -134,7 +134,7 @@ def test_compaction_preserves_all_required_fields_and_records_source_coverage(
     assert "Fixed string unquoting" in results_comp.content
 
     changes_comp = next(c for c in packet.components if c.label == "changes_and_verification")
-    assert "src/rudder/parser.py" in changes_comp.content
+    assert "src/skail/parser.py" in changes_comp.content
     assert "12/12" in changes_comp.content
 
     budget_comp = next(c for c in packet.components if c.label == "model_and_budget")

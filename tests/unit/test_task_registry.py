@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from rudder.agents.profiles import builtin_profiles
-from rudder.domain.ids import new_run_id
-from rudder.domain.tasks import TaskRequest, TaskStatus
-from rudder.runtime.task_registry import TaskRegistry
-from rudder.runtime.task_validation import TaskValidationError, TaskValidator
+from skail.agents.profiles import builtin_profiles
+from skail.domain.ids import new_run_id
+from skail.domain.tasks import TaskRequest, TaskStatus
+from skail.runtime.task_registry import TaskRegistry
+from skail.runtime.task_validation import TaskValidationError, TaskValidator
 
 
 def _validator(tmp_path) -> TaskValidator:
@@ -184,7 +184,7 @@ def test_task_registry_loads_failed_fingerprints_from_journal(tmp_path) -> None:
     from datetime import UTC, datetime
     from decimal import Decimal
 
-    from rudder.sessions.journal import Journal
+    from skail.sessions.journal import Journal
 
     journal = Journal(tmp_path / "journal.db")
     journal.migrate()

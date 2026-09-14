@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from rudder.domain.events import EventEnvelope, LifecyclePayload, RoutePayload, TaskPayload
-from rudder.domain.ids import RunId, SessionId, new_event_id, new_run_id, new_session_id
-from rudder.runtime.event_bus import EventBus
-from rudder.sessions import Journal
+from skail.domain.events import EventEnvelope, LifecyclePayload, RoutePayload, TaskPayload
+from skail.domain.ids import RunId, SessionId, new_event_id, new_run_id, new_session_id
+from skail.runtime.event_bus import EventBus
+from skail.sessions import Journal
 
 
 async def _publish_batch(
@@ -120,7 +120,7 @@ async def test_subscriber_receives_only_its_run_events_in_publish_order() -> Non
 async def test_journal_backed_bus_continues_after_transactional_route_events(
     tmp_path: Path,
 ) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     journal.migrate()
     session_id = new_session_id()
     run_id = new_run_id()
@@ -167,7 +167,7 @@ async def test_journal_backed_bus_continues_after_transactional_route_events(
 def test_post_commit_delivery_waits_for_outer_transaction_and_isolates_subscribers(
     tmp_path: Path,
 ) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     journal.migrate()
     session_id = new_session_id()
     run_id = new_run_id()
@@ -214,7 +214,7 @@ def test_post_commit_delivery_waits_for_outer_transaction_and_isolates_subscribe
 
 
 def test_rolled_back_events_are_never_delivered_or_replayed(tmp_path: Path) -> None:
-    journal = Journal(tmp_path / "rudder.sqlite")
+    journal = Journal(tmp_path / "skail.sqlite")
     journal.migrate()
     session_id = new_session_id()
     run_id = new_run_id()

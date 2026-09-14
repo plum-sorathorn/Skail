@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from rudder.domain.plans import ExecutionPlan, PlanNode, PlanNodeKind
+from skail.domain.plans import ExecutionPlan, PlanNode, PlanNodeKind
 
 
 def _node(local_id: str, *depends_on: str) -> PlanNode:

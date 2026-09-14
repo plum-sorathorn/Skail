@@ -1,4 +1,4 @@
-from rudder.runtime.escalation import bounded_handoff, escalation_floor
+from skail.runtime.escalation import bounded_handoff, escalation_floor
 
 
 def test_escalation_raises_floor_once_and_bounds_handoff() -> None:

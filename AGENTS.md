@@ -1,16 +1,16 @@
 # Repository Guidelines
 
-Rudder is a Python 3.12+ native, budget-aware multi-agent coding harness. The console command is
-`rudder`; the distribution is `rudder-harness`.
+Skail is a Python 3.12+ native, budget-aware multi-agent coding harness. The console command is
+`skail`; the distribution is `skail-harness`.
 
 ## Project Structure
 
-- `src/rudder/`: runtime, agents, routing, providers, sessions, tools, CLI, and TUI code.
+- `src/skail/`: runtime, agents, routing, providers, sessions, tools, CLI, and TUI code.
 - `tests/`: unit, contract, integration, end-to-end, and security tests.
 - `evals/`: deterministic evaluation schemas, fixtures, and reports.
-- `docs/rudder/`: specification, architecture, feature contracts, and release documentation.
+- `docs/skail/`: specification, architecture, feature contracts, and release documentation.
 - `tasks/plan.md`: implementation phases and acceptance criteria.
-- `scripts/`: smoke, evaluation, and release checks. `legacy/autoconduck/` is inert.
+- `scripts/`: smoke, evaluation, and release checks. `legacy/skail/` is inert.
 
 ## Development Commands
 
@@ -19,7 +19,7 @@ python -m pip install -e ".[dev]"   # editable install
 rtk pytest -q                       # offline test suite
 rtk pytest tests\unit -q            # focused unit tests
 python -m ruff check src tests scripts evals
-python -m mypy src\rudder
+python -m mypy src\skail
 python scripts\smoke.py --fake-provider
 python -m build
 ```
@@ -37,7 +37,7 @@ before changing behavior, then run focused and affected suites plus the full off
 Keep framework/provider types behind adapters. Preserve direct launch, immutable per-attempt model
 assignments, at most two child attempts, and a hard maximum of three concurrent children. Shared
 workspace writers must not overlap. Enforce filesystem, shell, trust, approval, and secret-redaction
-boundaries in code; never rely on prompts alone. Do not import or address `legacy/autoconduck/`.
+boundaries in code; never rely on prompts alone. Do not import or address `legacy/skail/`.
 
 ## Contributions
 

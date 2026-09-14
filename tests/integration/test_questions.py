@@ -8,8 +8,8 @@ from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
-from rudder.runtime.interrupts import QuestionStore, StaleAnswerError
-from rudder.tools.assembly import build_default_agent
+from skail.runtime.interrupts import QuestionStore, StaleAnswerError
+from skail.tools.assembly import build_default_agent
 
 
 def test_question_resume_targets_only_waiting_graph_and_survives_reload(tmp_path: Path) -> None:

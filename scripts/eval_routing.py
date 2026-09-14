@@ -41,7 +41,7 @@ def _write_script(target: str, content: str) -> ExecutionScript:
             ),
         ),
         final_response=ScriptedModelResponse(
-            content="Fixture work completed through Rudder tools.",
+            content="Fixture work completed through Skail tools.",
             usage=ScriptedUsage(
                 input_tokens=10, output_tokens=5, cost_usd=Decimal("0.001")
             ),
@@ -81,7 +81,7 @@ def _sample_fixtures() -> list[EvaluationFixture]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Rudder Routing & Orchestration Evaluation Runner")
+    parser = argparse.ArgumentParser(description="Skail Routing & Orchestration Evaluation Runner")
     parser.add_argument(
         "--fixtures",
         type=str,

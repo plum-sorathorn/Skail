@@ -10,13 +10,13 @@ from fakes.barriers import AsyncStartBarrier
 from fakes.models import ScriptedChatModel, parallel_tool_call_message
 from langchain_core.messages import AIMessage, BaseMessage
 
-from rudder.runtime.deepagents_adapter import (
+from skail.runtime.deepagents_adapter import (
     ChildRunGate,
     build_lead_agent,
     run_task_batch,
     stream_events,
 )
-from rudder.runtime.task_graph_spike import SpikeAssignment, build_compiled_task_subagent
+from skail.runtime.task_graph_spike import SpikeAssignment, build_compiled_task_subagent
 
 
 class TaskIdFactory:
