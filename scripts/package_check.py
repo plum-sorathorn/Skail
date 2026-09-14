@@ -44,8 +44,14 @@ def inspect_sdist(path: Path) -> None:
         names = archive.getnames()
         if not any(name.endswith("/src/rudder/__init__.py") for name in names):
             raise AssertionError("sdist does not contain the rudder source")
-        if any("autoconduck" in name.lower() for name in names):
-            raise AssertionError("sdist contains legacy autoconduck content")
+        forbidden = ("evals/", "scripts/", "tests/", "legacy/")
+        leaked = [
+            name
+            for name in names
+            if name.partition("/")[2].startswith(forbidden) or "autoconduck" in name.lower()
+        ]
+        if leaked:
+            raise AssertionError(f"sdist contains forbidden content: {leaked[0]}")
 
 
 def _run(command: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> None:

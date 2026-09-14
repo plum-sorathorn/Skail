@@ -65,3 +65,22 @@ def test_sdist_inspection_requires_runtime_and_rejects_legacy(tmp_path: Path) ->
         archive.add(legacy, arcname="rudder-harness-0.1.0/legacy/autoconduck.py")
     with pytest.raises(AssertionError, match="legacy"):
         inspect_sdist(archive_path)
+
+
+@pytest.mark.parametrize("forbidden_path", ("evals/run.py", "scripts/check.py", "tests/test_x.py"))
+def test_sdist_inspection_rejects_development_content(
+    tmp_path: Path, forbidden_path: str
+) -> None:
+    import tarfile
+
+    archive_path = tmp_path / "bad.tar.gz"
+    runtime = tmp_path / "runtime.py"
+    runtime.write_text("", encoding="utf-8")
+    leaked = tmp_path / "leaked.py"
+    leaked.write_text("", encoding="utf-8")
+    with tarfile.open(archive_path, "w:gz") as archive:
+        archive.add(runtime, arcname="rudder-harness-0.1.0/src/rudder/__init__.py")
+        archive.add(leaked, arcname=f"rudder-harness-0.1.0/{forbidden_path}")
+
+    with pytest.raises(AssertionError, match="forbidden"):
+        inspect_sdist(archive_path)
