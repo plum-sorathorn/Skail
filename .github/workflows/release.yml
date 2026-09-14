@@ -44,8 +44,15 @@ jobs:
       - name: Run fake-provider smoke test
         run: python scripts/smoke.py --fake-provider
 
-      - name: Build wheel and sdist
-        run: python -m build
+      - name: Verify isolated package artifacts
+        run: python scripts/package_check.py --evidence "${{ runner.temp }}/rudder-package-evidence.json"
+
+      - name: Upload package evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: rudder-package-evidence-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: ${{ runner.temp }}/rudder-package-evidence.json
+          if-no-files-found: error
 
       - name: Run release packaging verification
         run: python scripts/release_check.py

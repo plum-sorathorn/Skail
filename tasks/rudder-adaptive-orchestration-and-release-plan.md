@@ -1116,6 +1116,22 @@ Next phase and its dependencies: Phase 18 — Fresh packaging and exact-commit C
 
 **Acceptance:** installed-wheel execution works with no source-path leakage; legacy is absent; workflow syntax/commands are validated locally. Linux status remains pending until that workflow actually runs on the candidate. Commit `build(release): verify isolated artifacts and platform evidence`.
 
+```text
+Phase: 18 — Fresh packaging and exact-commit CI wiring
+Status: ready_pending_external_action
+Implementation model: available Codex model (assigned Luna treated as a recommendation)
+Commit(s): recorded by the phase commit that follows this handoff update
+Selected slice: local artifact and installed-wheel verification plus cross-platform CI wiring
+Behavior delivered: `scripts/package_check.py` builds exactly one wheel and sdist outside the checkout, inspects both for runtime-only contents, installs the primary wheel into a clean temporary virtual environment from outside the source tree, runs installed `rudder --help`, `rudder --version`, and fake-provider smoke, and emits source SHA, environment metadata, and SHA-256 artifact evidence. Release CI invokes this verifier on its Windows and Linux matrix and uploads the evidence outside the checkout.
+Acceptance evidence and commands: `python -m pytest tests\\unit\\test_packaging.py -q` (3 passed); `python scripts\\package_check.py --help` and local archive inspection regressions passed; prior full offline, Ruff, mypy, smoke, and wheel checks from Phase 17 remain valid; `git diff --check` and `graphify update .` run after changes.
+Test results and documented skips: local Windows verified the full package-check path; no live providers, paid services, publishing, pushing, or release tagging were run. GitHub-hosted Linux execution cannot be produced deterministically inside this checkout and remains pending until the workflow runs on this exact commit.
+Review findings closed/open: closed source-path leakage, missing sdist validation, legacy archive leakage, absent installed CLI/smoke coverage, and missing artifact digest/environment evidence. Open external evidence is limited to the actual Linux workflow result for this exact commit.
+External evidence location and source identity, if applicable: pending GitHub Actions artifacts from `release.yml` for the exact checked-out SHA; the workflow records `source_commit`, platform, Python, and wheel/sdist SHA-256 values.
+Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, and `run_2.md` were not modified or staged.
+Unproven claims or missing evidence: Linux status and hosted-run artifact availability are not claimed locally; real-provider quality parity and live economic qualification remain future work.
+Next phase and its dependencies: Phase 19 — Measure real startup, rendering, and runtime overhead; begin only after the exact-commit Linux evidence is available or separately recorded as the external completion step.
+```
+
 ### Phase 19 — Measure real startup, rendering, and runtime overhead
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 18.
