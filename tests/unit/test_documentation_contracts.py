@@ -45,14 +45,16 @@ def test_active_guide_uses_the_renamed_skail_workspace() -> None:
 
     assert "C:\\Users\\plum\\Documents\\Works\\Skail" in guide
     assert "C:\\Users\\plum\\Documents\\Works\\" + ("R" + "udder") not in guide
+    assert "Final repository URL: `https://github.com/plum-sorathorn/Skail`" in guide
+    assert "Final workspace: `C:\\Users\\plum\\Documents\\Works\\Skail`" in guide
 
 
 def test_readme_clones_the_skail_branch_into_a_skail_directory() -> None:
     readme = _read("README.md")
 
-    assert "git clone https://github.com/plum-sorathorn/Rudder.git -b skail" in readme
+    assert "git clone https://github.com/plum-sorathorn/Skail -b skail" in readme
     assert "cd Skail" in readme
-    assert "github.com/plum-sorathorn/" + ("R" + "udder") in readme
+    assert "github.com/plum-sorathorn/" + ("R" + "udder") not in readme
     assert "cd " + ("R" + "udder") not in readme
 
 

@@ -22,7 +22,7 @@ editor, interoperability, richer background, and multimodal work that is not par
 ## Quick start
 
 ```powershell
-git clone https://github.com/plum-sorathorn/Rudder.git -b skail
+git clone https://github.com/plum-sorathorn/Skail -b skail
 cd Skail
 python -m pip install -e ".[dev]"
 
