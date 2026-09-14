@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import benchmarks.bench_runner as bench_runner
 from benchmarks.bench_runner import (
+    benchmark_cli_runtime,
     benchmark_context_assembly,
     benchmark_event_persistence,
+    benchmark_scheduler_overhead,
     benchmark_tui_projection,
     benchmark_tui_rendered_updates,
+    benchmark_workspace_setup,
     validate_benchmarks,
 )
 
@@ -65,3 +68,35 @@ def test_benchmark_runner_includes_rendered_diagnostics(monkeypatch) -> None:
     monkeypatch.setattr(bench_runner, "benchmark_tui_rendered_updates", rendered_updates)
 
     assert bench_runner.run_benchmarks()["tui_rendered_updates"]["active_children"] == 3.0
+
+
+def test_runtime_benchmarks_measure_cli_scheduler_and_workspace() -> None:
+    cli = benchmark_cli_runtime()
+    scheduler = benchmark_scheduler_overhead()
+    workspace = benchmark_workspace_setup()
+
+    assert cli["help_seconds"] >= 0
+    assert cli["first_fake_response_seconds"] >= 0
+    assert scheduler["task_count"] == 4.0
+    assert scheduler["completed_tasks"] == 4.0
+    assert workspace["snapshot_files"] >= 1
+    assert workspace["setup_seconds"] >= 0
+
+
+def test_benchmark_runner_includes_runtime_diagnostics(monkeypatch) -> None:
+    monkeypatch.setattr(bench_runner, "benchmark_event_persistence", lambda *_: {"persist": 1.0})
+    monkeypatch.setattr(bench_runner, "benchmark_tui_projection", lambda *_: {"projection": 1.0})
+    monkeypatch.setattr(bench_runner, "benchmark_context_assembly", lambda *_: {"context": 1.0})
+    monkeypatch.setattr(bench_runner, "benchmark_cli_runtime", lambda: {"cli": 1.0})
+    monkeypatch.setattr(bench_runner, "benchmark_scheduler_overhead", lambda: {"scheduler": 1.0})
+    monkeypatch.setattr(bench_runner, "benchmark_workspace_setup", lambda: {"workspace": 1.0})
+
+    async def rendered_updates(*_: object) -> dict[str, float]:
+        return {"active_children": 3.0, "rendered_update_seconds": 0.01}
+
+    monkeypatch.setattr(bench_runner, "benchmark_tui_rendered_updates", rendered_updates)
+
+    results = bench_runner.run_benchmarks()
+    assert results["cli_runtime"] == {"cli": 1.0}
+    assert results["scheduler_overhead"] == {"scheduler": 1.0}
+    assert results["workspace_setup"] == {"workspace": 1.0}

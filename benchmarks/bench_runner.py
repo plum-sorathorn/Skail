@@ -5,7 +5,9 @@ import argparse
 import asyncio
 import gc
 import json
+import os
 import platform
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,6 +31,8 @@ from rudder.domain.events import (
     ToolPayload,
 )
 from rudder.domain.ids import new_run_id, new_session_id
+from rudder.runtime.scheduler import ChildScheduler
+from rudder.runtime.workspaces import WorkspaceManager
 from rudder.sessions.journal import Journal
 from rudder.tui.app import RudderApp
 from rudder.tui.projection import TuiProjection
@@ -201,6 +205,98 @@ async def benchmark_tui_rendered_updates(event_count: int = 100) -> dict[str, fl
     }
 
 
+def _isolated_cli_environment(home: Path) -> dict[str, str]:
+    return {
+        "PATH": os.environ.get("PATH", ""),
+        "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+        "USERPROFILE": str(home),
+        "APPDATA": str(home / "AppData"),
+        "LOCALAPPDATA": str(home / "AppData" / "Local"),
+    }
+
+
+def _run_cli_timed(command: list[str], environment: dict[str, str]) -> float:
+    started = time.perf_counter()
+    completed = subprocess.run(
+        [sys.executable, "-m", "rudder.cli.main", *command],
+        cwd=Path(__file__).resolve().parents[1],
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    if not completed.stdout.strip():
+        raise AssertionError("CLI benchmark command produced no useful output")
+    return time.perf_counter() - started
+
+
+def benchmark_cli_runtime() -> dict[str, float]:
+    """Measure CLI parsing separately from an offline end-to-end fake-provider response."""
+    with tempfile.TemporaryDirectory(prefix="rudder-bench-cli-") as directory:
+        environment = _isolated_cli_environment(Path(directory))
+        help_seconds = _run_cli_timed(["--help"], environment)
+        first_fake_response_seconds = _run_cli_timed(
+            ["--print", "offline benchmark", "--model", "fake:fast-model", "--fake-provider"],
+            environment,
+        )
+    return {
+        "help_seconds": help_seconds,
+        "first_fake_response_seconds": first_fake_response_seconds,
+    }
+
+
+async def _run_scheduler_benchmark() -> dict[str, float]:
+    scheduler = ChildScheduler(max_children=3)
+    task_ids = [str(uuid4()) for _ in range(4)]
+    for task_id in task_ids:
+        scheduler.submit(task_id, priority=1)
+
+    async def complete() -> str:
+        await asyncio.sleep(0)
+        return "completed"
+
+    started = time.perf_counter()
+    results = await scheduler.run({task_id: complete for task_id in task_ids})
+    return {
+        "task_count": float(len(task_ids)),
+        "completed_tasks": float(sum(result == "completed" for result in results.values())),
+        "dispatch_seconds": time.perf_counter() - started,
+    }
+
+
+def benchmark_scheduler_overhead() -> dict[str, float]:
+    """Measure the bounded three-child scheduler with a queued fourth child."""
+    return asyncio.run(_run_scheduler_benchmark())
+
+
+def _git(workspace: Path, *arguments: str) -> None:
+    subprocess.run(
+        ["git", *arguments], cwd=workspace, check=True, capture_output=True, text=True
+    )
+
+
+def benchmark_workspace_setup() -> dict[str, float]:
+    """Measure isolated snapshot and worktree setup using a disposable local Git repository."""
+    with tempfile.TemporaryDirectory(prefix="rudder-bench-workspace-") as directory:
+        root = Path(directory)
+        workspace = root / "workspace"
+        workspace.mkdir()
+        _git(workspace, "init")
+        _git(workspace, "config", "user.email", "benchmark@example.invalid")
+        _git(workspace, "config", "user.name", "Rudder benchmark")
+        (workspace / "input.txt").write_text("benchmark\n", encoding="utf-8")
+        _git(workspace, "add", "input.txt")
+        _git(workspace, "commit", "-m", "benchmark input")
+        manager = WorkspaceManager(root / "state")
+        started = time.perf_counter()
+        snapshot = manager.capture(workspace)
+        isolated = manager.materialize(snapshot, "benchmark-task")
+        manager.cleanup_integrated(isolated)
+        setup_seconds = time.perf_counter() - started
+        shutil.rmtree(root / "state", ignore_errors=True)
+    return {"snapshot_files": float(len(snapshot.files)), "setup_seconds": setup_seconds}
+
+
 def benchmark_context_assembly(item_count: int = 100) -> dict[str, float]:
     """Measure context packet assembly, secret scrubbing, and token-pressure bounding."""
     redactor = SecretRedactor(secrets=("sk-super-secret-12345", "password=admin"))
@@ -242,6 +338,9 @@ def run_benchmarks() -> dict[str, dict[str, float]]:
         "tui_projection": benchmark_tui_projection(1000),
         "tui_rendered_updates": asyncio.run(benchmark_tui_rendered_updates(100)),
         "context_assembly": benchmark_context_assembly(100),
+        "cli_runtime": benchmark_cli_runtime(),
+        "scheduler_overhead": benchmark_scheduler_overhead(),
+        "workspace_setup": benchmark_workspace_setup(),
     }
 
 

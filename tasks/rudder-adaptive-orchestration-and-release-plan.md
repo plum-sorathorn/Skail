@@ -1155,7 +1155,46 @@ Test results and documented skips: deterministic renderer and package regression
 Review findings closed/open: closed the invalid inference from projection throughput to rendered responsiveness, the stale zero-stutter/startup claims, and the task.started active-child accounting defect. Remaining Phase 19 work is dependency-ordered rather than an external blocker.
 External evidence location and source identity, if applicable: external raw evidence path is `C:\Users\plum\AppData\Local\Temp\rudder-phase19-rendered-evidence.json`; regenerate it after the phase commit so its `source_commit` matches the candidate.
 Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, and `run_2.md` were not modified or staged.
-Next phase and its dependencies: Phase 19b — Measure CLI/runtime, persistence, scheduler, workspace, and integration overhead; then Phase 19c — security/contract matrix and authoritative dependency/license audit.
+Next phase and its dependencies: Phase 19b — Measure CLI/runtime, persistence, scheduler, workspace, and integration overhead.
+```
+
+```text
+Phase: 19b — CLI/runtime, scheduler, workspace, and integration measurement
+Status: complete
+Implementation model: available Codex model (assigned Terra treated as a recommendation)
+Behavior delivered: The deterministic benchmark harness now measures CLI help separately from a
+fresh-home fake-provider response, bounded scheduler dispatch of four tasks under the three-child
+limit, and capture/materialization/cleanup of an isolated worktree from a disposable local Git
+repository. It records these alongside persistence, projection, rendering, and context results.
+Acceptance evidence and commands: RED `rtk pytest tests\unit\test_performance.py -q` failed on the
+absent benchmark imports; the focused runtime benchmark then passed. The external package check
+completed from a temporary venv with `--no-deps` and produced external Windows artifact evidence.
+New timing values remain diagnostic except for the inherited benchmark gates.
+Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`,
+`run_2.json`, and `run_2.md` were not modified or staged.
+Next phase and its dependencies: Phase 19c — security/contract matrix and authoritative dependency/license audit.
+```
+
+```text
+Phase: 19c — Security/contract matrix and dependency/license audit
+Status: complete
+Implementation model: available Codex model (assigned Terra treated as a recommendation)
+Behavior delivered: The phase records the direct runtime dependency versions, license expressions,
+OSV review date, relevant checkpoint advisory disposition, and the exact-candidate transitive-audit
+limitation in docs/rudder/DEPENDENCIES.md. PERFORMANCE.md now defines the operation measured by each
+new runtime diagnostic without converting it into an unsupported release claim.
+Acceptance evidence and commands: `rtk pytest tests\security\test_workspace_boundaries.py
+tests\security\test_command_injection_and_approvals.py tests\security\test_extension_trust_and_secrets.py
+tests\security\test_resolved_credential_canaries.py tests\security\test_crash_recovery_and_reservations.py
+tests\contract -q` passed (124 passed, 1 skipped). The matrix covers Windows link/workspace,
+command/approval, redaction, and recovery boundaries. OSV sources were checked on 2026-09-13;
+no unresolved release-blocking direct dependency finding applies to the declared versions.
+Remaining acceptance evidence: regenerate external raw benchmarks and package evidence on the exact
+completion commit; Linux CI evidence remains a later external release prerequisite, not a Phase 19
+implementation blocker.
+Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`,
+`run_2.json`, and `run_2.md` were not modified or staged.
+Next phase and its dependencies: Phase 20 — Documentation and separate feature-parity roadmap.
 ```
 
 ### Phase 20 — Documentation and separate feature-parity roadmap
