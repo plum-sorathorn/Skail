@@ -1189,9 +1189,13 @@ tests\security\test_resolved_credential_canaries.py tests\security\test_crash_re
 tests\contract -q` passed (124 passed, 1 skipped). The matrix covers Windows link/workspace,
 command/approval, redaction, and recovery boundaries. OSV sources were checked on 2026-09-13;
 no unresolved release-blocking direct dependency finding applies to the declared versions.
-Remaining acceptance evidence: regenerate external raw benchmarks and package evidence on the exact
-completion commit; Linux CI evidence remains a later external release prerequisite, not a Phase 19
-implementation blocker.
+External evidence: two raw Windows benchmark repetitions are retained at
+`C:\Users\plum\AppData\Local\Temp\rudder-phase19-final-42a5d01dfee448b397e4d47e976279c5.evidence.json`,
+and isolated package evidence is retained at
+`C:\Users\plum\AppData\Local\Temp\rudder-package-final-79ed90465caf42f8bcf0660fe330ca04.evidence.json`.
+Both identify implementation commit `deecf0f5fd7197b14541a9eb4726a4c3572d0ba2`. Any later candidate
+must regenerate its own evidence. Linux CI evidence remains a later external release prerequisite,
+not a Phase 19 implementation blocker.
 Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`,
 `run_2.json`, and `run_2.md` were not modified or staged.
 Next phase and its dependencies: Phase 20 — Documentation and separate feature-parity roadmap.
