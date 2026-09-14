@@ -3,7 +3,8 @@
 Status: Approved for implementation
 Date: 2026-09-02
 
-Skail Harness is the successor to Skail: a native, budget-aware, multi-agent coding harness built on DeepAgents.
+Skail Harness is the native, budget-aware multi-agent coding harness built on DeepAgents. It
+supersedes an archived predecessor implementation that used proxy, plugin, and sidecar surfaces.
 These documents contain normative product and engineering contracts; they are not, by themselves,
 proof that a capability has been qualified. The active implementation and release authority is
 [ADR 0006](../decisions/0006-adaptive-execution-and-release-boundaries.md) and the
@@ -19,6 +20,7 @@ Read in this order:
 6. [Architecture decision](../decisions/0001-skail-native-multi-agent-harness.md) — the major decisions and rejected alternatives.
 7. [Active implementation guide](../../tasks/skail-adaptive-orchestration-and-release-plan.md) — dependency-ordered delivery slices and verification gates.
 8. [Feature acceptance matrix and follow-on roadmap](FEATURE_PARITY_ROADMAP.md) — tested core scope, demonstrated gaps, and separately scoped future work.
+9. [Phase 21 final integrated review](PHASE_21_REVIEW.md) — cross-phase findings, representative traces, remediation ownership, and remaining release boundaries.
 
 ## Source baseline
 

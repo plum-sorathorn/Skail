@@ -3,6 +3,7 @@ import os
 import platform
 import subprocess
 import sys
+import zipfile
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -22,7 +23,7 @@ from evals.schema import (
     RawExecutionRecord,
     TaskEvalResult,
 )
-from scripts.release_check import validate_eval_report
+from scripts.release_check import check_wheel_contents, validate_eval_report
 from skail.domain.routing import RoutingMode
 
 
@@ -528,3 +529,18 @@ def test_evaluation_and_release_scripts_support_direct_and_module_help(
         )
         assert completed.returncode == 0, completed.stderr
         assert "usage:" in completed.stdout.lower()
+
+
+def test_integrated_release_wheel_check_accepts_canonical_skail_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def build_wheel(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        output = Path(command[command.index("--outdir") + 1])
+        with zipfile.ZipFile(output / "skail_harness-0.1.0-py3-none-any.whl", "w") as archive:
+            archive.writestr("skail/__init__.py", "")
+            archive.writestr("skail_harness-0.1.0.dist-info/METADATA", "")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", build_wheel)
+
+    check_wheel_contents()

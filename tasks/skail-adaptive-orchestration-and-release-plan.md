@@ -1656,3 +1656,20 @@ Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`
 Unproven claims or missing evidence: exact-candidate Linux evidence and live-provider quality/economics remain later release work. No repository- or workspace-rename reconciliation remains open.
 Next phase and its dependencies: Phase 21 — Final integrated review; depends on completed Phase 20a and should begin only after a bounded post-external-rename reconciliation commit updates the canonical repository URL and local workspace references.
 ```
+
+### Phase 21 handoff
+
+```text
+Phase: 21 — Final integrated review
+Status: complete
+Implementation model: available Codex model (assigned Sol treated as a recommendation)
+Commit(s): recorded by the phase commit that follows this handoff update
+Behavior delivered: A fresh integrated review covers the complete adaptive-runtime change since baseline `0b78744`, maps every historical remediation 7–9 bullet to its active implementation/test owner, and records deterministic direct, discovery/replan, isolated parallel integration, approval/resume, budget-block, cancellation, CLI JSONL, and TUI resume evidence. The review closes a release-blocking canonical-wheel rejection in the integrated verifier by reusing the standalone package policy, and repairs active documentation that described Skail as replacing itself.
+Acceptance evidence and commands: `rtk pytest` over the six representative traces plus CLI JSONL and TUI resume paths (8 passed); `rtk pytest tests\unit\test_release_check.py tests\unit\test_packaging.py -q` (23 passed); integrated CLI/TUI/security/migration/plan/budget/release/packaging/docs matrix (324 passed, 1 skipped); event/evaluation/timing matrix (82 passed); `rtk pytest -q` (682 passed, 4 skipped); `python -m ruff check src tests scripts evals benchmarks` (passed); `python -m mypy src\skail` (passed, 110 files); `python scripts\smoke.py --fake-provider` (passed); `python scripts\package_check.py` (passed for the reviewed input); direct integrated wheel gate (110 runtime package files); documentation contracts (7 passed); tracked documentation content scan; `graphify update .`; `rtk git diff --check`; complete baseline inventory and phase-diff review.
+Test results and documented skips: deterministic focused review evidence passes. One affected-matrix skip is the existing fail-closed local Windows link-capability probe. Live providers, paid evaluation, exact-candidate Linux CI, pushing, publishing, tagging, remote changes, and legacy cleanup were not run.
+Review findings closed/open: one high integrated-verifier finding and one medium documentation-truth finding are closed. No unresolved critical/high finding or missing release-blocking requirement remains. Exact-candidate platform evidence remains dependency-ordered under Phases 22 and 24.
+External evidence location and source identity, if applicable: none required for Phase 21; all new evidence is deterministic and local. Phase 22 must regenerate candidate-bound Windows evidence at the Phase 21 commit.
+Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, and `run_2.md` remain excluded from Phase 21 edits and staging.
+Unproven claims or missing evidence: exact-final-candidate Windows/Linux readiness, live-provider quality parity, live economic savings, production route promotion, publication, and tag eligibility remain unproven.
+Next phase and its dependencies: Phase 22 — Complete the clean Windows candidate matrix; depends on completed Phase 21 and must begin only in a later turn.
+```

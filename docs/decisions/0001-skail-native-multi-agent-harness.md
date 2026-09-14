@@ -9,7 +9,11 @@ Date: 2026-09-02
 
 ## Context
 
-Skail is a local model-routing proxy with optional plugin and OMA orchestration features. That position limits its control over the main agent loop, tool execution, subagent lifecycle, model ownership, safety, and user experience. The desired product is instead a coding harness launched directly as `skail`, aimed at users who want orchestrated speed and accuracy within a budget.
+The archived predecessor implementation is a local model-routing proxy with optional plugin and
+OMA orchestration features. That position limits its control over the main agent loop, tool
+execution, subagent lifecycle, model ownership, safety, and user experience. Skail is instead a
+coding harness launched directly as `skail`, aimed at users who want orchestrated speed and
+accuracy within a budget.
 
 DeepAgents provides a harness framework on LangGraph with a capable agent loop, filesystem and execution facilities, skills/memory, subagents, middleware, human interrupts, streaming, and persistence integration. It allows Skail to own product policy without implementing a complete agent runtime from scratch.
 
@@ -24,7 +28,8 @@ DeepAgents provides a harness framework on LangGraph with a capable agent loop, 
 6. Concurrency will be configurable from one to three child agents. Delegation depth defaults to one. Shared-workspace writers are serialized until worktree isolation is implemented.
 7. A failed task gets at most one automatic stronger-model attempt. A second failure returns structured evidence to the lead.
 8. OMA, the SLM, proxy/plugin planes, hook shims, and old compatibility commands will not be part of the Skail runtime.
-9. The current Skail source will move to `legacy/skail/` on a new branch as an inert reference. Skail will not provide configuration or runtime migration helpers.
+9. The archived predecessor source will move to `legacy/skail/` on a new branch as an inert
+   reference. Skail will not provide configuration or runtime migration helpers for it.
 10. Provider breadth will use LangChain integrations behind Skail adapters, with first-class LLM Gateway and DevPass support. Automatic routing requires trusted capability and price evidence.
 
 ## Rationale

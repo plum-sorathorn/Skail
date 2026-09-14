@@ -87,3 +87,40 @@ def test_phase_20_documents_evidence_boundaries_and_feature_roadmap() -> None:
         "Multimodal workflows",
     ):
         assert follow_on in roadmap
+
+
+def test_renamed_contracts_distinguish_skail_from_the_archived_predecessor() -> None:
+    documentation_index = _read("docs/skail/README.md")
+    specification = _read("docs/skail/SPEC.md")
+    migration = _read("docs/skail/MIGRATION.md")
+    features = _read("docs/skail/FEATURES.md")
+
+    assert "successor to Skail" not in documentation_index
+    assert "Skail replaces Skail" not in specification
+    assert "built wheel contains `skail` and no `skail` package" not in migration
+    assert "dependency on `legacy` or `skail`" not in migration
+    assert "| Archived feature | Skail decision |" in features
+    for document in (documentation_index, specification, migration):
+        assert "archived predecessor" in document
+
+
+def test_phase_21_records_the_final_integrated_audit() -> None:
+    audit = _read("docs/skail/PHASE_21_REVIEW.md")
+    guide = _read("tasks/skail-adaptive-orchestration-and-release-plan.md")
+
+    assert "Reviewed input: `b496d96f46f412223fe844b30ed74f7cdd53236a`" in audit
+    for remediation in ("Remediation 7", "Remediation 8", "Remediation 9"):
+        assert remediation in audit
+    for trace in (
+        "Direct execution",
+        "Discovery and replan",
+        "Isolated parallel integration",
+        "Approval and resume",
+        "Budget block",
+        "Cancellation",
+    ):
+        assert trace in audit
+    assert "No unresolved critical or high finding remains." in audit
+    assert "### Phase 21 handoff" in guide
+    assert "Phase: 21 — Final integrated review" in guide
+    assert "Next phase and its dependencies: Phase 22" in guide

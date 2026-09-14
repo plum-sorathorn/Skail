@@ -20,7 +20,8 @@ The default experience is:
 
 A capable lead agent may solve simple work directly or delegate bounded work to as many as three subagents. Every lead run and subagent task receives a model assignment before its first provider call. The model remains stable for that attempt. Skail selects models according to hard capability requirements, task role, observed evidence, provider health, and budget. Explicit user instructions override orchestration preferences but never bypass safety policy.
 
-Skail replaces Skail as a product. It is not a proxy, plugin, daemon, or adapter for another coding harness.
+Skail supersedes the archived predecessor product. It is not a proxy, plugin, daemon, or adapter
+for another coding harness.
 
 ## 2. Users and jobs
 

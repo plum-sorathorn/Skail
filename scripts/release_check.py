@@ -33,6 +33,7 @@ from evals.schema import (  # noqa: E402
     EvaluationPolicy,
     EvaluationReport,
 )
+from scripts.package_check import inspect_wheel  # noqa: E402
 
 
 def validate_eval_report(
@@ -297,19 +298,10 @@ def check_wheel_contents() -> None:
         wheel_path = wheels[0]
         print(f"  -> Inspecting fresh wheel: {wheel_path.name}")
 
+        inspect_wheel(wheel_path)
         with zipfile.ZipFile(wheel_path) as zf:
             namelist = zf.namelist()
-            for name in namelist:
-                if name.startswith(("evals/", "scripts/", "tests/")):
-                    raise AssertionError(f"Development-only content packaged in wheel: {name}")
-                if name.startswith("legacy/"):
-                    raise AssertionError(f"Forbidden legacy content packaged in wheel: {name}")
-                if "skail" in name.lower() and not name.startswith("skail_harness-"):
-                    raise AssertionError(f"Forbidden legacy skail reference in wheel: {name}")
-
             skail_files = [n for n in namelist if n.startswith("skail/")]
-            if not skail_files:
-                raise AssertionError("Wheel contains no skail package files!")
             print(f"  -> Verified {len(skail_files)} package files; 0 legacy files.")
 
 

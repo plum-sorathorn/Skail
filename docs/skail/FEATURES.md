@@ -728,9 +728,9 @@ The deterministic offline suite gates engineering readiness. It cannot promote a
 strategy or establish a broad savings claim. Promotion requires a separately authorized, held-out,
 paired live evaluation with preregistered completion, cost, latency, and safety criteria.
 
-## 26. Features removed from Skail
+## 26. Features removed from the archived implementation
 
-| Skail feature | Skail decision | Reason / replacement |
+| Archived feature | Skail decision | Reason / replacement |
 |---|---|---|
 | OpenAI-compatible proxy and HTTP server | Remove | Skail invokes providers directly as a harness. |
 | Router-only and plugin operating modes | Remove | One native runtime owns agent and tool execution. |

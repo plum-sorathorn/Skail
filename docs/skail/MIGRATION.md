@@ -1,4 +1,4 @@
-# Skail to Skail Repository Transition
+# Skail Repository Transition
 
 Status: Approved and in progress
 Date: 2026-09-02
@@ -6,16 +6,19 @@ Depends on: [SPEC.md](./SPEC.md), [ADR 0001](../decisions/0001-skail-native-mult
 
 ## 1. Goal
 
-Create Skail Harness as a clean product on a dedicated branch while retaining the current Skail source as an inert, readable reference under `legacy/skail/`.
+Create Skail Harness as a clean product on a dedicated branch while retaining the archived
+predecessor source as an inert, readable reference under `legacy/skail/`.
 
-This is a source-tree transition, not an end-user migration. Skail will not read Skail configuration, expose Skail commands, run its proxy/plugin services, or provide a compatibility layer.
+This is a source-tree transition, not an end-user migration. Skail does not read the archived
+predecessor's configuration, expose its commands, run its proxy/plugin services, or provide a
+compatibility layer.
 
 ## 2. Transition rules
 
-1. Preserve an immutable Git reference to the last Skail state before moving files.
+1. Preserve an immutable Git reference to the last archived predecessor state before moving files.
 2. Create the new development branch before structural changes.
 3. Use Git-aware moves so history remains traceable.
-4. Keep old code importable only within its archived project, never from Skail.
+4. Keep archived code importable only within its archived project, never from Skail.
 5. Replace root packaging, tests, instructions, and CI with Skail-owned equivalents.
 6. Do not maintain both products in the same root environment.
 7. Consult legacy code only for explicitly approved concepts; do not port modules wholesale.
@@ -30,12 +33,14 @@ rtk git status
 rtk git switch -c skail
 ```
 
-Before the move, create a clearly named commit or tag on the current Skail state. Do not create a tag or branch automatically until the user approves the specification and implementation begins.
+Before the move, create a clearly named commit or tag on the archived predecessor state. Do not
+create a tag or branch automatically until the user approves the specification and implementation
+begins.
 
 Recommended references:
 
 - branch: `skail`;
-- preservation tag: `skail-v0.5.2-final` if `0.5.2` accurately describes the checked-out state;
+- preservation tag: `legacy-v0.5.2-final` if `0.5.2` accurately describes the checked-out state;
 - first Skail architecture commit: documentation and legacy relocation only.
 
 Version accuracy must be verified from package metadata and Git history before tagging; the old AGENTS document contains conflicting historical version text.
@@ -59,7 +64,7 @@ Version accuracy must be verified from package metadata and Git history before t
     README.md                    archive status and usage warning
     pyproject.toml               old package metadata
     requirements.txt
-    skail/                 old runtime package
+    skail/                       archived runtime package
     tests/
     scripts/
     npm-packaging/
@@ -77,13 +82,13 @@ The relocation task must produce and review an exact manifest before mutation. E
 ### Move into `legacy/skail/`
 
 - `skail/`;
-- existing Skail `tests/`;
-- existing Skail `scripts/`;
+- archived predecessor `tests/`;
+- archived predecessor `scripts/`;
 - `npm-packaging/`;
 - old `requirements.txt`;
-- old `pyproject.toml` copied or moved before the Skail one replaces it;
+- archived `pyproject.toml` copied or moved before the Skail one replaces it;
 - old product README as `README.original.md`;
-- Skail-specific design, model catalog, changelog, reports, and phase documents;
+- archived design, model catalog, changelog, reports, and phase documents;
 - old project instructions as `AGENTS.md`;
 - other packaging/runtime files discovered by the reviewed manifest.
 
@@ -130,18 +135,19 @@ The archive is kept so agents can inspect proven provider, pricing, Textual, det
 
 The root package must use a `src/` layout and include only `skail*`. Required checks:
 
-- built wheel contains `skail` and no `skail` package;
-- installed console scripts include `skail` and no `skail`/`conduck` aliases;
+- built wheel contains `skail` and no archived package content;
+- installed console scripts include `skail` and no archived compatibility aliases;
 - test discovery excludes `legacy/`;
 - static/type/lint tooling excludes `legacy/`;
-- runtime import scan finds no `legacy.skail` or path manipulation into the archive;
+- runtime import scan finds no dependency on the legacy archive or path manipulation into it;
 - distribution metadata and descriptions contain Skail branding.
 
 The Python distribution name is `skail-harness`. The console command is `skail`.
 
 ## 8. Dependency disposition
 
-The new root dependency list is derived from Skail requirements, not copied from Skail.
+The new root dependency list is derived from Skail requirements, not copied from the archived
+predecessor.
 
 | Existing dependency area | Initial disposition |
 |---|---|
@@ -194,7 +200,8 @@ Each reuse requires a Skail-native contract and test. Copying a module unchanged
 
 ## 10. User data and compatibility
 
-Skail data remains under `~/.skail/`. Skail uses `~/.skail/` and never modifies or deletes the old directory.
+Pre-transition user data remains in its original location. Skail uses `~/.skail/` for current data
+and never discovers, modifies, deletes, or automatically imports archived predecessor data.
 
 There is no automatic import of:
 
@@ -211,9 +218,9 @@ Documentation may show users how to re-enter provider credentials safely, but mu
 
 The structural transition must scan active, non-legacy paths for:
 
-- Skail/skail/conduck names;
+- archived product names, console commands, and compatibility aliases;
 - old console commands and environment variables;
-- `~/.skail` paths;
+- archived configuration and user-data paths;
 - proxy/plugin/OMA/SLM claims;
 - old screenshots, package metadata, badges, and URLs.
 
@@ -226,17 +233,18 @@ Matches are acceptable only in migration/history documents or explicit legacy-bo
 - the legacy snapshot has the expected files and archive README;
 - no untracked deletion occurred;
 - Git recognizes moves where practical;
-- the new root contains no runnable Skail entrypoint;
+- the new root contains no runnable predecessor entrypoint;
 - `graphify update .` reflects the target boundary.
 
 ### After Skail skeleton
 
 - `python -m pip install -e ".[dev]"` succeeds in a clean environment;
 - `skail --help` resolves to the new package;
-- fake-provider smoke starts without Skail, Node, ONNX, FastAPI, or LiteLLM proxy dependencies;
+- fake-provider smoke starts without archived proxy/plugin code, Node, ONNX, FastAPI, or LiteLLM
+  proxy dependencies;
 - built wheel inspection contains no legacy package;
 - tests do not collect under `legacy/`;
-- import-boundary test rejects any `src/skail` dependency on `legacy` or `skail`.
+- import-boundary test rejects any `src/skail` dependency on the legacy archive.
 
 ### Rollback
 
