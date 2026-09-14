@@ -1,5 +1,9 @@
 # Specification: Rudder
 
+> Status note: this is a normative product contract. Its requirements are implemented and verified
+> only where the active tracker, tests, or named evidence say so; it is not a blanket capability or
+> release-qualification claim. See [the feature matrix](FEATURE_PARITY_ROADMAP.md).
+
 Status: Approved
 Date: 2026-09-02
 Target platforms: Windows and Linux

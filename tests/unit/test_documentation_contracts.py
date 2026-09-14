@@ -54,3 +54,34 @@ def test_readme_clones_the_rudder_branch_into_a_rudder_directory() -> None:
     assert "cd Rudder" in readme
     assert "github.com/plum-sorathorn/AutoConduck" not in readme
     assert "cd AutoConduck" not in readme
+
+
+def test_phase_20_documents_evidence_boundaries_and_feature_roadmap() -> None:
+    readme = _read("README.md")
+    documentation_index = _read("docs/rudder/README.md")
+    cli = _read("docs/rudder/CLI.md")
+    roadmap = _read("docs/rudder/FEATURE_PARITY_ROADMAP.md")
+
+    assert "not a live-provider quality or savings claim" in readme
+    assert "78.7%" not in readme
+    assert "100% offline" not in readme
+    assert "--jsonl" in cli
+    assert "ADR 0006" in documentation_index
+    for capability in (
+        "Streaming",
+        "Sessions and resume",
+        "Approvals",
+        "Steering",
+        "Skills and memory",
+        "Provider compatibility",
+        "Inspection",
+        "Context management",
+    ):
+        assert capability in roadmap
+    for follow_on in (
+        "Editor integration",
+        "External tool and extension interoperability",
+        "Background-agent interaction",
+        "Multimodal workflows",
+    ):
+        assert follow_on in roadmap

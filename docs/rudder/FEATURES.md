@@ -1,5 +1,9 @@
 # Rudder Feature Contracts
 
+> Status note: these are normative behavior contracts. A section is not an assertion that every
+> integration has production parity; tested scope and demonstrated gaps are recorded in the
+> [feature matrix](FEATURE_PARITY_ROADMAP.md).
+
 Status: Approved
 Date: 2026-09-02
 Depends on: [SPEC.md](./SPEC.md), [ARCHITECTURE.md](./ARCHITECTURE.md)

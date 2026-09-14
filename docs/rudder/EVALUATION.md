@@ -1,8 +1,8 @@
 # Rudder Evaluation & Routing Gates
 
-Status: Release sign-off withheld
-Date: 2026-09-10
-Tracker: [v0.1.0 release remediation](../../tasks/rudder-v0.1.0-release-remediation.md)
+Status: Active engineering evidence; not live economic qualification
+Date: 2026-09-13
+Tracker: [adaptive orchestration and release guide](../../tasks/rudder-adaptive-orchestration-and-release-plan.md)
 
 The previous report is invalid for release sign-off. Its scripted execution was coupled to
 oracle expectations, its timing fixtures did not demonstrate equivalent useful parallel work, and
@@ -21,10 +21,9 @@ do not become observed usage. The runner captures immutable raw execution record
 scoring and before policy summaries are generated. A missing execution script is an incomplete
 runtime evaluation, never a passing oracle result.
 
-The pre-existing fixture corpus remains loadable for auditability but has not yet been approved as
-independent execution evidence. Phase 05 owns rebuilding and approving those scripts; until then,
-running the old manifest is expected to report incomplete fixture executions rather than create
-release evidence.
+Historical pre-Phase-05 fixture material remains loadable for auditability. The active curated
+fixtures and frozen paired-runtime profile are covered by the Phase 15–17 evidence contract;
+historical reports remain historical rather than being relabelled as current release evidence.
 
 ## Current methodology record
 

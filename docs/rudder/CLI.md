@@ -7,7 +7,7 @@ The command line interface for Rudder Harness is `rudder`.
 ```text
 rudder [PROMPT...]
 rudder -p|--print [PROMPT...]
-rudder --json [PROMPT...]
+rudder --jsonl|--json [PROMPT...]
 rudder -c|--continue
 rudder -r|--resume [SESSION_ID]
 rudder --no-session
@@ -47,7 +47,7 @@ Non-interactive single-response mode:
 - **stdout**: Contains strictly the final lead agent response text. No progress indicators, banners, or diagnostic logging.
 - **stderr**: Contains progress logs, warnings, approvals, and error details.
 
-### 3.2 JSONL Mode (`--json`)
+### 3.2 JSONL Mode (`--jsonl`, with `--json` alias)
 
 Machine-readable event streaming mode:
 - **stdout**: Emits valid UTF-8 JSON lines, each encoding an `EventEnvelope` (schema version 1).
@@ -65,17 +65,17 @@ Machine-readable event streaming mode:
 ### `rudder sessions`
 - `rudder sessions list`: List stored local sessions with ID, status, and timestamps.
 - `rudder sessions show <session_id>`: Display overview of runs, tasks, and budget state for a session.
-- `rudder sessions export <session_id> [--output PATH]`: Export redacted session record to JSON or file.
+- `rudder sessions export <session_id> [--output PATH]`: Export a redacted session record as JSON to stdout or a file.
 - `rudder sessions archive <session_id>`: Move session to archived status.
 - `rudder sessions resume <session_id>`: Restore state and activate an interrupted or idle session.
 
 ### `rudder auth`
 - `rudder auth status`: Report configuration state for known provider credentials without exposing secrets.
-- `rudder auth check`: Verify configured provider credentials and endpoint connectivity.
+- `rudder auth check`: Report whether known provider credential environment variables are configured; it does not contact a provider.
 
 ### `rudder models`
-- `rudder models list`: List available built-in agent profiles and configured provider models.
-- `rudder models show <name>`: Display capability floors, tool permissions, and details for a profile or model.
+- `rudder models list`: List built-in profiles and the deterministic fake models. Configured production providers are resolved at run time.
+- `rudder models show <name>`: Display details for a built-in profile, or echo an otherwise unverified model/profile name.
 
 ### `rudder smoke`
 - `rudder smoke --fake-provider`: Offline deterministic package smoke verification.

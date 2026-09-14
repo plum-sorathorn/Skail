@@ -3,148 +3,221 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-**Rudder Harness** (distribution: `rudder-harness`) is a native, budget-aware multi-agent coding harness. It launches directly from the console as `rudder` without proxy servers, daemons, plugin planes, or hook shims.
+**Rudder Harness** (distribution: `rudder-harness`) is a local, budget-aware multi-agent coding
+harness. It runs as `rudder` without a proxy server, daemon, plugin plane, or hook shim.
 
-> **Just prompt; Rudder will orchestrate.**
+## What is implemented
 
-A capable lead agent completes simple coding tasks directly or delegates bounded work to as many as three concurrent subagents. Every lead run and subagent attempt receives an immutable model assignment before its first provider call. Rudder routes models deterministically according to hard capability floors, task roles, provider health, and budget limits.
+Rudder has deterministic, offline coverage for direct and planned execution, typed plan state,
+bounded child scheduling, workspace leases and worktree fallback, approvals and project trust,
+sessions/recovery, routing and budget records, CLI JSONL, and local inspection. It deliberately
+keeps a healthy model assignment fixed for an attempt, permits at most two attempts per delegated
+task, and permits at most three concurrent children.
 
----
+The [feature matrix](docs/rudder/FEATURE_PARITY_ROADMAP.md#core-feature-acceptance-matrix) names
+the evidence and demonstrated gaps for each user-facing capability. The separate
+[follow-on roadmap](docs/rudder/FEATURE_PARITY_ROADMAP.md#separate-follow-on-roadmap) identifies
+editor, interoperability, richer background, and multimodal work that is not part of this release.
 
-## 1. Key Invariants
+## Quick start
 
-1. **Direct Launch**: No daemon, proxy, OMA, or SLM required. Rudder launches directly as `rudder`.
-2. **One Capable Lead**: The lead agent is fully capable of direct exploration, editing, execution, and synthesis; delegation is used for leverage, not ceremony.
-3. **Immutable Model Assignments**: A model is selected and bound to an attempt before its first call. Healthy attempts never switch models mid-flight.
-4. **Escalate Once**: An attempt that fails due to under-tiering may escalate once to a higher-capability model (+0.15 floor boost). A second failure returns to the lead.
-5. **Bounded Concurrency**: Up to three child subagents run concurrently (`max_children=1..3`).
-6. **Shared-Workspace Write Leases**: Writers never overlap in a shared workspace.
-7. **Budget Accounting**: Distinguishes authoritative actual, estimated actual, reserved, and available balance with hard launch gates.
-8. **Enforced Security Boundaries**: Filesystem boundaries, path traversal guards, command execution policies, and secret redaction are enforced in code, never via prompts alone.
-9. **Offline by Default**: The entire test and evaluation suite runs 100% offline and credential-free.
-
----
-
-## 2. Quick Start
-
-### Installation
-
-```bash
-# Clone and install in editable mode with development dependencies
+```powershell
 git clone https://github.com/plum-sorathorn/Rudder.git -b rudder
 cd Rudder
 python -m pip install -e ".[dev]"
-```
 
-### Basic Usage
-
-```bash
-# 1. Interactive Terminal UI (TUI)
+# Interactive TUI
 rudder
 
-# 2. Interactive with initial prompt
-rudder "Refactor utils.py to use pathlib"
+# Deterministic offline non-interactive run
+rudder --print --fake-provider --model fake:fast-model "Summarize this workspace"
 
-# 3. Non-interactive print mode (clean stdout, diagnostics on stderr)
-rudder "Run unit tests and fix failures" --print
-
-# 4. Machine-readable JSONL streaming (versioned events + terminal event)
-rudder "Analyze repository dependencies" --jsonl
-
-# 5. Enforce budget limit and routing mode
-rudder "Write integration tests" --budget 2.50 --mode economy
+# Versioned JSONL event output (`--json` is an alias)
+rudder --jsonl --fake-provider --model fake:fast-model "Inspect this workspace"
 ```
 
----
+External provider use is opt-in and requires configured credentials. The deterministic offline
+suite is engineering evidence; it is not a live-provider quality or savings claim.
 
-## 3. CLI Subcommands
+## How Rudder works
 
-| Command | Description |
-|---|---|
-| `rudder config` | View layered configuration, precedence, and provenance |
-| `rudder sessions list` | List local sessions, status, run counts, and timestamps |
-| `rudder sessions export <id>` | Export session transcript, routes, and usage to JSON/Markdown |
-| `rudder auth status` | Check configured provider credentials and health |
-| `rudder auth login <provider>` | Interactive provider credential configuration |
-| `rudder models list` | List available models, capability vectors, and pricing |
-| `rudder smoke` | Run local harness verification with fake deterministic models |
+Rudder is designed for coding work that sometimes benefits from a small, controlled team but should
+not pay that overhead for every prompt.
 
----
+1. A lead either answers directly or records an execution decision for discovery or a typed plan.
+2. An admitted plan records nodes, dependencies, acceptance criteria, effect scope, and a durable
+   revision before anything runs. Model-authored todo text is never executable state.
+3. Ready work receives a concrete model assignment and budget reservation. Independent nodes can
+   run concurrently, subject to the hard three-child limit and workspace ownership rules.
+4. A successful child result releases dependent work. Failed attempts retain their evidence and
+   partial work; Rudder can escalate a task only once before returning it to the lead.
+5. Sessions preserve task, route, usage, approval, and verification state for inspection or
+   recovery. Ambiguous in-flight work fails closed instead of being silently replayed.
 
-## 4. Routing Modes & Economics
+This is a local application guarantee, not control over an operating system or an external provider.
+The [architecture](docs/rudder/ARCHITECTURE.md) explains the durable contracts behind the flow.
 
-Rudder provides four deterministic routing policies:
+## Typical workflows
 
-- **`auto` (default)**: Evaluates role floor (`explorer=0.35`, `tester=0.40`, `implementer=0.50`, `reviewer=0.55`, `lead=0.60`) and task risk (`trivial=0.25` up to `high-risk=0.70`), then selects the lowest-cost candidate that meets the floor. Reduces median task costs by **78.7%** compared to fixed quality.
-- **`economy`**: Applies a `-0.10` capability floor discount to explore economical smaller models, automatically recovering via one-time escalation if under-tiering is detected.
-- **`quality`**: Applies a `+0.15` capability floor boost and ranks candidates by capability fit and tool reliability before cost.
-- **`manual`**: Pins execution to an exact provider and model (e.g. `--model openai:gpt-4o`).
+### Ask directly
 
----
-
-## 5. Interactive TUI & Slash Commands
-
-When launched in an interactive terminal, Rudder renders a responsive conversation-first TUI:
-- **Main Chat Transcript**: Collapsible tool calls, markdown streaming, and persistent interrupt alerts.
-- **Agent Rail**: Live status badges (`queued`, `running`, `escalated`, `returned`, `blocked`), elapsed time, and per-agent cost breakdown.
-- **Routing & Budget View**: Inspect recorded routing decisions, hard limits, reserved funds, and available balance.
-- **Inline Interrupts**: Answer clarifying questions or review command approvals directly in the terminal.
-
-### Supported Slash Commands
-- `/help` — Display command help
-- `/agents` — List active and completed child tasks
-- `/agent <id>` — Focus transcript on specific child task
-- `/tasks` — Show current task hierarchy
-- `/route [id]` — Inspect model selection rationale and constraints
-- `/budget` — Show authoritative actual, estimated, and reserved spend
-- `/mode <auto|economy|quality>` — Switch active routing mode
-- `/cancel [id]` — Cancel active task or entire instruction run
-- `/compact` — Trigger context compaction preserving ADR 0005 invariants
-- `/quit` — Exit Rudder
-
----
-
-## 6. Provider Support Matrix
-
-| Provider | Support Level | Authentication | Streaming Tools |
-|---|---|---|---|
-| **LLM Gateway** | Native (First-class) | `LLM_GATEWAY_API_KEY` | Supported |
-| **DevPass** | Native (First-class) | `DEVPASS_TOKEN` | Supported |
-| **OpenAI-Compatible** | Native | `OPENAI_API_KEY` / Base URL | Supported |
-| **Anthropic** | LangChain integration | `ANTHROPIC_API_KEY` | Supported |
-| **Fake Provider** | Built-in (Deterministic) | None (Offline) | Simulated |
-
----
-
-## 7. Security & Threat Model
-
-Rudder enforces strict execution boundaries:
-- **Virtual Filesystem Boundary**: All file operations are jailed within `workspace.resolve()`. Directory traversals (`../../`), Windows drive escapes, and symlink/junction hops outside the workspace are strictly blocked.
-- **Sensitive Paths**: Files matching `.env*`, `id_rsa*`, `*.pem`, `*.key`, and `.git` are prohibited from entering model context.
-- **Command Policy**: Destructive commands (`rm`, `del`, `format`, `sudo`, `git clean -fdx`, `git reset --hard`) are hard-rejected. Shell interpreters and external network commands require interactive human approval.
-- **Secret Redaction**: Environment credentials and tokens are scrubbed from logs, context packets, and session exports via `SecretRedactor`.
-
----
-
-## 8. Verification & Release Testing
+Use a direct prompt for inspection, a narrow edit, or a task where coordinating children would add
+more cost than value.
 
 ```powershell
-# Run full offline test suite (430+ tests)
+rudder "Explain the failing tests in this repository"
+rudder --print --fake-provider --model fake:fast-model "Summarize the project layout"
+```
+
+### Bound a run
+
+Use routing, budget, delegation, and workspace controls when the work needs explicit limits. CLI
+values override the corresponding resolved configuration values for that run.
+
+```powershell
+rudder --budget 2.50 --mode economy --max-agents 2 --workspace worktree `
+  "Implement and verify the requested change"
+```
+
+`worktree` is an isolation preference, not a promise: unsafe or unavailable Git isolation falls
+back to the serialized shared-workspace path. A request to use a worktree never discards existing
+user changes.
+
+### Inspect or resume a session
+
+```powershell
+rudder sessions list
+rudder sessions show <session-id>
+rudder sessions export <session-id> --output session.json
+rudder --resume <session-id>
+```
+
+Exports are redacted records intended for local inspection. They are not a guarantee that every
+secret present in an independently executed trusted program was observable or removable.
+
+### Integrate with scripts
+
+Use print mode when a caller needs only the final text, or JSONL when it needs versioned lifecycle
+events. JSONL includes one terminal event for persisted runs; failures before a run is persisted do
+not fabricate one.
+
+```powershell
+rudder --print --fake-provider --model fake:fast-model "Report the next step"
+rudder --jsonl --fake-provider --model fake:fast-model "Inspect the current task"
+```
+
+## Execution and safety boundaries
+
+- **Direct versus adaptive execution:** simple work can finish directly. A recorded execution
+  decision can instead admit a typed plan whose ready nodes dispatch without another lead turn.
+- **Workspace modes:** shared writers are serialized. Git worktree isolation is used only when a
+  reproducible snapshot is safe; otherwise Rudder falls back to the shared single-writer path
+  without discarding user changes.
+- **Approvals and steering:** destructive, external, privileged, and unknown effects follow the
+  execution approval policy. Foreground input is classified as an answer, queued follow-up, or
+  cancellation; experimental background steering cannot enlarge permission, budget, depth, or
+  write scope.
+- **Economics:** route estimates, reservations, actual/estimated usage, and exclusions are durable.
+  Automatic strategy promotion remains shadow/experimental until separately authorized live,
+  held-out qualification.
+
+See the [architecture](docs/rudder/ARCHITECTURE.md), [feature contracts](docs/rudder/FEATURES.md),
+[CLI contract](docs/rudder/CLI.md), and [threat model](docs/rudder/THREAT_MODEL.md) for the
+normative contracts and their stated limitations.
+
+## Models, providers, and configuration
+
+The built-in fake provider is deterministic and credential-free, making it the default for tests,
+examples, and local smoke verification. Rudder also has adapter contracts for LLM Gateway, DevPass,
+and OpenAI-compatible providers; optional LangChain integrations depend on the corresponding extra
+and a provider configuration. `rudder auth status` and `rudder auth check` report environment
+configuration without exposing credential values or contacting a provider.
+
+Rudder records a route choice, estimated cost, reservation, and normalized provider usage when that
+usage is available. An estimate is not an invoice, and unobserved or synthetic usage is labelled as
+such. Automatic routing remains conservative until evidence qualifies a strategy for a workload
+class; see [evaluation](docs/rudder/EVALUATION.md).
+
+Configuration is layered from user and trusted-project TOML files. Use these commands to discover
+the actual paths and effective values on a workstation:
+
+```powershell
+rudder config path
+rudder config show
+rudder models list
+rudder models show implementer
+```
+
+Project-defined configuration and extensions require an explicit trust decision. Trust does not
+override filesystem, approval, budget, or global safety boundaries.
+
+## Safety model
+
+Rudder treats model output as untrusted input at its filesystem, command, trust, and secret
+boundaries. Workspace paths are normalized against the selected root; sensitive paths and
+outside-workspace access receive stronger handling. Command policy distinguishes ordinary local
+build/test activity from mutations, external effects, privilege requests, destructive effects, and
+unknown effects. The latter categories can require approval or be rejected.
+
+These controls reduce risk inside Rudder's application paths. They cannot make a trusted repository
+or privileged host process safe. Read the [threat model](docs/rudder/THREAT_MODEL.md) before using
+Rudder on sensitive workspaces or with external credentials.
+
+## CLI and inspection
+
+Run `rudder --help` for the active parser contract. The supported root flags include `--print`,
+`--jsonl`/`--json`, `--continue`, `--resume`, `--no-session`, `--mode`, `--model`,
+`--lead-model`, `--agent-model`, `--budget`, `--max-agents`, `--delegation`, `--workspace`,
+`--approve-project`, `--deny-project`, and `--fake-provider`.
+
+The supported subcommands are `config`, `sessions`, `auth`, `models`, and `smoke`. `auth check`
+reports whether known environment credential variables are present; it does not perform a provider
+network request. `rudder smoke --fake-provider` is the offline smoke path.
+
+The documented process exit codes are `0` (completed), `1` (failure), `2` (usage), `3` (blocked),
+and `4` (cancelled). Full syntax, output framing, subcommand behavior, and removed legacy aliases
+are in the [CLI contract](docs/rudder/CLI.md).
+
+## Verification and release evidence
+
+```powershell
 rtk pytest -q
-
-# Run static analysis and linting
-python -m ruff check src tests scripts evals
+python -m ruff check src tests scripts evals benchmarks
 python -m mypy src\rudder
-
-# Run deterministic routing & orchestration evaluation suite (52 fixtures)
-python scripts\eval_routing.py --fixtures evals\manifest.toml
-
-# Run release packaging check
+python scripts\smoke.py --fake-provider
+python scripts\package_check.py
 python scripts\release_check.py
 ```
 
----
+The [evaluation record](docs/rudder/EVALUATION.md),
+[performance record](docs/rudder/PERFORMANCE.md), and
+[dependency audit](docs/rudder/DEPENDENCIES.md) distinguish synthetic/local evidence from release
+and live-economics evidence. Engineering release readiness still requires exact-candidate Windows
+and Linux evidence. A release tag, publication, provider spend, and remote change each require
+separate authorization.
 
-## 9. License
+## Repository guide
 
-MIT License. See [LICENSE](LICENSE) for details.
+| Path | Purpose |
+| --- | --- |
+| `src/rudder/` | Runtime, agents, routing, providers, sessions, safety tools, CLI, and TUI. |
+| `tests/` | Deterministic unit, contract, integration, end-to-end, and security coverage. |
+| `evals/` | Offline evaluation schemas, fixtures, and raw-evidence tooling. |
+| `docs/rudder/` | Product contracts, architecture, threat model, evaluation, performance, and roadmap. |
+| `tasks/rudder-adaptive-orchestration-and-release-plan.md` | Active dependency-ordered implementation and release guide. |
+
+For development conventions, see [AGENTS.md](AGENTS.md). Historical plans and legacy source remain
+historical/reference material; they are not compatibility surfaces or current release evidence.
+
+## Current limitations
+
+- Live-provider quality, spend reduction, and universal provider behavior have not been qualified.
+- Exact-candidate cross-platform release evidence must be generated for the final candidate; a
+  passing report from an earlier commit is not transferable.
+- Editor integrations, arbitrary third-party extension interoperability, richer background-agent
+  interaction, and multimodal workflows are separate future work, not implied by the runtime.
+- The application does not run an HTTP proxy, daemon, or generic plugin server.
+
+## License
+
+MIT License. See [LICENSE](LICENSE).

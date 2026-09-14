@@ -3,7 +3,11 @@
 Status: Approved for implementation
 Date: 2026-09-02
 
-Rudder Harness is the successor to AutoConduck: a native, budget-aware, multi-agent coding harness built on DeepAgents. These documents are the implementation source of truth.
+Rudder Harness is the successor to AutoConduck: a native, budget-aware, multi-agent coding harness built on DeepAgents.
+These documents contain normative product and engineering contracts; they are not, by themselves,
+proof that a capability has been qualified. The active implementation and release authority is
+[ADR 0006](../decisions/0006-adaptive-execution-and-release-boundaries.md) and the
+[adaptive orchestration guide](../../tasks/rudder-adaptive-orchestration-and-release-plan.md).
 
 Read in this order:
 
@@ -13,7 +17,8 @@ Read in this order:
 4. [Legacy isolation](MIGRATION.md) — how the AutoConduck implementation becomes an inert reference under `legacy/autoconduck/`.
 5. [Pre-mortem risk analysis](PreMortem-Rudder-2026-09-02.md) — Tigers, Paper Tigers, Elephants, and launch-blocking mitigations.
 6. [Architecture decision](../decisions/0001-rudder-native-multi-agent-harness.md) — the major decisions and rejected alternatives.
-7. [Implementation plan](../../tasks/plan.md) and [task checklist](../../tasks/todo.md) — dependency-ordered delivery slices and verification gates.
+7. [Active implementation guide](../../tasks/rudder-adaptive-orchestration-and-release-plan.md) — dependency-ordered delivery slices and verification gates.
+8. [Feature acceptance matrix and follow-on roadmap](FEATURE_PARITY_ROADMAP.md) — tested core scope, demonstrated gaps, and separately scoped future work.
 
 ## Source baseline
 
@@ -40,6 +45,10 @@ When documents disagree, use this order:
 2. `SPEC.md` for product behavior.
 3. `ARCHITECTURE.md` for contracts and boundaries.
 4. `FEATURES.md` for detailed flows and defaults.
-5. `tasks/plan.md` for implementation order only.
+5. The active adaptive-orchestration guide for implementation order only.
+
+`tasks/plan.md`, `tasks/todo.md`, the v0.1.0 remediation plan, and archived planning material are
+historical records. Preserve their dates and evidence limits; do not use their checkboxes or claims
+as current implementation or release evidence.
 
 Implementation discoveries change the specification or an ADR first. They are not silently encoded only in code.

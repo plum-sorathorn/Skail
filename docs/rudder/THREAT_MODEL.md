@@ -1,8 +1,8 @@
 # Rudder Threat Model & Security Posture
 
-Status: Active
-Date: 2026-09-03
-Reference: ADR 0001, ADR 0005, SPEC.md Section 20
+Status: Active contract with residual-risk limits
+Date: 2026-09-13
+Reference: ADR 0006, ADR 0005, SPEC.md Section 20
 
 ## 1. System Architecture & Trust Boundaries
 
@@ -27,7 +27,7 @@ Rudder executes locally as a developer pairing tool without cloud daemons, proxy
 | [Model Providers]      [Workspace Filesystem]     [Shell Engine]  |
 | - API keys out-of-band - FilesystemBoundary       - ExecutionPol. |
 | - Response schema val  - Symlink & junction check - ApprovalStore |
-| - Exact token pricing  - Sensitive pattern block  - Zero escap.   |
+| - Usage normalization  - Sensitive pattern block  - Policy checks |
 +-------------------------------------------------------------------+
 ```
 
@@ -63,3 +63,4 @@ Rudder executes locally as a developer pairing tool without cloud daemons, proxy
 1. **Host-Level Permissions**: Rudder operates with the permissions of the invoking user. While `ExecutionPolicy` and `FilesystemBoundary` prevent agent-initiated breakout, running Rudder as `root` or `Administrator` is discouraged.
 2. **Untrusted Workspace Scripts**: Code executed during project testing (e.g. `pytest` or `cargo test`) executes natively. Users must only mark projects as trusted if they trust the codebase's test suite.
 3. **Live Provider Telemetry**: When configured with external commercial APIs, prompts sent to providers are governed by the respective provider's data retention policies. Secret redaction occurs prior to request dispatch.
+4. **Application boundary, not host control**: The tested filesystem, command, trust, and redaction controls constrain Rudder's application paths. They do not guarantee zero host compromise, zero secret leakage through a trusted program, or control over a privileged external process.
