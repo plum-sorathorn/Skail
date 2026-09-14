@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import gc
 import json
+import platform
+import subprocess
 import sys
 import tempfile
 import time
@@ -22,10 +25,12 @@ from rudder.domain.events import (
     LifecyclePayload,
     ModelPayload,
     SecretRedactor,
+    TaskPayload,
     ToolPayload,
 )
 from rudder.domain.ids import new_run_id, new_session_id
 from rudder.sessions.journal import Journal
+from rudder.tui.app import RudderApp
 from rudder.tui.projection import TuiProjection
 
 
@@ -141,6 +146,61 @@ def benchmark_tui_projection(event_count: int = 1000) -> dict[str, float]:
     }
 
 
+async def benchmark_tui_rendered_updates(event_count: int = 100) -> dict[str, float]:
+    """Measure actual Textual update and interaction work with three active children."""
+    now = datetime.now(UTC)
+    session_id = new_session_id()
+    run_id = new_run_id()
+    child_ids = [str(uuid4()), str(uuid4()), str(uuid4())]
+    app = RudderApp()
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        for sequence, child_id in enumerate(child_ids, start=1):
+            app.apply_event(
+                EventEnvelope(
+                    event_id=str(uuid4()),
+                    session_id=session_id,
+                    run_id=run_id,
+                    task_id=child_id,
+                    sequence=sequence,
+                    occurred_at=now,
+                    type="task.started",
+                    payload=TaskPayload(status="started", profile="implementer"),
+                )
+            )
+        await pilot.pause()
+
+        started = time.perf_counter()
+        for sequence in range(event_count):
+            app.apply_event(
+                EventEnvelope(
+                    event_id=str(uuid4()),
+                    session_id=session_id,
+                    run_id=run_id,
+                    task_id=child_ids[sequence % len(child_ids)],
+                    sequence=sequence + len(child_ids) + 1,
+                    occurred_at=now,
+                    type="model.delta",
+                    payload=ModelPayload(model="fake:fast-model", delta=f"token-{sequence}"),
+                )
+            )
+        await pilot.pause()
+        rendered_update_seconds = time.perf_counter() - started
+
+        interaction_started = time.perf_counter()
+        await pilot.press("ctrl+a")
+        await pilot.pause()
+        interaction_seconds = time.perf_counter() - interaction_started
+
+    return {
+        "event_count": float(event_count),
+        "active_children": float(app.projection.footer_data.active_agents_count),
+        "rendered_update_seconds": rendered_update_seconds,
+        "rendered_updates_per_sec": event_count / max(rendered_update_seconds, 0.000001),
+        "interaction_seconds": interaction_seconds,
+    }
+
+
 def benchmark_context_assembly(item_count: int = 100) -> dict[str, float]:
     """Measure context packet assembly, secret scrubbing, and token-pressure bounding."""
     redactor = SecretRedactor(secrets=("sk-super-secret-12345", "password=admin"))
@@ -180,6 +240,7 @@ def run_benchmarks() -> dict[str, dict[str, float]]:
     return {
         "event_persistence": benchmark_event_persistence(1000),
         "tui_projection": benchmark_tui_projection(1000),
+        "tui_rendered_updates": asyncio.run(benchmark_tui_rendered_updates(100)),
         "context_assembly": benchmark_context_assembly(100),
     }
 
@@ -205,9 +266,27 @@ def validate_benchmarks(results: dict[str, dict[str, float]]) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Rudder performance gates")
     parser.add_argument("--json", action="store_true", help="emit machine-readable results")
+    parser.add_argument("--repetitions", type=int, default=1, help="number of raw benchmark runs")
+    parser.add_argument(
+        "--evidence", type=Path, help="write raw benchmark evidence outside the checkout"
+    )
     args = parser.parse_args()
-    results = run_benchmarks()
-    failures = validate_benchmarks(results)
+    if args.repetitions < 1:
+        parser.error("--repetitions must be at least 1")
+    raw_runs = [run_benchmarks() for _ in range(args.repetitions)]
+    results = raw_runs[-1]
+    failures = [failure for run in raw_runs for failure in validate_benchmarks(run)]
+    if args.evidence is not None:
+        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        evidence = {
+            "source_commit": commit,
+            "python": sys.version,
+            "platform": platform.platform(),
+            "repetitions": args.repetitions,
+            "raw_runs": raw_runs,
+        }
+        args.evidence.parent.mkdir(parents=True, exist_ok=True)
+        args.evidence.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
     if args.json:
         print(json.dumps({"results": results, "failures": failures}, sort_keys=True))
         return 1 if failures else 0

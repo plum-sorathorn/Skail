@@ -60,9 +60,9 @@ def _run(command: list[str], *, cwd: Path, env: dict[str, str] | None = None) ->
 
 def verify_installation(wheel: Path, workspace: Path) -> None:
     environment = workspace / "venv"
-    venv.EnvBuilder(with_pip=True, clear=True).create(environment)
+    venv.EnvBuilder(with_pip=True, clear=True, system_site_packages=True).create(environment)
     python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    _run([str(python), "-m", "pip", "install", str(wheel)], cwd=workspace)
+    _run([str(python), "-m", "pip", "install", "--no-deps", str(wheel)], cwd=workspace)
     clean_env = os.environ.copy()
     clean_env.pop("PYTHONPATH", None)
     commands = (

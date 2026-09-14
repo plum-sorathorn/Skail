@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import scripts.package_check as package_check
 from scripts.package_check import inspect_sdist, inspect_wheel
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -84,3 +85,28 @@ def test_sdist_inspection_rejects_development_content(
 
     with pytest.raises(AssertionError, match="forbidden"):
         inspect_sdist(archive_path)
+
+
+def test_installation_verifier_does_not_resolve_dependencies_from_network(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    builder_options: dict[str, bool] = {}
+    commands: list[list[str]] = []
+
+    class FakeBuilder:
+        def __init__(self, **kwargs: bool) -> None:
+            builder_options.update(kwargs)
+
+        def create(self, environment: Path) -> None:
+            environment.mkdir()
+
+    def fake_run(command: list[str], **_: object) -> None:
+        commands.append(command)
+
+    monkeypatch.setattr(package_check.venv, "EnvBuilder", FakeBuilder)
+    monkeypatch.setattr(package_check, "_run", fake_run)
+
+    package_check.verify_installation(tmp_path / "rudder.whl", tmp_path)
+
+    assert builder_options["system_site_packages"] is True
+    assert commands[0][-2:] == ["--no-deps", str(tmp_path / "rudder.whl")]

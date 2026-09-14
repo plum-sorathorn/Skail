@@ -658,7 +658,9 @@ class TuiProjection:
 
         # Recalculate active agent count
         self.footer_data.active_agents_count = sum(
-            1 for item in self.agent_rail_items if item.status in ("queued", "running", "escalated")
+            1
+            for item in self.agent_rail_items
+            if item.status in ("queued", "started", "running", "escalated")
         )
 
     def toggle_collapse(self, item_id: str) -> bool:

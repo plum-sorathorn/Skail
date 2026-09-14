@@ -1122,10 +1122,10 @@ Status: ready_pending_external_action
 Implementation model: available Codex model (assigned Luna treated as a recommendation)
 Commit(s): recorded by the phase commit that follows this handoff update
 Selected slice: local artifact and installed-wheel verification plus cross-platform CI wiring
-Behavior delivered: `scripts/package_check.py` builds exactly one wheel and sdist outside the checkout, inspects both for runtime-only contents, installs the primary wheel into a clean temporary virtual environment from outside the source tree, runs installed `rudder --help`, `rudder --version`, and fake-provider smoke, and emits source SHA, environment metadata, and SHA-256 artifact evidence. Release CI invokes this verifier on its Windows and Linux matrix and uploads the evidence outside the checkout.
+Behavior delivered: `scripts/package_check.py` builds exactly one wheel and sdist outside the checkout, inspects both for runtime-only contents, installs the primary wheel into a fresh temporary virtual environment from outside the source tree without resolving dependencies from the network, runs installed `rudder --help`, `rudder --version`, and fake-provider smoke, and emits source SHA, environment metadata, and SHA-256 artifact evidence. Release CI invokes this verifier on its Windows and Linux matrix and uploads the evidence outside the checkout.
 Acceptance evidence and commands: `python -m pytest tests\\unit\\test_packaging.py -q` (3 passed); `python scripts\\package_check.py --help` and local archive inspection regressions passed; prior full offline, Ruff, mypy, smoke, and wheel checks from Phase 17 remain valid; `git diff --check` and `graphify update .` run after changes.
 Test results and documented skips: local Windows verified the full package-check path; no live providers, paid services, publishing, pushing, or release tagging were run. GitHub-hosted Linux execution cannot be produced deterministically inside this checkout and remains pending until the workflow runs on this exact commit.
-Review findings closed/open: closed source-path leakage, missing sdist validation, legacy archive leakage, absent installed CLI/smoke coverage, and missing artifact digest/environment evidence. Open external evidence is limited to the actual Linux workflow result for this exact commit.
+Review findings closed/open: closed source-path leakage, missing sdist validation, root-level development/legacy archive leakage, absent installed CLI/smoke coverage, and missing artifact digest/environment evidence. Open external evidence is limited to the actual Linux workflow result for this exact commit.
 External evidence location and source identity, if applicable: pending GitHub Actions artifacts from `release.yml` for the exact checked-out SHA; the workflow records `source_commit`, platform, Python, and wheel/sdist SHA-256 values.
 Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, and `run_2.md` were not modified or staged.
 Unproven claims or missing evidence: Linux status and hosted-run artifact availability are not claimed locally; real-provider quality parity and live economic qualification remain future work.
@@ -1143,6 +1143,20 @@ Next phase and its dependencies: Phase 19 — Measure real startup, rendering, a
 5. Audit pinned dependency versions and licensing against current authoritative sources. Record exact versions, notices, advisory dates, and limitations. Fix blocking findings or keep release blocked with a precise finding; documenting a critical issue alone does not waive it.
 
 **Acceptance:** performance claims map to actual measured operations, no unresolved release-blocking security/license finding, raw benchmark evidence retained externally. Commit `test(release): measure runtime rendering and boundary performance`.
+
+```text
+Phase: 19a — Rendered TUI measurement and evidence harness
+Status: complete
+Implementation model: available Codex model (assigned Terra treated as a recommendation)
+Commit(s): recorded by the phase commit that follows this handoff update
+Behavior delivered: The benchmark runner now measures actual Textual rendered updates separately from projection replay. It mounts RudderApp, starts exactly three valid task.started children, applies model deltas, flushes the renderer, measures a tab interaction, and records raw repetitions with source SHA, Python, and platform outside the checkout. The TUI footer now counts task.started children as active. PERFORMANCE.md withdraws stale startup and zero-stutter claims and defines the inherited gates plus the diagnostic rendering boundary.
+Acceptance evidence and commands: RED `rtk pytest tests\unit\test_performance.py -q` exposed the absent renderer measurement and then the omitted task.started active count; GREEN `rtk pytest tests\unit\test_performance.py tests\unit\test_tui_projection.py tests\unit\test_packaging.py -q` (21 passed); `python -m ruff check benchmarks\bench_runner.py src\rudder\tui\projection.py tests\unit\test_performance.py tests\unit\test_packaging.py` (passed); `python benchmarks\bench_runner.py --json --repetitions 2 --evidence C:\Users\plum\AppData\Local\Temp\rudder-phase19-rendered-evidence.json` produced two raw Windows repetitions outside the checkout. The exact phase commit must regenerate that external evidence before candidate readiness is claimed.
+Test results and documented skips: deterministic renderer and package regressions passed. No live providers, paid services, publishing, pushing, tagging, or external CI were run. Phase 19 security/contract matrix, CLI first-response measurement, scheduler/workspace/integration measurements, and authoritative dependency/license audit are deliberately not claimed by this slice.
+Review findings closed/open: closed the invalid inference from projection throughput to rendered responsiveness, the stale zero-stutter/startup claims, and the task.started active-child accounting defect. Remaining Phase 19 work is dependency-ordered rather than an external blocker.
+External evidence location and source identity, if applicable: external raw evidence path is `C:\Users\plum\AppData\Local\Temp\rudder-phase19-rendered-evidence.json`; regenerate it after the phase commit so its `source_commit` matches the candidate.
+Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, and `run_2.md` were not modified or staged.
+Next phase and its dependencies: Phase 19b — Measure CLI/runtime, persistence, scheduler, workspace, and integration overhead; then Phase 19c — security/contract matrix and authoritative dependency/license audit.
+```
 
 ### Phase 20 — Documentation and separate feature-parity roadmap
 
