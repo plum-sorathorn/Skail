@@ -6,8 +6,8 @@ from pathlib import Path
 from evals.report import compare_policies, generate_policy_summary, render_markdown_report
 from evals.runner import (
     EvaluationRunner,
-    _default_eval_candidates,
     check_route_invariants,
+    default_eval_candidates,
     evaluate_oracle,
 )
 from evals.schema import (
@@ -238,7 +238,9 @@ def test_oracle_mutation_changes_scoring_without_changing_execution_record() -> 
 
     assert passing.results[0].completed
     assert not failing.results[0].completed
-    assert passing.raw_records[0] == failing.raw_records[0]
+    assert passing.raw_records[0].model_copy(update={"wall_time_seconds": 0.0}) == (
+        failing.raw_records[0].model_copy(update={"wall_time_seconds": 0.0})
+    )
     assert passing.raw_records[0].evidence_class == "synthetic_offline"
 
 
@@ -253,7 +255,7 @@ def test_scripted_usage_is_recorded_independently_of_route_estimates() -> None:
     )
     inflated_candidates = tuple(
         candidate.model_copy(update={"estimated_cost_usd": Decimal("99.00")})
-        for candidate in _default_eval_candidates()
+        for candidate in default_eval_candidates()
     )
 
     report = EvaluationRunner(
@@ -346,7 +348,7 @@ def test_task_eval_result_child_metric_defaults() -> None:
 
 
 def test_default_candidates_include_manual_child_pin() -> None:
-    candidates = _default_eval_candidates()
+    candidates = default_eval_candidates()
     pins = {(c.profile.provider, c.profile.model) for c in candidates}
     assert ("fake", "explorer") in pins
 

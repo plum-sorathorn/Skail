@@ -5,7 +5,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rudder.domain.routing import RoutingMode
 from rudder.routing.requirements import TaskRisk
@@ -105,6 +105,14 @@ class EvaluationFixture(BaseModel):
     route_invariants: RouteInvariants = Field(default_factory=RouteInvariants)
     metadata: dict[str, Any] = Field(default_factory=dict)
     parallel_eligible: bool = False
+    expected_run_status: Literal["completed", "blocked", "failed", "cancelled"] = "completed"
+    economic_eligible: bool = True
+
+    @model_validator(mode="after")
+    def validate_expected_outcome(self) -> EvaluationFixture:
+        if self.expected_run_status != "completed" and self.economic_eligible:
+            raise ValueError("expected-failure fixtures cannot be economic successes")
+        return self
 
 
 class EvaluationPolicy(StrEnum):
@@ -192,42 +200,43 @@ class ContextEvalMetrics(BaseModel):
 
 
 class TaskEvalResult(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, allow_inf_nan=False)
 
     fixture_id: str
     policy: EvaluationPolicy
-    seed: int = 42
-    repetition: int = 1
-    execution_order: int = 0
+    seed: int = Field(default=42, ge=0)
+    repetition: int = Field(default=1, ge=1)
+    execution_order: int = Field(default=0, ge=0)
     completed: bool
     passed_oracle: bool
-    wall_time_seconds: float
-    total_cost_usd: Decimal
+    contract_passed: bool = True
+    wall_time_seconds: float = Field(ge=0)
+    total_cost_usd: Decimal = Field(ge=0)
     models_used: tuple[str, ...]
-    assignments_count: int
-    escalations_count: int
-    interrupts_count: int
+    assignments_count: int = Field(ge=0)
+    escalations_count: int = Field(ge=0)
+    interrupts_count: int = Field(ge=0)
     safety_defects: tuple[str, ...] = ()
     context_metrics: ContextEvalMetrics = Field(default_factory=ContextEvalMetrics)
     error: str | None = None
     catalog_revision: str = "default"
     provider_mode: str = "fake"
-    child_wall_seconds: float = 0.0
-    child_peak_active: int = 0
-    child_count: int = 0
+    child_wall_seconds: float = Field(default=0.0, ge=0)
+    child_peak_active: int = Field(default=0, ge=0)
+    child_count: int = Field(default=0, ge=0)
 
 
 class ExecutedAssignment(BaseModel):
     """Stable assignment facts captured from the controller's persisted journal."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, allow_inf_nan=False)
 
     attempt_number: Literal[1, 2]
     provider: str
     model: str
     routing_mode: RoutingMode
     capability_floor: float | None
-    estimated_attempt_cost_usd: Decimal
+    estimated_attempt_cost_usd: Decimal = Field(ge=0)
     explanation: tuple[str, ...]
     catalog_revision: str
 
@@ -235,72 +244,75 @@ class ExecutedAssignment(BaseModel):
 class RawExecutionRecord(BaseModel):
     """Immutable execution evidence captured before oracle scoring and summaries."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, allow_inf_nan=False)
 
     fixture_id: str
     policy: EvaluationPolicy
-    seed: int = 42
-    repetition: int = 1
-    execution_order: int = 0
+    seed: int = Field(default=42, ge=0)
+    repetition: int = Field(default=1, ge=1)
+    execution_order: int = Field(default=0, ge=0)
     evidence_class: Literal["synthetic_offline"] = "synthetic_offline"
     script_digest: str
     run_status: str | None = None
     error: str | None = None
-    usage_cost_usd: Decimal
+    wall_time_seconds: float = Field(default=0.0, ge=0)
+    usage_cost_usd: Decimal = Field(ge=0)
     usage_records: tuple[Decimal, ...] = ()
     assignments: tuple[ExecutedAssignment, ...] = ()
     workspace_files: tuple[tuple[str, str], ...] = ()
+    workspace_text_files: tuple[tuple[str, str], ...] = ()
+    oracle_command_exit_code: int | None = None
 
 
 class PolicySummary(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, allow_inf_nan=False)
 
     policy: EvaluationPolicy
-    total_runs: int
-    completed_count: int
-    completion_rate: float
-    oracle_pass_rate: float
-    total_cost_usd: Decimal
-    failed_work_cost_usd: Decimal = Decimal("0.00")
-    cost_per_successful_task_usd: Decimal | None = None
-    median_cost_usd: Decimal
-    mean_cost_usd: Decimal
-    median_wall_time_seconds: float
-    total_escalations: int
-    total_interrupts: int
-    safety_defect_count: int
+    total_runs: int = Field(ge=0)
+    completed_count: int = Field(ge=0)
+    completion_rate: float = Field(ge=0, le=1)
+    oracle_pass_rate: float = Field(ge=0, le=1)
+    total_cost_usd: Decimal = Field(ge=0)
+    failed_work_cost_usd: Decimal = Field(default=Decimal("0.00"), ge=0)
+    cost_per_successful_task_usd: Decimal | None = Field(default=None, ge=0)
+    median_cost_usd: Decimal = Field(ge=0)
+    mean_cost_usd: Decimal = Field(ge=0)
+    median_wall_time_seconds: float = Field(ge=0)
+    total_escalations: int = Field(ge=0)
+    total_interrupts: int = Field(ge=0)
+    safety_defect_count: int = Field(ge=0)
 
 
 class PairedSpeedup(BaseModel):
     """One complete auto/serial timing pair for a parallel fixture and seed."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, allow_inf_nan=False)
 
     fixture_id: str
     seed: int
-    auto_median_wall_time: float
-    serial_median_wall_time: float
+    auto_median_wall_time: float = Field(ge=0)
+    serial_median_wall_time: float = Field(gt=0)
     speedup_pct: float
 
 
 class EvaluationComparison(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, allow_inf_nan=False)
 
-    auto_completion_rate: float
-    quality_completion_rate: float
+    auto_completion_rate: float = Field(ge=0, le=1)
+    quality_completion_rate: float = Field(ge=0, le=1)
     completion_delta: float
-    auto_median_cost_usd: Decimal
-    quality_median_cost_usd: Decimal
+    auto_median_cost_usd: Decimal = Field(ge=0)
+    quality_median_cost_usd: Decimal = Field(ge=0)
     cost_reduction_pct: float
-    parallel_median_wall_time: float
-    serial_median_wall_time: float
+    parallel_median_wall_time: float = Field(ge=0)
+    serial_median_wall_time: float = Field(ge=0)
     speedup_pct: float
     parallel_fixture_speedups: tuple[PairedSpeedup, ...] = ()
     parallel_seed_speedups_pct: dict[int, float] = Field(default_factory=dict)
-    parallel_pair_count: int = 0
-    parallel_expected_pair_count: int = 0
+    parallel_pair_count: int = Field(default=0, ge=0)
+    parallel_expected_pair_count: int = Field(default=0, ge=0)
     parallel_pairing_complete: bool = False
-    parallel_cross_seed_spread_pct: float | None = None
+    parallel_cross_seed_spread_pct: float | None = Field(default=None, ge=0)
     gate_completion_passed: bool
     gate_cost_passed: bool
     gate_parallel_passed: bool
@@ -325,7 +337,7 @@ class EvaluationProvenance(BaseModel):
 
 
 class EvaluationReport(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, allow_inf_nan=False)
 
     run_id: str
     timestamp: datetime
@@ -333,10 +345,10 @@ class EvaluationReport(BaseModel):
     provider_mode: str
     evidence_class: Literal["synthetic_offline"] = "synthetic_offline"
     production_qualified: Literal[False] = False
-    fixture_count: int
+    fixture_count: int = Field(ge=0)
     run_profile_id: str | None = None
     paired_seeds: tuple[int, ...] = (42,)
-    repetitions: int = 1
+    repetitions: int = Field(default=1, ge=1)
     provenance: EvaluationProvenance | None = None
     policy_controls: dict[str, EvaluationPolicyControls] = Field(default_factory=dict)
     policy_summaries: dict[str, PolicySummary]

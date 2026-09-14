@@ -52,6 +52,12 @@ release evidence.
   including failed work; median per-run cost is diagnostic only. Offline reports now encode
   `production_qualified = false`, and manifest 1.1.2 states explicitly that the visible curated
   synthetic corpus is not held out. See the [Phase 16 review](PHASE_16_REVIEW.md).
+- Phase 17 release validation does not trust serialized summaries or gate flags. It requires the
+  canonical fixture/policy/seed/repetition matrix in raw and scored records, replays file oracles
+  from captured workspace observations, binds timing, usage, assignments, provenance, Python, and
+  platform identity, and regenerates comparisons. Declared non-success contracts remain outside
+  the economic denominator. Synthetic cost results stay visible but do not gate engineering
+  readiness or set `production_qualified`; live economic promotion remains Q1 evidence.
 
 ## Required evidence before release
 

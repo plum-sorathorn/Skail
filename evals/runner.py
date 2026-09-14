@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import importlib.metadata
 import json
-import platform
 import random
 import subprocess
 import time
@@ -19,6 +17,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable
 
+from evals.evidence import evaluation_provenance
 from evals.report import compare_policies, generate_policy_summary
 from evals.schema import (
     CANONICAL_PAIRED_RUNTIME_PROFILE,
@@ -26,7 +25,6 @@ from evals.schema import (
     EvaluationFixture,
     EvaluationPolicy,
     EvaluationPolicyControls,
-    EvaluationProvenance,
     EvaluationReport,
     ExecutedAssignment,
     ExecutionScript,
@@ -49,64 +47,6 @@ from rudder.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
 from rudder.routing.selector import RouteCandidate
 from rudder.runtime.run_controller import RunController  # type: ignore[import-untyped]
 from rudder.sessions.journal import Journal, SessionSnapshot  # type: ignore[import-untyped]
-
-
-def _digest(value: object) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def _git_value(*args: str) -> str:
-    try:
-        completed = subprocess.run(
-            ["git", *args],
-            cwd=Path(__file__).resolve().parents[1],
-            capture_output=True,
-            check=True,
-            text=True,
-            timeout=5,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return "unavailable"
-    return completed.stdout.strip() or "unavailable"
-
-
-def _evaluation_provenance(
-    *,
-    fixtures: Sequence[EvaluationFixture],
-    catalog_revision: str,
-    candidates: Sequence[RouteCandidate],
-    policy_controls: dict[str, EvaluationPolicyControls],
-    command: tuple[str, ...],
-) -> EvaluationProvenance:
-    source_tree = _git_value("rev-parse", "HEAD^{tree}")
-    dependencies = {
-        name: importlib.metadata.version(name)
-        for name in ("deepagents", "langchain", "langchain-core", "langgraph", "pydantic")
-    }
-    return EvaluationProvenance(
-        source_commit=_git_value("rev-parse", "HEAD"),
-        source_digest=_digest(
-            {
-                "tree": source_tree,
-                "working_diff": _git_value("diff", "--binary", "--no-ext-diff", "HEAD"),
-            }
-        ),
-        fixture_digest=_digest([fixture.model_dump(mode="json") for fixture in fixtures]),
-        catalog_digest=_digest(
-            {
-                "catalog_revision": catalog_revision,
-                "candidates": [candidate.model_dump(mode="json") for candidate in candidates],
-            }
-        ),
-        policy_digest=_digest(
-            {name: controls.model_dump(mode="json") for name, controls in policy_controls.items()}
-        ),
-        operating_system=platform.platform(),
-        python_version=platform.python_version(),
-        dependency_versions=dependencies,
-        command=command,
-    )
 
 
 class _FixtureChatModel(BaseChatModel):
@@ -217,7 +157,7 @@ def _fixed_profile_models(model: str | None) -> dict[str, str]:
     return {} if model is None else {name: model for name in builtin_profiles()}
 
 
-def _default_eval_candidates() -> tuple[RouteCandidate, ...]:
+def default_eval_candidates() -> tuple[RouteCandidate, ...]:
     profiles = [
         ModelProfile(
             provider="eval-provider",
@@ -499,6 +439,7 @@ def _raw_execution_record(
     workspace: Path,
     run_status: str | None,
     error: str | None,
+    wall_time_seconds: float,
     usage_records: tuple[Decimal, ...],
     assignments: tuple[TaskAssignment, ...],
 ) -> RawExecutionRecord:
@@ -515,12 +456,25 @@ def _raw_execution_record(
             and path.name != ".rudder-eval.sqlite"
         )
     )
+    workspace_text_files = tuple(
+        sorted(
+            (
+                str(path.relative_to(workspace)).replace("\\", "/"),
+                path.read_bytes().decode("utf-8", errors="replace"),
+            )
+            for path in workspace.rglob("*")
+            if path.is_file()
+            and ".rudder" not in path.relative_to(workspace).parts
+            and path.name != ".rudder-eval.sqlite"
+        )
+    )
     return RawExecutionRecord(
         fixture_id=fixture.id,
         policy=policy,
         script_digest=hashlib.sha256(script_json.encode("utf-8")).hexdigest(),
         run_status=run_status,
         error=error,
+        wall_time_seconds=wall_time_seconds,
         usage_cost_usd=sum(usage_records, Decimal("0.00")),
         usage_records=usage_records,
         assignments=tuple(
@@ -537,6 +491,7 @@ def _raw_execution_record(
             for assignment in assignments
         ),
         workspace_files=workspace_files,
+        workspace_text_files=workspace_text_files,
     )
 
 
@@ -563,7 +518,7 @@ class EvaluationRunner:
     ) -> None:
         self.fixtures = list(fixtures)
         self.policies = list(policies)
-        self.candidates = candidates or _default_eval_candidates()
+        self.candidates = candidates or default_eval_candidates()
         self.base_workspace = base_workspace
         self.seed = seed
         self.paired_seeds = (seed,) if paired_seeds is None else paired_seeds
@@ -612,7 +567,7 @@ class EvaluationRunner:
         raw_records: list[RawExecutionRecord] = []
 
         policy_controls = {policy.value: policy.controls() for policy in self.policies}
-        provenance = _evaluation_provenance(
+        provenance = evaluation_provenance(
             fixtures=self.fixtures,
             catalog_revision=catalog_revision,
             candidates=self.candidates,
@@ -644,12 +599,18 @@ class EvaluationRunner:
             results.append(res.model_copy(update=identity))
             raw_records.append(raw_record.model_copy(update=identity))
 
+        economic_fixture_ids = {
+            fixture.id for fixture in self.fixtures if fixture.economic_eligible
+        }
+        economic_results = [
+            result for result in results if result.fixture_id in economic_fixture_ids
+        ]
         summaries: dict[str, PolicySummary] = {
-            pol.value: generate_policy_summary(results, pol) for pol in self.policies
+            pol.value: generate_policy_summary(economic_results, pol) for pol in self.policies
         }
         comparison = compare_policies(
             summaries,
-            results,
+            economic_results,
             self.fixtures,
             paired_seeds=self.paired_seeds,
             repetitions=self.repetitions,
@@ -825,6 +786,7 @@ class EvaluationRunner:
                 workspace=workspace,
                 run_status=None if run_result is None else run_result.status,
                 error=error_msg,
+                wall_time_seconds=round(elapsed, 4),
                 usage_records=tuple(usage.amount_usd for usage in snapshot.usage_records),
                 assignments=tuple(assignments),
             )
@@ -832,6 +794,8 @@ class EvaluationRunner:
             completed = bool(
                 run_result is not None and run_result.status == "completed" and passed_oracle
             )
+            run_status = None if run_result is None else run_result.status
+            contract_passed = run_status == fixture.expected_run_status and passed_oracle
             if error_msg is None and not passed_oracle:
                 error_msg = oracle_error
 
@@ -849,6 +813,7 @@ class EvaluationRunner:
                 policy=policy,
                 completed=completed,
                 passed_oracle=passed_oracle,
+                contract_passed=contract_passed,
                 wall_time_seconds=round(elapsed, 4),
                 total_cost_usd=total_cost,
                 models_used=tuple(dict.fromkeys(item.model for item in assignments)),

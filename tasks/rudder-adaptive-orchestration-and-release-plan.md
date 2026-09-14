@@ -1058,9 +1058,9 @@ Next phase and its dependencies: Phase 17 — Independently validate raw release
 
 **Owner:** `gpt-5.6-terra`, medium. **Depends on:** 16. **Begins:** old remediation 9.
 
-**Phase 17 status:** in progress through dependency-ordered slices. Slice 17a is complete; 17b
-owns immutable provenance/platform binding, numeric-domain validation, expected-failure separation,
-and clean-environment entry-point/package verification.
+**Phase 17 status:** complete through dependency-ordered slices 17a and 17b. Raw observations now
+determine release evaluation outcomes and aggregate gates; immutable provenance, numeric domains,
+expected-failure contracts, clean entry points, and wheel corpus exclusion fail closed.
 
 1. Recompute completion, costs, per-fixture medians, paired speedups, repetition coverage, and gates from raw records. Serialized summaries are convenience data and must agree with recomputation; never trust `all_gates_passed`.
 2. Reject forged summary values, future/naive timestamps, nonfinite or invalid negative values, missing/duplicate pairs or invocation records, mismatched source/fixture/catalog/policy digests, insufficient repetitions, fewer than 50 approved fixtures, unresolved usage, and missing required platform evidence.
@@ -1086,6 +1086,23 @@ External evidence location and source identity, if applicable: none required for
 Protected/unrelated files preserved: pre-existing edits in AGENTS.md, README.md, evals/runner.py, src/rudder/runtime/run_controller.py, and tests/unit/test_eval_runner.py were not modified or staged by this slice. .gitignore and evals/results/run_1.json, run_1.md, run_2.json, and run_2.md were not modified or staged.
 Unproven claims or missing evidence: 17a binds execution identities/costs and recomputes serialized aggregates from scored outcomes; it does not yet certify immutable artifact provenance, cross-platform exact-candidate evidence, expected-failure semantics, live quality/cost qualification, or production promotion.
 Next phase and its dependencies: Phase 17b — Validate provenance, numeric domains, expected failures, platforms, and entry points; depends on completed 17a.
+```
+
+#### Phase 17b handoff
+
+```text
+Phase: 17b — Validate provenance, numeric domains, expected failures, platforms, and entry points
+Status: complete
+Implementation model: available Codex model (assigned Terra treated as a recommendation)
+Commit(s): recorded by the phase commit that follows this handoff update
+Behavior delivered: Canonical evidence helpers bind the candidate commit and checkout digest, approved fixture corpus, evaluation catalog, policy controls, Python runtime, dependencies, platform, and invoking command. Report numeric fields reject nonfinite and invalid negative values. Raw records retain wall time and bounded workspace text observations so release validation independently reproduces file oracles and binds result timing, usage, assignment identities, execution order, and catalog revision. Explicit expected non-success contracts are validated separately and excluded from economics. Release-scale checks require at least 50 approved fixtures and the frozen paired-runtime-v1 matrix. Offline engineering readiness requires completion parity, paired speed, and safety while retaining the synthetic cost result as unqualified evidence; Q1 remains the only live economic promotion gate. Evaluation and release scripts support direct and module help from outside the checkout, and wheel inspection rejects evals, scripts, tests, and legacy content.
+Acceptance evidence and commands: `rtk pytest tests\unit\test_release_check.py tests\unit\test_eval_evidence.py tests\unit\test_eval_runner.py tests\unit\test_eval_paired_profile.py tests\unit\test_eval_paired_statistics.py tests\unit\test_eval_paired_matrix.py tests\contract\test_eval_fixtures.py -q` (57 passed); final raw-workspace integrity matrix (40 passed); `rtk pytest -q` (666 passed, 4 skipped); `python -m ruff check src tests scripts evals benchmarks` (passed); `python -m mypy src\rudder` (passed, 110 files); `python scripts\smoke.py --fake-provider` (passed); fresh temporary wheel inspection (110 package files, no development/legacy content); direct/module entry-point regressions; `graphify update .`; `rtk git diff --check`; complete staged review.
+Test results and documented skips: deterministic local verification completed. Four full-suite skips are the existing local Windows hard-link, symbolic-link, and junction capability probes. An additional ad-hoc mypy traversal through unconfigured evaluation dependencies did not terminate and its import-skipping fallback produced only invalid Any-derived diagnostics; neither is claimed as evidence. Live providers, paid evaluation, Linux CI, release tagging, pushing, publishing, remote changes, and legacy cleanup were not run. Cross-model CLI review was skipped because external-provider/OAuth/spend use was not authorized.
+Review findings closed/open: closed findings cover mutable aggregate trust, scored-only oracle trust, missing raw wall time, duplicate/missing repetitions, incomplete usage/assignment binding, representable invalid numerics, provenance/platform mismatch, expected-failure denominator pollution, synthetic-cost/release-boundary conflation, direct-script import leakage, and evaluation-corpus wheel leakage. No Phase 17 defect remains open; Phase 18 owns independent wheel/sdist installation and exact-commit Windows/Linux CI artifacts.
+External evidence location and source identity, if applicable: no external evidence is required for Phase 17 implementation. Exact-candidate Linux evidence is intentionally owned by Phase 18 and was not fabricated locally.
+Protected/unrelated files preserved: .gitignore and evals/results/run_1.json, run_1.md, run_2.json, and run_2.md were not modified or staged.
+Unproven claims or missing evidence: real-provider quality parity, live aggregate savings, held-out qualification, production route promotion, and exact-candidate cross-platform readiness remain unproven and are not implied by synthetic engineering validation.
+Next phase and its dependencies: Phase 18 — Fresh packaging and exact-commit CI wiring; depends on completed Phase 17.
 ```
 
 ### Phase 18 — Fresh packaging and exact-commit CI wiring
