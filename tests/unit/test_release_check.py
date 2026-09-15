@@ -626,4 +626,5 @@ def test_release_tests_use_an_isolated_runtime_workspace(
     assert isinstance(environment, dict)
     assert command[-1] == "-q"
     assert workspace == Path(__file__).resolve().parents[2]
+    assert environment["USERPROFILE"] != str(workspace)
     assert environment["HOME"] != str(workspace)
