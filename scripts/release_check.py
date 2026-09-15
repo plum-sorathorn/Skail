@@ -215,11 +215,18 @@ def validate_eval_report(
     return parsed
 
 
-def _run_checked(label: str, command: list[str]) -> str:
+def _run_checked(
+    label: str,
+    command: list[str],
+    *,
+    cwd: Path = ROOT,
+    env: dict[str, str] | None = None,
+) -> str:
     print(label)
     proc = subprocess.run(
         command,
-        cwd=str(ROOT),
+        cwd=str(cwd),
+        env=env,
         capture_output=True,
         text=True,
     )
@@ -256,10 +263,23 @@ def check_quality() -> None:
         "[3/8] Running mypy...",
         [sys.executable, "-m", "mypy", "src/skail"],
     )
-    _run_checked(
-        "[4/8] Running complete offline test suite...",
-        [sys.executable, "-m", "pytest", "-q"],
-    )
+    with tempfile.TemporaryDirectory(prefix="skail-release-tests-") as directory:
+        workspace = Path(directory)
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "USERPROFILE": str(workspace),
+                "APPDATA": str(workspace / "AppData"),
+                "LOCALAPPDATA": str(workspace / "AppData" / "Local"),
+                "HOME": str(workspace),
+            }
+        )
+        _run_checked(
+            "[4/8] Running complete offline test suite...",
+            [sys.executable, "-m", "pytest", "-q", str(ROOT / "tests")],
+            cwd=workspace,
+            env=environment,
+        )
 
 
 def check_docs() -> None:
@@ -316,6 +336,7 @@ def check_smoke() -> None:
                 "USERPROFILE": str(workspace),
                 "APPDATA": str(workspace / "AppData"),
                 "LOCALAPPDATA": str(workspace / "AppData" / "Local"),
+                "HOME": str(workspace),
             }
         )
         proc = subprocess.run(
@@ -353,6 +374,7 @@ def check_evals() -> None:
                 "USERPROFILE": str(workspace),
                 "APPDATA": str(workspace / "AppData"),
                 "LOCALAPPDATA": str(workspace / "AppData" / "Local"),
+                "HOME": str(workspace),
             }
         )
         proc = subprocess.run(
@@ -360,12 +382,12 @@ def check_evals() -> None:
                 sys.executable,
                 str(ROOT / "scripts" / "eval_routing.py"),
                 "--fixtures",
-                str(ROOT / "evals" / "manifest.toml"),
+                "evals/manifest.toml",
                 "--paired-runtime",
                 "--output",
                 str(output),
             ],
-            cwd=str(workspace),
+            cwd=str(ROOT),
             env=environment,
             capture_output=True,
             text=True,

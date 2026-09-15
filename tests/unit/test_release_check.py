@@ -24,7 +24,12 @@ from evals.schema import (
     TaskEvalResult,
 )
 from scripts import release_check
-from scripts.release_check import check_smoke, check_wheel_contents, validate_eval_report
+from scripts.release_check import (
+    check_quality,
+    check_smoke,
+    check_wheel_contents,
+    validate_eval_report,
+)
 from skail.domain.routing import RoutingMode
 
 
@@ -567,9 +572,10 @@ def test_release_smoke_uses_an_isolated_runtime_workspace(
     assert workspace != Path(__file__).resolve().parents[2]
     assert environment["USERPROFILE"] == str(workspace)
     assert environment["APPDATA"] == str(workspace / "AppData")
+    assert environment["HOME"] == str(workspace)
 
 
-def test_release_evals_use_an_isolated_runtime_workspace(
+def test_release_evals_isolate_user_runtime_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     observed: dict[str, object] = {}
@@ -595,6 +601,31 @@ def test_release_evals_use_an_isolated_runtime_workspace(
     workspace = Path(str(observed["cwd"]))
     environment = observed["env"]
     assert isinstance(environment, dict)
+    assert workspace == Path(__file__).resolve().parents[2]
+    assert environment["USERPROFILE"] != str(workspace)
+    assert environment["APPDATA"] != str(workspace / "AppData")
+    assert environment["HOME"] == environment["USERPROFILE"]
+
+
+def test_release_tests_use_an_isolated_runtime_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[tuple[list[str], dict[str, object]]] = []
+
+    def run_check(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        observed.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", run_check)
+
+    check_quality()
+
+    command, kwargs = next(call for call in observed if "pytest" in call[0])
+    workspace = Path(str(kwargs["cwd"]))
+    environment = kwargs["env"]
+    assert isinstance(environment, dict)
+    assert command[-1] == str(Path(__file__).resolve().parents[2] / "tests")
     assert workspace != Path(__file__).resolve().parents[2]
     assert environment["USERPROFILE"] == str(workspace)
     assert environment["APPDATA"] == str(workspace / "AppData")
+    assert environment["HOME"] == str(workspace)
