@@ -5,13 +5,21 @@ import sys
 from pathlib import Path
 from shutil import which
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
+CLI_WORKSPACE = ROOT
+
+
+@pytest.fixture(autouse=True)
+def isolate_cli_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys.modules[__name__], "CLI_WORKSPACE", tmp_path)
 
 
 def run_module(*arguments: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "skail.cli.main", *arguments],
-        cwd=ROOT,
+        cwd=CLI_WORKSPACE,
         capture_output=True,
         text=True,
     )
@@ -40,7 +48,7 @@ def test_fake_provider_smoke_is_offline_and_deterministic() -> None:
 def test_developer_smoke_script_uses_the_same_contract() -> None:
     result = subprocess.run(
         [sys.executable, "scripts/smoke.py", "--fake-provider"],
-        cwd=ROOT,
+        cwd=CLI_WORKSPACE,
         capture_output=True,
         text=True,
     )
@@ -54,10 +62,10 @@ def test_installed_console_script_exposes_help_and_version() -> None:
     assert executable is not None, "install the project before running contract tests"
 
     help_result = subprocess.run(
-        [executable, "--help"], cwd=ROOT, capture_output=True, text=True
+        [executable, "--help"], cwd=CLI_WORKSPACE, capture_output=True, text=True
     )
     version_result = subprocess.run(
-        [executable, "--version"], cwd=ROOT, capture_output=True, text=True
+        [executable, "--version"], cwd=CLI_WORKSPACE, capture_output=True, text=True
     )
 
     assert help_result.returncode == 0
