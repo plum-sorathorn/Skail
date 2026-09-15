@@ -6,16 +6,24 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from skail.cli.exit_codes import EXIT_BLOCKED, EXIT_FAILURE, EXIT_OK, EXIT_USAGE
 from skail.domain.events import EventEnvelope
 
 ROOT = Path(__file__).resolve().parents[2]
+CLI_WORKSPACE = ROOT
+
+
+@pytest.fixture(autouse=True)
+def isolate_cli_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys.modules[__name__], "CLI_WORKSPACE", tmp_path)
 
 
 def run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "skail.cli.main", *args],
-        cwd=ROOT,
+        cwd=CLI_WORKSPACE,
         capture_output=True,
         text=True,
         env=env,
@@ -84,6 +92,13 @@ def test_cli_subcommand_config(tmp_path: Path) -> None:
     result_path = run_cli("config", "path")
     assert result_path.returncode == EXIT_OK
     assert ".skail" in result_path.stdout
+
+
+def test_cli_subprocess_does_not_write_runtime_state_to_checkout() -> None:
+    result = run_cli("-p", "say hello", "--fake-provider")
+
+    assert result.returncode == EXIT_OK
+    assert not (ROOT / ".skail").exists()
 
 
 def test_cli_subcommand_sessions(tmp_path: Path) -> None:
