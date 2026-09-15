@@ -23,7 +23,7 @@ from evals.schema import (
     RawExecutionRecord,
     TaskEvalResult,
 )
-from scripts.release_check import check_wheel_contents, validate_eval_report
+from scripts.release_check import check_smoke, check_wheel_contents, validate_eval_report
 from skail.domain.routing import RoutingMode
 
 
@@ -544,3 +544,25 @@ def test_integrated_release_wheel_check_accepts_canonical_skail_package(
     monkeypatch.setattr(subprocess, "run", build_wheel)
 
     check_wheel_contents()
+
+
+def test_release_smoke_uses_an_isolated_runtime_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[dict[str, object]] = []
+
+    def run_smoke(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        observed.append(kwargs)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", run_smoke)
+
+    check_smoke()
+
+    smoke_call = next(call for call in observed if "env" in call)
+    workspace = Path(str(smoke_call["cwd"]))
+    environment = smoke_call["env"]
+    assert isinstance(environment, dict)
+    assert workspace != Path(__file__).resolve().parents[2]
+    assert environment["USERPROFILE"] == str(workspace)
+    assert environment["APPDATA"] == str(workspace / "AppData")

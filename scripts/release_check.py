@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import platform
 import subprocess
 import sys
@@ -307,12 +308,23 @@ def check_wheel_contents() -> None:
 
 def check_smoke() -> None:
     print("[7/8] Running fake-provider smoke and benchmark verification...")
-    proc = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "smoke.py"), "--fake-provider"],
-        cwd=str(ROOT),
-        capture_output=True,
-        text=True,
-    )
+    with tempfile.TemporaryDirectory(prefix="skail-release-smoke-") as directory:
+        workspace = Path(directory)
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "USERPROFILE": str(workspace),
+                "APPDATA": str(workspace / "AppData"),
+                "LOCALAPPDATA": str(workspace / "AppData" / "Local"),
+            }
+        )
+        proc = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "smoke.py"), "--fake-provider"],
+            cwd=str(workspace),
+            env=environment,
+            capture_output=True,
+            text=True,
+        )
     if proc.returncode != 0:
         raise RuntimeError(f"Smoke test failed:\n{proc.stderr}")
     print("  -> Fake-provider smoke: OK.")
