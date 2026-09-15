@@ -13,11 +13,17 @@ from skail.domain.events import EventEnvelope
 
 ROOT = Path(__file__).resolve().parents[2]
 CLI_WORKSPACE = ROOT
+CLI_HOME = ROOT
 
 
 @pytest.fixture(autouse=True)
 def isolate_cli_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys.modules[__name__], "CLI_WORKSPACE", tmp_path)
+    home = tmp_path / "home"
+    monkeypatch.setattr(sys.modules[__name__], "CLI_HOME", home)
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("APPDATA", str(home / "AppData"))
+    monkeypatch.setenv("LOCALAPPDATA", str(home / "AppData" / "Local"))
 
 
 def run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -99,6 +105,8 @@ def test_cli_subprocess_does_not_write_runtime_state_to_checkout() -> None:
 
     assert result.returncode == EXIT_OK
     assert not (ROOT / ".skail").exists()
+    assert (CLI_WORKSPACE / ".skail").exists()
+    assert (CLI_HOME / ".skail").exists()
 
 
 def test_cli_subcommand_sessions(tmp_path: Path) -> None:

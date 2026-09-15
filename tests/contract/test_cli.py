@@ -9,11 +9,17 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 CLI_WORKSPACE = ROOT
+CLI_HOME = ROOT
 
 
 @pytest.fixture(autouse=True)
 def isolate_cli_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys.modules[__name__], "CLI_WORKSPACE", tmp_path)
+    home = tmp_path / "home"
+    monkeypatch.setattr(sys.modules[__name__], "CLI_HOME", home)
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("APPDATA", str(home / "AppData"))
+    monkeypatch.setenv("LOCALAPPDATA", str(home / "AppData" / "Local"))
 
 
 def run_module(*arguments: str) -> subprocess.CompletedProcess[str]:
@@ -47,7 +53,7 @@ def test_fake_provider_smoke_is_offline_and_deterministic() -> None:
 
 def test_developer_smoke_script_uses_the_same_contract() -> None:
     result = subprocess.run(
-        [sys.executable, "scripts/smoke.py", "--fake-provider"],
+        [sys.executable, ROOT / "scripts" / "smoke.py", "--fake-provider"],
         cwd=CLI_WORKSPACE,
         capture_output=True,
         text=True,
@@ -55,6 +61,7 @@ def test_developer_smoke_script_uses_the_same_contract() -> None:
     assert result.returncode == 0
     assert result.stdout.strip() == "Skail fake-provider smoke: ok"
     assert result.stderr == ""
+    assert not (ROOT / ".skail").exists()
 
 
 def test_installed_console_script_exposes_help_and_version() -> None:
