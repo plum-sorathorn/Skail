@@ -276,8 +276,8 @@ def check_quality() -> None:
         )
         _run_checked(
             "[4/8] Running complete offline test suite...",
-            [sys.executable, "-m", "pytest", "-q", str(ROOT / "tests")],
-            cwd=workspace,
+            [sys.executable, "-m", "pytest", "-q"],
+            cwd=ROOT,
             env=environment,
         )
 

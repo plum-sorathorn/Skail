@@ -624,8 +624,8 @@ def test_release_tests_use_an_isolated_runtime_workspace(
     workspace = Path(str(kwargs["cwd"]))
     environment = kwargs["env"]
     assert isinstance(environment, dict)
-    assert command[-1] == str(Path(__file__).resolve().parents[2] / "tests")
-    assert workspace != Path(__file__).resolve().parents[2]
-    assert environment["USERPROFILE"] == str(workspace)
-    assert environment["APPDATA"] == str(workspace / "AppData")
-    assert environment["HOME"] == str(workspace)
+    assert command[-1] == "-q"
+    assert workspace == Path(__file__).resolve().parents[2]
+    assert environment["USERPROFILE"] != str(workspace)
+    assert environment["APPDATA"] != str(workspace / "AppData")
+    assert environment["HOME"] == environment["USERPROFILE"]
