@@ -1,184 +1,165 @@
+<p align="center"><strong>SKAIL</strong></p>
+
+<p align="center">
+  A Python multi-agent coding harness built on DeepAgents and LangGraph.
+</p>
+
+<p align="center">
+  <a href="https://github.com/plum-sorathorn/Skail/actions/workflows/ci.yml"><img src="https://github.com/plum-sorathorn/Skail/actions/workflows/ci.yml/badge.svg?branch=skail" alt="CI"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.12%2B-blue.svg?style=flat-square" alt="Python 3.12+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
+</p>
+
 # Skail
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+Skail is an agentic AI and multi-agent coding harness built on
+[DeepAgents](https://github.com/langchain-ai/deepagents). It uses **LangGraph** for durable,
+stateful orchestration—including direct execution, dependency-aware task graphs, checkpointing,
+human-in-the-loop interrupts, and resumable sessions—and **LangChain** abstractions for LLM
+provider integration, model invocation, structured output, and tool calling.
 
-**Skail Harness** (distribution: `skail-harness`) is a local, budget-aware multi-agent coding
-harness. It runs as `skail` without a proxy server, daemon, plugin plane, or hook shim.
+Its systems stack combines **Pydantic** contracts, **SQLite** persistence, asynchronous Python
+concurrency, Git worktree isolation, budget-aware model routing, provider usage accounting,
+context engineering, and a **Textual** terminal UI. Skail coordinates specialized subagents while
+enforcing task dependencies, bounded retries, verification evidence, permissions, and hard cost
+limits in deterministic runtime code.
 
-## What is implemented
+Skail runs locally without a proxy server or daemon and exposes an interactive TUI, a conventional
+CLI, and versioned JSONL event streaming for automation. The Python distribution is
+`skail-harness`; the console command is `skail`.
 
-Skail has deterministic, offline coverage for direct and planned execution, typed plan state,
-bounded child scheduling, workspace leases and worktree fallback, approvals and project trust,
-sessions/recovery, routing and budget records, CLI JSONL, and local inspection. It deliberately
-keeps a healthy model assignment fixed for an attempt, permits at most two attempts per delegated
-task, and permits at most three concurrent children.
+## Why Skail?
 
-The [feature matrix](docs/skail/FEATURE_PARITY_ROADMAP.md#core-feature-acceptance-matrix) names
-the evidence and demonstrated gaps for each user-facing capability. The separate
-[follow-on roadmap](docs/skail/FEATURE_PARITY_ROADMAP.md#separate-follow-on-roadmap) identifies
-editor, interoperability, richer background, and multimodal work that is not part of this release.
+Building a coding agent is straightforward. Making it dependable across planning, parallel work,
+cost control, recovery, and verification is the harder part. Skail provides those runtime
+guarantees out of the box:
 
-## Quick start
+- **Adaptive execution** — simple requests stay direct; complex work can use discovery checkpoints
+  or a typed, dependency-aware plan.
+- **Task-bound model routing** — each lead run and child attempt receives a durable provider/model
+  assignment based on capability, role, evidence, health, and budget.
+- **Hard budget control** — reservations happen before provider calls, usage is settled once, and
+  uncertain accounting blocks unsafe replay.
+- **Safe parallel work** — up to three children can run concurrently; writers use reproducible Git
+  worktrees when available and serialized integration when changes return.
+- **Human checkpoints** — project trust, tool approvals, questions, steering, and cancellation are
+  enforced by runtime policy rather than prompt compliance.
+- **Durable sessions** — SQLite-backed plans, assignments, events, approvals, usage, checkpoints,
+  compaction, recovery, and exports survive interruption.
+- **Context engineering** — bounded task packets, skills, memory, artifact references, output
+  offloading, and compaction keep model context focused.
+- **Terminal-native interfaces** — work interactively in the TUI, capture only the final answer, or
+  consume a stable JSONL event stream from scripts.
+
+The control plane runs locally with SQLite state and direct provider adapters; no service
+infrastructure is required.
+
+## Getting started
+
+### Quickstart from source
 
 ```powershell
 git clone https://github.com/plum-sorathorn/Skail -b skail
 cd Skail
 python -m pip install -e ".[dev]"
 
-# Interactive TUI
-skail
+# Verify the installation without credentials
+skail smoke --fake-provider
 
-# Deterministic offline non-interactive run
+# Run a deterministic local request
 skail --print --fake-provider --model fake:fast-model "Summarize this workspace"
-
-# Versioned JSONL event output (`--json` is an alias)
-skail --jsonl --fake-provider --model fake:fast-model "Inspect this workspace"
 ```
 
-External provider use is opt-in and requires configured credentials. The deterministic offline
-suite is engineering evidence; it is not a live-provider quality or savings claim.
-
-## How Skail works
-
-Skail is designed for coding work that sometimes benefits from a small, controlled team but should
-not pay that overhead for every prompt.
-
-1. A lead either answers directly or records an execution decision for discovery or a typed plan.
-2. An admitted plan records nodes, dependencies, acceptance criteria, effect scope, and a durable
-   revision before anything runs. Model-authored todo text is never executable state.
-3. Ready work receives a concrete model assignment and budget reservation. Independent nodes can
-   run concurrently, subject to the hard three-child limit and workspace ownership rules.
-4. A successful child result releases dependent work. Failed attempts retain their evidence and
-   partial work; Skail can escalate a task only once before returning it to the lead.
-5. Sessions preserve task, route, usage, approval, and verification state for inspection or
-   recovery. Ambiguous in-flight work fails closed instead of being silently replayed.
-
-This is a local application guarantee, not control over an operating system or an external provider.
-The [architecture](docs/skail/ARCHITECTURE.md) explains the durable contracts behind the flow.
-
-## Typical workflows
-
-### Ask directly
-
-Use a direct prompt for inspection, a narrow edit, or a task where coordinating children would add
-more cost than value.
+For normal interactive use, configure a supported provider, verify it without making a network
+request, then launch Skail:
 
 ```powershell
-skail "Explain the failing tests in this repository"
-skail --print --fake-provider --model fake:fast-model "Summarize the project layout"
+skail auth check
+skail models list
+skail
 ```
 
-### Bound a run
-
-Use routing, budget, delegation, and workspace controls when the work needs explicit limits. CLI
-values override the corresponding resolved configuration values for that run.
+Useful bounded invocations:
 
 ```powershell
+# Cap spend and parallelism while preferring isolated writers
 skail --budget 2.50 --mode economy --max-agents 2 --workspace worktree `
-  "Implement and verify the requested change"
-```
+  "Implement and verify this change"
 
-`worktree` is an isolation preference, not a promise: unsafe or unavailable Git isolation falls
-back to the serialized shared-workspace path. A request to use a worktree never discards existing
-user changes.
+# Emit versioned events for automation
+skail --jsonl --budget 1.00 "Inspect the repository and report findings"
 
-### Inspect or resume a session
-
-```powershell
+# Resume durable work
 skail sessions list
-skail sessions show <session-id>
-skail sessions export <session-id> --output session.json
 skail --resume <session-id>
 ```
 
-Exports are redacted records intended for local inspection. They are not a guarantee that every
-secret present in an independently executed trusted program was observable or removable.
+See the [CLI contract](docs/skail/CLI.md) for every flag, subcommand, output mode, and exit code.
 
-### Integrate with scripts
+## Architecture
 
-Use print mode when a caller needs only the final text, or JSONL when it needs versioned lifecycle
-events. JSONL includes one terminal event for persisted runs; failures before a run is persisted do
-not fabricate one.
-
-```powershell
-skail --print --fake-provider --model fake:fast-model "Report the next step"
-skail --jsonl --fake-provider --model fake:fast-model "Inspect the current task"
+```mermaid
+flowchart LR
+    User[Developer] --> Surface[TUI · Print · JSONL]
+    Surface --> Controller[RunController]
+    Controller --> Lead[Capable lead]
+    Lead --> Direct[Direct execution]
+    Lead --> Plan[Typed adaptive plan]
+    Plan --> Scheduler[Bounded scheduler]
+    Scheduler --> Workers[Up to 3 children]
+    Direct --> Tools[Policy-enforced tools]
+    Workers --> Tools
+    Workers --> Workspaces[Shared or isolated workspaces]
+    Controller --> Budget[Budget and assignment ledger]
+    Controller --> Journal[(SQLite journal)]
+    Journal --> Resume[Resume · replay · export]
 ```
 
-## Execution and safety boundaries
+| Execution path | Best for | Coordination | Workspace behavior |
+| --- | --- | --- | --- |
+| Direct | Small edits, inspection, and focused commands | The lead works in its normal tool loop | Shared workspace with policy-enforced writes |
+| Discovery | Work whose shape depends on repository evidence | Read-only frontier, checkpoint, then evidence-backed revision | Read-only discovery before later admitted work |
+| Planned | Multi-step or parallel work with known dependencies | Durable nodes release when verified prerequisites complete | Isolated worktrees when safe; serialized fallback and integration |
 
-- **Direct versus adaptive execution:** simple work can finish directly. A recorded execution
-  decision can instead admit a typed plan whose ready nodes dispatch without another lead turn.
-- **Workspace modes:** shared writers are serialized. Git worktree isolation is used only when a
-  reproducible snapshot is safe; otherwise Skail falls back to the shared single-writer path
-  without discarding user changes.
-- **Approvals and steering:** destructive, external, privileged, and unknown effects follow the
-  execution approval policy. Foreground input is classified as an answer, queued follow-up, or
-  cancellation; experimental background steering cannot enlarge permission, budget, depth, or
-  write scope.
-- **Economics:** route estimates, reservations, actual/estimated usage, and exclusions are durable.
-  Automatic strategy promotion remains shadow/experimental until separately authorized live,
-  held-out qualification.
+> **Skail is a local application boundary.** It runs with the invoking user's operating-system
+> permissions. Workspace confinement, trust, approvals, redaction, and budgets govern actions that
+> pass through Skail; trusted programs and privileged host processes remain the user's
+> responsibility.
 
-See the [architecture](docs/skail/ARCHITECTURE.md), [feature contracts](docs/skail/FEATURES.md),
-[CLI contract](docs/skail/CLI.md), and [threat model](docs/skail/THREAT_MODEL.md) for the
-normative contracts and their stated limitations.
+## Documentation
 
-## Models, providers, and configuration
+| Section | What you'll find |
+| --- | --- |
+| [Product specification](docs/skail/SPEC.md) | Product behavior, users, commands, configuration, and acceptance criteria |
+| [Architecture](docs/skail/ARCHITECTURE.md) | Runtime topology, graph composition, persistence, routing, budgets, and safety boundaries |
+| [Feature contracts](docs/skail/FEATURES.md) | Exact behavior for agents, tools, sessions, approvals, context, and terminal interfaces |
+| [CLI reference](docs/skail/CLI.md) | Invocation syntax, subcommands, JSONL framing, and process exit codes |
+| [Threat model](docs/skail/THREAT_MODEL.md) | Trust boundaries, mitigations, and residual host-level risks |
+| [Evaluation](docs/skail/EVALUATION.md) | Independent fixtures, raw evidence, routing gates, and qualification rules |
+| [Performance](docs/skail/PERFORMANCE.md) | Reproducible runtime, rendering, persistence, and context measurements |
+| [Feature roadmap](docs/skail/FEATURE_PARITY_ROADMAP.md) | Core acceptance matrix and separately scoped follow-on integrations |
+| [Final integrated review](docs/skail/PHASE_21_REVIEW.md) | Cross-phase findings, representative traces, and release evidence boundaries |
 
-The built-in fake provider is deterministic and credential-free, making it the default for tests,
-examples, and local smoke verification. Skail also has adapter contracts for LLM Gateway, DevPass,
-and OpenAI-compatible providers; optional LangChain integrations depend on the corresponding extra
-and a provider configuration. `skail auth status` and `skail auth check` report environment
-configuration without exposing credential values or contacting a provider.
+## Benchmarks
 
-Skail records a route choice, estimated cost, reservation, and normalized provider usage when that
-usage is available. An estimate is not an invoice, and unobserved or synthetic usage is labelled as
-such. Automatic routing remains conservative until evidence qualifies a strategy for a workload
-class; see [evaluation](docs/skail/EVALUATION.md).
-
-Configuration is layered from user and trusted-project TOML files. Use these commands to discover
-the actual paths and effective values on a workstation:
+Skail includes reproducible local benchmarks and an independently scored offline evaluation suite.
+Run them against the same source and environment you want to measure:
 
 ```powershell
-skail config path
-skail config show
-skail models list
-skail models show implementer
+python benchmarks\bench_runner.py --json --repetitions 5
+python scripts\eval_routing.py --paired-runtime --output $env:TEMP\skail-eval.json
+python scripts\release_check.py
 ```
 
-Project-defined configuration and extensions require an explicit trust decision. Trust does not
-override filesystem, approval, budget, or global safety boundaries.
+The suite measures orchestration, persistence, context, rendering, workspace, and paired execution
+behavior from raw records. Deterministic fake-provider evidence verifies the engineering contract;
+it is not a live-provider quality or savings claim.
 
-## Safety model
+## Contributing
 
-Skail treats model output as untrusted input at its filesystem, command, trust, and secret
-boundaries. Workspace paths are normalized against the selected root; sensitive paths and
-outside-workspace access receive stronger handling. Command policy distinguishes ordinary local
-build/test activity from mutations, external effects, privilege requests, destructive effects, and
-unknown effects. The latter categories can require approval or be rejected.
-
-These controls reduce risk inside Skail's application paths. They cannot make a trusted repository
-or privileged host process safe. Read the [threat model](docs/skail/THREAT_MODEL.md) before using
-Skail on sensitive workspaces or with external credentials.
-
-## CLI and inspection
-
-Run `skail --help` for the active parser contract. The supported root flags include `--print`,
-`--jsonl`/`--json`, `--continue`, `--resume`, `--no-session`, `--mode`, `--model`,
-`--lead-model`, `--agent-model`, `--budget`, `--max-agents`, `--delegation`, `--workspace`,
-`--approve-project`, `--deny-project`, and `--fake-provider`.
-
-The supported subcommands are `config`, `sessions`, `auth`, `models`, and `smoke`. `auth check`
-reports whether known environment credential variables are present; it does not perform a provider
-network request. `skail smoke --fake-provider` is the offline smoke path.
-
-The documented process exit codes are `0` (completed), `1` (failure), `2` (usage), `3` (blocked),
-and `4` (cancelled). Full syntax, output framing, subcommand behavior, and removed legacy aliases
-are in the [CLI contract](docs/skail/CLI.md).
-
-## Verification and release evidence
+Issues, pull requests, tests, and documentation improvements are welcome. Read
+[AGENTS.md](AGENTS.md) for the repository conventions and keep changes focused, typed, offline by
+default, and backed by the appropriate tests.
 
 ```powershell
 rtk pytest -q
@@ -186,38 +167,18 @@ python -m ruff check src tests scripts evals benchmarks
 python -m mypy src\skail
 python scripts\smoke.py --fake-provider
 python scripts\package_check.py
-python scripts\release_check.py
 ```
 
-The [evaluation record](docs/skail/EVALUATION.md),
-[performance record](docs/skail/PERFORMANCE.md), and
-[dependency audit](docs/skail/DEPENDENCIES.md) distinguish synthetic/local evidence from release
-and live-economics evidence. Engineering release readiness still requires exact-candidate Windows
-and Linux evidence. A release tag, publication, provider spend, and remote change each require
-separate authorization.
+Report bugs or propose changes through [GitHub Issues](https://github.com/plum-sorathorn/Skail/issues).
+For the project's security boundaries, start with the [threat model](docs/skail/THREAT_MODEL.md).
 
-## Repository guide
+## Project links
 
-| Path | Purpose |
-| --- | --- |
-| `src/skail/` | Runtime, agents, routing, providers, sessions, safety tools, CLI, and TUI. |
-| `tests/` | Deterministic unit, contract, integration, end-to-end, and security coverage. |
-| `evals/` | Offline evaluation schemas, fixtures, and raw-evidence tooling. |
-| `docs/skail/` | Product contracts, architecture, threat model, evaluation, performance, and roadmap. |
-| `tasks/skail-adaptive-orchestration-and-release-plan.md` | Active dependency-ordered implementation and release guide. |
-
-For development conventions, see [AGENTS.md](AGENTS.md). Historical plans and legacy source remain
-historical/reference material; they are not compatibility surfaces or current release evidence.
-
-## Current limitations
-
-- Live-provider quality, spend reduction, and universal provider behavior have not been qualified.
-- Exact-candidate cross-platform release evidence must be generated for the final candidate; a
-  passing report from an earlier commit is not transferable.
-- Editor integrations, arbitrary third-party extension interoperability, richer background-agent
-  interaction, and multimodal workflows are separate future work, not implied by the runtime.
-- The application does not run an HTTP proxy, daemon, or generic plugin server.
+- [GitHub repository](https://github.com/plum-sorathorn/Skail)
+- [Issue tracker](https://github.com/plum-sorathorn/Skail/issues)
+- [Documentation index](docs/skail/README.md)
+- [Implementation and release guide](tasks/skail-adaptive-orchestration-and-release-plan.md)
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+Skail is released under the [MIT License](LICENSE).
