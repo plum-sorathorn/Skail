@@ -124,3 +124,18 @@ def test_phase_21_records_the_final_integrated_audit() -> None:
     assert "### Phase 21 handoff" in guide
     assert "Phase: 21 — Final integrated review" in guide
     assert "Next phase and its dependencies: Phase 22" in guide
+
+
+def test_phase_23_records_candidate_status_without_self_attestation() -> None:
+    readme = _read("README.md")
+    documentation_index = _read("docs/skail/README.md")
+    guide = _read("tasks/skail-adaptive-orchestration-and-release-plan.md")
+
+    assert "candidate-bound Windows verification" in readme
+    assert "exact-final-commit Windows/Linux verification remains pending" in documentation_index
+    assert "Skail Harness is" not in documentation_index
+    assert "| [x] | 10 |" in guide
+    assert "| [x] | 23 |" in guide
+    assert "| [ ] | 24 |" in guide
+    assert "### Phase 23 handoff" in guide
+    assert "hash intentionally omitted from this frozen record" in guide

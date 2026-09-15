@@ -1,14 +1,22 @@
 # Skail design set
 
-Status: Approved for implementation
-Date: 2026-09-02
+Status: v0.1.0 candidate documentation; exact-final-commit Windows/Linux verification remains pending
+Date: 2026-09-15
 
-Skail Harness is the native, budget-aware multi-agent coding harness built on DeepAgents. It
+Skail is the native, budget-aware multi-agent coding harness built on DeepAgents. It
 supersedes an archived predecessor implementation that used proxy, plugin, and sidecar surfaces.
 These documents contain normative product and engineering contracts; they are not, by themselves,
 proof that a capability has been qualified. The active implementation and release authority is
 [ADR 0006](../decisions/0006-adaptive-execution-and-release-boundaries.md) and the
 [adaptive orchestration guide](../../tasks/skail-adaptive-orchestration-and-release-plan.md).
+
+## Release status
+
+The Phase 22 candidate-bound Windows verification passed for the source candidate recorded in the
+active guide, including offline tests, packaging, smoke, benchmarks, and paired evaluation. This is
+not release sign-off: exact-final-commit Windows/Linux verification remains pending and must be
+regenerated or obtained for the frozen documentation commit in Phase 24. Live-provider quality,
+economic qualification, and production route promotion remain separate Q1 work.
 
 Read in this order:
 
@@ -21,6 +29,7 @@ Read in this order:
 7. [Active implementation guide](../../tasks/skail-adaptive-orchestration-and-release-plan.md) — dependency-ordered delivery slices and verification gates.
 8. [Feature acceptance matrix and follow-on roadmap](FEATURE_PARITY_ROADMAP.md) — tested core scope, demonstrated gaps, and separately scoped future work.
 9. [Phase 21 final integrated review](PHASE_21_REVIEW.md) — cross-phase findings, representative traces, remediation ownership, and remaining release boundaries.
+10. [Phase 22 candidate and release evidence](../../tasks/skail-adaptive-orchestration-and-release-plan.md#phase-22-handoff) — candidate results and the final release sequence.
 
 ## Source baseline
 

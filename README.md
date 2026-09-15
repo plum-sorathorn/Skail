@@ -54,6 +54,13 @@ guarantees out of the box:
 The control plane runs locally with SQLite state and direct provider adapters; no service
 infrastructure is required.
 
+## Release status
+
+The v0.1.0 source candidate has passed candidate-bound Windows verification through Phase 22,
+including the offline, packaging, smoke, benchmark, and paired-evaluation checks. Exact-final-
+commit Windows/Linux verification remains pending; the Phase 22 evidence cannot certify this
+documentation commit. Live-provider quality and economic qualification remain a separate Q1 track.
+
 ## Getting started
 
 ### Quickstart from source

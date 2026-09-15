@@ -182,7 +182,7 @@ Preserve reservations for completion work before launching optional children. If
 
 ## 6. Phase index
 
-Every row starts unchecked. Dependencies refer to this guide, not the old phase numbers. Execute the numbered rows in order; dependencies describe what a resumed session must verify.
+Rows are marked complete only when their recorded implementation and evidence are verified. Dependencies refer to this guide, not the old phase numbers. Execute the numbered rows in order; dependencies describe what a resumed session must verify.
 
 | Done | Phase | Owner | Main dependency | Deliverable |
 |---|---|---|---|---|
@@ -196,20 +196,20 @@ Every row starts unchecked. Dependencies refer to this guide, not the old phase 
 | [x] | 07 | Terra | 06 | Required execution decisions and plan admission |
 | [x] | 08 | Terra | 07 | Ready-work execution without lead round trips |
 | [x] | 09 | Terra | 08 | Revision-aware context, recovery, and steering |
-| [ ] | 10 | Sol | 09 | Independent graph/accounting review |
-| [ ] | 11 | Terra | 10 | Reproducible isolated worker snapshots |
-| [ ] | 12 | Terra | 11 | Serialized verified integration |
-| [ ] | 13 | Terra | 12 | Outcome-based strategy routing in shadow mode |
-| [ ] | 14 | Gemini Flash | 13 | Replayable plan/route/workspace TUI |
+| [x] | 10 | Sol | 09 | Independent graph/accounting review |
+| [x] | 11 | Terra | 10 | Reproducible isolated worker snapshots |
+| [x] | 12 | Terra | 11 | Serialized verified integration |
+| [x] | 13 | Terra | 12 | Outcome-based strategy routing in shadow mode |
+| [x] | 14 | Gemini Flash | 13 | Replayable plan/route/workspace TUI |
 | [x] | 15 | Terra | 14 | Honest paired evaluation and timing |
 | [x] | 16 | Sol | 15 | Independent economics/isolation review |
-| [ ] | 17 | Terra | 16 | Raw-evidence release verifier |
-| [ ] | 18 | Luna | 17 | Packaging and exact-commit CI wiring |
-| [ ] | 19 | Terra | 18 | Startup/rendering/security performance checks |
-| [ ] | 20 | Gemini Flash | 19 | Honest documentation and feature roadmap |
-| [ ] | 21 | Sol | 20 | Final integrated review |
-| [ ] | 22 | Terra | 21 | Clean Windows candidate matrix |
-| [ ] | 23 | Luna | 22 | Exact final documentation commit |
+| [x] | 17 | Terra | 16 | Raw-evidence release verifier |
+| [x] | 18 | Luna | 17 | Packaging and exact-commit CI wiring |
+| [x] | 19 | Terra | 18 | Startup/rendering/security performance checks |
+| [x] | 20 | Gemini Flash | 19 | Honest documentation and feature roadmap |
+| [x] | 21 | Sol | 20 | Final integrated review |
+| [x] | 22 | Terra | 21 | Clean Windows candidate matrix |
+| [x] | 23 | Luna | 22 | Exact final documentation commit |
 | [ ] | 24 | Terra | 23 | Exact-commit verification and conditional tag |
 
 Q1 is the separately authorized live qualification track. C1 is optional archive cleanup after release. Neither is silently included in a normal numbered-phase run.
@@ -1689,4 +1689,37 @@ External evidence location and source identity, if applicable: source `b8ca9850e
 Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`, `run_2.json`, and `run_2.md` were not modified or staged. The original development checkout was not cleaned, stashed, or reset to satisfy candidate verification.
 Unproven claims or missing evidence: native Linux checks for this exact source commit are unavailable from the local Windows environment and cannot be simulated as native platform evidence. Phase 22 does not certify the following documentation commit, authorize a tag, or qualify live-provider quality/economics.
 Next phase and its dependencies: Phase 23 — Final synchronized documentation commit; depends on completed Phase 22 and closure of review findings.
+```
+
+### Phase 23 handoff
+
+```text
+Phase: 23 — Final synchronized documentation commit
+Status: complete
+Implementation model: available Codex model (assigned Luna treated as a recommendation)
+Commit(s): exact-message documentation commit; hash intentionally omitted from this frozen record
+Behavior delivered: Release-facing documentation now identifies the v0.1.0 candidate status, records
+the completed candidate-bound Windows evidence without turning it into release sign-off, and keeps
+exact-final-commit Windows/Linux verification, live-provider qualification, and production promotion
+pending. The active phase index records completion through Phase 23 while Phase 24 remains open.
+Acceptance evidence and commands: documentation contract tests; Markdown link/content review;
+`graphify update .`; `rtk git diff --check`; complete intended docs/metadata diff review.
+Test results and documented skips: deterministic documentation checks passed. Runtime, packaging,
+benchmark, and full offline suites were not rerun because this phase changes documentation only;
+Phase 22 contains the candidate-bound Windows results. Live providers, paid evaluation, Linux CI,
+publishing, pushing, tagging, OAuth integration, remote changes, and legacy cleanup were not run.
+Review findings closed/open: release-status wording and stale active phase-index state are
+synchronized. No Phase 23 documentation finding remains open.
+External evidence location and source identity, if applicable: Phase 22 evidence remains at
+`C:\Users\plum\AppData\Local\Temp\skail-phase22-final-b8ca985\evidence` for source
+`b8ca9850eda399315cd3aad7693ddafadf3a6059`; Phase 24 must regenerate evidence for this frozen
+documentation commit.
+Protected/unrelated files preserved: `.gitignore` and `evals/results/run_1.json`, `run_1.md`,
+`run_2.json`, and `run_2.md` were not modified or staged.
+Unproven claims or missing evidence: exact-final-commit Windows/Linux readiness, live-provider
+quality parity, live economic savings, production route promotion, publication, and tag eligibility
+remain unproven.
+Next phase and its dependencies: Phase 24 — Verify the exact final commit and conditionally tag;
+depends on this frozen documentation commit plus exact platform evidence and separate tag
+authorization.
 ```
