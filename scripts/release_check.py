@@ -266,14 +266,7 @@ def check_quality() -> None:
     with tempfile.TemporaryDirectory(prefix="skail-release-tests-") as directory:
         workspace = Path(directory)
         environment = os.environ.copy()
-        environment.update(
-            {
-                "USERPROFILE": str(workspace),
-                "APPDATA": str(workspace / "AppData"),
-                "LOCALAPPDATA": str(workspace / "AppData" / "Local"),
-                "HOME": str(workspace),
-            }
-        )
+        environment["HOME"] = str(workspace)
         _run_checked(
             "[4/8] Running complete offline test suite...",
             [sys.executable, "-m", "pytest", "-q"],
