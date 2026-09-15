@@ -628,3 +628,4 @@ def test_release_tests_use_an_isolated_runtime_workspace(
     assert workspace == Path(__file__).resolve().parents[2]
     assert environment["USERPROFILE"] != str(workspace)
     assert environment["HOME"] != str(workspace)
+    assert environment["SKAIL_ASSERT_CLEAN_TEST_ROOT"] == "1"

@@ -268,6 +268,7 @@ def check_quality() -> None:
         environment = os.environ.copy()
         environment["USERPROFILE"] = str(workspace)
         environment["HOME"] = str(workspace)
+        environment["SKAIL_ASSERT_CLEAN_TEST_ROOT"] = "1"
         _run_checked(
             "[4/8] Running complete offline test suite...",
             [sys.executable, "-m", "pytest", "-q"],

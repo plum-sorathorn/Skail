@@ -1,8 +1,22 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def reject_release_test_runtime_state() -> Iterator[None]:
+    if os.environ.get("SKAIL_ASSERT_CLEAN_TEST_ROOT") != "1":
+        yield
+        return
+    root = Path(__file__).resolve().parents[1]
+    runtime_dir = root / ".skail"
+    assert not runtime_dir.exists(), f"release test created runtime state before {runtime_dir}"
+    yield
+    assert not runtime_dir.exists(), f"release test created runtime state at {runtime_dir}"
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
