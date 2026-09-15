@@ -345,18 +345,28 @@ def check_evals() -> None:
     expected_controls = {policy.value: policy.controls() for policy in EvaluationPolicy}
     expected_policy_digest = policy_digest(expected_controls)
     with tempfile.TemporaryDirectory(prefix="skail-release-eval-") as directory:
-        output = Path(directory) / "paired-runtime-report.json"
+        workspace = Path(directory)
+        output = workspace / "paired-runtime-report.json"
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "USERPROFILE": str(workspace),
+                "APPDATA": str(workspace / "AppData"),
+                "LOCALAPPDATA": str(workspace / "AppData" / "Local"),
+            }
+        )
         proc = subprocess.run(
             [
                 sys.executable,
                 str(ROOT / "scripts" / "eval_routing.py"),
                 "--fixtures",
-                "evals/manifest.toml",
+                str(ROOT / "evals" / "manifest.toml"),
                 "--paired-runtime",
                 "--output",
                 str(output),
             ],
-            cwd=str(ROOT),
+            cwd=str(workspace),
+            env=environment,
             capture_output=True,
             text=True,
         )

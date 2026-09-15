@@ -23,6 +23,7 @@ from evals.schema import (
     RawExecutionRecord,
     TaskEvalResult,
 )
+from scripts import release_check
 from scripts.release_check import check_smoke, check_wheel_contents, validate_eval_report
 from skail.domain.routing import RoutingMode
 
@@ -562,6 +563,37 @@ def test_release_smoke_uses_an_isolated_runtime_workspace(
     smoke_call = next(call for call in observed if "env" in call)
     workspace = Path(str(smoke_call["cwd"]))
     environment = smoke_call["env"]
+    assert isinstance(environment, dict)
+    assert workspace != Path(__file__).resolve().parents[2]
+    assert environment["USERPROFILE"] == str(workspace)
+    assert environment["APPDATA"] == str(workspace / "AppData")
+
+
+def test_release_evals_use_an_isolated_runtime_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+
+    def run_evaluation(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        observed.update(kwargs)
+        output = Path(command[command.index("--output") + 1])
+        output.write_text("{}", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", run_evaluation)
+    monkeypatch.setattr(release_check, "load_fixtures", lambda _: [])
+    monkeypatch.setattr(release_check, "default_eval_candidates", lambda: ())
+    monkeypatch.setattr(release_check, "source_identity", lambda: ("commit", "digest"))
+    monkeypatch.setattr(release_check, "fixture_digest", lambda _: "fixtures")
+    monkeypatch.setattr(release_check, "catalog_digest", lambda *_: "catalog")
+    monkeypatch.setattr(release_check, "policy_digest", lambda _: "policy")
+    monkeypatch.setattr(release_check.EvaluationReport, "model_validate_json", lambda _: object())
+    monkeypatch.setattr(release_check, "validate_eval_report", lambda *args, **kwargs: None)
+
+    release_check.check_evals()
+
+    workspace = Path(str(observed["cwd"]))
+    environment = observed["env"]
     assert isinstance(environment, dict)
     assert workspace != Path(__file__).resolve().parents[2]
     assert environment["USERPROFILE"] == str(workspace)
