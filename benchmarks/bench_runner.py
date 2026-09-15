@@ -212,14 +212,17 @@ def _isolated_cli_environment(home: Path) -> dict[str, str]:
         "USERPROFILE": str(home),
         "APPDATA": str(home / "AppData"),
         "LOCALAPPDATA": str(home / "AppData" / "Local"),
+        "HOME": str(home),
     }
 
 
-def _run_cli_timed(command: list[str], environment: dict[str, str]) -> float:
+def _run_cli_timed(
+    command: list[str], environment: dict[str, str], workspace: Path
+) -> float:
     started = time.perf_counter()
     completed = subprocess.run(
         [sys.executable, "-m", "skail.cli.main", *command],
-        cwd=Path(__file__).resolve().parents[1],
+        cwd=workspace,
         env=environment,
         check=True,
         capture_output=True,
@@ -233,11 +236,13 @@ def _run_cli_timed(command: list[str], environment: dict[str, str]) -> float:
 def benchmark_cli_runtime() -> dict[str, float]:
     """Measure CLI parsing separately from an offline end-to-end fake-provider response."""
     with tempfile.TemporaryDirectory(prefix="skail-bench-cli-") as directory:
-        environment = _isolated_cli_environment(Path(directory))
-        help_seconds = _run_cli_timed(["--help"], environment)
+        workspace = Path(directory)
+        environment = _isolated_cli_environment(workspace)
+        help_seconds = _run_cli_timed(["--help"], environment, workspace)
         first_fake_response_seconds = _run_cli_timed(
             ["--print", "offline benchmark", "--model", "fake:fast-model", "--fake-provider"],
             environment,
+            workspace,
         )
     return {
         "help_seconds": help_seconds,

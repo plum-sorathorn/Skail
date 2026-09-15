@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
 import benchmarks.bench_runner as bench_runner
 from benchmarks.bench_runner import (
     benchmark_cli_runtime,
@@ -84,6 +87,22 @@ def test_runtime_benchmarks_measure_cli_scheduler_and_workspace() -> None:
     assert scheduler["completed_tasks"] == 4.0
     assert workspace["snapshot_files"] >= 1
     assert workspace["setup_seconds"] >= 0
+
+
+def test_cli_benchmark_runs_outside_the_source_checkout(
+    monkeypatch, tmp_path: Path
+) -> None:
+    observed: dict[str, object] = {}
+
+    def run_cli(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        observed.update(kwargs)
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    monkeypatch.setattr(subprocess, "run", run_cli)
+
+    bench_runner._run_cli_timed(["--help"], {}, tmp_path)
+
+    assert observed["cwd"] == tmp_path
 
 
 def test_benchmark_runner_includes_runtime_diagnostics(monkeypatch) -> None:
