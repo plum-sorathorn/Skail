@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from evals.fixtures_loader import load_fixtures
@@ -326,3 +327,16 @@ def test_eval_fixtures_manifest_freeze_and_digests() -> None:
         assert (
             stored_digest == computed_digest
         ), f"Digest mismatch for {rel_file}: expected {stored_digest}, computed {computed_digest}"
+
+
+def test_eval_fixture_contents_are_checked_out_with_lf_endings() -> None:
+    root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        ["git", "check-attr", "eol", "--", "evals/fixtures/trivial.json"],
+        cwd=root,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+
+    assert result.stdout.strip().endswith("eol: lf")
