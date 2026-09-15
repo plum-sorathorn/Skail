@@ -61,6 +61,9 @@ def test_benchmark_runner_includes_rendered_diagnostics(monkeypatch) -> None:
     monkeypatch.setattr(bench_runner, "benchmark_event_persistence", lambda *_: {"persist": 1.0})
     monkeypatch.setattr(bench_runner, "benchmark_tui_projection", lambda *_: {"projection": 1.0})
     monkeypatch.setattr(bench_runner, "benchmark_context_assembly", lambda *_: {"context": 1.0})
+    monkeypatch.setattr(bench_runner, "benchmark_cli_runtime", lambda: {"cli": 1.0})
+    monkeypatch.setattr(bench_runner, "benchmark_scheduler_overhead", lambda: {"scheduler": 1.0})
+    monkeypatch.setattr(bench_runner, "benchmark_workspace_setup", lambda: {"workspace": 1.0})
 
     async def rendered_updates(*_: object) -> dict[str, float]:
         return {"active_children": 3.0, "rendered_update_seconds": 0.01}
