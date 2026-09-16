@@ -390,8 +390,9 @@ async def test_tui_shell_route_shadow_labels() -> None:
         assert item.evidence_status == "sufficient"
 
         panel_widget = route_view.query(Static).last()
-        assert panel_widget.renderable is not None
-        assert "SHADOW: economy" in str(getattr(panel_widget.renderable, "title", ""))
+        visual = panel_widget.render()
+        inner = getattr(visual, "_renderable", visual)
+        assert "SHADOW: economy" in str(getattr(inner, "title", inner))
 
 
 @pytest.mark.asyncio

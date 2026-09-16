@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -38,7 +38,7 @@ def _acquire_lock(handle: BinaryIO, timeout_sec: float | None = None) -> None:
 
 def _lock(handle: BinaryIO, non_blocking: bool = False) -> None:
     handle.seek(0)
-    if os.name == "nt":
+    if sys.platform == "win32":
         import msvcrt
 
         if handle.read(1) == b"":
@@ -50,17 +50,17 @@ def _lock(handle: BinaryIO, non_blocking: bool = False) -> None:
     else:
         import fcntl
 
-        flags = fcntl.LOCK_EX | (fcntl.LOCK_NB if non_blocking else 0)  # type: ignore[attr-defined]
-        fcntl.flock(handle.fileno(), flags)  # type: ignore[attr-defined]
+        flags = fcntl.LOCK_EX | (fcntl.LOCK_NB if non_blocking else 0)
+        fcntl.flock(handle.fileno(), flags)
 
 
 def _unlock(handle: BinaryIO) -> None:
     handle.seek(0)
-    if os.name == "nt":
+    if sys.platform == "win32":
         import msvcrt
 
         msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
     else:
         import fcntl
 
-        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)  # type: ignore[attr-defined]
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
