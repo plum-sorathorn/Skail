@@ -1,7 +1,7 @@
 # Skail design set
 
 Status: v0.1.0 candidate documentation; exact-final-commit Windows/Linux verification remains pending
-Date: 2026-09-15
+Date: 2026-09-16
 
 Skail is the native, budget-aware multi-agent coding harness built on DeepAgents. It
 supersedes an archived predecessor implementation that used proxy, plugin, and sidecar surfaces.
@@ -17,6 +17,12 @@ active guide, including offline tests, packaging, smoke, benchmarks, and paired 
 not release sign-off: exact-final-commit Windows/Linux verification remains pending and must be
 regenerated or obtained for the frozen documentation commit in Phase 24. Live-provider quality,
 economic qualification, and production route promotion remain separate Q1 work.
+
+Windows verification is green on `421e8e4` (Windows, Python 3.14.6), covering the journal
+connection-pool fix (`6809874`) and the eval-journal-close fix (`421e8e4`): 1377.8 appends/sec
+against the unchanged 100 appends/sec gate, with synchronous=FULL and per-op commit/rollback
+preserved. Measurements from the earlier documentation commit do not carry over as evidence for
+this commit. Linux CI raw evidence is still required; Linux green is not claimed.
 
 Read in this order:
 

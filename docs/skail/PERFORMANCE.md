@@ -1,7 +1,7 @@
 # Skail Performance & Context Hardening
 
 Status: Active
-Date: 2026-09-13
+Date: 2026-09-16
 Reference: ADR 0005, SPEC.md Section 20
 
 ## 1. Objectives
@@ -52,3 +52,16 @@ prove rendering responsiveness.
 Journal growth is measured as bytes per event in the raw benchmark evidence. Compaction safely
 summarizes older transcripts while preserving all lineage, model assignments, budget states, and
 artifact references.
+
+## 4. v0.1.0 current release evidence
+
+New-commit measurements only: evidence from the earlier documentation commit does not carry
+over as evidence for this commit.
+
+- Source: `421e8e4` (includes the journal connection-pool fix `6809874` and the
+  eval-journal-close fix `421e8e4`); platform Windows, Python 3.14.6.
+- Event persistence: 1377.8 appends/sec against the unchanged 100 appends/sec gate.
+- Durability preserved: synchronous=FULL with per-op commit/rollback; connection-pool reuse
+  and the eval-journal-close fix do not weaken commit or rollback semantics.
+- Linux CI raw evidence is still required; Linux green is not claimed. Exact-final-commit
+  Windows/Linux verification remains pending in Phase 24.

@@ -57,9 +57,14 @@ infrastructure is required.
 ## Release status
 
 The v0.1.0 source candidate has passed candidate-bound Windows verification through Phase 22,
-including the offline, packaging, smoke, benchmark, and paired-evaluation checks. Exact-final-
+including the offline, packaging, smoke, benchmark, and paired-evaluation checks, plus Windows
+verification of the journal connection-pool fix (`6809874`) and the eval-journal-close fix
+(`421e8e4`): 1377.8 appends/sec on `421e8e4` (Windows, Python 3.14.6) against the unchanged 100
+appends/sec gate, with synchronous=FULL and per-op commit/rollback preserved. Exact-final-
 commit Windows/Linux verification remains pending; the Phase 22 evidence cannot certify this
-documentation commit. Live-provider quality and economic qualification remain a separate Q1 track.
+documentation commit. Windows is green on `421e8e4`; Linux CI raw evidence is still required
+and Linux green is not claimed. Live-provider quality and economic qualification remain a
+separate Q1 track.
 
 ## Getting started
 
@@ -146,6 +151,7 @@ flowchart LR
 | [Performance](docs/skail/PERFORMANCE.md) | Reproducible runtime, rendering, persistence, and context measurements |
 | [Feature roadmap](docs/skail/FEATURE_PARITY_ROADMAP.md) | Core acceptance matrix and separately scoped follow-on integrations |
 | [Final integrated review](docs/skail/PHASE_21_REVIEW.md) | Cross-phase findings, representative traces, and release evidence boundaries |
+| [Changelog](CHANGELOG.md) | Notable v0.1.0 fixes, performance evidence, and release status |
 
 ## Benchmarks
 
