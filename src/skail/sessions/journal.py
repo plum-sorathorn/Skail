@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from threading import RLock, local
-from typing import Any, Literal
+from typing import Any
 
 from skail.domain.changesets import ChangeSet, ChangeSetStatus
 from skail.domain.events import EventEnvelope, PlanPayload, SecretRedactor
@@ -41,6 +41,7 @@ from skail.domain.strategy_estimates import (
 )
 from skail.domain.tasks import AttemptStatus, TaskStatus
 from skail.runtime.errors import FrameworkContractError
+from skail.sessions.connections import JournalConnections
 from skail.sessions.migrations import apply_migrations
 
 
@@ -673,15 +674,6 @@ class JournalTransaction:
             ) from exc
 
 
-class ClosingConnection(sqlite3.Connection):
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> Literal[False]:
-        try:
-            super().__exit__(exc_type, exc_val, exc_tb)
-            return False
-        finally:
-            self.close()
-
-
 class Journal:
     def __init__(
         self,
@@ -697,19 +689,16 @@ class Journal:
         self.redactor = redactor or SecretRedactor()
         self._migration_lock = RLock()
         self._transactions = local()
+        self._connections = JournalConnections(path, busy_timeout_ms)
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(
-            self.path,
-            timeout=self.busy_timeout_ms / 1_000,
-            isolation_level=None,
-            factory=ClosingConnection,
-        )
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute(f"PRAGMA busy_timeout={self.busy_timeout_ms}")
-        connection.execute("PRAGMA journal_mode=WAL")
-        return connection
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        with self._connections.lease() as connection:
+            yield connection
+
+    def close(self) -> None:
+        """Release retained connections without interrupting active transactions."""
+        self._connections.close()
 
     def migrate(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -841,34 +830,32 @@ class Journal:
             finally:
                 self._transactions.active = active
             return
-        connection: sqlite3.Connection | None = None
         for attempt in range(self.max_retries + 1):
-            connection = self._connect()
-            try:
-                connection.execute("BEGIN IMMEDIATE")
-                break
-            except sqlite3.OperationalError as exc:
-                connection.close()
-                connection = None
-                if "locked" not in str(exc).lower() or attempt >= self.max_retries:
-                    raise JournalBusyError("journal remained busy after bounded retries") from exc
-                time.sleep(min(0.005 * (attempt + 1), 0.025))
-        if connection is None:
-            raise JournalBusyError("journal connection was not acquired")
-        transaction = JournalTransaction(connection, self.redactor)
-        self._transactions.active = (connection, transaction, 1)
-        try:
-            yield transaction
-        except BaseException:
-            connection.rollback()
-            raise
-        else:
-            connection.commit()
-            for callback in transaction.after_commit_callbacks:
-                callback()
-        finally:
-            self._transactions.active = None
-            connection.close()
+            with self._connect() as connection:
+                try:
+                    connection.execute("BEGIN IMMEDIATE")
+                except sqlite3.OperationalError as exc:
+                    if "locked" not in str(exc).lower() or attempt >= self.max_retries:
+                        raise JournalBusyError(
+                            "journal remained busy after bounded retries"
+                        ) from exc
+                    time.sleep(min(0.005 * (attempt + 1), 0.025))
+                    continue
+                transaction = JournalTransaction(connection, self.redactor)
+                self._transactions.active = (connection, transaction, 1)
+                try:
+                    yield transaction
+                except BaseException:
+                    connection.rollback()
+                    raise
+                else:
+                    connection.commit()
+                    for callback in transaction.after_commit_callbacks:
+                        callback()
+                finally:
+                    self._transactions.active = None
+                return
+        raise JournalBusyError("journal connection was not acquired")
 
     def _write(self, method: str, **values: Any) -> None:
         with self.transaction() as transaction:

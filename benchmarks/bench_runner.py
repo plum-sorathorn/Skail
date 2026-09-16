@@ -80,6 +80,8 @@ def benchmark_event_persistence(iterations: int = 1000) -> dict[str, float]:
         _ = journal.get_session_snapshot(session_id).events
         read_time = time.perf_counter() - t1
 
+        # Measure the final database after committed WAL pages have been checkpointed.
+        journal.close()
         db_size = db_path.stat().st_size
 
         del journal
