@@ -58,9 +58,12 @@ class FilesystemBoundary:
 
     def resolve(self, raw: str | Path, *, for_write: bool = False) -> Path:
         self.assert_host_path_allowed(raw)
-        supplied = Path(raw)
+        supplied = Path(str(raw).replace("\\", "/"))
         candidate = supplied if supplied.is_absolute() else self.workspace / supplied
-        candidate = candidate.resolve(strict=not for_write)
+        try:
+            candidate = candidate.resolve(strict=not for_write)
+        except FileNotFoundError:
+            candidate = candidate.resolve(strict=False)
         if candidate in self.outside_grants:
             return candidate
         try:

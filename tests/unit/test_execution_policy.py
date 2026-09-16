@@ -44,7 +44,7 @@ def test_command_policy_table_and_structured_arguments(tmp_path: Path) -> None:
     assert policy.evaluate(no_index).requires_approval
     global_config = CommandRequest("git", ("config", "--global", "x", "y"), tmp_path)
     assert policy.evaluate(global_config).requires_approval
-    outside_rg = CommandRequest("rg", ("TOKEN", "C:/outside"), tmp_path)
+    outside_rg = CommandRequest("rg", ("TOKEN", str(tmp_path.parent)), tmp_path)
     assert policy.evaluate(outside_rg).requires_approval
     assert policy.evaluate(
         CommandRequest("curl", ("https://example.com",), tmp_path)
