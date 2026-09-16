@@ -731,46 +731,53 @@ class EvaluationRunner:
             started = time.perf_counter()
             error_msg: str | None = None
             try:
-                controller = RunController(
-                    session_id=session_id,
-                    workspace=workspace,
-                    journal=journal,
-                    models=runtime_models,
-                    default_lead_model=(
-                        policy_controls.lead_model or self.candidates[0].profile.model
-                    ),
-                    default_child_model=policy_controls.child_model or child_model_name,
-                    fixed_profile_models={
-                        "explorer": child_model_name,
-                        **_fixed_profile_models(policy_controls.child_model),
-                    },
-                    budget_limit_usd=Decimal("100.00"),
-                    catalog_revision=catalog_revision,
-                    providers={
-                        "eval-provider": FakeProviderAdapter(),
-                        "fake": FakeProviderAdapter(),
-                    },
-                    candidates_fn=lambda: RoutingSnapshot(
+                try:
+                    controller = RunController(
+                        session_id=session_id,
+                        workspace=workspace,
+                        journal=journal,
+                        models=runtime_models,
+                        default_lead_model=(
+                            policy_controls.lead_model or self.candidates[0].profile.model
+                        ),
+                        default_child_model=policy_controls.child_model or child_model_name,
+                        fixed_profile_models={
+                            "explorer": child_model_name,
+                            **_fixed_profile_models(policy_controls.child_model),
+                        },
+                        budget_limit_usd=Decimal("100.00"),
                         catalog_revision=catalog_revision,
-                        config_revision=config_revision({"routing": {"mode": routing_mode.value}}),
-                        health_revision="eval-health-v1",
-                        candidates=self.candidates,
-                    ),
-                )
-                run_result = asyncio.run(
-                    asyncio.wait_for(
-                        controller.run_instruction(fixture.prompt, controls=controls),
-                        timeout=self.cell_timeout_seconds,
+                        providers={
+                            "eval-provider": FakeProviderAdapter(),
+                            "fake": FakeProviderAdapter(),
+                        },
+                        candidates_fn=lambda: RoutingSnapshot(
+                            catalog_revision=catalog_revision,
+                            config_revision=config_revision(
+                                {"routing": {"mode": routing_mode.value}}
+                            ),
+                            health_revision="eval-health-v1",
+                            candidates=self.candidates,
+                        ),
                     )
-                )
-            except TimeoutError:
-                run_result = None
-                error_msg = f"runtime execution timed out after {self.cell_timeout_seconds:.1f}s"
-            except Exception as exc:
-                run_result = None
-                error_msg = f"runtime execution failed ({type(exc).__name__}): {exc}"
-            elapsed = time.perf_counter() - started
-            snapshot = journal.get_session_snapshot(str(session_id))
+                    run_result = asyncio.run(
+                        asyncio.wait_for(
+                            controller.run_instruction(fixture.prompt, controls=controls),
+                            timeout=self.cell_timeout_seconds,
+                        )
+                    )
+                except TimeoutError:
+                    run_result = None
+                    error_msg = (
+                        f"runtime execution timed out after {self.cell_timeout_seconds:.1f}s"
+                    )
+                except Exception as exc:
+                    run_result = None
+                    error_msg = f"runtime execution failed ({type(exc).__name__}): {exc}"
+                elapsed = time.perf_counter() - started
+                snapshot = journal.get_session_snapshot(str(session_id))
+            finally:
+                journal.close()
             assignments = [
                 TaskAssignment.model_validate(assignment.payload)
                 for assignment in snapshot.assignments
