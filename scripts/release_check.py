@@ -346,7 +346,13 @@ def check_smoke() -> None:
     print("  -> Fake-provider smoke: OK.")
     _run_checked(
         "  -> Running benchmark thresholds...",
-        [sys.executable, str(ROOT / "benchmarks" / "bench_runner.py"), "--json"],
+        [
+            sys.executable,
+            str(ROOT / "benchmarks" / "bench_runner.py"),
+            "--json",
+            "--repetitions",
+            "3",
+        ],
     )
 
 

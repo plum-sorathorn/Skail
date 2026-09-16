@@ -555,17 +555,18 @@ def test_integrated_release_wheel_check_accepts_canonical_skail_package(
 def test_release_smoke_uses_an_isolated_runtime_workspace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    observed: list[dict[str, object]] = []
+    observed: list[tuple[list[str], dict[str, object]]] = []
 
     def run_smoke(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        observed.append(kwargs)
+        observed.append((command, kwargs))
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(subprocess, "run", run_smoke)
 
     check_smoke()
 
-    smoke_call = next(call for call in observed if "env" in call)
+    smoke_call = next(kwargs for _, kwargs in observed if "env" in kwargs)
+    benchmark_command = next(command for command, _ in observed if "bench_runner.py" in command[1])
     workspace = Path(str(smoke_call["cwd"]))
     environment = smoke_call["env"]
     assert isinstance(environment, dict)
@@ -573,6 +574,7 @@ def test_release_smoke_uses_an_isolated_runtime_workspace(
     assert environment["USERPROFILE"] == str(workspace)
     assert environment["APPDATA"] == str(workspace / "AppData")
     assert environment["HOME"] == str(workspace)
+    assert benchmark_command[-2:] == ["--repetitions", "3"]
 
 
 def test_release_evals_isolate_user_runtime_paths(

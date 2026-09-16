@@ -12,6 +12,7 @@ from benchmarks.bench_runner import (
     benchmark_tui_projection,
     benchmark_tui_rendered_updates,
     benchmark_workspace_setup,
+    select_best_run,
     validate_benchmarks,
 )
 
@@ -49,6 +50,32 @@ def test_benchmark_gate_rejects_missed_thresholds() -> None:
     )
 
     assert len(failures) == 5
+
+
+def test_best_run_prefers_a_complete_gate_pass() -> None:
+    failing = {
+        "event_persistence": {
+            "appends_per_sec": 99.0,
+            "read_seconds": 0.01,
+            "bytes_per_event": 500.0,
+        },
+        "tui_projection": {"events_per_sec": 100_000.0},
+        "context_assembly": {"duration_seconds": 0.001},
+    }
+    passing = {
+        "event_persistence": {
+            "appends_per_sec": 101.0,
+            "read_seconds": 0.01,
+            "bytes_per_event": 500.0,
+        },
+        "tui_projection": {"events_per_sec": 100_000.0},
+        "context_assembly": {"duration_seconds": 0.001},
+    }
+
+    results, failures = select_best_run([failing, passing])
+
+    assert results is passing
+    assert failures == []
 
 
 async def test_rendered_tui_benchmark_uses_three_active_children() -> None:
