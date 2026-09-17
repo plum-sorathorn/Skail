@@ -13,14 +13,17 @@
 # Skail
 
 Skail is an agentic AI and multi-agent coding harness built on
-[DeepAgents](https://github.com/langchain-ai/deepagents). It uses **LangGraph** for durable,
+[DeepAgents](https://github.com/langchain-ai/deepagents). It uses
+**[LangGraph](https://github.com/langchain-ai/langgraph)** for durable,
 stateful orchestration—including direct execution, dependency-aware task graphs, checkpointing,
-human-in-the-loop interrupts, and resumable sessions—and **LangChain** abstractions for LLM
+human-in-the-loop interrupts, and resumable sessions—and
+**[LangChain](https://github.com/langchain-ai/langchain)** abstractions for LLM
 provider integration, model invocation, structured output, and tool calling.
 
-Its systems stack combines **Pydantic** contracts, **SQLite** persistence, asynchronous Python
+Its systems stack combines **[Pydantic](https://github.com/pydantic/pydantic)** contracts,
+**[SQLite](https://www.sqlite.org/)** persistence, asynchronous Python
 concurrency, Git worktree isolation, budget-aware model routing, provider usage accounting,
-context engineering, and a **Textual** terminal UI. Skail coordinates specialized subagents while
+context engineering, and a **[Textual](https://github.com/Textualize/textual)** terminal UI. Skail coordinates specialized subagents while
 enforcing task dependencies, bounded retries, verification evidence, permissions, and hard cost
 limits in deterministic runtime code.
 
@@ -152,10 +155,11 @@ flowchart LR
 | [Feature roadmap](docs/skail/FEATURE_PARITY_ROADMAP.md) | Core acceptance matrix and separately scoped follow-on integrations |
 | [Final integrated review](docs/skail/PHASE_21_REVIEW.md) | Cross-phase findings, representative traces, and release evidence boundaries |
 | [Changelog](CHANGELOG.md) | Notable v0.1.0 fixes, performance evidence, and release status |
+| [Dependencies](docs/skail/DEPENDENCIES.md) | Pinned runtime dependencies, provider extras, and transitive tooling |
 
 ## Benchmarks
 
-Skail includes reproducible local benchmarks and an independently scored offline evaluation suite.
+Skail includes reproducible local benchmarks ([bench_runner](benchmarks/bench_runner.py)) and an independently scored offline evaluation suite.
 Run them against the same source and environment you want to measure:
 
 ```powershell
