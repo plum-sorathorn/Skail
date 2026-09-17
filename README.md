@@ -8,6 +8,12 @@
   [![CI](https://github.com/plum-sorathorn/Skail/actions/workflows/ci.yml/badge.svg?branch=skail)](https://github.com/plum-sorathorn/Skail/actions/workflows/ci.yml)
   [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg?style=flat-square)](https://www.python.org/downloads/)
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+  [![DeepAgents](https://img.shields.io/badge/DeepAgents-multi--agent-blue.svg?style=flat-square)](https://github.com/langchain-ai/deepagents)
+  [![LangGraph](https://img.shields.io/badge/LangGraph-orchestration-blue.svg?style=flat-square)](https://github.com/langchain-ai/langgraph)
+  [![LangChain](https://img.shields.io/badge/LangChain-framework-blue.svg?style=flat-square)](https://github.com/langchain-ai/langchain)
+  [![Textual](https://img.shields.io/badge/Textual-TUI-blue.svg?style=flat-square)](https://github.com/Textualize/textual)
+  [![Pydantic](https://img.shields.io/badge/Pydantic-validation-blue.svg?style=flat-square)](https://github.com/pydantic/pydantic)
+  [![SQLite](https://img.shields.io/badge/SQLite-storage-blue.svg?style=flat-square)](https://www.sqlite.org/)
 </p>
 
 # Skail
