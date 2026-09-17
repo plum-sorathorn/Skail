@@ -5,9 +5,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/plum-sorathorn/Skail/actions/workflows/ci.yml"><img src="https://github.com/plum-sorathorn/Skail/actions/workflows/ci.yml/badge.svg?branch=skail" alt="CI"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.12%2B-blue.svg?style=flat-square" alt="Python 3.12+"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
+  [![CI](https://github.com/plum-sorathorn/Skail/actions/workflows/ci.yml/badge.svg?branch=skail)](https://github.com/plum-sorathorn/Skail/actions/workflows/ci.yml)
+  [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg?style=flat-square)](https://www.python.org/downloads/)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 </p>
 
 # Skail

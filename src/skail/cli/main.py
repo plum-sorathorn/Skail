@@ -523,69 +523,45 @@ def main(argv: Sequence[str] | None = None) -> int:
             title=prompt_text[:50] or "New Session",
         )
 
-    # 7. Check non-interactive prompt requirements
+    # 7. Classify interactive-TTY vs headless BEFORE runtime construction.
+    headless_requested = bool(args.print_mode or args.json_mode)
+    interactive_tty = (
+        not headless_requested and sys.stdin.isatty() and sys.stdout.isatty()
+    )
     if not prompt_text and not args.continue_session and args.resume_session is None:
         if args.print_mode or args.json_mode:
             render_print_stderr("Error: prompt required in non-interactive print or JSONL mode.")
             return EXIT_USAGE
-        if not sys.stdin.isatty():
-            render_print_stdout(f"Skail {__version__} interactive harness ready.")
-            render_print_stdout("Use 'skail [PROMPT]' or slash commands. Type '/quit' to exit.")
-            return EXIT_OK
+        if not headless_requested and not interactive_tty:
+            from skail.tui.onboarding import NON_TTY_USAGE_ERROR
+
+            render_print_stderr(NON_TTY_USAGE_ERROR)
+            return EXIT_FAILURE
 
     approvals = ApprovalStore(workspace / ".skail" / "approvals.sqlite")
     question_store = QuestionStore(workspace / ".skail" / "questions.sqlite")
 
-    # 8. Interactive TUI execution
-    if not args.print_mode and not args.json_mode and sys.stdin.isatty():
-        try:
-            runtime_models = _build_runtime_models(
-                args, redaction, prompt_text
-            )
-            assert runtime_models.catalog is not None
-            assert runtime_models.config is not None
-            has_bootstrap_candidates = bool(runtime_models.candidates)
-            models, lead_model_name, child_model_name = runtime_models
-        except ProviderConfigurationError as exc:
-            render_print_stderr(f"Provider configuration error: {exc}")
-            return EXIT_FAILURE
-        from skail.runtime.run_controller import RunController
+    # 8. Interactive TUI execution: mount shell first, build runtime lazily.
+    if interactive_tty:
         from skail.tui.app import SkailApp
 
-        budget_usd = Decimal(str(args.budget)) if args.budget is not None else None
-        controller = RunController(
-            session_id=SessionId(session_record.session_id),
-            workspace=workspace,
-            journal=journal,
-            checkpoints=checkpoints,
-            redaction=redaction,
-            models=models,
-            default_lead_model=lead_model_name,
-            default_child_model=child_model_name,
-            budget_limit_usd=budget_usd,
-            budget_warning_percent=args.budget_warning_percent,
-            approvals=approvals,
-            question_store=question_store,
-            project_trusted=trusted,
-            profile_models=profile_models,
-            providers=runtime_models.providers,
-            candidates_fn=(runtime_models.routing_snapshot if has_bootstrap_candidates else None),
-            catalog_revision=(
-                runtime_models.catalog.revision if has_bootstrap_candidates else "catalog-v1"
-            ),
-            config_snapshot=(
-                runtime_models.config.model_dump(mode="json")
-                if has_bootstrap_candidates
-                else None
-            ),
-            workspace_mode=args.workspace_mode,
-        )
-        initial_snapshot = None
-        if args.resume_session is not None:
-            controller.restore_interrupted()
-            initial_snapshot = journal.get_session_snapshot(session_record.session_id)
+        def _runtime_factory() -> RuntimeModelSet:
+            return _build_runtime_models(args, redaction, prompt_text)
+
+        bootstrap = {
+            "workspace": str(workspace),
+            "session_id": session_record.session_id,
+            "fake_provider": bool(getattr(args, "fake_provider", False)),
+            "initial_prompt": prompt_text or None,
+            "max_agents": args.max_agents,
+            "delegation": args.delegation,
+            "budget": args.budget,
+            "budget_warning_percent": args.budget_warning_percent,
+            "workspace_mode": args.workspace_mode,
+            "project_trusted": trusted,
+            "resume_session": args.resume_session,
+        }
         app = SkailApp(
-            controller=controller,
             session_service=session_service,
             session_id=SessionId(session_record.session_id),
             approval_store=approvals,
@@ -593,7 +569,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             initial_prompt=prompt_text or None,
             max_children=args.max_agents,
             delegation=args.delegation,
-            initial_snapshot=initial_snapshot,
+            runtime_factory=_runtime_factory,
+            bootstrap=bootstrap,
+            journal=journal,
+            checkpoints=checkpoints,
+            redaction=redaction,
+            profile_models=profile_models,
         )
         return app.run() or EXIT_OK
 

@@ -41,14 +41,14 @@ Read in this order:
 
 The design was checked against the following current upstream behavior:
 
-- DeepAgents builds an agent harness on LangChain and LangGraph, with planning, filesystems, context management, subagents, memory, backends, permissions, and human-in-the-loop support: <https://docs.langchain.com/oss/python/deepagents/overview>
-- Synchronous subagents are invoked through the `task` tool and may be declarative agents or caller-supplied compiled LangGraph runnables: <https://docs.langchain.com/oss/python/deepagents/subagents>
-- Async subagents provide background execution, updates, and cancellation, but remain a preview API: <https://docs.langchain.com/oss/python/deepagents/async-subagents>
-- Model middleware can replace the concrete model before a provider call: <https://docs.langchain.com/oss/python/langchain/middleware/custom#dynamic-model-selection>
-- Filesystem permissions do not protect custom tools or shell execution, so Skail must enforce command policy separately: <https://docs.langchain.com/oss/python/deepagents/permissions>
-- LLM Gateway exposes an OpenAI-compatible endpoint at `https://api.llmgateway.io/v1`: <https://docs.llmgateway.io/developers>
-- The current DeepAgents repository separates the deployment-oriented `deepagents-cli` from the interactive `deepagents-code`/`dcode` product: <https://github.com/langchain-ai/deepagents/blob/main/AGENTS.md>
-- Pi's coding-agent prompt uses a deliberately small direct-work tool set, while its repository requires broad provider behavior tests: <https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/system-prompt.ts> and <https://github.com/badlogic/pi-mono/blob/main/AGENTS.md>
+- DeepAgents builds an agent harness on LangChain and LangGraph, with planning, filesystems, context management, subagents, memory, backends, permissions, and human-in-the-loop support: [DeepAgents overview](https://docs.langchain.com/oss/python/deepagents/overview)
+- Synchronous subagents are invoked through the `task` tool and may be declarative agents or caller-supplied compiled LangGraph runnables: [DeepAgents subagents](https://docs.langchain.com/oss/python/deepagents/subagents)
+- Async subagents provide background execution, updates, and cancellation, but remain a preview API: [DeepAgents async subagents](https://docs.langchain.com/oss/python/deepagents/async-subagents)
+- Model middleware can replace the concrete model before a provider call: [LangChain dynamic model selection](https://docs.langchain.com/oss/python/langchain/middleware/custom#dynamic-model-selection)
+- Filesystem permissions do not protect custom tools or shell execution, so Skail must enforce command policy separately: [DeepAgents permissions](https://docs.langchain.com/oss/python/deepagents/permissions)
+- LLM Gateway exposes an OpenAI-compatible endpoint at `https://api.llmgateway.io/v1`: [LLM Gateway developers](https://docs.llmgateway.io/developers)
+- The current DeepAgents repository separates the deployment-oriented `deepagents-cli` from the interactive `deepagents-code`/`dcode` product: [DeepAgents AGENTS.md](https://github.com/langchain-ai/deepagents/blob/main/AGENTS.md)
+- Pi's coding-agent prompt uses a deliberately small direct-work tool set, while its repository requires broad provider behavior tests: [Pi coding-agent system prompt](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/system-prompt.ts) and [pi-mono AGENTS.md](https://github.com/badlogic/pi-mono/blob/main/AGENTS.md)
 
 The implementation baseline used during research was `deepagents==0.7.13`. The implementation must repeat the compatibility spike and pin the exact supported version before writing the runtime adapter.
 

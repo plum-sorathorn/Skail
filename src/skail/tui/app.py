@@ -1,15 +1,25 @@
+"""Phase 1 semantic shell and boot separation for SkailApp.
+
+Draft source: docs/skail/TUI_REVAMP_DRAFT.md sections 8.1-8.4, 11 (Phase 1).
+Interactive sessions mount the shell immediately; provider/model
+construction happens in a Textual worker after the shell is visible.
+Headless paths never touch this module.
+"""
+
 from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable
+from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
-from textual.widgets import Footer, Header, Static, TabbedContent, TabPane
+from textual.widgets import Footer, Header, Input, Static, TabbedContent, TabPane
 
 from skail import __version__
 from skail.agents.lead import DelegationMode, LeadControls
@@ -17,20 +27,72 @@ from skail.domain.events import EventEnvelope, UserPayload
 from skail.domain.ids import SessionId, new_event_id, new_run_id, new_session_id
 from skail.domain.routing import RoutingMode
 from skail.runtime.interrupts import QuestionStore
-from skail.runtime.run_controller import RunController
 from skail.sessions.journal import SessionSnapshot
 from skail.sessions.service import SessionService
 from skail.tools.approvals import ApprovalChoice, ApprovalStore
 from skail.tools.execution import CommandRequest
 from skail.tui.commands import dispatch_slash_command
+from skail.tui.onboarding import (
+    VALIDATION_FAILURE_COPY,
+    BootstrapCredentials,
+    OnboardingState,
+    has_env_credentials,
+    ready_receipt,
+)
 from skail.tui.projection import InterruptItem, TranscriptItem, TuiProjection
+from skail.tui.theme import (
+    ThemeName,
+    ThemeTokens,
+    detect_system_preference,
+    get_theme,
+    reduced_motion_enabled,
+    resolve_system_theme,
+)
 from skail.tui.widgets.agents import AgentRail
 from skail.tui.widgets.budget import BudgetView
 from skail.tui.widgets.chat import ChatTranscript
 from skail.tui.widgets.composer import PromptComposer
 from skail.tui.widgets.interrupts import InterruptWidget
+from skail.tui.widgets.onboarding import OnboardingPanel
 from skail.tui.widgets.plan import PlanView
 from skail.tui.widgets.route import RouteView
+
+AppState = Literal["onboarding", "initializing", "ready", "error", "quitting"]
+
+ACTION_REGISTRY: dict[str, dict[str, str]] = {
+    "quit": {"binding": "ctrl+c", "description": "Quit", "group": "Session"},
+    "view_budget": {"binding": "ctrl+b", "description": "Budget", "group": "Nav"},
+    "view_agents": {"binding": "ctrl+a", "description": "Agents", "group": "Nav"},
+    "view_plan": {"binding": "ctrl+p", "description": "Plan", "group": "Nav"},
+    "view_route": {"binding": "ctrl+r", "description": "Route", "group": "Nav"},
+    "view_chat": {"binding": "ctrl+t", "description": "Chat", "group": "Nav"},
+    "show_help": {"binding": "f1", "description": "Help", "group": "Session"},
+    "transcript_overlay": {"binding": "ctrl+o", "description": "Transcript", "group": "Display"},
+    "shortcuts_overlay": {
+        "binding": "question_mark",
+        "description": "Shortcuts",
+        "group": "Display",
+    },
+    "missions_overlay": {"binding": "ctrl+t", "description": "Missions", "group": "Agents"},
+    "cycle_mode": {"binding": "shift+tab", "description": "Cycle mode", "group": "Run"},
+    "model_picker": {"binding": "alt+p", "description": "Model picker", "group": "Run"},
+}
+
+_PROVIDER_ENV_VARS = {
+    "llmgateway": "LLMGATEWAY_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+}
+
+_READY_COPY = (
+    "Ready.\n\nDescribe the outcome you want, paste an error, or type /help.\n"
+    "Shift+Tab changes mode. ? shows shortcuts."
+)
+_STARTING_COPY = "✻ Starting Skail runtime…\nLoading configured providers and session state."
+_RUNTIME_ERROR_COPY = (
+    "RUNTIME COULD NOT START\n\nYour session is safe. No agent run was started.\n"
+    "Review provider settings or retry initialization.\n\n[R] Retry   [S] Setup   [Q] Quit"
+)
 
 
 class SkailApp(App[int]):
@@ -67,6 +129,15 @@ class SkailApp(App[int]):
     .narrow #sidebar-container {
         display: none;
     }
+    .wide #chat-container {
+        width: 60%;
+    }
+    .wide #sidebar-container {
+        display: block;
+    }
+    .reduced-motion * {
+        transition: none;
+    }
     #status-strip {
         width: 100%;
         height: 1;
@@ -83,6 +154,8 @@ class SkailApp(App[int]):
         Binding("ctrl+p", "view_plan", "Plan", priority=True),
         Binding("ctrl+r", "view_route", "Route"),
         Binding("ctrl+t", "view_chat", "Chat"),
+        Binding("ctrl+o", "transcript_overlay", "Transcript"),
+        Binding("question_mark", "shortcuts_overlay", "Shortcuts"),
         Binding("f1", "show_help", "Help"),
     ]
 
@@ -90,7 +163,7 @@ class SkailApp(App[int]):
         self,
         projection: TuiProjection | None = None,
         background_supported: bool = False,
-        controller: RunController | None = None,
+        controller: Any | None = None,
         session_service: SessionService | None = None,
         session_id: SessionId | None = None,
         approval_store: ApprovalStore | None = None,
@@ -99,6 +172,14 @@ class SkailApp(App[int]):
         max_children: int = 3,
         delegation: DelegationMode = "auto",
         initial_snapshot: SessionSnapshot | None = None,
+        runtime_factory: Callable[[], Any] | None = None,
+        bootstrap: dict[str, Any] | None = None,
+        journal: Any | None = None,
+        checkpoints: Any | None = None,
+        redaction: Any | None = None,
+        profile_models: dict[str, str] | None = None,
+        theme_name: ThemeName = "system",
+        reduced_motion: bool | None = None,
     ) -> None:
         super().__init__()
         self.projection = projection or TuiProjection()
@@ -112,11 +193,46 @@ class SkailApp(App[int]):
         self.max_children = max_children
         self.delegation = delegation
         self.initial_snapshot = initial_snapshot
+        self.runtime_factory = runtime_factory
+        self.bootstrap: dict[str, Any] = dict(bootstrap or {})
+        self.journal = journal
+        self.checkpoints = checkpoints
+        self.redaction = redaction
+        self.profile_models = profile_models or {}
         self.simulated: bool = False
         self._active_worker: Any = None
         self._mounted: bool = False
+        self.app_state: AppState = "ready"
+        self.startup_error: str | None = None
+        self.onboarding_state = OnboardingState(
+            workspace=str(self.bootstrap.get("workspace", "")),
+            session_id=str(self.bootstrap.get("session_id", "")),
+            theme=theme_name,
+        )
+        self.onboarding_credentials = BootstrapCredentials()
+        self._previous_theme: str = self.onboarding_state.theme
+        self.current_theme_name: ThemeName = theme_name
+        if theme_name == "dark":
+            self.current_tokens: ThemeTokens = get_theme("dark")
+        elif theme_name == "light":
+            self.current_tokens = get_theme("light")
+        else:
+            self.current_tokens = resolve_system_theme(
+                detect_system_preference()
+            )[0]
+        self.reduced_motion = reduced_motion_enabled(reduced_motion)
+        self._overlay_stack: list[str] = []
+        self._focus_before_overlay: Any = None
         if self.controller is not None:
             self.controller.subscribe_events(self.apply_event)
+            self.app_state = "ready"
+        elif self.runtime_factory is not None:
+            if bool(self.bootstrap.get("fake_provider", False)):
+                self.app_state = "initializing"
+            elif has_env_credentials():
+                self.app_state = "initializing"
+            else:
+                self.app_state = "onboarding"
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -140,6 +256,7 @@ class SkailApp(App[int]):
 
     def on_mount(self) -> None:
         self._mounted = True
+        self.apply_theme(self.current_theme_name)
         if self.initial_snapshot is not None:
             self.projection.apply_snapshot(self.initial_snapshot)
         if self.controller is not None and self.controller.pending_interrupt is not None:
@@ -149,9 +266,16 @@ class SkailApp(App[int]):
                 if self.initial_snapshot and self.initial_snapshot.runs
                 else "restored",
             )
-        self.update_views()
+        if self.app_state == "onboarding":
+            self._mount_onboarding()
+        elif self.app_state == "initializing":
+            self._append_system_message("Starting", _STARTING_COPY)
+            self.update_views()
+            self._start_runtime_worker()
+        else:
+            self.update_views()
         self._check_screen_width()
-        if self.initial_prompt:
+        if self.initial_prompt and self.app_state == "ready":
             self.on_prompt_composer_prompt_submitted(
                 PromptComposer.PromptSubmitted(self.initial_prompt)
             )
@@ -160,15 +284,310 @@ class SkailApp(App[int]):
         self._check_screen_width()
 
     def _check_screen_width(self) -> None:
-        container = self.query_one("#main-container")
+        try:
+            container = self.query_one("#main-container")
+        except Exception:
+            return
         if self.size.width < 100:
             container.add_class("narrow")
+            container.remove_class("wide")
         else:
+            container.add_class("wide")
             container.remove_class("narrow")
 
+    # -- theme -----------------------------------------------------------
+    def apply_theme(self, name: ThemeName) -> ThemeTokens:
+        """Apply a theme by name; system falls back to Dark and says so."""
+        self.current_theme_name = name
+        if name == "system":
+            tokens, _ = resolve_system_theme(detect_system_preference())
+        else:
+            tokens = get_theme(name)
+        self.current_tokens = tokens
+        if self._mounted:
+            try:
+                screen = self.screen
+                screen.remove_class("theme-dark")
+                screen.remove_class("theme-light")
+                screen.add_class("theme-dark" if tokens is get_theme("dark") else "theme-light")
+                if self.reduced_motion:
+                    screen.add_class("reduced-motion")
+                else:
+                    screen.remove_class("reduced-motion")
+            except Exception:
+                pass
+        return tokens
+
+    def preview_theme(self, name: ThemeName) -> ThemeTokens:
+        """Live preview without committing the onboarding selection."""
+        return self.apply_theme(name)
+
+    def restore_theme(self) -> ThemeTokens:
+        """Restore the previously committed theme (Escape in picker)."""
+        previous = self._previous_theme
+        if previous == "dark":
+            return self.apply_theme("dark")
+        if previous == "light":
+            return self.apply_theme("light")
+        return self.apply_theme("system")
+
+    # -- overlay stack scaffold ------------------------------------------
+    def open_overlay(self, name: str) -> None:
+        """Push an overlay name, remembering focus for later restore."""
+        try:
+            self._focus_before_overlay = self.focused
+        except Exception:
+            self._focus_before_overlay = None
+        if name not in self._overlay_stack:
+            self._overlay_stack.append(name)
+
+    def close_overlay(self, name: str | None = None) -> None:
+        """Pop an overlay and restore the previously focused widget."""
+        if not self._overlay_stack:
+            return
+        if name is None:
+            self._overlay_stack.pop()
+        elif name in self._overlay_stack:
+            self._overlay_stack.remove(name)
+        else:
+            return
+        previous = self._focus_before_overlay
+        self._focus_before_overlay = None
+        if previous is not None:
+            try:
+                previous.focus()
+            except Exception:
+                pass
+
+    # -- boot / runtime worker -------------------------------------------
+    def _start_runtime_worker(self) -> None:
+        self.app_state = "initializing"
+        self.run_worker(self._initialize_runtime(), exclusive=True)
+
+    async def _initialize_runtime(self) -> None:
+        if self.runtime_factory is None:
+            return
+        try:
+            factory = self.runtime_factory
+            runtime_models = await asyncio.to_thread(factory)
+            self._attach_runtime_models(runtime_models)
+        except Exception as exc:
+            self._enter_error_state(self._sanitize_startup_error(exc))
+
+    def _attach_runtime_models(self, runtime_models: Any) -> None:
+        from skail.runtime.run_controller import RunController
+
+        models, lead_model_name, child_model_name = runtime_models
+        assert self.journal is not None, "journal required for runtime attach"
+        assert self.checkpoints is not None, "checkpoints required for runtime attach"
+        assert self.redaction is not None, "redaction required for runtime attach"
+        workspace = Path(str(self.bootstrap.get("workspace", Path.cwd())))
+        budget_raw = self.bootstrap.get("budget", None)
+        budget_usd = Decimal(str(budget_raw)) if budget_raw is not None else None
+        controller = RunController(
+            session_id=self.session_id or new_session_id(),
+            workspace=workspace,
+            journal=self.journal,
+            checkpoints=self.checkpoints,
+            redaction=self.redaction,
+            models=models,
+            default_lead_model=lead_model_name,
+            default_child_model=child_model_name,
+            budget_limit_usd=budget_usd,
+            budget_warning_percent=self.bootstrap.get("budget_warning_percent", 80),
+            approvals=self.approval_store,
+            question_store=self.question_store,
+            project_trusted=bool(self.bootstrap.get("project_trusted", False)),
+            profile_models=self.profile_models,
+            providers=runtime_models.providers,
+            candidates_fn=(
+                runtime_models.routing_snapshot if bool(runtime_models.candidates) else None
+            ),
+            catalog_revision=(
+                runtime_models.catalog.revision
+                if bool(runtime_models.candidates)
+                else "catalog-v1"
+            ),
+            config_snapshot=(
+                runtime_models.config.model_dump(mode="json")
+                if bool(runtime_models.candidates)
+                else None
+            ),
+            workspace_mode=self.bootstrap.get("workspace_mode", "shared"),
+        )
+        self.controller = controller
+        controller.subscribe_events(self.apply_event)
+        resume_target = self.bootstrap.get("resume_session", None)
+        if resume_target is not None:
+            controller.restore_interrupted()
+        self.onboarding_credentials.clear()
+        self.app_state = "ready"
+        self.startup_error = None
+        self._remove_onboarding_panel()
+        self._append_system_message("Ready", _READY_COPY)
+        if self.onboarding_state.provider:
+            receipt = ready_receipt(
+                provider=self.onboarding_state.provider,
+                trusted=self.onboarding_state.trusted,
+                theme=self.onboarding_state.theme,
+                mode=self.onboarding_state.mode,
+                session_id=str(self.session_id or self.bootstrap.get("session_id", "new")),
+            )
+            self._append_system_message("Receipt", receipt)
+        self.update_views()
+        if self.initial_prompt:
+            self.on_prompt_composer_prompt_submitted(
+                PromptComposer.PromptSubmitted(self.initial_prompt)
+            )
+
+    def _enter_error_state(self, detail: str) -> None:
+        secret = self.onboarding_credentials.reveal()
+        if secret:
+            detail = detail.replace(secret, "<redacted>")
+        self.app_state = "error"
+        self.startup_error = detail
+        self._append_system_message("Startup error", _RUNTIME_ERROR_COPY + f"\nDetail: {detail}")
+        self.update_views()
+
+    def _sanitize_startup_error(self, exc: BaseException) -> str:
+        message = str(exc)[:300] or exc.__class__.__name__
+        for secret in (self.onboarding_credentials.reveal(),):
+            if secret:
+                message = message.replace(secret, "<redacted>")
+        return message
+
+    def retry_startup(self) -> None:
+        """Retry recoverable runtime initialization from the error screen."""
+        self.startup_error = None
+        self._start_runtime_worker()
+
+    # -- onboarding -------------------------------------------------------
+    def _mount_onboarding(self) -> None:
+        self._append_system_message("Welcome", "Welcome to Skail.")
+        self.update_views()
+        try:
+            container = self.query_one("#interrupt-container", Container)
+            if not container.query("OnboardingPanel"):
+                container.mount(
+                    OnboardingPanel(
+                        self.onboarding_state,
+                        self.onboarding_credentials,
+                        workspace=str(self.bootstrap.get("workspace", "")),
+                        session_id=str(self.bootstrap.get("session_id", "")),
+                    )
+                )
+        except Exception:
+            pass
+
+    def _remove_onboarding_panel(self) -> None:
+        try:
+            for panel in self.query("OnboardingPanel"):
+                panel.remove()
+        except Exception:
+            pass
+
+    def _refresh_onboarding_panel(self) -> None:
+        try:
+            for panel in self.query("OnboardingPanel"):
+                if isinstance(panel, OnboardingPanel):
+                    panel.refresh_step()
+        except Exception:
+            pass
+
+    def onboarding_confirm(self) -> None:
+        """Enter key in onboarding: continue or activate the step action."""
+        step = self.onboarding_state.step
+        if step == "welcome":
+            self.onboarding_state.advance()
+            self._refresh_onboarding_panel()
+        elif step == "provider":
+            if self.onboarding_state.provider == "fake":
+                self.bootstrap["fake_provider"] = True
+                self.onboarding_state.advance()
+                self._refresh_onboarding_panel()
+            else:
+                self.validate_onboarding_key()
+        elif step == "trust":
+            if self.onboarding_state.trusted is None:
+                self.onboarding_state.trusted = False
+            self.onboarding_state.advance()
+            self._refresh_onboarding_panel()
+        elif step == "theme":
+            self._previous_theme = self.onboarding_state.theme
+            self.onboarding_state.advance()
+            self._refresh_onboarding_panel()
+        elif step == "ready":
+            self._remove_onboarding_panel()
+            self._start_runtime_worker()
+
+    def onboarding_back(self) -> None:
+        """Escape in onboarding: go back one step, restoring theme preview."""
+        if self.onboarding_state.step == "theme":
+            self.restore_theme()
+        self.onboarding_state.go_back()
+        self._refresh_onboarding_panel()
+
+    def onboarding_choose_fake(self) -> None:
+        """F key: select the fake provider path without inventing a key."""
+        self.onboarding_state.provider = "fake"
+        self.bootstrap["fake_provider"] = True
+        if self.onboarding_state.step == "welcome":
+            self.onboarding_state.advance()
+        self._refresh_onboarding_panel()
+
+    def onboarding_trust_folder(self) -> None:
+        """T key: trust the exact resolved workspace."""
+        self.onboarding_state.trusted = True
+        self.onboarding_state.advance()
+        self._refresh_onboarding_panel()
+
+    def onboarding_restricted_mode(self) -> None:
+        """R key: continue in restricted mode."""
+        self.onboarding_state.trusted = False
+        self.onboarding_state.advance()
+        self._refresh_onboarding_panel()
+
+    def validate_onboarding_key(self) -> None:
+        """V key: async validation with loading state and sanitized errors."""
+        if self.onboarding_state.validating:
+            return
+        self.onboarding_state.validating = True
+        self.onboarding_state.validation_error = None
+        self._refresh_onboarding_panel()
+        self.run_worker(self._validate_key_async(), exclusive=True)
+
+    async def _validate_key_async(self) -> None:
+        await asyncio.sleep(0)
+        key = self.onboarding_credentials.reveal()
+        self.onboarding_state.validating = False
+        if len(key.strip()) >= 8:
+            self.onboarding_state.validation_error = None
+            self._inject_onboarding_key_into_env()
+            self.onboarding_state.advance()
+        else:
+            self.onboarding_state.validation_error = VALIDATION_FAILURE_COPY
+        self._refresh_onboarding_panel()
+        self.update_views()
+
+    def _inject_onboarding_key_into_env(self) -> None:
+        import os
+
+        provider = self.onboarding_state.provider
+        env_var = _PROVIDER_ENV_VARS.get(provider)
+        key = self.onboarding_credentials.reveal()
+        if env_var and key and not os.environ.get(env_var):
+            os.environ[env_var] = key
+
+    # -- rendering --------------------------------------------------------
     def _render_status_strip(self) -> Text:
         f = self.projection.footer_data
         text = Text()
+        if self.app_state == "onboarding":
+            text.append("PROVIDER not configured   ", style="bold yellow")
+        elif self.app_state == "initializing":
+            text.append("✻ STARTING   ", style="bold cyan")
+        elif self.app_state == "error":
+            text.append("× SETUP FAILED   ", style="bold red")
         text.append(f"Model: {f.lead_model} ", style="bold cyan")
         text.append(f"| Mode: {f.routing_mode} ", style="green")
         if f.active_mode != "direct":
@@ -178,6 +597,16 @@ class SkailApp(App[int]):
             text.append(f" / ${f.budget_limit_usd:.2f}", style="dim yellow")
         text.append(f" | Active Agents: {f.active_agents_count}", style="magenta")
         return text
+
+    def _append_system_message(self, title: str, content: str) -> None:
+        self.projection.transcript_items.append(
+            TranscriptItem(
+                id=f"sys-{title.lower()}-{len(self.projection.transcript_items)}",
+                role="system",
+                title=title,
+                content=content,
+            )
+        )
 
     def update_views(self) -> None:
         if not self._mounted:
@@ -212,11 +641,15 @@ class SkailApp(App[int]):
         status_strip = self.query_one("#status-strip", Static)
         status_strip.update(self._render_status_strip())
 
-        # Update interrupt container
         interrupt_container = self.query_one("#interrupt-container", Container)
-        interrupt_container.remove_children()
         if self.projection.pending_interrupt:
-            interrupt_container.mount(InterruptWidget(self.projection.pending_interrupt))
+            if not interrupt_container.query("InterruptWidget"):
+                interrupt_container.mount(InterruptWidget(self.projection.pending_interrupt))
+        else:
+            for widget in interrupt_container.query("InterruptWidget"):
+                widget.remove()
+        if self.app_state == "onboarding":
+            self._refresh_onboarding_panel()
 
     def apply_snapshot(self, snapshot: SessionSnapshot) -> None:
         self.projection.apply_snapshot(snapshot)
@@ -318,7 +751,6 @@ class SkailApp(App[int]):
             payload=payload,
         )
 
-    # User input handling
     def on_prompt_composer_prompt_submitted(
         self, event: PromptComposer.PromptSubmitted
     ) -> None:
@@ -346,6 +778,7 @@ class SkailApp(App[int]):
                     self.session_service.journal.update_session_status(
                         session_id=str(self.session_id), status="idle"
                     )
+                self.app_state = "quitting"
                 self.exit(0)
                 return
             if result.action == "view" and result.target_view:
@@ -357,10 +790,7 @@ class SkailApp(App[int]):
                 if self._active_worker is not None:
                     self._active_worker.cancel()
                     self._active_worker = None
-            elif (
-                result.action == "resume"
-                and self.session_service is not None
-            ):
+            elif result.action == "resume" and self.session_service is not None:
                 selected_id = result.target_id or (
                     str(self.session_id) if self.session_id is not None else None
                 )
@@ -418,7 +848,6 @@ class SkailApp(App[int]):
             self.update_views()
             return
 
-        # Ordinary prompt submitted
         self.projection.transcript_items.append(
             TranscriptItem(
                 id=f"user-{len(self.projection.transcript_items)}",
@@ -447,7 +876,11 @@ class SkailApp(App[int]):
                     self._execute_prompt(text), exclusive=False
                 )
 
-    # Interrupt handling
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Route onboarding key-field edits into memory-only credentials."""
+        if event.input.id == "onboarding-key":
+            self.onboarding_credentials.set_key(event.value)
+
     def on_interrupt_widget_approved(self, event: InterruptWidget.Approved) -> None:
         pending = self.projection.pending_interrupt
         if (
@@ -534,7 +967,6 @@ class SkailApp(App[int]):
         tabs.active = "tab-route"
         self.update_views()
 
-    # Keybinding actions
     def action_view_budget(self) -> None:
         self.query_one("#tabs", TabbedContent).active = "tab-budget"
 
@@ -548,7 +980,24 @@ class SkailApp(App[int]):
         self.query_one("#tabs", TabbedContent).active = "tab-route"
 
     def action_view_chat(self) -> None:
-        self.query_one("#composer-input").focus()
+        try:
+            self.query_one("#composer-input").focus()
+        except Exception:
+            pass
+
+    def action_transcript_overlay(self) -> None:
+        """Scaffold: track transcript overlay in the overlay stack."""
+        if "transcript" in self._overlay_stack:
+            self.close_overlay("transcript")
+        else:
+            self.open_overlay("transcript")
+
+    def action_shortcuts_overlay(self) -> None:
+        """Scaffold: track shortcuts overlay in the overlay stack."""
+        if "shortcuts" in self._overlay_stack:
+            self.close_overlay("shortcuts")
+        else:
+            self.open_overlay("shortcuts")
 
     def action_show_help(self) -> None:
         result = dispatch_slash_command("/help", self.projection)
@@ -562,3 +1011,22 @@ class SkailApp(App[int]):
                 )
             )
             self.update_views()
+
+    async def action_quit(self) -> None:
+        if self._active_worker is not None:
+            try:
+                self._active_worker.cancel()
+            except Exception:
+                pass
+        if self.session_service is not None and self.session_id is not None:
+            try:
+                self.session_service.journal.update_session_status(
+                    session_id=str(self.session_id), status="idle"
+                )
+            except Exception:
+                pass
+        self.app_state = "quitting"
+        self.exit(0)
+
+
+__all__ = ["ACTION_REGISTRY", "AppState", "SkailApp"]
