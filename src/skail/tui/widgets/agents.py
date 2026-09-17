@@ -86,10 +86,16 @@ class AgentRail(VerticalScroll):
         padding: 0 1;
         scrollbar-size: 1 1;
     }
+    AgentRail:focus-within {
+        outline: solid $focusRing;
+    }
     .rail-header {
         text-style: bold;
         color: $accent;
         padding-bottom: 1;
+    }
+    .agent-row:focus-within {
+        outline: solid $focusRing;
     }
     """
 

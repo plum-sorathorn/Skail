@@ -32,6 +32,7 @@ from skail.sessions.service import SessionService
 from skail.tools.approvals import ApprovalChoice, ApprovalStore
 from skail.tools.execution import CommandRequest
 from skail.tui.commands import COMMAND_REGISTRY, dispatch_slash_command
+from skail.tui.logo import COMPACT_MARK
 from skail.tui.onboarding import (
     VALIDATION_FAILURE_COPY,
     BootstrapCredentials,
@@ -43,8 +44,10 @@ from skail.tui.projection import InterruptItem, TranscriptItem, TuiProjection
 from skail.tui.theme import (
     ThemeName,
     ThemeTokens,
+    as_dict,
     detect_system_preference,
     get_theme,
+    lookup,
     reduced_motion_enabled,
     resolve_system_theme,
 )
@@ -117,12 +120,17 @@ _RUNTIME_ERROR_COPY = (
 class SkailApp(App[int]):
     """Main Textual interactive application for Skail harness."""
 
-    TITLE = f"Skail {__version__}"
+    TITLE = f"{COMPACT_MARK} Skail {__version__}"
     ENABLE_COMMAND_PALETTE = False
     CSS = """
     Screen {
         layout: vertical;
-        background: $background;
+        background: $surface;
+        color: $text;
+    }
+    Screen.theme-light {
+        background: $surface;
+        color: $text;
     }
     #main-container {
         width: 100%;
@@ -131,7 +139,7 @@ class SkailApp(App[int]):
     #chat-container {
         width: 60%;
         height: 100%;
-        border-right: solid $primary;
+        border-right: solid $border;
     }
     #sidebar-container {
         width: 40%;
@@ -150,6 +158,7 @@ class SkailApp(App[int]):
     }
     .wide #chat-container {
         width: 60%;
+        border-right: solid $border;
     }
     .wide #sidebar-container {
         display: block;
@@ -163,6 +172,9 @@ class SkailApp(App[int]):
         background: $surface;
         color: $text-muted;
         padding: 0 1;
+    }
+    Screen:focus-within {
+        outline: solid $focusRing;
     }
     """
 
@@ -203,6 +215,15 @@ class SkailApp(App[int]):
         theme_name: ThemeName = "system",
         reduced_motion: bool | None = None,
     ) -> None:
+        self.current_theme_name: ThemeName = theme_name
+        if theme_name == "dark":
+            self.current_tokens: ThemeTokens = get_theme("dark")
+        elif theme_name == "light":
+            self.current_tokens = get_theme("light")
+        else:
+            self.current_tokens = resolve_system_theme(
+                detect_system_preference()
+            )[0]
         super().__init__()
         self.projection = projection or TuiProjection()
         self.background_supported = background_supported
@@ -233,15 +254,6 @@ class SkailApp(App[int]):
         )
         self.onboarding_credentials = BootstrapCredentials()
         self._previous_theme: str = self.onboarding_state.theme
-        self.current_theme_name: ThemeName = theme_name
-        if theme_name == "dark":
-            self.current_tokens: ThemeTokens = get_theme("dark")
-        elif theme_name == "light":
-            self.current_tokens = get_theme("light")
-        else:
-            self.current_tokens = resolve_system_theme(
-                detect_system_preference()
-            )[0]
         self.reduced_motion = reduced_motion_enabled(reduced_motion)
         self._overlay_stack: list[str] = []
         self._focus_before_overlay: Any = None
@@ -318,6 +330,24 @@ class SkailApp(App[int]):
             container.remove_class("narrow")
 
     # -- theme -----------------------------------------------------------
+    def get_css_variables(self) -> dict[str, str]:
+        """Expose semantic theme tokens as Textual CSS variables."""
+        base = super().get_css_variables()
+        tokens = getattr(self, "current_tokens", None)
+        if tokens is None:
+            try:
+                tokens = get_theme("dark")
+            except KeyError:
+                return base
+        for name, value in as_dict(tokens).items():
+            base[f"--{name}"] = value
+            base[name] = value
+        try:
+            base["focusRing"] = lookup(tokens, "focusRing")
+        except KeyError:
+            pass
+        return base
+
     def apply_theme(self, name: ThemeName) -> ThemeTokens:
         """Apply a theme by name; system falls back to Dark and says so."""
         self.current_theme_name = name
@@ -331,11 +361,17 @@ class SkailApp(App[int]):
                 screen = self.screen
                 screen.remove_class("theme-dark")
                 screen.remove_class("theme-light")
-                screen.add_class("theme-dark" if tokens is get_theme("dark") else "theme-light")
+                screen.add_class(
+                    "theme-dark" if tokens is get_theme("dark") else "theme-light"
+                )
                 if self.reduced_motion:
                     screen.add_class("reduced-motion")
                 else:
                     screen.remove_class("reduced-motion")
+            except Exception:
+                pass
+            try:
+                self.refresh_css()
             except Exception:
                 pass
         return tokens
@@ -493,7 +529,11 @@ class SkailApp(App[int]):
 
     # -- onboarding -------------------------------------------------------
     def _mount_onboarding(self) -> None:
-        self._append_system_message("Welcome", "Welcome to Skail.")
+        from skail.tui.logo import render_logo_text
+
+        self._append_system_message(
+            "Welcome", render_logo_text() + "\nWelcome to Skail."
+        )
         self.update_views()
         try:
             container = self.query_one("#interrupt-container", Container)
@@ -615,9 +655,9 @@ class SkailApp(App[int]):
         if self.app_state == "onboarding":
             text.append("PROVIDER not configured   ", style="bold yellow")
         elif self.app_state == "initializing":
-            text.append("✻ STARTING   ", style="bold cyan")
+            text.append("STARTING   ", style="bold cyan")
         elif self.app_state == "error":
-            text.append("× SETUP FAILED   ", style="bold red")
+            text.append("SETUP FAILED   ", style="bold red")
         text.append(f"Model: {f.lead_model} ", style="bold cyan")
         text.append(f"| Mode: {f.routing_mode} ", style="green")
         if f.active_mode != "direct":
@@ -1029,6 +1069,45 @@ class SkailApp(App[int]):
                 content="User rejected approval request.",
             )
         )
+        self.update_views()
+
+    def on_plan_view_plan_accepted(self, event: PlanView.PlanAccepted) -> None:
+        _ = event
+        self._resolve_pending_plan("accepted")
+
+    def on_plan_view_plan_rejected(self, event: PlanView.PlanRejected) -> None:
+        _ = event
+        self._resolve_pending_plan("rejected")
+
+    def on_plan_view_plan_changes_requested(
+        self, event: PlanView.PlanChangesRequested
+    ) -> None:
+        _ = event
+        self.projection.note_plan("proposed")
+        self.update_views()
+
+    def _resolve_pending_plan(self, decision: str) -> None:
+        """Route Accept/Reject through the existing approval/plan path."""
+        self.projection.note_plan(decision)
+        pending = self.projection.pending_interrupt
+        if (
+            pending is not None
+            and pending.payload.get("type") == "plan_approval"
+            and self.question_store is not None
+            and pending.payload.get("question_id")
+        ):
+            try:
+                if decision == "accepted":
+                    self.question_store.answer(
+                        str(pending.payload["question_id"]), "accept", graph_id="lead"
+                    )
+                else:
+                    self.question_store.cancel(
+                        str(pending.payload["question_id"]), graph_id="lead"
+                    )
+            except Exception:
+                pass
+            self.projection.pending_interrupt = None
         self.update_views()
 
     def on_agent_rail_agent_selected(self, event: AgentRail.AgentSelected) -> None:

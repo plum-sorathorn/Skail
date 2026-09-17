@@ -12,6 +12,7 @@ from rich.text import Text
 from textual.binding import Binding
 from textual.widgets import Input, Static
 
+from skail.tui.logo import render_logo_text
 from skail.tui.onboarding import (
     KEY_ENTRY_COPY,
     PROVIDER_OPTIONS,
@@ -70,6 +71,7 @@ class OnboardingPanel(Static):
         text = Text()
         text.append(f"SETUP  {self._ladder_line()}\n\n", style="bold")
         if step == "welcome":
+            text.append(render_logo_text() + "\n\n")
             text.append(WELCOME_COPY + "\n")
             text.append("\n[Enter] Continue   [F] Fake provider   [Ctrl+C] Quit")
         elif step == "provider":

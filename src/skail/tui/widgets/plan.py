@@ -68,18 +68,29 @@ class PlanView(VerticalScroll):
         padding: 0 1;
         scrollbar-size: 1 1;
     }
+    PlanView:focus-within {
+        outline: solid $focusRing;
+    }
     .plan-header {
         text-style: bold;
         color: $accent;
         padding-bottom: 1;
     }
     .plan-proposed {
-        border: heavy $warning;
+        border: round $approval;
+        background: $approvalSurface;
         padding: 1;
     }
+    .plan-proposed:focus-within {
+        outline: solid $focusRing;
+    }
     .plan-rejected {
+        border-left: solid $border;
         opacity: 60%;
         padding: 1;
+    }
+    .plan-row:focus-within {
+        outline: solid $focusRing;
     }
     """
 

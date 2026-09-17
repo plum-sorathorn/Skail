@@ -1,5 +1,16 @@
 <p align="center"><strong>SKAIL</strong></p>
 
+```text
+Windward mark (v0.1.0, monochrome, never animated):
+   ■
+  ■■│
+ ■■■│
+■■■■│
+  ▪ │
+━━━━━━━
+```
+
+
 <p align="center">
   A Python multi-agent coding harness built on DeepAgents and LangGraph.
 </p>
@@ -116,6 +127,39 @@ skail --resume <session-id>
 ```
 
 See the [CLI contract](docs/skail/CLI.md) for every flag, subcommand, output mode, and exit code.
+
+### Interactive TUI
+
+Launch `skail` in a TTY to mount the cockpit immediately; provider and model
+setup runs in a background worker after the shell is visible. First run walks
+a mount-first 5-step onboarding ladder:
+
+1. Welcome (Windward mark + overview)
+2. Provider (LLM Gateway / OpenAI / Anthropic / Fake)
+3. Trust (trust this exact folder, or restricted mode)
+4. Theme (Dark / Light / System with live preview)
+5. Ready (receipt with the exact `skail -r <session-id>` resume command)
+
+```powershell
+# No credentials needed for local evaluation
+skail --fake-provider
+
+# Normal interactive start after provider setup
+skail auth check
+skail models list
+skail
+```
+
+Keybindings: `Shift+Tab` cycles mode, `Alt+P` opens the model picker (future
+attempts only), `Esc` goes back one step and never approves (pending approvals
+stay pending), `Ctrl+O` opens the transcript overlay, `Ctrl+T` opens Mission
+Control (child agents), `Ctrl+Shift+T` focuses chat/composer (missions moved to
+`Ctrl+T`), `?` opens the shortcuts pane (type-to-filter). While a run is
+active, `Ctrl+Enter` queues a follow-up; take back the newest queued prompt
+from the queue view. `skail -r <session-id>` resumes any durable session.
+Headless use is unchanged: `skail -p "<prompt>"` prints the final answer,
+`skail --jsonl` streams versioned events, `-c` continues, `-r` resumes, and
+`--no-session` runs without persistence.
 
 ## Architecture
 

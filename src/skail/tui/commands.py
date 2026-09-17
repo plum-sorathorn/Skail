@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from skail.tui.logo import help_header
 from skail.tui.projection import TuiProjection
 
 THEME_USAGE = "Usage: /theme [dark|light|system]"
@@ -165,9 +166,28 @@ COMMAND_REGISTRY: list[dict[str, Any]] = [
 
 
 def _registry_help_text() -> str:
-    lines = ["Available Slash Commands:"]
+    lines = [help_header(), "", "Available Slash Commands:"]
     for entry in COMMAND_REGISTRY:
         lines.append(f"  {entry['synopsis']:<32}- {entry['description']}")
+    lines.extend(
+        [
+            "",
+            "Keybindings:",
+            "  Shift+Tab  Cycle routing mode (Quality/Economy/Manual)",
+            "  Alt+P      Model picker (future attempts only)",
+            "  Esc        Back one step / keep approval pending (never approves)",
+            "  Ctrl+O     Transcript overlay (full scrollback + search)",
+            "  Ctrl+T     Mission Control (child agents)",
+            "  Ctrl+Shift+T  Chat (focus composer; missions moved to Ctrl+T)",
+            "  ?          Shortcuts pane (type-to-filter)",
+            "",
+            "Queue: Ctrl+Enter queues while a run is active; "
+            "take back the newest queued prompt from the queue view.",
+            "Onboarding: 5 steps (Welcome > Provider > Trust > Theme > Ready); "
+            "choose Fake provider or restart with skail --fake-provider.",
+            "Receipts include the exact resume command: skail -r <session-id>.",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 

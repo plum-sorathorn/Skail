@@ -40,6 +40,9 @@ class RouteView(VerticalScroll):
         padding: 0 1;
         scrollbar-size: 1 1;
     }
+    RouteView:focus-within {
+        outline: solid $focusRing;
+    }
     .route-header {
         text-style: bold;
         color: $accent;

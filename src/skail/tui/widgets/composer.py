@@ -218,7 +218,10 @@ class PromptComposer(Widget):
         height: auto;
         padding: 0 1;
         background: $surface;
-        border-top: solid $primary;
+        border-top: solid $border;
+    }
+    PromptComposer:focus-within {
+        outline: solid $focusRing;
     }
     #composer-queue {
         width: 100%;
@@ -230,12 +233,12 @@ class PromptComposer(Widget):
     #composer-card {
         width: 100%;
         height: auto;
-        border: round $primary;
-        background: $surface;
+        border: round $borderStrong;
+        background: $surfaceRaised;
         padding: 0 1;
     }
     #composer-card:focus-within {
-        border: round $accent;
+        border: round $focusRing;
     }
     #composer-input {
         width: 100%;
@@ -245,10 +248,13 @@ class PromptComposer(Widget):
         background: $surface;
         color: $text;
     }
+    #composer-input:focus-within {
+        outline: solid $focusRing;
+    }
     #composer-status {
         width: 100%;
         height: 1;
-        color: $text-muted;
+        color: $textMuted;
     }
     #composer-mode {
         color: $accent;
@@ -258,8 +264,8 @@ class PromptComposer(Widget):
         width: 100%;
         height: auto;
         max-height: 6;
-        background: $surface;
-        border: round $primary;
+        background: $surfaceRaised;
+        border: round $borderStrong;
         color: $text;
     }
     #composer-send {

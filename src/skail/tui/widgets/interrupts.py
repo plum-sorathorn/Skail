@@ -93,24 +93,24 @@ class InterruptWidget(Widget):
     InterruptWidget {
         width: 100%;
         height: auto;
-        border: heavy $warning;
-        background: $surface;
+        border: round $approval;
+        background: $approvalSurface;
         padding: 1;
         margin: 1 0;
     }
     InterruptWidget:focus-within {
-        border: heavy $accent;
+        border: round $focusRing;
     }
     InterruptWidget.rejected {
         opacity: 60%;
-        color: $text-muted;
+        color: $textMuted;
     }
     InterruptWidget.approved {
         color: $text;
     }
     .interrupt-title {
         text-style: bold;
-        color: $warning;
+        color: $approval;
     }
     .interrupt-question {
         margin: 1 0;
@@ -122,7 +122,13 @@ class InterruptWidget(Widget):
         margin-top: 1;
     }
     .interrupt-hint {
-        color: $text-muted;
+        color: $textMuted;
+    }
+    InterruptWidget #btn-approve:focus-within,
+    InterruptWidget #btn-reject:focus-within,
+    InterruptWidget #btn-instruct:focus-within,
+    InterruptWidget #interrupt-input:focus-within {
+        outline: solid $focusRing;
     }
     Button {
         margin-right: 1;

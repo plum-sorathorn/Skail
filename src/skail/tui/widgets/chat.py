@@ -157,9 +157,10 @@ class TranscriptItemWidget(Widget):
         height: auto;
         margin-bottom: 1;
         padding: 0 1;
+        border-left: solid $border;
     }
-    TranscriptItemWidget:focus {
-        border-left: heavy $accent;
+    TranscriptItemWidget:focus-within {
+        border-left: heavy $focusRing;
     }
     TranscriptItemWidget.role-user {
         border-left: solid $accent;
@@ -171,21 +172,21 @@ class TranscriptItemWidget(Widget):
         border-left: heavy $accent;
     }
     TranscriptItemWidget.role-task {
-        border-left: solid $warning;
+        border-left: solid $modeManual;
     }
     TranscriptItemWidget.role-tool {
-        border-left: solid $secondary;
+        border-left: solid $delegation;
     }
     TranscriptItemWidget.role-error {
-        border: heavy $error;
-        background: $surface;
+        border-left: heavy $error;
+        background: $errorSurface;
     }
     TranscriptItemWidget.role-approval {
-        border: heavy $warning;
-        background: $surface;
+        border: round $approval;
+        background: $approvalSurface;
     }
     TranscriptItemWidget.role-receipt {
-        border-left: solid $text-muted;
+        border-left: solid $textMuted;
     }
     TranscriptItemWidget.collapsed {
         opacity: 70%;
@@ -301,11 +302,14 @@ class ChatTranscript(VerticalScroll):
         padding: 1;
         scrollbar-size: 1 1;
     }
+    ChatTranscript:focus-within {
+        outline: solid $focusRing;
+    }
     #transcript-new-events {
         dock: bottom;
         width: 100%;
         height: 1;
-        background: $surface;
+        background: $surfaceRaised;
         color: $accent;
         text-align: center;
     }

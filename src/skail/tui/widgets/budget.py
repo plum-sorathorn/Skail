@@ -60,6 +60,9 @@ class BudgetView(VerticalScroll):
         padding: 0 1;
         scrollbar-size: 1 1;
     }
+    BudgetView:focus-within {
+        outline: solid $focusRing;
+    }
     .budget-header {
         text-style: bold;
         color: $accent;
