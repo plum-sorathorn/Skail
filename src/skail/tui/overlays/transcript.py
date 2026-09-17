@@ -42,7 +42,7 @@ def transcript_plain_text(items: list[TranscriptItem]) -> str:
     return export_transcript_text(items)
 
 
-class TranscriptOverlay(Screen):  # type: ignore[misc]
+class TranscriptOverlay(Screen):  # type: ignore[type-arg]
     """Full-area transcript; Esc/Ctrl+O closes, Ctrl+Shift+O pagers."""
 
     def __init__(
@@ -51,7 +51,7 @@ class TranscriptOverlay(Screen):  # type: ignore[misc]
         scroll_y: int = 0,
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)  # type: ignore[call-arg]
+        super().__init__(**kwargs)
         self.overlay_items: list[TranscriptItem] = list(items or [])
         self.saved_scroll_y = int(scroll_y)
         self.query_text = ""

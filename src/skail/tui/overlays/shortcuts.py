@@ -86,11 +86,11 @@ def render_shortcut_lines(
     return lines
 
 
-class ShortcutsOverlay(Screen):  # type: ignore[misc]
+class ShortcutsOverlay(Screen):  # type: ignore[type-arg]
     """Shortcuts pane; Esc closes; never injects a transcript event."""
 
     def __init__(self, registry: dict[str, dict[str, str]] | None = None, **kw: Any) -> None:
-        super().__init__(**kw)  # type: ignore[call-arg]
+        super().__init__(**kw)
         self.registry = dict(registry or {})
         self.filter_query = ""
 

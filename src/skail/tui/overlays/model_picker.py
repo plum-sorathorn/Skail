@@ -28,7 +28,7 @@ def model_rows(models: list[str], current: str) -> list[str]:
     return rows
 
 
-class ModelPickerOverlay(Screen):  # type: ignore[misc]
+class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
     """Enter selects for FUTURE attempts via ``set_future_model``."""
 
     def __init__(
@@ -37,7 +37,7 @@ class ModelPickerOverlay(Screen):  # type: ignore[misc]
         current: str = "auto",
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)  # type: ignore[call-arg]
+        super().__init__(**kwargs)
         self.models: list[str] = list(models or [])
         self.current = current
         self.index = 0

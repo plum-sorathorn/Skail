@@ -44,11 +44,11 @@ def resolve_system_note(detected: str | None) -> tuple[str, str]:
     return ("Light" if (detected or "").strip().lower() == "light" else "Dark", detail)
 
 
-class ThemePickerOverlay(Screen):  # type: ignore[misc]
+class ThemePickerOverlay(Screen):  # type: ignore[type-arg]
     """List Dark/Light/System; preview on move, commit on Enter."""
 
     def __init__(self, current: str = "dark", **kwargs: Any) -> None:
-        super().__init__(**kwargs)  # type: ignore[call-arg]
+        super().__init__(**kwargs)
         self.current = current
         self.previous = current
         self.index = 0
@@ -74,7 +74,7 @@ class ThemePickerOverlay(Screen):  # type: ignore[misc]
         try:
             app = _app_for(self)
             if app is not None and hasattr(app, "apply_theme_preview"):
-                app.apply_theme_preview(name)  # type: ignore[attr-defined]
+                app.apply_theme_preview(name)
         except Exception:
             pass
         return name
@@ -84,7 +84,7 @@ class ThemePickerOverlay(Screen):  # type: ignore[misc]
         try:
             app = _app_for(self)
             if app is not None and hasattr(app, "apply_theme_preview"):
-                app.apply_theme_preview(name)  # type: ignore[attr-defined]
+                app.apply_theme_preview(name)
         except Exception:
             pass
         self.current = name
@@ -103,7 +103,7 @@ class ThemePickerOverlay(Screen):  # type: ignore[misc]
         try:
             app = _app_for(self)
             if app is not None and hasattr(app, "apply_theme_preview"):
-                app.apply_theme_preview(previous)  # type: ignore[arg-type]
+                app.apply_theme_preview(previous)
             if app is not None and hasattr(app, "close_overlay"):
                 app.close_overlay("theme_picker")
         except Exception:

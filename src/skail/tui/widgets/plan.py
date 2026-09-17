@@ -128,9 +128,9 @@ class PlanView(VerticalScroll):
         self.integrations = integrations or {}
         self.plan_state = plan_state
         self.receipts = list(receipts or [])
-        self._render()
+        self._refresh()
 
-    def _render(self) -> None:
+    def _refresh(self) -> None:
         try:
             self.remove_children()
         except Exception:
