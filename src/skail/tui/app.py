@@ -31,7 +31,7 @@ from skail.sessions.journal import SessionSnapshot
 from skail.sessions.service import SessionService
 from skail.tools.approvals import ApprovalChoice, ApprovalStore
 from skail.tools.execution import CommandRequest
-from skail.tui.commands import dispatch_slash_command
+from skail.tui.commands import COMMAND_REGISTRY, dispatch_slash_command
 from skail.tui.onboarding import (
     VALIDATION_FAILURE_COPY,
     BootstrapCredentials,
@@ -61,21 +61,40 @@ AppState = Literal["onboarding", "initializing", "ready", "error", "quitting"]
 
 ACTION_REGISTRY: dict[str, dict[str, str]] = {
     "quit": {"binding": "ctrl+c", "description": "Quit", "group": "Session"},
-    "view_budget": {"binding": "ctrl+b", "description": "Budget", "group": "Nav"},
-    "view_agents": {"binding": "ctrl+a", "description": "Agents", "group": "Nav"},
-    "view_plan": {"binding": "ctrl+p", "description": "Plan", "group": "Nav"},
-    "view_route": {"binding": "ctrl+r", "description": "Route", "group": "Nav"},
-    "view_chat": {"binding": "ctrl+t", "description": "Chat", "group": "Nav"},
+    "view_budget": {"binding": "ctrl+b", "description": "Budget", "group": "Navigation"},
+    "view_agents": {"binding": "ctrl+a", "description": "Agents", "group": "Navigation"},
+    "view_plan": {"binding": "ctrl+p", "description": "Plan", "group": "Navigation"},
+    "view_route": {"binding": "ctrl+r", "description": "Route", "group": "Navigation"},
+    "view_chat": {
+        "binding": "ctrl+shift+t",
+        "description": "Chat (focus composer)",
+        "group": "Navigation",
+    },
     "show_help": {"binding": "f1", "description": "Help", "group": "Session"},
-    "transcript_overlay": {"binding": "ctrl+o", "description": "Transcript", "group": "Display"},
+    "transcript_overlay": {
+        "binding": "ctrl+o",
+        "description": "Transcript",
+        "group": "Display",
+    },
     "shortcuts_overlay": {
-        "binding": "question_mark",
+        "binding": "?",
         "description": "Shortcuts",
         "group": "Display",
     },
+    "theme_picker": {"binding": "alt+t", "description": "Theme picker", "group": "Display"},
     "missions_overlay": {"binding": "ctrl+t", "description": "Missions", "group": "Agents"},
+    "agent_detail": {"binding": "enter", "description": "Agent detail", "group": "Agents"},
+    "agent_missions": {"binding": "m", "description": "Mission Control", "group": "Agents"},
     "cycle_mode": {"binding": "shift+tab", "description": "Cycle mode", "group": "Run"},
     "model_picker": {"binding": "alt+p", "description": "Model picker", "group": "Run"},
+    "composer_submit": {"binding": "enter", "description": "Send prompt", "group": "Composer"},
+    "composer_queue": {
+        "binding": "ctrl+enter",
+        "description": "Queue prompt",
+        "group": "Composer",
+    },
+    "approve": {"binding": "y", "description": "Approve", "group": "Approvals"},
+    "deny": {"binding": "n", "description": "Reject", "group": "Approvals"},
 }
 
 _PROVIDER_ENV_VARS = {
@@ -153,9 +172,12 @@ class SkailApp(App[int]):
         Binding("ctrl+a", "view_agents", "Agents"),
         Binding("ctrl+p", "view_plan", "Plan", priority=True),
         Binding("ctrl+r", "view_route", "Route"),
-        Binding("ctrl+t", "view_chat", "Chat"),
-        Binding("ctrl+o", "transcript_overlay", "Transcript"),
-        Binding("question_mark", "shortcuts_overlay", "Shortcuts"),
+        Binding("ctrl+t", "missions_overlay", "Missions (Ctrl+T)"),
+        Binding("ctrl+shift+t", "view_chat", "Chat"),
+        Binding("ctrl+o", "transcript_overlay", "Transcript (Ctrl+O)"),
+        Binding("question_mark", "shortcuts_overlay", "Shortcuts (?)"),
+        Binding("alt+t", "theme_picker", "Theme"),
+        Binding("alt+p", "model_picker", "Model"),
         Binding("f1", "show_help", "Help"),
     ]
 
@@ -345,12 +367,20 @@ class SkailApp(App[int]):
         """Pop an overlay and restore the previously focused widget."""
         if not self._overlay_stack:
             return
+        closing: str | None
         if name is None:
-            self._overlay_stack.pop()
+            closing = self._overlay_stack.pop()
         elif name in self._overlay_stack:
             self._overlay_stack.remove(name)
+            closing = name
         else:
             return
+        if closing is not None:
+            try:
+                if self.screen_stack and len(self.screen_stack) > 1:
+                    self.pop_screen()
+            except Exception:
+                pass
         previous = self._focus_before_overlay
         self._focus_before_overlay = None
         if previous is not None:
@@ -616,10 +646,18 @@ class SkailApp(App[int]):
         chat.update_items(self.projection.transcript_items)
 
         rail = self.query_one("#agent-rail", AgentRail)
-        rail.update_items(
-            self.projection.agent_rail_items,
-            focused_id=self.projection.focused_agent_id,
-        )
+        try:
+            from skail.tui.projection import ChildView as _ChildView  # noqa: F401
+        except Exception:
+            pass
+        children = self.projection.children_view()
+        if children:
+            rail.update_children(children, focused_id=self.projection.focused_agent_id)
+        else:
+            rail.update_items(
+                self.projection.agent_rail_items,
+                focused_id=self.projection.focused_agent_id,
+            )
 
         plan_view = self.query_one("#plan-view", PlanView)
         plan_view.update_plan(
@@ -627,6 +665,8 @@ class SkailApp(App[int]):
             plan_id=self.projection.current_plan_id,
             revision=self.projection.current_plan_revision,
             integrations=self.projection.workspace_integrations,
+            plan_state=self.projection.plan_state,
+            receipts=self.projection.receipts,
         )
 
         route_view = self.query_one("#route-view", RouteView)
@@ -637,6 +677,36 @@ class SkailApp(App[int]):
 
         budget_view = self.query_one("#budget-view", BudgetView)
         budget_view.update_budget(self.projection.budget_item)
+
+        try:
+            from skail.tui.widgets.composer import PromptComposer as _Composer
+
+            composer = self.query_one("#prompt-composer", _Composer)
+            composer.set_queue(self.projection.queue)
+            # Feed slash palette from the command registry (names +
+            # descriptions/keywords) so ghost completion stays in sync.
+            names: list[str] = []
+            descriptions: dict[str, str] = {}
+            keywords: dict[str, list[str]] = {}
+            for entry in COMMAND_REGISTRY:
+                raw = str(entry.get("command", "")).lstrip("/").lower()
+                if not raw:
+                    continue
+                names.append(raw)
+                descriptions[raw] = str(entry.get("description", ""))
+                kw = entry.get("keywords", [])
+                keywords[raw] = [str(k) for k in kw] if isinstance(kw, list) else []
+                for alias in entry.get("aliases", []) or []:
+                    alias_name = str(alias).lstrip("/").lower()
+                    if alias_name and alias_name not in names:
+                        names.append(alias_name)
+                        descriptions[alias_name] = str(entry.get("description", ""))
+                        keywords[alias_name] = list(keywords[raw])
+            composer.registry = names
+            composer.descriptions = descriptions
+            composer.keywords = keywords
+        except Exception:
+            pass
 
         status_strip = self.query_one("#status-strip", Static)
         status_strip.update(self._render_status_strip())
@@ -962,10 +1032,62 @@ class SkailApp(App[int]):
         self.update_views()
 
     def on_agent_rail_agent_selected(self, event: AgentRail.AgentSelected) -> None:
+        # Phase 3b: selecting stays in Agents; never jumps to Route.
         self.projection.focus_agent(event.task_id)
-        tabs = self.query_one("#tabs", TabbedContent)
-        tabs.active = "tab-route"
         self.update_views()
+
+    def on_agent_rail_agent_detail_requested(
+        self, event: AgentRail.AgentDetailRequested
+    ) -> None:
+        """Enter opens detail: focus the detail region (stays tab-local)."""
+        self.projection.focus_agent(event.task_id)
+        try:
+            self.query_one("#agent-rail", AgentRail).focus()
+        except Exception:
+            pass
+        self.update_views()
+
+    def on_agent_rail_mission_control_requested(
+        self, event: AgentRail.MissionControlRequested
+    ) -> None:
+        self.action_missions_overlay()
+
+    # -- theme preview / future model (overlay hooks) ----------------------
+    def apply_theme_preview(self, name: Any) -> Any:
+        """Live preview hook for the theme picker (commits immediately)."""
+        normalized = str(name).strip().lower()
+        if normalized not in ("dark", "light", "system"):
+            normalized = "dark"
+        return self.apply_theme(normalized)  # type: ignore[arg-type]
+
+    def set_future_model(self, name: str) -> None:
+        """Select model for FUTURE attempts only; active attempt untouched."""
+        self.projection.set_future_model(name)
+        self.update_views()
+
+    def request_child_cancel(self, child_id: str) -> None:
+        """Forward a confirmed child-cancel request to the controller."""
+        controller = self.controller
+        if controller is not None and hasattr(controller, "request_cancel"):
+            try:
+                controller.request_cancel(child_id)
+                return
+            except Exception:
+                pass
+        self.projection.mark_child_status(child_id, "cancelled", "cancel requested")
+
+    def open_system_pager(self, text: str) -> str:
+        """Suspend/pager fallback for Ctrl+Shift+O transcript export."""
+        from skail.tui.overlays.transcript import NATIVE_SCROLLBACK_UNAVAILABLE
+
+        try:
+            with self.suspend():
+                import pydoc
+
+                pydoc.pager(text)
+        except Exception:
+            pass
+        return NATIVE_SCROLLBACK_UNAVAILABLE
 
     def action_view_budget(self) -> None:
         self.query_one("#tabs", TabbedContent).active = "tab-budget"
@@ -986,18 +1108,77 @@ class SkailApp(App[int]):
             pass
 
     def action_transcript_overlay(self) -> None:
-        """Scaffold: track transcript overlay in the overlay stack."""
+        """Push/pop the transcript overlay with focus restore."""
         if "transcript" in self._overlay_stack:
             self.close_overlay("transcript")
-        else:
-            self.open_overlay("transcript")
+            return
+        self.open_overlay("transcript")
+        try:
+            from skail.tui.overlays.transcript import TranscriptOverlay
+
+            chat = self.query_one("#chat-transcript", ChatTranscript)
+            try:
+                scroll_y = int(chat.scroll_y)
+            except Exception:
+                scroll_y = 0
+            self.push_screen(
+                TranscriptOverlay(list(self.projection.transcript_items), scroll_y)
+            )
+        except Exception:
+            pass
 
     def action_shortcuts_overlay(self) -> None:
-        """Scaffold: track shortcuts overlay in the overlay stack."""
+        """Push/pop the shortcuts overlay with focus restore (no transcript)."""
         if "shortcuts" in self._overlay_stack:
             self.close_overlay("shortcuts")
-        else:
-            self.open_overlay("shortcuts")
+            return
+        self.open_overlay("shortcuts")
+        try:
+            from skail.tui.overlays.shortcuts import ShortcutsOverlay
+
+            self.push_screen(ShortcutsOverlay(ACTION_REGISTRY))
+        except Exception:
+            pass
+
+    def action_missions_overlay(self) -> None:
+        """Ctrl+T opens Mission Control (missions wins the binding)."""
+        if "missions" in self._overlay_stack:
+            self.close_overlay("missions")
+            return
+        self.open_overlay("missions")
+        try:
+            from skail.tui.overlays.missions import MissionsOverlay
+
+            self.push_screen(MissionsOverlay(self.projection.children_view()))
+        except Exception:
+            pass
+
+    def action_theme_picker(self) -> None:
+        if "theme_picker" in self._overlay_stack:
+            self.close_overlay("theme_picker")
+            return
+        self.open_overlay("theme_picker")
+        self._previous_theme = str(self.current_theme_name)
+        try:
+            from skail.tui.overlays.theme_picker import ThemePickerOverlay
+
+            self.push_screen(ThemePickerOverlay(str(self.current_theme_name)))
+        except Exception:
+            pass
+
+    def action_model_picker(self) -> None:
+        if "model_picker" in self._overlay_stack:
+            self.close_overlay("model_picker")
+            return
+        self.open_overlay("model_picker")
+        try:
+            from skail.tui.overlays.model_picker import ModelPickerOverlay
+
+            models = sorted(set(self.profile_models.values())) if self.profile_models else []
+            current = self.projection.model_for_future()
+            self.push_screen(ModelPickerOverlay(models, current))
+        except Exception:
+            pass
 
     def action_show_help(self) -> None:
         result = dispatch_slash_command("/help", self.projection)

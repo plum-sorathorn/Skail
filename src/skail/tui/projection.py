@@ -1,12 +1,30 @@
+"""Pure TUI projection: view-model reconstructed from snapshots and events.
+
+Phase 3a: queue, child slots, receipts, plan/approval state, missions,
+model immutability, unread counts, stable transcript IDs, budget helpers.
+This module must stay Textual-free and Rich-free.
+"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import uuid
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
 from skail.domain.events import EventEnvelope
 from skail.sessions.journal import SessionSnapshot
+
+BUDGET_UNAVAILABLE_COPY = "Budget details are unavailable for this provider."
+
+_FILLED_CELL = "■"
+_EMPTY_CELL = "·"
+_DEFAULT_METER_CELLS = 8
+
+_VALID_PLAN_STATES = ("none", "proposed", "accepted", "rejected")
+_VALID_APPROVAL_STATES = ("pending", "approved", "rejected")
+_MAX_CHILD_SLOTS = 3
 
 
 @dataclass
@@ -113,6 +131,201 @@ class FooterData:
     active_agents_count: int = 0
 
 
+@dataclass
+class ChildView:
+    """Mission row for the sidebar/missions view."""
+
+    id: str
+    slot: int
+    status: str = "running"
+    task: str = ""
+    model: str = ""
+    workspace_lock: str = ""
+    last_event: str = ""
+    cost: Decimal = Decimal("0.00")
+
+    @property
+    def task_id(self) -> str:
+        return self.id
+
+    def __getitem__(self, key: str) -> Any:
+        if key == "task_id":
+            return self.id
+        return getattr(self, key)
+
+
+class BudgetState(str):
+    """State string equal to both spec and legacy display copies."""
+
+    _ALIASES: dict[str, str] = {
+        "normal": "normal",
+        "near": "near",
+        "near limit": "near",
+        "near_limit": "near",
+        "critical": "critical",
+        "exceeded": "exceeded",
+        "limit reached": "exceeded",
+        "limit_reached": "exceeded",
+    }
+
+    @classmethod
+    def _normalize(cls, value: object) -> str:
+        text = str(value).strip().lower().replace("_", " ")
+        text = " ".join(text.split())
+        return cls._ALIASES.get(text, text)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, str):
+            return self._normalize(self) == self._normalize(other)
+        if isinstance(other, BudgetState):
+            return self._normalize(self) == self._normalize(other)
+        return False
+
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
+
+    def __hash__(self) -> int:
+        return hash(self._normalize(self))
+
+
+@dataclass
+class BudgetViewModel:
+    cells: str = ""
+    pct: float = 0.0
+    state: BudgetState = field(default_factory=lambda: BudgetState("normal"))
+    unavailable: bool = False
+    copy: str = ""
+
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)
+
+
+def _ratio_to_state(ratio: float) -> BudgetState:
+    if ratio >= 1.0:
+        return BudgetState("exceeded")
+    if ratio >= 0.90:
+        return BudgetState("critical")
+    if ratio >= 0.75:
+        return BudgetState("near")
+    return BudgetState("normal")
+
+
+def budget_meter(
+    used: float,
+    limit: float | None = None,
+    cells: int = _DEFAULT_METER_CELLS,
+) -> str:
+    """Render an 8-cell meter of filled/empty cells.
+
+    Accepts either a ratio (single arg) or used/limit pair.
+    """
+    if limit is None:
+        ratio = float(used)
+    elif limit <= 0:
+        ratio = 0.0 if float(used) <= 0 else 1.0
+    else:
+        ratio = float(used) / float(limit)
+    if ratio != ratio:  # NaN guard
+        ratio = 0.0
+    ratio = min(1.0, max(0.0, ratio))
+    filled = int(ratio * cells)
+    filled = min(cells, max(0, filled))
+    return _FILLED_CELL * filled + _EMPTY_CELL * (cells - filled)
+
+
+def _ratio_from_item(
+    item: BudgetViewItem | None,
+    used_ratio: float | None,
+) -> float:
+    if used_ratio is not None:
+        return float(used_ratio)
+    if item is None or item.hard_limit_usd is None:
+        return 0.0
+    limit = float(item.hard_limit_usd)
+    if limit <= 0:
+        return 0.0
+    committed = (
+        float(item.authoritative_actual_usd)
+        + float(item.estimated_actual_usd)
+        + float(item.reserved_usd)
+        + float(item.unknown_cost_usd)
+    )
+    return committed / limit
+
+
+def budget_view_model(
+    used: BudgetViewItem | float | None = None,
+    limit: float | None = None,
+    *,
+    used_ratio: float | None = None,
+    cells: int = _DEFAULT_METER_CELLS,
+) -> BudgetViewModel:
+    """Build a budget view-model for either calling convention.
+
+    New: budget_view_model(used, limit) -> {cells, pct, state}.
+    Legacy: budget_view_model(BudgetViewItem | None, used_ratio=...).
+    """
+    if isinstance(used, BudgetViewItem) or used is None and (
+        used_ratio is not None or limit is None
+    ):
+        item = used if isinstance(used, BudgetViewItem) else None
+        if item is None and used_ratio is None and limit is None:
+            # budget_view_model(None) -> unavailable
+            if used is None:
+                return BudgetViewModel(
+                    cells=_EMPTY_CELL * cells,
+                    pct=0.0,
+                    state=BudgetState("normal"),
+                    unavailable=True,
+                    copy=BUDGET_UNAVAILABLE_COPY,
+                )
+        # Legacy item path (item may be None with used_ratio given).
+        ratio = _ratio_from_item(item, used_ratio)
+        state = _ratio_to_state(ratio)
+        meter = budget_meter(ratio, None, cells)
+        return BudgetViewModel(
+            cells=meter,
+            pct=ratio * 100.0,
+            state=state,
+            unavailable=False,
+            copy="",
+        )
+    # Numeric path: used is float, limit optional.
+    used_val = float(used) if used is not None else 0.0
+    if used_ratio is not None:
+        ratio = float(used_ratio)
+    elif limit is None:
+        ratio = used_val
+    elif limit <= 0:
+        ratio = 0.0 if used_val <= 0 else 1.0
+    else:
+        ratio = used_val / float(limit)
+    ratio = min(2.0, max(0.0, ratio)) if ratio == ratio else 0.0
+    state = _ratio_to_state(ratio)
+    meter = budget_meter(ratio, None, cells)
+    return BudgetViewModel(
+        cells=meter,
+        pct=ratio * 100.0,
+        state=state,
+        unavailable=False,
+        copy="",
+    )
+
+
+def queue_followup(queue: list[str], text: str) -> list[str]:
+    """Append a follow-up prompt to a FIFO queue (pure helper)."""
+    queue.append(text)
+    return queue
+
+
+def take_back_newest(queue: list[str]) -> tuple[list[str], str | None]:
+    """Remove and return the newest queued prompt (pure helper)."""
+    if not queue:
+        return ([], None)
+    newest = queue[-1]
+    return (list(queue[:-1]), newest)
+
+
 class TuiProjection:
     """Pure projection reconstructing UI state from snapshots and event streams."""
 
@@ -133,6 +346,170 @@ class TuiProjection:
         self.footer_data: FooterData = FooterData()
         self.focused_agent_id: str | None = None
         self._seen_event_ids: set[str] = set()
+        self._seen_transcript_ids: set[str] = set()
+        # Phase 3a pure-data fields.
+        self.queue: list[str] = []
+        self.child_slots: dict[str, int] = {}
+        self.receipts: list[str] = []
+        self.plan_state: str = "none"
+        self.approvals: dict[str, str] = {}
+        self._children: dict[str, ChildView] = {}
+        self.attempt_models: dict[str, str] = {}
+        self._future_model: str = "auto"
+        self.unread: int = 0
+
+    # -- Phase 3a helpers -------------------------------------------------
+    def queue_followup(self, text: str) -> None:
+        self.queue.append(text)
+
+    def take_back_newest(self) -> str | None:
+        if not self.queue:
+            return None
+        return self.queue.pop()
+
+    def child_slot_for(self, child_id: str) -> int:
+        if child_id in self.child_slots:
+            return self.child_slots[child_id]
+        used = set(self.child_slots.values())
+        for slot in (1, 2, 3):
+            if slot not in used:
+                if len(self.child_slots) >= _MAX_CHILD_SLOTS:
+                    break
+                self.child_slots[child_id] = slot
+                return slot
+        # At capacity: deterministic fallback without growing the map.
+        return 1
+
+    def note_receipt(self, text: str) -> None:
+        self.receipts.append(text)
+        self.unread += 1
+
+    def note_plan(self, state: str) -> None:
+        normalized = state.strip().lower()
+        if normalized not in _VALID_PLAN_STATES:
+            raise ValueError(f"Invalid plan state: {state}")
+        self.plan_state = normalized
+
+    def mark_approval(self, approval_id: str, decision: str) -> None:
+        normalized = decision.strip().lower()
+        if normalized not in _VALID_APPROVAL_STATES:
+            raise ValueError(f"Invalid approval decision: {decision}")
+        self.approvals[approval_id] = normalized
+        if self.pending_interrupt is not None and (
+            self.pending_interrupt.approval_id == approval_id
+        ):
+            self.pending_interrupt.status = normalized
+
+    def note_child(
+        self,
+        child_id: str,
+        task: str = "",
+        model: str = "",
+        workspace_lock: str = "",
+    ) -> int:
+        slot = self.child_slot_for(child_id)
+        existing = self._children.get(child_id)
+        if existing is not None:
+            if task:
+                existing.task = task
+            if model:
+                existing.model = model
+            if workspace_lock:
+                existing.workspace_lock = workspace_lock
+            return existing.slot
+        self._children[child_id] = ChildView(
+            id=child_id,
+            slot=slot,
+            status="running",
+            task=task,
+            model=model,
+            workspace_lock=workspace_lock,
+            last_event="started",
+            cost=Decimal("0.00"),
+        )
+        return slot
+
+    def mark_child_status(
+        self,
+        child_id: str,
+        status: str,
+        last_event: str | None = None,
+    ) -> None:
+        child = self._children.get(child_id)
+        if child is None:
+            slot = self.child_slot_for(child_id)
+            child = ChildView(
+                id=child_id,
+                slot=slot,
+                status=status,
+                last_event=last_event or status,
+            )
+            self._children[child_id] = child
+            return
+        child.status = status
+        child.last_event = last_event if last_event is not None else status
+
+    def children_view(self) -> list[ChildView]:
+        return sorted(self._children.values(), key=lambda c: (c.slot, c.id))
+
+    def set_future_model(self, name: str) -> None:
+        self._future_model = name
+        self.footer_data.lead_model = name
+
+    def model_for_future(self) -> str:
+        return self._future_model
+
+    def note_attempt_model(self, attempt_id: str, model: str) -> None:
+        if attempt_id not in self.attempt_models:
+            self.attempt_models[attempt_id] = model
+
+    def model_for_attempt(self, attempt_id: str) -> str | None:
+        return self.attempt_models.get(attempt_id)
+
+    def mark_seen(self) -> None:
+        self.unread = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize UI state without any secret material."""
+
+        def _safe(value: Any) -> Any:
+            if isinstance(value, Decimal):
+                return str(value)
+            if isinstance(value, datetime):
+                return value.isoformat()
+            if isinstance(value, dict):
+                return {str(k): _safe(v) for k, v in value.items()}
+            if isinstance(value, (list, tuple)):
+                return [_safe(v) for v in value]
+            return value
+
+        raw: dict[str, Any] = {
+            "session_id": self.session_id,
+            "session_title": self.session_title,
+            "session_status": self.session_status,
+            "queue": list(self.queue),
+            "child_slots": dict(self.child_slots),
+            "receipts": list(self.receipts),
+            "plan_state": self.plan_state,
+            "approvals": dict(self.approvals),
+            "children": [asdict(c) for c in self.children_view()],
+            "attempt_models": dict(self.attempt_models),
+            "future_model": self._future_model,
+            "unread": self.unread,
+            "transcript": [asdict(t) for t in self.transcript_items],
+        }
+        cleaned: dict[str, Any] = _safe(raw)
+        return cleaned
+
+    def _add_transcript_item(self, item: TranscriptItem) -> bool:
+        if not item.id:
+            item.id = f"tx-{uuid.uuid4().hex[:12]}"
+        if item.id in self._seen_transcript_ids:
+            return False
+        self._seen_transcript_ids.add(item.id)
+        self.transcript_items.append(item)
+        self.unread += 1
+        return True
 
     def apply_snapshot(self, snapshot: SessionSnapshot) -> None:
         self.transcript_items = []
@@ -146,6 +523,7 @@ class TuiProjection:
         self.pending_interrupt = None
         self.footer_data = FooterData()
         self._seen_event_ids = set()
+        self._seen_transcript_ids = set()
         self.session_id = snapshot.session_id
         self.session_title = snapshot.title
         self.session_status = snapshot.status
@@ -283,7 +661,7 @@ class TuiProjection:
                     question=ap.question,
                     status="pending",
                 )
-                self.transcript_items.append(
+                self._add_transcript_item(
                     TranscriptItem(
                         id=f"app-{ap.approval_id}",
                         role="approval",
@@ -369,7 +747,9 @@ class TuiProjection:
         )
         lead_model_name = self.route_items.get("lead", default_route).model
         self.footer_data = FooterData(
-            lead_model=lead_model_name,
+            lead_model=self.footer_data.lead_model
+            if self.footer_data.lead_model != "auto"
+            else lead_model_name,
             active_mode=self.footer_data.active_mode,
             routing_mode="auto",
             session_cost_usd=total_authoritative,
@@ -377,6 +757,9 @@ class TuiProjection:
             context_tokens_estimated=context_tokens,
             active_agents_count=active_count,
         )
+        # Preserve future model if it was customized before snapshot.
+        if self._future_model != "auto":
+            self.footer_data.lead_model = self._future_model
 
     def apply_event(self, event: EventEnvelope) -> None:
         event_id = str(event.event_id)
@@ -420,7 +803,7 @@ class TuiProjection:
             )
             is_terminal = suffix in terminal_states
             is_error = suffix in ("failed", "blocked")
-            self.transcript_items.append(
+            self._add_transcript_item(
                 TranscriptItem(
                     id=str(event.event_id),
                     role="task",
@@ -437,7 +820,7 @@ class TuiProjection:
             tool_name = getattr(event.payload, "tool", "tool")
             status_val = getattr(event.payload, "status", "completed")
             is_error = status_val in ("failed", "rejected")
-            self.transcript_items.append(
+            self._add_transcript_item(
                 TranscriptItem(
                     id=str(event.event_id),
                     role="error" if is_error else "tool",
@@ -453,7 +836,7 @@ class TuiProjection:
         elif ev_type in ("diagnostic.error", "invariant.failed"):
             summary = getattr(event.payload, "summary", "Diagnostic Error")
             code = getattr(event.payload, "code", "error")
-            self.transcript_items.append(
+            self._add_transcript_item(
                 TranscriptItem(
                     id=str(event.event_id),
                     role="error",
@@ -474,7 +857,7 @@ class TuiProjection:
                 question=content or "Question",
                 status="pending",
             )
-            self.transcript_items.append(
+            self._add_transcript_item(
                 TranscriptItem(
                     id=str(event.event_id),
                     role="approval",
@@ -491,7 +874,7 @@ class TuiProjection:
             if self.pending_interrupt:
                 self.pending_interrupt.status = "approved"
             content = getattr(event.payload, "content", "Answered")
-            self.transcript_items.append(
+            self._add_transcript_item(
                 TranscriptItem(
                     id=str(event.event_id),
                     role="user",
@@ -513,7 +896,7 @@ class TuiProjection:
                 if rev_val is not None:
                     self.current_plan_revision = int(rev_val)
                 self.footer_data.active_mode = "planned"
-                self.transcript_items.append(
+                self._add_transcript_item(
                     TranscriptItem(
                         id=str(event.event_id),
                         role="system",
@@ -526,7 +909,7 @@ class TuiProjection:
                 rev_val = getattr(event.payload, "revision", None)
                 if rev_val is not None:
                     self.current_plan_revision = int(rev_val)
-                self.transcript_items.append(
+                self._add_transcript_item(
                     TranscriptItem(
                         id=str(event.event_id),
                         role="system",
@@ -554,7 +937,7 @@ class TuiProjection:
                             kind="agent",
                             state=st_val,
                         )
-                self.transcript_items.append(
+                self._add_transcript_item(
                     TranscriptItem(
                         id=str(event.event_id),
                         role="task",
@@ -564,7 +947,7 @@ class TuiProjection:
                     )
                 )
             elif ev_type == "plan.blocked":
-                self.transcript_items.append(
+                self._add_transcript_item(
                     TranscriptItem(
                         id=str(event.event_id),
                         role="error",
@@ -577,7 +960,7 @@ class TuiProjection:
         elif ev_type.startswith("route."):
             action_val = getattr(event.payload, "action", ev_type.split(".", 1)[1])
             asg_id = getattr(event.payload, "assignment_id", None)
-            self.transcript_items.append(
+            self._add_transcript_item(
                 TranscriptItem(
                     id=str(event.event_id),
                     role="system" if action_val != "failed" else "error",
@@ -594,7 +977,7 @@ class TuiProjection:
                 self.footer_data.active_mode = (
                     mode_val.value if hasattr(mode_val, "value") else str(mode_val)
                 )
-            self.transcript_items.append(
+            self._add_transcript_item(
                 TranscriptItem(
                     id=str(event.event_id),
                     role="system",
@@ -617,7 +1000,7 @@ class TuiProjection:
                     status=action_val,
                     base_head="",
                 )
-            self.transcript_items.append(
+            self._add_transcript_item(
                 TranscriptItem(
                     id=str(event.event_id),
                     role="task",
@@ -673,3 +1056,24 @@ class TuiProjection:
 
     def focus_agent(self, task_id: str | None) -> None:
         self.focused_agent_id = task_id
+
+
+__all__ = [
+    "BUDGET_UNAVAILABLE_COPY",
+    "AgentRailItem",
+    "BudgetState",
+    "BudgetViewItem",
+    "BudgetViewModel",
+    "ChildView",
+    "FooterData",
+    "InterruptItem",
+    "PlanNodeViewItem",
+    "RouteViewItem",
+    "TranscriptItem",
+    "TuiProjection",
+    "WorkspaceIntegrationItem",
+    "budget_meter",
+    "budget_view_model",
+    "queue_followup",
+    "take_back_newest",
+]

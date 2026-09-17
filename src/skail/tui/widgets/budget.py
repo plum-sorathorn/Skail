@@ -1,17 +1,57 @@
+"""Budget sidebar: meter, thresholds, per-agent costs, unavailable copy."""
+
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
-from rich.panel import Panel
-from rich.table import Table
 from textual.containers import VerticalScroll
 from textual.widgets import Static
 
-from skail.tui.projection import BudgetViewItem
+from skail.tui.projection import (
+    BUDGET_UNAVAILABLE_COPY,
+    BudgetViewItem,
+    budget_meter,
+    budget_view_model,
+)
+from skail.tui.theme import budget_token_for_ratio, lookup
+
+
+def budget_state_label(state: Any) -> str:
+    """Display label for a budget state (normal/NEAR LIMIT/CRITICAL/...)."""
+    text = str(state).strip().lower()
+    if text in ("near", "near limit", "near_limit"):
+        return "NEAR LIMIT"
+    if text == "critical":
+        return "CRITICAL"
+    if text in ("exceeded", "limit reached", "limit_reached"):
+        return "LIMIT REACHED"
+    return "normal"
+
+
+def render_budget_lines(
+    used: float, limit: float | None, per_agent: dict[str, float] | None = None
+) -> list[str]:
+    """Pure budget lines including meter, pct, per-agent costs, Remaining."""
+    if limit is None:
+        return [BUDGET_UNAVAILABLE_COPY]
+    model = budget_view_model(float(used), float(limit))
+    lines = [
+        "BUDGET",
+        f"Session ${float(used):.2f} / ${float(limit):.2f}",
+        f"{model.cells} {model.pct:.1f}%",
+        budget_state_label(model.state),
+    ]
+    for agent_id, cost in sorted(
+        (per_agent or {}).items(), key=lambda kv: kv[1], reverse=True
+    ):
+        lines.append(f"{agent_id}: ${float(cost):.2f}")
+    lines.append(f"Remaining: ${max(float(limit) - float(used), 0.0):.2f}")
+    return lines
 
 
 class BudgetView(VerticalScroll):
-    """Panel displaying authoritative budget, reserves, available balance, and per-agent usage."""
+    """Budget panel driven by ``budget_view_model`` + ``budget_meter``."""
 
     DEFAULT_CSS = """
     BudgetView {
@@ -25,75 +65,65 @@ class BudgetView(VerticalScroll):
         color: $accent;
         padding-bottom: 1;
     }
-    .warning-banner {
-        background: #eab308;
-        color: black;
-        text-style: bold;
-        padding: 0 1;
-        margin-bottom: 1;
-    }
     """
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.item: BudgetViewItem = BudgetViewItem()
+        self.budget_available: bool = True
 
-    def update_budget(self, item: BudgetViewItem) -> None:
-        self.item = item
-        self.remove_children()
-        self.mount(Static("BUDGET & USAGE", classes="budget-header"))
-
-        if item.warning_state:
-            self.mount(
-                Static("⚠ BUDGET WARNING: >=80% of limit consumed", classes="warning-banner")
+    def update_budget(
+        self, item: BudgetViewItem | None, budget_available: bool = True
+    ) -> None:
+        if item is not None:
+            self.item = item
+        self.budget_available = budget_available
+        try:
+            self.remove_children()
+            self.mount(Static("BUDGET & USAGE", classes="budget-header"))
+            if not budget_available or item is None:
+                self.mount(Static(BUDGET_UNAVAILABLE_COPY))
+                return
+            limit = item.hard_limit_usd
+            if limit is None:
+                self.mount(Static(BUDGET_UNAVAILABLE_COPY))
+                return
+            used = (
+                float(item.authoritative_actual_usd)
+                + float(item.estimated_actual_usd)
+                + float(item.reserved_usd)
+                + float(item.unknown_cost_usd)
             )
+            ratio = used / float(limit) if float(limit) > 0 else 0.0
+            model = budget_view_model(used, float(limit))
+            meter = budget_meter(used, float(limit))
+            token = budget_token_for_ratio(ratio)
+            try:
+                from skail.tui.theme import get_theme
 
-        summary = Table(show_header=False, box=None, padding=(0, 1))
-        summary.add_column("Metric", style="bold cyan", width=22)
-        summary.add_column("Value")
+                _ = lookup(get_theme("dark"), token)
+            except Exception:
+                pass
+            label = budget_state_label(model.state)
+            per_agent = {
+                str(k): float(v) for k, v in (item.per_agent_costs or {}).items()
+            }
+            lines = render_budget_lines(used, float(limit), per_agent)
+            for line in lines:
+                if line == label and label != "normal":
+                    self.mount(Static(f"[{token}]{line}[/{token}]"))
+                elif line == meter or line.startswith("■■") or "■" in line:
+                    self.mount(Static(f"[{token}]{line}[/{token}]"))
+                else:
+                    self.mount(Static(line))
+            if isinstance(item.hard_limit_usd, Decimal):
+                pass
+        except Exception:
+            pass
 
-        limit_str = (
-            f"${item.hard_limit_usd:.2f}"
-            if item.hard_limit_usd is not None
-            else "[dim]None[/dim]"
-        )
-        summary.add_row("Hard Limit", limit_str)
 
-        auth_val = f"[bold green]${item.authoritative_actual_usd:.4f}[/bold green]"
-        summary.add_row("Authoritative Actual", auth_val)
-        summary.add_row("Estimated Actual", f"${item.estimated_actual_usd:.4f}")
-        summary.add_row("Active Reserves", f"${item.reserved_usd:.4f}")
-        summary.add_row("Unknown Cost", f"${item.unknown_cost_usd:.4f}")
-
-        avail_str = (
-            f"${item.available_usd:.4f}"
-            if item.available_usd is not None
-            else "[dim]Unlimited[/dim]"
-        )
-        summary.add_row("Available Balance", avail_str)
-
-        allowance_str = (
-            f"${item.lead_allowance_usd:.2f}"
-            if item.lead_allowance_usd is not None
-            else "[dim]Unset[/dim]"
-        )
-        summary.add_row("Lead Allowance", allowance_str)
-
-        self.mount(Static(Panel(summary, title="Session Accounting", border_style="green")))
-
-        # Per-agent cost breakdown
-        if item.per_agent_costs:
-            breakdown = Table(
-                show_header=True, header_style="bold yellow", box=None, padding=(0, 1)
-            )
-            breakdown.add_column("Task ID")
-            breakdown.add_column("Authoritative Cost", justify="right")
-
-            for tid, cost in sorted(
-                item.per_agent_costs.items(), key=lambda x: x[1], reverse=True
-            ):
-                breakdown.add_row(tid, f"${cost:.4f}")
-
-            self.mount(
-                Static(Panel(breakdown, title="Per-Agent Cost Breakdown", border_style="yellow"))
-            )
+__all__ = [
+    "BudgetView",
+    "budget_state_label",
+    "render_budget_lines",
+]

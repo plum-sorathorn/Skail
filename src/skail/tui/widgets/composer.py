@@ -295,6 +295,8 @@ class PromptComposer(Widget):
         mode: str = "QUALITY",
         queue: list[str] | None = None,
         registry: list[str] | None = None,
+        descriptions: dict[str, str] | None = None,
+        keywords: dict[str, list[str]] | None = None,
         **kwargs: object,
     ) -> None:
         super().__init__(**kwargs)  # type: ignore[arg-type]
@@ -302,6 +304,8 @@ class PromptComposer(Widget):
         self.queue_items: list[str] = list(queue or [])
         self.history = ComposerHistory()
         self.registry = list(registry or ["help", "agents", "plan", "route"])
+        self.descriptions: dict[str, str] = dict(descriptions or {})
+        self.keywords: dict[str, list[str]] = dict(keywords or {})
         self._palette_open = False
         self._matches: list[PaletteMatch] = []
         self._palette_index = 0
@@ -384,7 +388,16 @@ class PromptComposer(Widget):
 
     def _update_palette_for_draft(self, draft: str) -> None:
         if draft.startswith("/") and "\n" not in draft:
-            self._matches = fuzzy_match_commands(draft, self.registry)
+            entries = [
+                PaletteMatch(
+                    command=name,
+                    description=self.descriptions.get(name, ""),
+                )
+                for name in self.registry
+            ]
+            self._matches = fuzzy_match_commands(
+                draft, entries, self.descriptions, self.keywords
+            )
             self._palette_open = bool(self._matches)
             self._palette_index = 0
         else:

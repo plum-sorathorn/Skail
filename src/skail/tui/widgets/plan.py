@@ -1,18 +1,65 @@
+"""Plan sidebar: header, rows, proposed/rejected cards, receipts."""
+
 from __future__ import annotations
 
 from typing import Any
 
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
 from textual.containers import VerticalScroll
+from textual.message import Message
 from textual.widgets import Static
 
-from skail.tui.projection import PlanNodeViewItem, WorkspaceIntegrationItem
+from skail.tui.projection import PlanNodeViewItem
+
+GLYPH_DONE = "\u2713"
+GLYPH_CURRENT = "\u25cf"
+GLYPH_TODO = "\u2219"
+
+DONE_STATES = ("succeeded", "complete", "done", "verified", "integrated")
+CURRENT_STATES = ("running", "executing", "ready", "launching")
+PROPOSED_TITLE = "PROPOSED PLAN"
+REJECTED_TITLE = "REJECTED"
+
+
+def plan_row_kind(state: str) -> str:
+    """Map a node state to done/current/todo."""
+    text = state.strip().lower()
+    if text in DONE_STATES:
+        return "done"
+    if text in CURRENT_STATES:
+        return "current"
+    return "todo"
+
+
+def plan_glyph(state: str) -> str:
+    kind = plan_row_kind(state)
+    if kind == "done":
+        return GLYPH_DONE
+    if kind == "current":
+        return GLYPH_CURRENT
+    return GLYPH_TODO
+
+
+def plan_progress(items: dict[str, PlanNodeViewItem]) -> tuple[int, int]:
+    """Return (done, total) counting done states."""
+    total = len(items)
+    done = sum(1 for item in items.values() if plan_row_kind(item.state) == "done")
+    return done, total
+
+
+def plan_header(total_done: int, total: int) -> str:
+    return f"PLAN \u00b7 {total_done}/{total}"
+
+
+def render_plan_rows(items: dict[str, PlanNodeViewItem]) -> list[str]:
+    ordered = sorted(items.values(), key=lambda i: i.local_id)
+    rows: list[str] = []
+    for item in ordered:
+        rows.append(f"{plan_glyph(item.state)} {item.local_id} {item.objective}")
+    return rows
 
 
 class PlanView(VerticalScroll):
-    """Panel displaying adaptive execution plan nodes, dependencies, and workspace integrations."""
+    """Plan panel with proposed/rejected cards and receipts."""
 
     DEFAULT_CSS = """
     PlanView {
@@ -26,130 +73,132 @@ class PlanView(VerticalScroll):
         color: $accent;
         padding-bottom: 1;
     }
+    .plan-proposed {
+        border: heavy $warning;
+        padding: 1;
+    }
+    .plan-rejected {
+        opacity: 60%;
+        padding: 1;
+    }
     """
+
+    class PlanAccepted(Message):
+        pass
+
+    class PlanRejected(Message):
+        pass
+
+    class PlanChangesRequested(Message):
+        pass
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.plan_items: dict[str, PlanNodeViewItem] = {}
         self.plan_id: str | None = None
         self.revision: int | None = None
-        self.integrations: dict[str, WorkspaceIntegrationItem] = {}
+        self.integrations: dict[str, Any] = {}
+        self.plan_state: str = "none"
+        self.receipts: list[str] = []
+        self.rejected_collapsed: bool = True
 
     def update_plan(
         self,
         plan_items: dict[str, PlanNodeViewItem],
         plan_id: str | None = None,
         revision: int | None = None,
-        integrations: dict[str, WorkspaceIntegrationItem] | None = None,
+        integrations: dict[str, Any] | None = None,
+        plan_state: str = "none",
+        receipts: list[str] | None = None,
     ) -> None:
         self.plan_items = plan_items
         self.plan_id = plan_id
         self.revision = revision
         self.integrations = integrations or {}
-        self.remove_children()
-        self.mount(Static("ADAPTIVE PLAN & WORKSPACES", classes="plan-header"))
+        self.plan_state = plan_state
+        self.receipts = list(receipts or [])
+        self._render()
 
-        if not plan_items and not self.integrations:
-            self.mount(Static("[dim]No execution plan active[/dim]"))
+    def _render(self) -> None:
+        try:
+            self.remove_children()
+        except Exception:
             return
-
-        if plan_items:
-            table = Table(
-                expand=True,
-                show_header=True,
-                header_style="bold cyan",
-                box=None,
-                padding=(0, 1),
-            )
-            table.add_column("Node", style="bold", width=12)
-            table.add_column("Kind", width=10)
-            table.add_column("Scope", width=16)
-            table.add_column("State", width=14)
-            table.add_column("Depends On", width=16)
-            table.add_column("Objective")
-
-            for item in plan_items.values():
-                short_id = item.node_id[:8] if len(item.node_id) > 8 else item.node_id
-                node_lbl = item.local_id or short_id
-                kind_lbl = item.kind
-                scope_lbl = item.effect_scope
-
-                st_text = Text()
-                st = item.state.lower().strip()
-                if st in ("running", "executing"):
-                    st_text.append("running", style="bold yellow")
-                elif st == "ready":
-                    st_text.append("ready", style="bold cyan")
-                elif st in ("succeeded", "complete"):
-                    st_text.append("succeeded", style="bold green")
-                elif st == "failed":
-                    st_text.append("failed", style="bold red")
-                elif st == "blocked":
-                    st_text.append("blocked", style="bold red reverse")
-                elif st == "cancelled":
-                    st_text.append("cancelled", style="dim red")
-                else:
-                    st_text.append(st, style="white")
-
-                deps_lbl = ", ".join(item.depends_on) if item.depends_on else "[dim]none[/dim]"
-                table.add_row(node_lbl, kind_lbl, scope_lbl, st_text, deps_lbl, item.objective)
-
-            plan_title = f"Plan: {plan_id or 'active'}"
-            if revision is not None:
-                plan_title += f" (rev {revision})"
-            self.mount(Static(Panel(table, title=plan_title, border_style="cyan")))
-
-        if self.integrations:
-            ws_table = Table(
-                expand=True,
-                show_header=True,
-                header_style="bold magenta",
-                box=None,
-                padding=(0, 1),
-            )
-            ws_table.add_column("Changeset", style="bold", width=14)
-            ws_table.add_column("Task ID", width=14)
-            ws_table.add_column("Status", width=14)
-            ws_table.add_column("Base Head", width=10)
-            ws_table.add_column("Paths")
-
-            for ws_item in self.integrations.values():
-                cs_lbl = (
-                    ws_item.changeset_id[:12]
-                    if len(ws_item.changeset_id) > 12
-                    else ws_item.changeset_id
+        done, total = plan_progress(self.plan_items)
+        try:
+            self.mount(Static(plan_header(done, total), classes="plan-header"))
+            state = (self.plan_state or "none").strip().lower()
+            if state == "proposed":
+                self.mount(
+                    Static(
+                        "PROPOSED PLAN\n[A] Accept [R] Reject [E] Request changes",
+                        classes="plan-proposed",
+                    )
                 )
-                task_lbl = (
-                    ws_item.task_id[:12]
-                    if len(ws_item.task_id) > 12
-                    else ws_item.task_id
-                )
+                for row in render_plan_rows(self.plan_items):
+                    self.mount(Static(row))
+            elif state == "rejected":
+                self.mount(Static("REJECTED", classes="plan-rejected"))
+                if not self.rejected_collapsed:
+                    for row in render_plan_rows(self.plan_items):
+                        self.mount(Static(row))
+            else:
+                for row in render_plan_rows(self.plan_items):
+                    self.mount(Static(row))
+                for receipt in self.receipts:
+                    self.mount(Static(receipt))
+            if not self.plan_items and state == "none":
+                self.mount(Static("[dim]No execution plan active[/dim]"))
+        except Exception:
+            pass
 
-                st_text = Text()
-                st = ws_item.status.lower().strip()
-                if st == "integrated":
-                    st_text.append("integrated", style="bold green")
-                elif st == "verified":
-                    st_text.append("verified", style="green")
-                elif st == "pending":
-                    st_text.append("pending", style="bold yellow")
-                elif st == "in_doubt":
-                    st_text.append("in doubt", style="bold red")
-                elif st == "rejected":
-                    st_text.append("rejected", style="bold red reverse")
-                else:
-                    st_text.append(st, style="white")
+    def accept(self) -> None:
+        self.plan_state = "accepted"
+        self.post_message(self.PlanAccepted())
 
-                base_lbl = ws_item.base_head[:8] if ws_item.base_head else "--"
-                paths_lbl = ", ".join(ws_item.paths) if ws_item.paths else "[dim]none[/dim]"
-                if ws_item.error:
-                    paths_lbl += f" [red]({ws_item.error})[/red]"
+    def reject(self) -> None:
+        self.plan_state = "rejected"
+        self.rejected_collapsed = True
+        self.post_message(self.PlanRejected())
 
-                ws_table.add_row(cs_lbl, task_lbl, st_text, base_lbl, paths_lbl)
+    def request_changes(self) -> None:
+        self.post_message(self.PlanChangesRequested())
 
-            ws_panel = Panel(
-                ws_table,
-                title="Workspace Changesets & Integration",
-                border_style="magenta",
-            )
-            self.mount(Static(ws_panel))
+    async def on_key(self, event: Any) -> None:
+        if (self.plan_state or "").strip().lower() != "proposed":
+            return
+        key = getattr(event, "key", "")
+        if key in ("a", "A"):
+            self.accept()
+            try:
+                event.stop()
+            except Exception:
+                pass
+        elif key in ("r", "R"):
+            self.reject()
+            try:
+                event.stop()
+            except Exception:
+                pass
+        elif key in ("e", "E"):
+            self.request_changes()
+            try:
+                event.stop()
+            except Exception:
+                pass
+        elif key == "enter":
+            self.accept()
+            try:
+                event.stop()
+            except Exception:
+                pass
+
+
+__all__ = [
+    "PlanView",
+    "plan_glyph",
+    "plan_header",
+    "plan_progress",
+    "plan_row_kind",
+    "render_plan_rows",
+]
