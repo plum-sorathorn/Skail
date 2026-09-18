@@ -163,3 +163,14 @@ children are budget-blocked (D-4), never launched (D-3), or crash on dispatch (D
 5. **Not touched:** pre-existing `phase22`/`phase24` worktrees, `AutoConduck-BASE`, untracked `.skail/`
    and `package.json`, and every other branch.
 6. Nothing was pushed; no remote operation was performed.
+
+---
+
+## 9. Remediation (post-R8) — 2026-09-18
+
+- **D-3 — FIXED** (commit `1bf8e96`): `settle_plan_node_execution` missing-row is an idempotent logged no-op; pump `finally` drains detached running tasks. Note: the exact P4 live trigger could not be reproduced (no P4 journal retained); the crash path and detached-task leak are eliminated.
+- **D-4 — RE-DIAGNOSED + FIXED** (commit `1bf8e96`): the report's ×1e6 price-mis-scale hypothesis is DISPROVEN (llmgateway per-token→per-million is balanced by estimates.py ÷1e6; live lead reservation $0.044611 proves sane units). Real defect = fabricated/lost routing reason; now preserved via `BatchAssignmentResult.failures` + `_route_failure_for_task`.
+- **D-7 — FIXED** (commit `1bf8e96`): `Journal.ensure_task`.
+- **D-9 — FIXED** (commit `1bf8e96`): true reason propagated to task events (`TaskPayload.reason`).
+- **D-5 — INSTRUMENTED, NOT FIXED** (commit `1bf8e96`): a scan of all 73 `%TEMP%\skail-ephemeral-*` journals found ZERO occurrences of `Message as a sequence must be (role string, template)`; all Skail/deepagents message producers and the task-tool input path are statically well-formed (`{"messages": [BaseMessage...]}`). Run-failure handlers now capture error type/message + redacted traceback and a message-shape dump so the next live occurrence localizes itself. No coercion shipped.
+- Verification: ruff clean, mypy 121 files clean, unit 554 passed/2 skipped, contract 114/2 (pre-existing install-env), integration 211/10 (pre-existing TUI/live-child), `scripts\smoke.py --fake-provider` ok.
