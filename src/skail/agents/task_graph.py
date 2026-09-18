@@ -127,7 +127,7 @@ def build_task_graph(
     leases: WorkspaceLeaseManager,
     scheduler: ChildScheduler | None = None,
     task_registry: TaskRegistry | None = None,
-    task_event: Callable[[TaskSpec, str, str | None], None] | None = None,
+    task_event: Callable[[TaskSpec, str, str | None, str | None], None] | None = None,
     resolve_spec: Callable[[str, str], TaskSpec | None] | None = None,
     require_preplanned: bool = False,
     serialize_writers: bool = True,
@@ -167,7 +167,7 @@ def build_task_graph(
                     attempt_number=number,
                 )
             if task_event is not None:
-                task_event(spec, result.status, None)
+                task_event(spec, result.status, None, result.summary)
             return {
                 "result": result
             }
@@ -266,7 +266,7 @@ def build_task_graph(
                 attempt_number=number,
             )
         if task_event is not None:
-            task_event(spec, "started", state.get("attempt_id"))
+            task_event(spec, "started", state.get("attempt_id"), None)
 
         async def invoke() -> TaskResult:
             raw = await execute(spec, assignment, packet)
@@ -364,6 +364,7 @@ def build_task_graph(
                 spec,
                 "returned_to_lead" if result.status == "failed" and number == 2 else result.status,
                 state.get("attempt_id"),
+                result.summary,
             )
         if terminal:
             if result.status == "failed":
@@ -424,7 +425,7 @@ def build_compiled_profile_subagent(
     leases: WorkspaceLeaseManager,
     scheduler: ChildScheduler | None = None,
     task_registry: TaskRegistry | None = None,
-    task_event: Callable[[TaskSpec, str, str | None], None] | None = None,
+    task_event: Callable[[TaskSpec, str, str | None, str | None], None] | None = None,
     resolve_spec: Callable[[str, str], TaskSpec | None] | None = None,
     persist_context: Callable[[ContextPacket], None] | None = None,
     settle_attempt: Callable[[AttemptBinding, TaskResult], None] | None = None,
@@ -493,8 +494,8 @@ def build_compiled_profile_subagent(
                     attempt_number=1,
                 )
                 if task_event is not None:
-                    task_event(spec, "proposed", None)
-                    task_event(spec, "queued", None)
+                    task_event(spec, "proposed", None, None)
+                    task_event(spec, "queued", None, None)
             except TaskValidationError as exc:
                 return {"spec": spec, "validation_error": exc.code}
         return {"spec": spec}

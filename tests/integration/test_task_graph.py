@@ -256,6 +256,43 @@ async def test_task_graph_keeps_budget_block_distinct_and_never_executes(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_task_graph_blocked_events_carry_the_true_reason(tmp_path) -> None:
+    spec = _spec(tmp_path)
+    events: list[tuple[str, str | None, str | None]] = []
+
+    def record(spec, status, attempt_id, summary):
+        events.append((status, attempt_id, summary))
+
+    async def execute(*args):
+        raise AssertionError("blocked task must not execute")
+
+    def graph_for(constraint: str | None, counts: dict[str, int]):
+        return build_task_graph(
+            profile=builtin_profiles()["implementer"],
+            assign=lambda *args: RouteFailure(
+                excluded_counts=counts, binding_constraint=constraint
+            ),
+            execute=execute,
+            gate=ChildRunGate(3), leases=WorkspaceLeaseManager(),
+            task_event=record,
+        )
+
+    state = await graph_for("budget_unaffordable", {"budget": 1}).ainvoke({"spec": spec})
+    assert state["result"].status == "budget_blocked"
+    assert ("budget_blocked", None, "budget_unaffordable") in events
+
+    events.clear()
+    state = await graph_for("model_excluded", {"model_excluded": 1}).ainvoke({"spec": spec})
+    assert state["result"].status == "blocked"
+    assert ("blocked", None, "model_excluded") in events
+
+    events.clear()
+    state = await graph_for(None, {}).ainvoke({"spec": spec})
+    assert state["result"].status == "blocked"
+    assert ("blocked", None, "no eligible route") in events
+
+
+@pytest.mark.asyncio
 async def test_task_graph_converts_execution_error_to_bounded_escalation(tmp_path) -> None:
     spec = _spec(tmp_path)
     assignments = [_assignment(spec, 1, "economy"), _assignment(spec, 2, "quality")]

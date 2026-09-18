@@ -7,9 +7,12 @@ exact one-shot approval flow. No live providers, no secrets.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from langchain_core.messages import AIMessage
@@ -23,6 +26,7 @@ from skail.domain.plans import (
     PlanNodeKind,
     PlanNodeState,
 )
+from skail.domain.tasks import TaskId, TaskResult
 from skail.runtime.decisions import DecisionAdmissionError, ExecutionDecisionGate
 from skail.runtime.errors import FrameworkContractError
 from skail.runtime.interrupts import QuestionStore
@@ -847,6 +851,161 @@ def test_stale_revision_rejected(tmp_path: Path) -> None:
             revision=PlanRevisionModel.model_validate(good_revision),
             plan=good_plan,
         )
+
+
+class _D3PumpController(RunController):
+    """Minimal harness for ``_dispatch_admitted_plan_agents``: journal + events.
+
+    Tool execution and agent admission are overridden so the pump's dispatch,
+    settle, and cleanup paths run against a real journal without any lead or
+    child model machinery.
+    """
+
+    def __init__(self, journal: Journal, *, fail_node_id: str | None = None) -> None:
+        self.journal = journal
+        self.events = SimpleNamespace(publish_persisted_nowait=lambda event: None)
+        self._planned_node_dispatches: list[object] = []
+        self._plan_revision_evidence: dict[str, frozenset[str]] = {}
+        self._plan_revision_checkpoints: dict[str, str] = {}
+        self._fail_node_id = fail_node_id
+
+    def _admit_ready_plan_agents(self, *args: object, **kwargs: object) -> None:
+        del args, kwargs
+
+    async def _run_plan_tool_node(
+        self,
+        *,
+        run_id: object,
+        node_id: str,
+        node: object,
+        controls: object,
+        leases: object,
+        scheduler: object,
+    ) -> TaskResult:
+        del run_id, node, controls, leases, scheduler
+        if node_id == self._fail_node_id:
+            raise RuntimeError("d3-simulated tool crash")
+        await asyncio.sleep(0.05)
+        return TaskResult(
+            task_id=TaskId(str(new_run_id())),
+            status="succeeded",
+            summary="d3 probe",
+            verification_authority="runtime",
+        )
+
+
+def _d3_journal(tmp_path: Path, name: str) -> tuple[Journal, str]:
+    journal = Journal(tmp_path / f"d3-{name}.sqlite")
+    journal.migrate()
+    session_id = _session(journal)
+    run_id = str(new_run_id())
+    journal.create_run(
+        run_id=run_id,
+        session_id=session_id,
+        status="running",
+        budget_limit_usd=Decimal("2.00"),
+        created_at=datetime.now(UTC),
+    )
+    return journal, run_id
+
+
+def _d3_tool_plan() -> ExecutionPlan:
+    return ExecutionPlan(
+        schema_version=1,
+        policy_version="adaptive-v1",
+        revision=1,
+        nodes=(
+            PlanNode(local_id="probe_a", kind=PlanNodeKind.TOOL, objective="Probe A"),
+            PlanNode(local_id="probe_b", kind=PlanNodeKind.TOOL, objective="Probe B"),
+        ),
+    )
+
+
+def _d3_dispatch_kwargs(run_id: str) -> dict[str, object]:
+    return {
+        "run_id": run_id,
+        "workspace_revision": "r0",
+        "leases": None,
+        "gate": None,
+        "scheduler": None,
+        "controls": None,
+        "delegation_approved": True,
+        "lead_assignment": None,
+        "lead_agent": None,
+        "lead_attempt_id": None,
+        "invoke_config": None,
+        "recorded_child_results": [],
+    }
+
+
+def test_d3_cancel_of_never_launched_node_is_a_noop(tmp_path: Path) -> None:
+    """Cancelling a plan node that never launched completes without raising."""
+    journal, run_id = _d3_journal(tmp_path, "cancel")
+    admitted = journal.admit_plan(run_id=run_id, plan=_d3_tool_plan())
+    controller = _D3PumpController(journal)
+    unlaunched = admitted.node_ids["probe_a"]
+
+    controller._cancel_plan_node(admitted.plan_id, unlaunched)
+
+    plan = journal.get_plan(admitted.plan_id)
+    assert plan.node_states["probe_a"] is PlanNodeState.READY
+    execution = journal.begin_plan_node_execution(
+        node_id=unlaunched, execution_key=f"tool:{unlaunched}"
+    )
+    assert execution.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_d3_pump_failure_exit_settles_running_nodes(tmp_path: Path) -> None:
+    """A pump exit via a failed task must not leave detached running nodes."""
+    journal, run_id = _d3_journal(tmp_path, "failure-exit")
+    admitted = journal.admit_plan(run_id=run_id, plan=_d3_tool_plan())
+    probe_a = admitted.node_ids["probe_a"]
+    probe_b = admitted.node_ids["probe_b"]
+    controller = _D3PumpController(journal, fail_node_id=probe_a)
+
+    with pytest.raises(RuntimeError, match="d3-simulated tool crash"):
+        await controller._dispatch_admitted_plan_agents(**_d3_dispatch_kwargs(run_id))
+
+    plan = journal.get_plan(admitted.plan_id)
+    assert plan.node_states == {
+        "probe_a": PlanNodeState.CANCELLED,
+        "probe_b": PlanNodeState.CANCELLED,
+    }
+    for node_id in (probe_a, probe_b):
+        execution = journal.begin_plan_node_execution(
+            node_id=node_id, execution_key=f"tool:{node_id}"
+        )
+        assert execution.status == "settled"
+        assert execution.result == {"status": "cancelled"}
+
+
+@pytest.mark.asyncio
+async def test_d3_pump_cancelled_exit_settles_running_nodes(tmp_path: Path) -> None:
+    """A cancelled pump exit drains its running tasks and settles their nodes."""
+    journal, run_id = _d3_journal(tmp_path, "cancelled-exit")
+    admitted = journal.admit_plan(run_id=run_id, plan=_d3_tool_plan())
+    controller = _D3PumpController(journal)
+    pump = asyncio.create_task(
+        controller._dispatch_admitted_plan_agents(**_d3_dispatch_kwargs(run_id))
+    )
+
+    await asyncio.sleep(0.01)
+    pump.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await pump
+
+    plan = journal.get_plan(admitted.plan_id)
+    assert plan.node_states == {
+        "probe_a": PlanNodeState.CANCELLED,
+        "probe_b": PlanNodeState.CANCELLED,
+    }
+    for node_id in admitted.node_ids.values():
+        execution = journal.begin_plan_node_execution(
+            node_id=node_id, execution_key=f"tool:{node_id}"
+        )
+        assert execution.status == "settled"
+        assert execution.result == {"status": "cancelled"}
 
 
 @pytest.mark.asyncio

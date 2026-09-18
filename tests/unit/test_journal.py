@@ -416,6 +416,83 @@ def test_task_replay_requires_identical_content(tmp_path: Path) -> None:
     assert len(journal.get_session_snapshot(SESSION_ID).tasks) == 1
 
 
+def test_repersisting_a_queued_task_as_running_transitions_instead_of_conflicting(
+    tmp_path: Path,
+) -> None:
+    journal = Journal(tmp_path / "skail.sqlite")
+    journal.migrate()
+    _seed_session(journal)
+    common = {
+        "run_id": RUN_ID,
+        "description": "probe",
+        "idempotency_key": f"task:{TASK_ID}",
+        "created_at": NOW,
+        "fingerprint": "fp-1",
+    }
+    journal.create_task(task_id=TASK_ID, status="queued", **common)
+
+    # The duplicate insert that produced the P3 failure still conflicts: the stored
+    # status ("queued") no longer matches the replayed content.
+    with pytest.raises(JournalIdempotencyError) as caught:
+        journal.create_task(task_id=TASK_ID, status="running", **common)
+
+    assert caught.value.error.code == "session.idempotency_conflict"
+
+    # The second persist is a status transition of the existing task, not a
+    # conflicting replay.
+    journal.ensure_task(task_id=TASK_ID, status="running", **common)
+
+    task = journal.get_session_snapshot(SESSION_ID).tasks[0]
+    assert task.task_id == TASK_ID
+    assert task.status == "running"
+
+
+def test_ensure_task_inserts_a_genuinely_new_task_and_stays_idempotent(
+    tmp_path: Path,
+) -> None:
+    journal = Journal(tmp_path / "skail.sqlite")
+    journal.migrate()
+    _seed_session(journal)
+    common = {
+        "run_id": RUN_ID,
+        "description": "fresh",
+        "idempotency_key": f"task:{TASK_ID}",
+        "created_at": NOW,
+        "fingerprint": "fp-1",
+    }
+    journal.ensure_task(task_id=TASK_ID, status="queued", **common)
+    journal.ensure_task(task_id=TASK_ID, status="queued", **common)
+
+    tasks = journal.get_session_snapshot(SESSION_ID).tasks
+    assert [task.task_id for task in tasks] == [TASK_ID]
+    assert tasks[0].status == "queued"
+
+
+def test_ensure_task_still_rejects_unrelated_conflicting_content(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "skail.sqlite")
+    journal.migrate()
+    _seed_session(journal)
+    common = {
+        "run_id": RUN_ID,
+        "idempotency_key": f"task:{TASK_ID}",
+        "created_at": NOW,
+        "fingerprint": "fp-1",
+    }
+    journal.create_task(task_id=TASK_ID, description="probe", status="queued", **common)
+
+    other_task_id = "44444444-4444-4444-8444-444444444444"
+    with pytest.raises(JournalIdempotencyError) as caught:
+        journal.ensure_task(
+            task_id=other_task_id, description="other", status="running", **common
+        )
+
+    assert caught.value.error.code == "session.idempotency_conflict"
+
+    tasks = journal.get_session_snapshot(SESSION_ID).tasks
+    assert [task.task_id for task in tasks] == [TASK_ID]
+    assert tasks[0].status == "queued"
+
+
 def test_context_packets_are_idempotent_and_redacted(tmp_path: Path) -> None:
     canary = "context-canary-secret"
     journal = Journal(tmp_path / "skail.sqlite", redactor=SecretRedactor([canary]))

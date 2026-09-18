@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
+import traceback
 from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
@@ -83,6 +85,7 @@ from skail.routing.assignment import (
     AssignmentRequest,
     AssignmentService,
     AssignmentUsageSettler,
+    BatchAssignmentResult,
     PersistedAssignmentRegistry,
     RoutingSnapshot,
     config_revision,
@@ -169,6 +172,55 @@ class _PlannedNodeDispatch:
 AssignChildAttempt = Callable[
     [TaskSpec, int, tuple[tuple[str, str], ...]], AttemptBinding | RouteFailure
 ]
+
+_LOGGER = logging.getLogger(__name__)
+_MESSAGE_SEQUENCE_ERROR = "Message as a sequence"
+
+
+def _exception_chain(exc: BaseException) -> list[BaseException]:
+    """Return exc followed by its __cause__/__context__ ancestors, cycle-safe."""
+    chain: list[BaseException] = []
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        chain.append(current)
+        current = current.__cause__ or current.__context__
+    return chain
+
+
+def _is_message_sequence_error(exc: BaseException) -> bool:
+    """Whether exc or its cause/context chain is the known message-conversion error."""
+    return any(_MESSAGE_SEQUENCE_ERROR in str(item) for item in _exception_chain(exc))
+
+
+def _describe_message_shapes(messages: object) -> str:
+    """Summarize lead-state message shapes to localize message conversion failures."""
+    if not isinstance(messages, (list, tuple)):
+        return f"messages={type(messages).__name__}"
+    if not messages:
+        return "messages=<empty>"
+    parts: list[str] = []
+    for index, element in enumerate(messages):
+        if isinstance(element, (list, tuple)):
+            first = type(element[0]).__name__ if element else "<empty>"
+            parts.append(f"{index}:{type(element).__name__}(len={len(element)},first={first})")
+        else:
+            parts.append(f"{index}:{type(element).__name__}")
+    return f"messages[{len(messages)}]=[{'; '.join(parts)}]"
+
+
+async def _collect_message_sequence_diagnostics(
+    lead_agent: Any, invoke_config: RunnableConfig
+) -> str:
+    """Read-only best-effort lead-state dump; diagnostic failures never propagate."""
+    try:
+        state = await lead_agent.aget_state(invoke_config)
+        values = getattr(state, "values", None)
+        messages = values.get("messages") if isinstance(values, dict) else None
+        return _describe_message_shapes(messages if messages is not None else [])
+    except Exception:
+        return "message-shape diagnostics unavailable"
 
 
 class RunController:
@@ -1038,10 +1090,7 @@ class RunController:
             self._planned_assignments[str(spec.task_id)] = (
                 AttemptBinding(str(attempt_id), assignment)
                 if assignment is not None
-                else RouteFailure(
-                    excluded_counts={"budget_unaffordable": 1},
-                    binding_constraint="budget_unaffordable",
-                )
+                else _route_failure_for_task(result, str(spec.task_id))
             )
 
     async def _finalize_completion(
@@ -1321,16 +1370,15 @@ class RunController:
                     continue
                 done, _ = await asyncio.wait(running, return_when=asyncio.FIRST_COMPLETED)
                 for task in done:
-                    running.pop(task)
                     await task
+                    running.pop(task)
                 await admit_ready_agents()
-        except asyncio.CancelledError:
+        finally:
             for task in running:
                 task.cancel()
             await asyncio.gather(*running, return_exceptions=True)
             for plan_id, node_id in running.values():
                 self._cancel_plan_node(plan_id, node_id)
-            raise
         checkpoint_blocked = checkpoint_blocked or any(
             state is not PlanNodeState.SUCCEEDED
             for persisted in self.journal.plans_for_run(str(run_id))
@@ -1457,7 +1505,12 @@ class RunController:
     def _settle_plan_node(self, plan_id: str, node_id: str, result: dict[str, Any]) -> None:
         self.journal.settle_plan_node_execution(node_id=node_id, result=result)
         persisted = self.journal.get_plan(plan_id)
-        local_id = next(local for local, value in persisted.node_ids.items() if value == node_id)
+        local_id = next(
+            (local for local, value in persisted.node_ids.items() if value == node_id),
+            None,
+        )
+        if local_id is None:
+            return
         state = persisted.node_states[local_id]
         status = result.get("status")
         target = {
@@ -1776,10 +1829,7 @@ class RunController:
             self._planned_assignments[str(spec.task_id)] = (
                 AttemptBinding(str(attempt_id), assignment)
                 if assignment is not None
-                else RouteFailure(
-                    excluded_counts={"budget_unaffordable": 1},
-                    binding_constraint="budget_unaffordable",
-                )
+                else _route_failure_for_task(result, str(spec.task_id))
             )
 
     def _activity_emitter(
@@ -2075,6 +2125,25 @@ class RunController:
                 ),
             )
         except BaseException as exc:
+            error_type: str | None = None
+            error_message: str | None = None
+            try:
+                error_type = f"{type(exc).__module__}.{type(exc).__name__}"
+                error_message = str(self.redactor.scrub(str(exc)))
+                failure_traceback = self.redactor.scrub(traceback.format_exc())
+                _LOGGER.error(
+                    "run failed: %s: %s\n%s",
+                    error_type,
+                    error_message,
+                    failure_traceback,
+                )
+                if _is_message_sequence_error(exc):
+                    shapes = await _collect_message_sequence_diagnostics(
+                        lead_agent, invoke_config
+                    )
+                    _LOGGER.error("run failed diagnostics: %s", shapes)
+            except Exception:
+                pass  # diagnostics must never mask or replace the original failure
             is_cancelled = isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError))
             run_status = "cancelled" if is_cancelled else "failed"
             attempt_status = AttemptStatus.INTERRUPTED if is_cancelled else AttemptStatus.FAILED
@@ -2089,7 +2158,11 @@ class RunController:
                     tx,
                     run_id=run_id,
                     type=terminal_type,
-                    payload=LifecyclePayload(status=run_status),
+                    payload=LifecyclePayload(
+                        status=run_status,
+                        error_type=error_type,
+                        error_message=error_message,
+                    ),
                 )
             await _save_checkpoint(
                 "terminal_cancelled" if is_cancelled else "terminal_failed",
@@ -2640,6 +2713,25 @@ class RunController:
                     else {"messages": []}
                 )
             except BaseException as exc:
+                error_type: str | None = None
+                error_message: str | None = None
+                try:
+                    error_type = f"{type(exc).__module__}.{type(exc).__name__}"
+                    error_message = str(self.redactor.scrub(str(exc)))
+                    failure_traceback = self.redactor.scrub(traceback.format_exc())
+                    _LOGGER.error(
+                        "run failed: %s: %s\n%s",
+                        error_type,
+                        error_message,
+                        failure_traceback,
+                    )
+                    if _is_message_sequence_error(exc):
+                        shapes = await _collect_message_sequence_diagnostics(
+                            lead_agent, invoke_config
+                        )
+                        _LOGGER.error("run failed diagnostics: %s", shapes)
+                except Exception:
+                    pass  # diagnostics must never mask or replace the original failure
                 cancelled = isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError))
                 with self.journal.transaction() as tx:
                     tx.update_attempt_status(
@@ -2659,7 +2751,11 @@ class RunController:
                         tx,
                         run_id=pending.run_id,
                         type="run.cancelled" if cancelled else "run.failed",
-                        payload=LifecyclePayload(status="cancelled" if cancelled else "failed"),
+                        payload=LifecyclePayload(
+                            status="cancelled" if cancelled else "failed",
+                            error_type=error_type,
+                            error_message=error_message,
+                        ),
                     )
                 self._finalize_child_budgets(pending.run_id, pending.lead_task_id)
                 self._finalize_assignment_budget(pending.lead_assignment)
@@ -2900,7 +2996,7 @@ class RunController:
 
             # Persist task in journal if first attempt
             if number == 1:
-                self.journal.create_task(
+                self.journal.ensure_task(
                     task_id=str(spec.task_id),
                     run_id=str(run_id),
                     description=spec.request.description,
@@ -3237,7 +3333,9 @@ class RunController:
         def exhaust_fp(spec: TaskSpec) -> None:
             self.registry._failed_fingerprint_attempts[spec.fingerprint] = 2
 
-        def emit_task(spec: TaskSpec, status: str, attempt_id: str | None) -> None:
+        def emit_task(
+            spec: TaskSpec, status: str, attempt_id: str | None, summary: str | None
+        ) -> None:
             event_persisted = False
             plan_node = self._plan_nodes_by_task.get(str(spec.task_id))
             if plan_node is not None:
@@ -3290,9 +3388,13 @@ class RunController:
                     task_id=spec.task_id,
                     status=cast(Any, status),
                     summary=(
-                        "budget_unaffordable"
-                        if status == "budget_blocked"
-                        else "task blocked before execution"
+                        summary
+                        if summary is not None
+                        else (
+                            "budget_unaffordable"
+                            if status == "budget_blocked"
+                            else "task blocked before execution"
+                        )
                     ),
                 )
                 with self.journal.transaction() as tx:
@@ -3314,7 +3416,7 @@ class RunController:
                         tx,
                         run_id=run_id,
                         type=f"task.{status}",
-                        payload=TaskPayload(status=status, profile=profile.name),
+                        payload=TaskPayload(status=status, profile=profile.name, reason=summary),
                         task_id=spec.task_id,
                         attempt_id=AttemptId(persisted_attempt_id),
                     )
@@ -3328,7 +3430,7 @@ class RunController:
                 self._emit_event(
                     run_id=run_id,
                     type=f"task.{status}",
-                    payload=TaskPayload(status=status, profile=profile.name),
+                    payload=TaskPayload(status=status, profile=profile.name, reason=summary),
                     task_id=spec.task_id,
                     attempt_id=AttemptId(attempt_id) if attempt_id else None,
                 )
@@ -3363,6 +3465,17 @@ class RunController:
             require_preplanned=True,
             serialize_writers=self.workspace_selection.mode is not WorkspaceMode.WORKTREE,
         )
+
+
+def _route_failure_for_task(result: BatchAssignmentResult, task_id: str) -> RouteFailure:
+    """Resolve a task's recorded batch deferral; never fabricate a constraint."""
+    for failure in result.failures:
+        if str(failure.task_id) == task_id:
+            return RouteFailure(
+                excluded_counts=dict(failure.excluded_counts),
+                binding_constraint=failure.binding_constraint,
+            )
+    return RouteFailure(excluded_counts={}, binding_constraint=None)
 
 
 def _task_request_for_plan_node(node: PlanNode) -> TaskRequest:

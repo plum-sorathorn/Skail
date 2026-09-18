@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -162,6 +163,53 @@ async def test_terminal_failure_event_observes_committed_failed_run(tmp_path: Pa
         await controller.run_instruction("fail deterministically")
 
     assert observed == [("run.failed", "failed")]
+
+
+@pytest.mark.asyncio
+async def test_run_failed_event_and_log_carry_error_diagnostics(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Diagnostic failure", created_at=datetime.now(UTC)
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": ScriptedChatModel(responses=[])},
+        default_lead_model="lead-model",
+    )
+    failed: list[object] = []
+    observed: list[tuple[str, str]] = []
+
+    def observe(event) -> None:
+        if event.type != "run.failed":
+            return
+        snapshot = journal.get_session_snapshot(str(session_id))
+        observed.append((event.type, snapshot.runs[0].status))
+        failed.append(event.payload)
+
+    controller.subscribe_events(observe)
+
+    with (
+        caplog.at_level(logging.ERROR, logger="skail.runtime.run_controller"),
+        pytest.raises(AccountingReconciliationRequired) as excinfo,
+    ):
+        await controller.run_instruction("fail deterministically")
+
+    exc = excinfo.value
+    [payload] = failed
+    assert observed == [("run.failed", "failed")]
+    assert payload.status == "failed"
+    assert payload.error_type == f"{type(exc).__module__}.{type(exc).__name__}"
+    # The handler records the caught lead-invoke exception; finalization may replace
+    # the propagated error, so the recorded message is verified against the log.
+    assert payload.error_message == "provider outcome is ambiguous; paid execution is blocked"
+    assert payload.error_message in caplog.text
+    assert "AccountingReconciliationRequired" in caplog.text
+    assert "Traceback (most recent call last)" in caplog.text
 
 
 @pytest.mark.asyncio

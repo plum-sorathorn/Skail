@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import time
 from collections.abc import Callable, Iterator
@@ -43,6 +44,8 @@ from skail.domain.tasks import AttemptStatus, TaskStatus
 from skail.runtime.errors import FrameworkContractError
 from skail.sessions.connections import JournalConnections
 from skail.sessions.migrations import apply_migrations
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _now(value: datetime | None = None) -> str:
@@ -449,6 +452,45 @@ class JournalTransaction:
         )
         if cursor.rowcount == 0:
             raise KeyError(task_id)
+
+    def ensure_task(
+        self,
+        task_id: str,
+        run_id: str,
+        description: str,
+        status: str,
+        idempotency_key: str,
+        created_at: datetime,
+        fingerprint: str = "unassigned",
+    ) -> None:
+        now = _now(created_at)
+        task_status = TaskStatus(status).value
+        scrubbed_desc = (
+            self.redactor.scrub_text(description)
+            if hasattr(self.redactor, "scrub_text")
+            else str(self.redactor.scrub(description))
+        )
+        values = (task_id, run_id, scrubbed_desc, task_status, fingerprint, idempotency_key)
+        try:
+            self._insert_idempotent(
+                table="tasks",
+                key=idempotency_key,
+                columns="task_id,run_id,description,status,fingerprint,idempotency_key",
+                values=values,
+                insert_values=(*values, now, now),
+            )
+        except JournalIdempotencyError:
+            row = self.connection.execute(
+                "SELECT task_id FROM tasks WHERE idempotency_key=?", (idempotency_key,)
+            ).fetchone()
+            if row is None or str(row[0]) != task_id:
+                raise
+            # Same task_id (e.g. the queued launch insert already persisted it): this
+            # repeat persist is a status transition, not a conflicting replay.
+            self.connection.execute(
+                "UPDATE tasks SET status=?,fingerprint=?,updated_at=? WHERE task_id=?",
+                (task_status, fingerprint, now, task_id),
+            )
 
     def record_task_result(self, task_id: str, payload: dict[str, Any]) -> None:
         payload_json = json.dumps(
@@ -955,6 +997,19 @@ class Journal:
     def update_task_status(self, *, task_id: str, status: TaskStatus) -> None:
         self._write("update_task_status", task_id=task_id, status=status)
 
+    def ensure_task(
+        self,
+        *,
+        task_id: str,
+        run_id: str,
+        description: str,
+        status: str,
+        idempotency_key: str,
+        created_at: datetime,
+        fingerprint: str = "unassigned",
+    ) -> None:
+        self._write("ensure_task", **locals_without_self(locals()))
+
     def record_task_result(self, *, task_id: str, payload: dict[str, Any]) -> None:
         self._write("record_task_result", task_id=task_id, payload=payload)
 
@@ -1339,9 +1394,10 @@ class Journal:
                 "SELECT status FROM plan_node_executions WHERE node_id=?", (node_id,)
             ).fetchone()
             if row is None:
-                raise FrameworkContractError(
-                    "plan.node_execution_missing", "plan node execution was not launched"
+                _LOGGER.debug(
+                    "plan node execution %s: not launched; settle is a no-op", node_id
                 )
+                return
             if row["status"] == "settled":
                 return
             transaction.connection.execute(

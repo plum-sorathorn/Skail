@@ -141,6 +141,8 @@ class PayloadBase(BaseModel):
 class LifecyclePayload(PayloadBase):
     family: Literal["lifecycle"] = "lifecycle"
     status: str
+    error_type: str | None = None
+    error_message: str | None = None
 
 
 class ModelPayload(PayloadBase):
@@ -153,6 +155,7 @@ class TaskPayload(PayloadBase):
     family: Literal["task"] = "task"
     status: str
     profile: str | None = None
+    reason: str | None = None
 
 
 class PlanPayload(PayloadBase):

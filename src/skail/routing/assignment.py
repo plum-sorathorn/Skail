@@ -47,12 +47,23 @@ class AssignmentRequest(BaseModel):
     fallback_of_assignment_id: str | None = None
 
 
+class DeferredAssignment(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    task_id: TaskId
+    binding_constraint: str | None = None
+    excluded_counts: dict[str, int] = Field(default_factory=dict)
+
+
 class BatchAssignmentResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     assignments: tuple[TaskAssignment, ...]
     deferred_task_ids: tuple[TaskId, ...]
     lead_reservation_id: str | None = None
+
+    # Field defaults keep pre-existing replayed assignment_batches payloads valid.
+    failures: tuple[DeferredAssignment, ...] = ()
 
 
 class RoutingSnapshot(BaseModel):
@@ -216,6 +227,7 @@ class AssignmentService:
                 tuple[AssignmentRequest, RouteSelection, tuple[RouteCandidate, ...], str]
             ] = []
             deferred: list[TaskId] = []
+            deferred_failures: list[DeferredAssignment] = []
             for request in requests:
                 routing_snapshot = candidates(request)
                 if routing_snapshot.catalog_revision != request.catalog_revision:
@@ -243,9 +255,23 @@ class AssignmentService:
                 )
                 if isinstance(selection, RouteFailure):
                     deferred.append(request.task_id)
+                    deferred_failures.append(
+                        DeferredAssignment(
+                            task_id=request.task_id,
+                            binding_constraint=selection.binding_constraint,
+                            excluded_counts=dict(selection.excluded_counts),
+                        )
+                    )
                     continue
                 if selection.candidate.estimated_cost_usd is None:
                     deferred.append(request.task_id)
+                    deferred_failures.append(
+                        DeferredAssignment(
+                            task_id=request.task_id,
+                            binding_constraint="price_unavailable_for_reservation",
+                            excluded_counts={"price_unavailable_for_reservation": 1},
+                        )
+                    )
                     continue
                 selections.append(
                     (request, selection, candidate_snapshot, routing_snapshot.health_revision)
@@ -255,7 +281,9 @@ class AssignmentService:
                     remaining -= selection.candidate.estimated_cost_usd
             if not selections:
                 return BatchAssignmentResult(
-                    assignments=(), deferred_task_ids=tuple(request.task_id for request in requests)
+                    assignments=(),
+                    deferred_task_ids=tuple(request.task_id for request in requests),
+                    failures=tuple(deferred_failures),
                 )
             lead_reservation_id = str(new_reservation_id())
             self.ledger.reserve_in_transaction(
@@ -285,6 +313,7 @@ class AssignmentService:
                 assignments=assignments,
                 deferred_task_ids=tuple(deferred),
                 lead_reservation_id=lead_reservation_id,
+                failures=tuple(deferred_failures),
             )
             transaction.connection.execute(
                 "INSERT INTO assignment_batches VALUES (?,?,?)",

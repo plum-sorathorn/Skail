@@ -38,7 +38,7 @@ TASK_ID = TaskId("33333333-3333-4333-8333-333333333333")
 ATTEMPT_ID = AttemptId("44444444-4444-4444-8444-444444444444")
 
 
-def _service(tmp_path: Path, *, limit: str = "1.00") -> tuple[AssignmentService, Journal]:
+def _service(tmp_path: Path, *, limit: str | None = "1.00") -> tuple[AssignmentService, Journal]:
     journal = Journal(tmp_path / "skail.sqlite")
     journal.migrate()
     journal.create_session(session_id=SESSION_ID, title="assignment", created_at=NOW)
@@ -46,7 +46,7 @@ def _service(tmp_path: Path, *, limit: str = "1.00") -> tuple[AssignmentService,
         run_id=RUN_ID,
         session_id=SESSION_ID,
         status="running",
-        budget_limit_usd=Decimal(limit),
+        budget_limit_usd=Decimal(limit) if limit is not None else None,
         created_at=NOW,
     )
     journal.create_task(
@@ -262,6 +262,170 @@ def test_batch_funds_ordered_affordable_subset_and_one_lead_allowance(tmp_path: 
         (None, Decimal("0.25")),
         (str(TASK_ID), Decimal("0.50")),
     ]
+
+
+def test_assign_batch_reports_deferred_budget_failures(tmp_path: Path) -> None:
+    service, journal = _service(tmp_path)
+    second_task = TaskId("55555555-5555-4555-8555-555555555555")
+    second_attempt = AttemptId("66666666-6666-4666-8666-666666666666")
+    journal.create_task(
+        task_id=second_task,
+        run_id=RUN_ID,
+        description="second",
+        status="queued",
+        idempotency_key="task-2",
+        created_at=NOW,
+    )
+    journal.create_attempt(
+        attempt_id=second_attempt,
+        task_id=second_task,
+        number=1,
+        status="assigned",
+        idempotency_key="attempt-2",
+        created_at=NOW,
+    )
+    second_request = _request().model_copy(
+        update={"task_id": second_task, "attempt_id": second_attempt}
+    )
+    result = service.assign_batch(
+        (_request(), second_request),
+        lambda request: _snapshot(
+            _candidate(
+                str(request.task_id),
+                "0.50" if request.task_id == TASK_ID else "0.90",
+            )
+        ),
+        lead_allowance_usd=Decimal("0.25"),
+    )
+    assert [assignment.task_id for assignment in result.assignments] == [TASK_ID]
+    assert result.deferred_task_ids == (second_task,)
+    deferred = [(str(failure.task_id), failure.binding_constraint) for failure in result.failures]
+    assert deferred == [(str(second_task), "budget_unaffordable")]
+    assert result.failures[0].excluded_counts == {"budget_unaffordable": 1}
+
+
+def test_assign_batch_reports_price_unavailable_route_failure(tmp_path: Path) -> None:
+    service, journal = _service(tmp_path)
+    second_task = TaskId("55555555-5555-4555-8555-555555555555")
+    second_attempt = AttemptId("66666666-6666-4666-8666-666666666666")
+    journal.create_task(
+        task_id=second_task,
+        run_id=RUN_ID,
+        description="second",
+        status="queued",
+        idempotency_key="task-2",
+        created_at=NOW,
+    )
+    journal.create_attempt(
+        attempt_id=second_attempt,
+        task_id=second_task,
+        number=1,
+        status="assigned",
+        idempotency_key="attempt-2",
+        created_at=NOW,
+    )
+    second_request = _request().model_copy(
+        update={"task_id": second_task, "attempt_id": second_attempt}
+    )
+
+    def prices(request: AssignmentRequest) -> RoutingSnapshot:
+        cost = "0.50" if request.task_id == TASK_ID else "0.40"
+        candidate = _candidate(str(request.task_id), cost)
+        if request.task_id != TASK_ID:
+            candidate = candidate.model_copy(update={"estimated_cost_usd": None})
+        return _snapshot(candidate)
+
+    result = service.assign_batch(
+        (_request(), second_request), prices, lead_allowance_usd=Decimal("0.25")
+    )
+    assert [assignment.task_id for assignment in result.assignments] == [TASK_ID]
+    assert result.deferred_task_ids == (second_task,)
+    assert [failure.binding_constraint for failure in result.failures] == ["price_unavailable"]
+    assert result.failures[0].excluded_counts == {"price_unavailable": 1}
+
+
+def test_assign_batch_reports_price_unavailable_for_reservation(tmp_path: Path) -> None:
+    service, journal = _service(tmp_path, limit=None)
+    second_task = TaskId("55555555-5555-4555-8555-555555555555")
+    second_attempt = AttemptId("66666666-6666-4666-8666-666666666666")
+    journal.create_task(
+        task_id=second_task,
+        run_id=RUN_ID,
+        description="second",
+        status="queued",
+        idempotency_key="task-2",
+        created_at=NOW,
+    )
+    journal.create_attempt(
+        attempt_id=second_attempt,
+        task_id=second_task,
+        number=1,
+        status="assigned",
+        idempotency_key="attempt-2",
+        created_at=NOW,
+    )
+    manual_request = _request().model_copy(
+        update={
+            "task_id": second_task,
+            "attempt_id": second_attempt,
+            "manual_model": ("fake", str(second_task)),
+            "requirements": RequirementBuilder().build(
+                role="implementer", risk=TaskRisk.ROUTINE, mode=RoutingMode.MANUAL
+            ),
+        }
+    )
+
+    def prices(request: AssignmentRequest) -> RoutingSnapshot:
+        candidate = _candidate(str(request.task_id))
+        if request.task_id != TASK_ID:
+            candidate = candidate.model_copy(update={"estimated_cost_usd": None})
+        return _snapshot(candidate)
+
+    result = service.assign_batch(
+        (_request(), manual_request), prices, lead_allowance_usd=Decimal("0.25")
+    )
+    assert [assignment.task_id for assignment in result.assignments] == [TASK_ID]
+    assert result.deferred_task_ids == (second_task,)
+    assert [failure.binding_constraint for failure in result.failures] == [
+        "price_unavailable_for_reservation"
+    ]
+    assert result.failures[0].excluded_counts == {"price_unavailable_for_reservation": 1}
+
+
+def test_batch_assignment_result_roundtrips_and_defaults_failures() -> None:
+    from skail.routing.assignment import BatchAssignmentResult
+
+    result = BatchAssignmentResult(assignments=(), deferred_task_ids=())
+    restored = BatchAssignmentResult.model_validate_json(result.model_dump_json())
+    assert restored == result
+    legacy = BatchAssignmentResult.model_validate_json(
+        '{"assignments": [], "deferred_task_ids": []}'
+    )
+    assert legacy.failures == ()
+    assert legacy.lead_reservation_id is None
+
+
+def test_route_failure_for_task_prefers_recorded_deferred_detail() -> None:
+    from skail.routing.assignment import BatchAssignmentResult, DeferredAssignment
+    from skail.runtime.run_controller import _route_failure_for_task
+
+    recorded = DeferredAssignment(
+        task_id=TaskId("77777777-7777-4777-8777-777777777777"),
+        binding_constraint="model_excluded",
+        excluded_counts={"model_excluded": 1},
+    )
+    result = BatchAssignmentResult(
+        assignments=(),
+        deferred_task_ids=(recorded.task_id,),
+        failures=(recorded,),
+    )
+    resolved = _route_failure_for_task(result, str(recorded.task_id))
+    assert resolved.binding_constraint == "model_excluded"
+    assert resolved.excluded_counts == {"model_excluded": 1}
+    legacy = BatchAssignmentResult(assignments=(), deferred_task_ids=(recorded.task_id,))
+    neutral = _route_failure_for_task(legacy, str(recorded.task_id))
+    assert neutral.binding_constraint is None
+    assert neutral.excluded_counts == {}
 
 
 def test_transport_fallback_is_a_second_assignment_on_the_same_attempt(tmp_path: Path) -> None:
