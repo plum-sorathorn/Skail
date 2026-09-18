@@ -150,7 +150,7 @@ class ExecutionDecisionGate:
                     self._revise_plan(decision.revision, decision.plan)
             except Exception as exc:
                 self._consume_repair()
-                raise DecisionAdmissionError("decision.plan_refused") from exc
+                raise DecisionAdmissionError(_actionable_plan_refused(exc)) from exc
         self.decision = decision
         if self._persist_decision is not None:
             self._persist_decision(decision)
@@ -316,9 +316,37 @@ def _actionable_plan_invalid(exc: ValidationError) -> str:
     )
 
 
+def _actionable_plan_refused(exc: Exception) -> str:
+    """Render why the plan store refused a validated plan."""
+
+    skeleton = (
+        "{'schema_version': 1, 'policy_version': 'adaptive-v1', 'revision': 1, "
+        "'nodes': [{'local_id': '<id>', 'kind': 'checkpoint', "
+        "'objective': '<what>', 'effect_scope': 'read'}]}"
+    )
+    if isinstance(exc, DecisionAdmissionError):
+        detail = str(exc)
+        if detail and detail != "decision.plan_refused":
+            return f"decision.plan_refused: {detail}"
+    elif isinstance(exc, ValidationError):
+        return f"decision.plan_refused: {_actionable_plan_invalid(exc)}"
+    detail = f"{type(exc).__name__}: {exc}".strip()
+    if not detail or detail.endswith(":"):
+        detail = f"{type(exc).__name__} (no detail)"
+    return (
+        "decision.plan_refused: plan store rejected the validated plan "
+        f"({detail}); resend mode=planned with objective, reason, "
+        f"and a validated plan; minimal plan skeleton={skeleton}"
+    )
+
+
 def _decision_required(request: ToolCallRequest) -> ToolMessage:
     return ToolMessage(
-        content="execution.decision_required: record execution_decision before operational tools",
+        content=(
+            "execution.decision_required: call execution_decision with "
+            "mode='direct', objective='<goal>', reason='<why>' before any "
+            "other tool"
+        ),
         tool_call_id=request.tool_call["id"],
         status="error",
     )
