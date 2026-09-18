@@ -19,14 +19,24 @@ from skail.tools.registry import SideEffect, ToolMetadata, ToolRegistry
 DelegationMode = Literal["auto", "ask", "off"]
 
 TASK_PACKET_GUIDANCE = """Before any operational tool call, call execution_decision with mode,
-objective, constraints, and reason. Use direct for bounded work, discovery only for read-only
-evidence work with a checkpoint, or planned with a validated finite plan. A final answer needs no
-execution_decision. When delegating, call task(description, subagent_type). The description
-may be plain text or one JSON object with: description, success_criteria, depends_on (persisted task
-IDs), priority, write_scope, model_policy, budget_usd, and background. Preserve the user's criteria,
-dependencies, scope, model constraints, and budget. Never invent dependency IDs. When Skail wakes
-you at a plan checkpoint, call execution_decision again with the full revised plan and revision
-metadata using only the supplied evidence references."""
+objective, constraints, and reason. Use direct for bounded work (direct must NOT
+send plan or revision), discovery only for read-only evidence work with a checkpoint,
+or planned with a validated finite plan. planned/discovery REQUIRE plan: a validated
+finite plan object (or JSON string of one) with a checkpoint node; discovery plan nodes
+must all be read-only. constraints may be a string or a list of strings. A final
+answer needs no execution_decision. When delegating, call task(description,
+subagent_type). The description may be plain text or one JSON object with: description,
+success_criteria, depends_on (persisted task IDs), priority, write_scope, model_policy,
+budget_usd, and background. subagent_type and profile are aliases; description may
+itself be a JSON-encoded object string. Preserve the user's criteria, dependencies,
+scope, model constraints, and budget. Never invent dependency IDs. Operational tools
+take exact args: grep(pattern, path='.', glob=None) e.g. {"pattern": "SKAIL_LIVE_OK",
+"path": ".", "glob": "*.py"}; read(file_path, offset=0, limit=2000) e.g.
+{"file_path": "src/skail/agents/lead.py"}; ls(path='.') e.g. {"path": "."};
+glob(pattern, path=None) e.g. {"pattern": "*.py"}. Use pattern (not query/search),
+path (not dir), glob (not include), file_path (not path/file). When Skail wakes
+you at a plan checkpoint, call execution_decision again with the full revised plan and
+revision metadata using only the supplied evidence references."""
 
 
 @dataclass(frozen=True)

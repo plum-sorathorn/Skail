@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -114,12 +116,20 @@ class ExecutionDecisionGate:
         return candidate
 
     def _parse(self, value: dict[str, Any]) -> ExecutionDecision:
+        normalized = _normalize_decision_args(dict(value))
         try:
-            return ExecutionDecision.model_validate(value)
+            return ExecutionDecision.model_validate(normalized)
         except ValidationError as exc:
             message = str(exc)
             if "revision_mismatch" in message or "revision_required" in message:
                 raise DecisionAdmissionError("decision.revision_conflict") from exc
+            if "decision.plan_required" in message or "plan_required" in message:
+                self._consume_repair()
+                raise DecisionAdmissionError(
+                    "decision.plan_required: planned/discovery need a "
+                    "validated finite plan (checkpoint + read-only for "
+                    "discovery); direct must not send plan"
+                ) from exc
             self._consume_repair()
             raise DecisionAdmissionError("decision.plan_invalid") from exc
 
@@ -232,6 +242,40 @@ class ExecutionDecisionMiddleware(AgentMiddleware[Any, Any, Any]):
         if self._gate.allows(name, call_id) or name == "execution_decision":
             return handler(request)
         return _decision_required(request)
+
+
+def _normalize_decision_args(value: dict[str, Any]) -> dict[str, Any]:
+    """Normalize model-supplied decision args before validation."""
+    normalized = dict(value)
+    constraints = normalized.get("constraints", ())
+    if isinstance(constraints, str):
+        parts = [part.strip() for part in re.split(r"[;\n]+", constraints)]
+        normalized["constraints"] = tuple(part for part in parts if part)
+    elif isinstance(constraints, list):
+        normalized["constraints"] = tuple(
+            str(item).strip() for item in constraints if str(item).strip()
+        )
+    plan = normalized.get("plan")
+    if isinstance(plan, str):
+        stripped = plan.strip()
+        if stripped:
+            try:
+                normalized["plan"] = json.loads(stripped)
+            except json.JSONDecodeError:
+                pass
+        else:
+            normalized.pop("plan", None)
+    revision = normalized.get("revision")
+    if isinstance(revision, str):
+        stripped = revision.strip()
+        if stripped:
+            try:
+                normalized["revision"] = json.loads(stripped)
+            except json.JSONDecodeError:
+                pass
+        else:
+            normalized.pop("revision", None)
+    return normalized
 
 
 def _decision_required(request: ToolCallRequest) -> ToolMessage:

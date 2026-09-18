@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,281 @@ from skail.tools.execution import (
     ExecutionSecurityContext,
 )
 from skail.tools.registry import SideEffect, ToolMetadata, ToolRegistry
+
+
+class ToolArgValidationError(ValueError):
+    """Recoverable tool-arg rejection with an actionable schema hint."""
+
+
+_KEY_CAMEL = re.compile(r"(?<!^)(?=[A-Z])")
+
+_GREP_FIELDS = ("pattern", "path", "glob", "max_count", "context_lines")
+_GLOB_FIELDS = ("pattern", "path")
+_LS_FIELDS = ("path",)
+_READ_FIELDS = ("file_path", "offset", "limit")
+_WRITE_FIELDS = ("file_path", "content")
+_EDIT_FIELDS = ("file_path", "old_string", "new_string", "replace_all")
+
+_GREP_ALIASES = {
+    "query": "pattern",
+    "search": "pattern",
+    "text": "pattern",
+    "regex": "pattern",
+    "keyword": "pattern",
+    "dir": "path",
+    "directory": "path",
+    "folder": "path",
+    "cwd": "path",
+    "filepath": "path",
+    "file": "path",
+    "include": "glob",
+    "includes": "glob",
+    "filepattern": "glob",
+    "file_pattern": "glob",
+    "globpattern": "glob",
+    "glob_pattern": "glob",
+    "maxresults": "max_count",
+    "max_results": "max_count",
+    "limit": "max_count",
+    "count": "max_count",
+    "context": "context_lines",
+    "contextlines": "context_lines",
+    "context_lines": "context_lines",
+    "lines": "context_lines",
+}
+
+_GLOB_ALIASES = {
+    "query": "pattern",
+    "search": "pattern",
+    "glob": "pattern",
+    "globpattern": "pattern",
+    "glob_pattern": "pattern",
+    "include": "pattern",
+    "includes": "pattern",
+    "filepattern": "pattern",
+    "file_pattern": "pattern",
+    "dir": "path",
+    "directory": "path",
+    "folder": "path",
+    "cwd": "path",
+    "filepath": "path",
+    "file": "path",
+}
+
+_LS_ALIASES = {
+    "dir": "path",
+    "directory": "path",
+    "folder": "path",
+    "cwd": "path",
+    "filepath": "path",
+    "file": "path",
+}
+
+_READ_ALIASES = {
+    "path": "file_path",
+    "filepath": "file_path",
+    "file": "file_path",
+    "filename": "file_path",
+    "offset": "offset",
+    "start": "offset",
+    "limit": "limit",
+    "count": "limit",
+    "maxlines": "limit",
+    "max_lines": "limit",
+}
+
+_NORMALIZABLE_TOOLS = {
+    "grep": (_GREP_FIELDS, _GREP_ALIASES, "grep(pattern, path='.', glob=None)"),
+    "glob": (_GLOB_FIELDS, _GLOB_ALIASES, "glob(pattern, path=None)"),
+    "ls": (_LS_FIELDS, _LS_ALIASES, "ls(path='.')"),
+    "read": (_READ_FIELDS, _READ_ALIASES, "read(file_path, offset=0, limit=2000)"),
+    "read_file": (_READ_FIELDS, _READ_ALIASES, "read(file_path, offset=0, limit=2000)"),
+}
+
+
+def _normalize_key(raw: str) -> str:
+    key = raw.strip().replace("-", "_").replace(" ", "_")
+    key = _KEY_CAMEL.sub("_", key).lower()
+    key = re.sub(r"__+", "_", key)
+    return key
+
+
+def _coerce_int(value: object, *, field: str, tool_hint: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ToolArgValidationError(
+            f"invalid {field}: expected int for {tool_hint}; got boolean"
+        )
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if re.fullmatch(r"[+-]?\d+", stripped or ""):
+            return int(stripped)
+    raise ToolArgValidationError(
+        f"invalid {field}: expected int for {tool_hint}; got {value!r}"
+    )
+
+
+def normalize_tool_args(name: object, args: object) -> dict[str, Any]:
+    """Normalize read-only tool args (grep/glob/ls/read) before validation.
+
+    Handles wrong-case keys, common aliases, JSON-string args, and safe
+    defaults for optional fields. Raises ToolArgValidationError naming the
+    expected schema for missing/invalid required fields. Safety-relevant
+    denials are never normalized away; unknown tools pass through unchanged.
+    """
+    tool = str(name or "").strip().lower()
+    if tool not in _NORMALIZABLE_TOOLS:
+        if isinstance(args, dict):
+            return dict(args)
+        return {}
+    fields, aliases, hint = _NORMALIZABLE_TOOLS[tool]
+    if args is None:
+        args = {}
+    if isinstance(args, str):
+        stripped = args.strip()
+        try:
+            decoded = json.loads(stripped) if stripped else {}
+        except json.JSONDecodeError as exc:
+            raise ToolArgValidationError(
+                f"invalid args for {tool}: expected {hint}; got a string "
+                f"that is not JSON ({exc.msg})"
+            ) from exc
+        if not isinstance(decoded, dict):
+            raise ToolArgValidationError(
+                f"invalid args for {tool}: expected {hint}; got JSON {type(decoded).__name__}"
+            )
+        args = decoded
+    if not isinstance(args, dict):
+        raise ToolArgValidationError(
+            f"invalid args for {tool}: expected {hint}; got {type(args).__name__}"
+        )
+    raw: dict[str, Any] = dict(args)
+    if len(raw) == 1:
+        sole = next(iter(raw.values()))
+        if isinstance(sole, str):
+            stripped = sole.strip()
+            if stripped.startswith("{") and stripped.endswith("}"):
+                try:
+                    decoded = json.loads(stripped)
+                except json.JSONDecodeError:
+                    decoded = None
+                if isinstance(decoded, dict):
+                    raw = decoded
+    normalized: dict[str, Any] = {}
+    for raw_key, value in raw.items():
+        if not isinstance(raw_key, str):
+            continue
+        key = _normalize_key(raw_key)
+        key = aliases.get(key, key)
+        if key not in fields:
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+        normalized[key] = value
+    if tool == "grep":
+        pattern = normalized.get("pattern")
+        if pattern is None or (isinstance(pattern, str) and not pattern):
+            raise ToolArgValidationError(
+                "invalid grep args: expected grep(pattern, path='.', glob=None); "
+                "pattern is required and must be a non-empty string"
+            )
+        if not isinstance(pattern, str):
+            raise ToolArgValidationError(
+                "invalid grep args: expected grep(pattern, path='.', glob=None); "
+                f"pattern must be a string, got {type(pattern).__name__}"
+            )
+        if normalized.get("path") in (None, ""):
+            normalized.pop("path", None)
+        if normalized.get("glob") in (None, ""):
+            normalized.pop("glob", None)
+        if "max_count" in normalized:
+            coerced = _coerce_int(
+                normalized["max_count"], field="max_count", tool_hint="grep"
+            )
+            if coerced is None:
+                normalized.pop("max_count", None)
+            else:
+                normalized["max_count"] = coerced
+        if "context_lines" in normalized:
+            coerced = _coerce_int(
+                normalized["context_lines"], field="context_lines", tool_hint="grep"
+            )
+            normalized["context_lines"] = 0 if coerced is None else coerced
+        return normalized
+    if tool == "glob":
+        pattern = normalized.get("pattern")
+        if pattern is None or (isinstance(pattern, str) and not pattern):
+            raise ToolArgValidationError(
+                "invalid glob args: expected glob(pattern, path=None); "
+                "pattern is required and must be a non-empty string"
+            )
+        if not isinstance(pattern, str):
+            raise ToolArgValidationError(
+                "invalid glob args: expected glob(pattern, path=None); "
+                f"pattern must be a string, got {type(pattern).__name__}"
+            )
+        if normalized.get("path") in (None, ""):
+            normalized.pop("path", None)
+        return normalized
+    if tool == "ls":
+        path = normalized.get("path")
+        if path is None or (isinstance(path, str) and not path):
+            return {"path": "."}
+        if not isinstance(path, str):
+            raise ToolArgValidationError(
+                "invalid ls args: expected ls(path='.'); "
+                f"path must be a string, got {type(path).__name__}"
+            )
+        return {"path": path}
+    file_path = normalized.get("file_path")
+    if file_path is None or (isinstance(file_path, str) and not file_path):
+        raise ToolArgValidationError(
+            "invalid read args: expected read(file_path, offset=0, limit=2000); "
+            "file_path is required and must be a non-empty string"
+        )
+    if not isinstance(file_path, str):
+        raise ToolArgValidationError(
+            "invalid read args: expected read(file_path, offset=0, limit=2000); "
+            f"file_path must be a string, got {type(file_path).__name__}"
+        )
+    result: dict[str, Any] = {"file_path": file_path}
+    if normalized.get("offset") is not None:
+        result["offset"] = _coerce_int(normalized["offset"], field="offset", tool_hint=tool)
+    if normalized.get("limit") is not None:
+        result["limit"] = _coerce_int(normalized["limit"], field="limit", tool_hint=tool)
+    return result
+
+
+def _normalize_request_args(request: ToolCallRequest) -> ToolCallRequest:
+    try:
+        normalized = normalize_tool_args(
+            request.tool_call.get("name"), request.tool_call.get("args", {})
+        )
+    except ToolArgValidationError:
+        return request
+    original = request.tool_call.get("args", {})
+    if isinstance(original, dict) and normalized == original:
+        return request
+    if not isinstance(normalized, dict):
+        return request
+    return request.override(
+        tool_call={**request.tool_call, "args": normalized}
+    )
+
+
+def _validation_error_message(request: ToolCallRequest) -> str | None:
+    try:
+        normalize_tool_args(
+            request.tool_call.get("name"), request.tool_call.get("args", {})
+        )
+    except ToolArgValidationError as exc:
+        return str(exc)
+    return None
 
 
 class ProfileToolVisibilityMiddleware(AgentMiddleware[Any, Any, Any]):
@@ -154,6 +430,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             self.emit("model.failed", self.model_name)
             raise
         self.emit("model.completed", self.model_name)
+        self.monitor.observe_success()
         if self.model_response_observer is not None:
             self.model_response_observer(response)
         return response
@@ -170,6 +447,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             self.emit("model.failed", self.model_name)
             raise
         self.emit("model.completed", self.model_name)
+        self.monitor.observe_success()
         if self.model_response_observer is not None:
             self.model_response_observer(response)
         return response
@@ -187,6 +465,12 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Any]],
     ) -> ToolMessage | Any:
         name = request.tool_call["name"]
+        hint = _validation_error_message(request)
+        if hint is not None:
+            self.emit("tool.failed", name)
+            self.monitor.observe_call(name, request.tool_call.get("args", {}))
+            return ToolMessage(content=hint, tool_call_id=request.tool_call["id"], status="error")
+        request = _normalize_request_args(request)
         signal = self.monitor.observe_call(name, request.tool_call.get("args", {}))
         if signal is not None:
             raise RuntimeError(signal)
@@ -219,6 +503,12 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         handler: Callable[[ToolCallRequest], ToolMessage | Any],
     ) -> ToolMessage | Any:
         name = request.tool_call["name"]
+        hint = _validation_error_message(request)
+        if hint is not None:
+            self.emit("tool.failed", name)
+            self.monitor.observe_call(name, request.tool_call.get("args", {}))
+            return ToolMessage(content=hint, tool_call_id=request.tool_call["id"], status="error")
+        request = _normalize_request_args(request)
         signal = self.monitor.observe_call(name, request.tool_call.get("args", {}))
         if signal is not None:
             raise RuntimeError(signal)

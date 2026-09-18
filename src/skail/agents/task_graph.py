@@ -69,6 +69,15 @@ class ProfileTaskState(DeepAgentState):
 def decode_task_request(description: str, *, profile: str) -> TaskRequest:
     """Decode Skail's optional structured packet carried by the standard task description."""
     stripped = description.strip()
+    if stripped.startswith('"'):
+        try:
+            unwrapped = json.loads(stripped)
+        except json.JSONDecodeError:
+            unwrapped = None
+        if isinstance(unwrapped, str):
+            stripped = unwrapped.strip()
+        elif isinstance(unwrapped, dict):
+            stripped = json.dumps(unwrapped)
     if not stripped.startswith("{"):
         return TaskRequest(
             description=description,
@@ -79,9 +88,26 @@ def decode_task_request(description: str, *, profile: str) -> TaskRequest:
         payload = json.loads(stripped)
         if not isinstance(payload, dict):
             raise ValueError("task packet must be an object")
+        alias = payload.pop("subagent_type", None)
+        if "profile" in payload and alias is not None and payload["profile"] != alias:
+            raise ValueError("task packet profile does not match subagent_type")
+        if "profile" not in payload and alias is not None:
+            payload["profile"] = alias
         if "profile" in payload and payload["profile"] != profile:
             raise ValueError("task packet profile does not match subagent_type")
         payload["profile"] = profile
+        inner = payload.get("description")
+        if isinstance(inner, str):
+            inner_stripped = inner.strip()
+            if inner_stripped.startswith("{"):
+                try:
+                    inner_payload = json.loads(inner_stripped)
+                except json.JSONDecodeError:
+                    inner_payload = None
+                if isinstance(inner_payload, dict):
+                    inner_payload.pop("subagent_type", None)
+                    inner_payload.pop("profile", None)
+                    payload = {**inner_payload, "profile": profile}
         return TaskRequest.model_validate(payload)
     except (json.JSONDecodeError, ValidationError, ValueError) as exc:
         raise TaskValidationError("task.description_packet_invalid") from exc
