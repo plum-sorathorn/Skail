@@ -1413,6 +1413,41 @@ class Journal:
             )
         return tuple(reconciled)
 
+    @staticmethod
+    def _scrub_blocked_text(redactor: Any, value: str) -> str:
+        try:
+            scrubbed: Any = (
+                redactor.scrub(value) if hasattr(redactor, "scrub") else value
+            )
+        except Exception:
+            scrubbed = value
+        text = scrubbed if isinstance(scrubbed, str) else str(scrubbed)
+        return text.strip()[:500] or "unexplained_block"
+
+    def _blocked_reason(
+        self, connection: sqlite3.Connection, node_id: str
+    ) -> str:
+        """Redacted reason for a blocked node, or a sentinel if unknown."""
+        try:
+            row = connection.execute(
+                "SELECT result_json FROM plan_node_executions WHERE node_id=?",
+                (node_id,),
+            ).fetchone()
+            result_json = row["result_json"] if row is not None else None
+        except Exception:
+            result_json = None
+        if result_json:
+            try:
+                result = json.loads(result_json)
+            except (TypeError, ValueError):
+                result = None
+            if isinstance(result, dict):
+                for key in ("summary", "status"):
+                    value = result.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return self._scrub_blocked_text(self.redactor, value)
+        return "unexplained_block"
+
     def transition_plan_node_state(
         self,
         *,
@@ -1536,6 +1571,12 @@ class Journal:
                     (owner["run_id"],),
                 ).fetchone()[0]
             )
+            blocked_reasons: dict[str, str] = {}
+            for changed_node_id, _, state in changed:
+                if state is PlanNodeState.BLOCKED:
+                    blocked_reasons[changed_node_id] = self._blocked_reason(
+                        connection, changed_node_id
+                    )
             for changed_node_id, _, state in changed:
                 sequence += 1
                 event = EventEnvelope(
@@ -1550,6 +1591,7 @@ class Journal:
                         plan_id=plan_id,
                         revision=owner["current_revision"],
                         node_id=changed_node_id,
+                        reason=blocked_reasons.get(changed_node_id),
                     ),
                 )
                 transaction.append_event(event)

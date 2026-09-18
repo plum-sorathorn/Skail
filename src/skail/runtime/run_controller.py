@@ -1755,14 +1755,21 @@ class RunController:
         run_id: RunId,
         task_id: TaskId,
         attempt_id: AttemptId,
-    ) -> Callable[[str, str], None]:
-        def emit(event_type: str, subject: str) -> None:
+    ) -> Callable[..., None]:
+        def emit(
+            event_type: str, subject: str, reason: str | None = None
+        ) -> None:
             suffix = event_type.split(".", 1)[1]
             payload: EventPayload
             if event_type.startswith("model."):
                 payload = ModelPayload(model=subject)
             else:
-                payload = ToolPayload(tool=subject, status=suffix)
+                clean_reason: str | None = None
+                if reason:
+                    clean_reason = self.redaction.scrub_text(reason)[:500]
+                payload = ToolPayload(
+                    tool=subject, status=suffix, reason=clean_reason
+                )
             self._emit_event(
                 run_id=run_id,
                 type=event_type,

@@ -161,6 +161,7 @@ class PlanPayload(PayloadBase):
     plan_id: str
     revision: int = Field(ge=1)
     node_id: str | None = None
+    reason: str | None = None
 
     @model_validator(mode="after")
     def validate_ids(self) -> PlanPayload:
@@ -180,6 +181,7 @@ class ToolPayload(PayloadBase):
     family: Literal["tool"] = "tool"
     tool: str
     status: str
+    reason: str | None = None
 
 
 class BudgetPayload(PayloadBase):

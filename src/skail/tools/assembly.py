@@ -310,6 +310,24 @@ def _validation_error_message(request: ToolCallRequest) -> str | None:
     return None
 
 
+_MAX_FAILURE_REASON_LENGTH = 500
+
+
+def _failure_reason(value: object, redactor: Any) -> str:
+    """Return a redacted, length-bounded reason for a tool failure event."""
+    text = value if isinstance(value, str) else str(value)
+    try:
+        scrubbed = redactor.scrub(text) if hasattr(redactor, "scrub") else text
+    except Exception:
+        scrubbed = text
+    if not isinstance(scrubbed, str):
+        scrubbed = str(scrubbed)
+    cleaned = scrubbed.strip()
+    if not cleaned:
+        return "tool error"
+    return cleaned[:_MAX_FAILURE_REASON_LENGTH]
+
+
 class ProfileToolVisibilityMiddleware(AgentMiddleware[Any, Any, Any]):
     def __init__(
         self,
@@ -457,14 +475,22 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         self,
         *,
         model_name: str,
-        emit: Callable[[str, str], None],
+        emit: Callable[..., None],
         redactor: Any,
         model_response_observer: Callable[[ModelResponse[Any]], None] | None = None,
     ) -> None:
         self.model_name = model_name
         self.emit = emit
         self.monitor = FailureMonitor(redactor)
+        self._redactor = redactor
         self.model_response_observer = model_response_observer
+
+    def _emit_failure(self, name: str, reason_value: object) -> None:
+        reason = _failure_reason(reason_value, self._redactor)
+        try:
+            self.emit("tool.failed", name, reason)
+        except TypeError:
+            self.emit("tool.failed", name)
 
     def wrap_model_call(
         self,
@@ -515,7 +541,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         name = request.tool_call["name"]
         hint = _validation_error_message(request)
         if hint is not None:
-            self.emit("tool.failed", name)
+            self._emit_failure(name, hint)
             self.monitor.observe_call(name, request.tool_call.get("args", {}))
             return ToolMessage(content=hint, tool_call_id=request.tool_call["id"], status="error")
         request = _normalize_request_args(request)
@@ -526,14 +552,14 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         try:
             result = await handler(request)
         except Exception as exc:
-            self.emit("tool.failed", name)
+            self._emit_failure(name, exc)
             signal = self.monitor.observe_error(exc, tool=name)
             if signal is not None:
                 raise RuntimeError(signal) from exc
             raise
         status = _tool_result_status(result)
         if status == "error":
-            self.emit("tool.failed", name)
+            self._emit_failure(name, getattr(result, "content", "tool error"))
             if _is_decision_gate_rejection(name, result):
                 if _is_decision_exhausted_rejection(result):
                     signal = self.monitor.observe_error(
@@ -552,7 +578,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
                 if signal is not None:
                     raise RuntimeError(signal)
         elif status == "blocked":
-            self.emit("tool.failed", name)
+            self._emit_failure(name, getattr(result, "content", "tool blocked"))
             self.monitor.observe_error(getattr(result, "content", "tool blocked"), blocked=True)
         else:
             self.emit("tool.completed", name)
@@ -567,7 +593,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         name = request.tool_call["name"]
         hint = _validation_error_message(request)
         if hint is not None:
-            self.emit("tool.failed", name)
+            self._emit_failure(name, hint)
             self.monitor.observe_call(name, request.tool_call.get("args", {}))
             return ToolMessage(content=hint, tool_call_id=request.tool_call["id"], status="error")
         request = _normalize_request_args(request)
@@ -578,14 +604,14 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         try:
             result = handler(request)
         except Exception as exc:
-            self.emit("tool.failed", name)
+            self._emit_failure(name, exc)
             signal = self.monitor.observe_error(exc, tool=name)
             if signal is not None:
                 raise RuntimeError(signal) from exc
             raise
         status = _tool_result_status(result)
         if status == "error":
-            self.emit("tool.failed", name)
+            self._emit_failure(name, getattr(result, "content", "tool error"))
             if _is_decision_gate_rejection(name, result):
                 if _is_decision_exhausted_rejection(result):
                     signal = self.monitor.observe_error(
@@ -604,7 +630,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
                 if signal is not None:
                     raise RuntimeError(signal)
         elif status == "blocked":
-            self.emit("tool.failed", name)
+            self._emit_failure(name, getattr(result, "content", "tool blocked"))
             self.monitor.observe_error(getattr(result, "content", "tool blocked"), blocked=True)
         else:
             self.emit("tool.completed", name)
