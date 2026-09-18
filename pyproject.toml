@@ -56,9 +56,9 @@ namespaces = false
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
-pythonpath = [".", "src"]
+pythonpath = [".", "src", "tests"]
 norecursedirs = ["legacy", ".git", "build", "dist"]
-addopts = ["--strict-config", "--strict-markers"]
+addopts = ["--strict-config", "--strict-markers", "--import-mode=importlib"]
 asyncio_mode = "auto"
 markers = [
   "unit: deterministic isolated tests",

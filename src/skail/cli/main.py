@@ -9,16 +9,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from skail import __version__
-from skail.cli.commands import (
-    handle_auth,
-    handle_config,
-    handle_models,
-    handle_sessions,
-    handle_smoke,
-)
 from skail.cli.exit_codes import (
     EXIT_BLOCKED,
     EXIT_CANCELLED,
@@ -32,7 +25,6 @@ from skail.cli.render import (
     render_print_stdout,
 )
 from skail.config.loader import ConfigValidationError, load_config
-from skail.config.models import SkailConfig
 from skail.config.paths import (
     default_checkpoints_path,
     default_journal_path,
@@ -46,20 +38,20 @@ from skail.domain.ids import SessionId, new_invocation_id, new_run_id
 from skail.domain.routing import RoutingMode
 from skail.domain.security import ProjectTrustLevel, identify_workspace
 from skail.domain.sessions import SessionRecord
-from skail.providers.base import ProviderAdapter
-from skail.providers.catalog import ModelCatalog
-from skail.providers.credentials import EnvironmentCredentialResolver
-from skail.providers.errors import ProviderConfigurationError
-from skail.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
-from skail.routing.assignment import RoutingSnapshot, config_revision
-from skail.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
-from skail.routing.selector import RouteCandidate
 from skail.runtime.interrupts import QuestionStore
 from skail.runtime.redaction import RedactionRegistry
-from skail.sessions.checkpoints import CheckpointStore
-from skail.sessions.journal import Journal
 from skail.sessions.service import SessionService
 from skail.tools.approvals import ApprovalStore
+
+if TYPE_CHECKING:
+    from skail.config.models import SkailConfig
+    from skail.providers.base import ProviderAdapter
+    from skail.providers.catalog import ModelCatalog
+    from skail.providers.models import ModelProfile
+    from skail.routing.assignment import RoutingSnapshot
+    from skail.routing.selector import RouteCandidate
+    from skail.sessions.checkpoints import CheckpointStore
+    from skail.sessions.journal import Journal
 
 REMOVED_ALIASES = frozenset(
     {"proxy", "serve", "oma", "daemon", "plugin", "slm", "--proxy", "--port", "--host"}
@@ -83,6 +75,7 @@ class RuntimeModelSet:
         yield self.child_model
 
     def routing_snapshot(self) -> RoutingSnapshot:
+        from skail.routing.assignment import RoutingSnapshot, config_revision
         assert self.catalog is not None
         assert self.config is not None
         return RoutingSnapshot(
@@ -94,6 +87,8 @@ class RuntimeModelSet:
 
 
 def _route_candidate(profile: ModelProfile, *, hard_budget: bool) -> RouteCandidate:
+    from skail.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
+    from skail.routing.selector import RouteCandidate
     estimate = estimate_attempt_cost(
         AttemptEstimateInput(
             context_tokens=min(profile.context_tokens or 4096, 4096),
@@ -331,6 +326,8 @@ def _build_storage(
     redaction: RedactionRegistry,
     ephemeral_dir: Path | None = None,
 ) -> tuple[Journal, CheckpointStore, Path]:
+    from skail.sessions.checkpoints import CheckpointStore
+    from skail.sessions.journal import Journal
     if no_session:
         if ephemeral_dir is None:
             import tempfile
@@ -430,6 +427,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             trust_store.set_level(identity, ProjectTrustLevel.DENIED)
             render_print_stdout(f"Project at {workspace} is now DENIED.")
         return EXIT_OK
+
+    # Imported lazily so --help/--version avoid loading the command dispatch.
+    from skail.cli.commands import (
+        handle_auth,
+        handle_config,
+        handle_models,
+        handle_sessions,
+        handle_smoke,
+    )
 
     workspace = Path.cwd()
 
@@ -600,7 +606,12 @@ def _build_runtime_models(
     redaction: RedactionRegistry,
     prompt: str = "",
 ) -> RuntimeModelSet:
+    from skail.config.models import SkailConfig
+    from skail.providers.catalog import ModelCatalog
+    from skail.providers.credentials import EnvironmentCredentialResolver
+    from skail.providers.errors import ProviderConfigurationError
     from skail.providers.fake import DeterministicFakeChatModel
+    from skail.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
 
     config = getattr(args, "effective_config", SkailConfig())
     catalog = ModelCatalog.from_entries(
@@ -835,6 +846,7 @@ async def _execute_instruction(
     project_trusted: bool = False,
 ) -> int:
     from skail.agents.lead import LeadControls
+    from skail.providers.errors import ProviderConfigurationError
     from skail.runtime.run_controller import RunController
 
     try:
