@@ -230,6 +230,14 @@ class PromptComposer(Widget):
         color: $text-muted;
         padding: 0 1;
     }
+    #composer-outer {
+        width: 100%;
+        height: auto;
+    }
+    #composer-actions {
+        width: 100%;
+        height: auto;
+    }
     #composer-card {
         width: 100%;
         height: auto;
@@ -318,7 +326,7 @@ class PromptComposer(Widget):
         self._stashed: str | None = None
 
     def compose(self) -> ComposeResult:
-        with Vertical():
+        with Vertical(id="composer-outer"):
             yield Static("", id="composer-queue")
             with Vertical(id="composer-card"):
                 yield TextArea(
@@ -327,7 +335,7 @@ class PromptComposer(Widget):
                     show_line_numbers=False,
                 )
                 yield Static("", id="composer-palette")
-                with Horizontal():
+                with Horizontal(id="composer-actions"):
                     yield Static("", id="composer-status")
                     yield Static(f"MODE {self.composer_mode}", id="composer-mode")
                     yield Button("Send", id="composer-send", variant="primary")

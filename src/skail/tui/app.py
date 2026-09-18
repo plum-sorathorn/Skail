@@ -145,6 +145,13 @@ class SkailApp(App[int]):
         width: 40%;
         height: 100%;
     }
+    #tabs {
+        height: 1fr;
+    }
+    #tabs ContentSwitcher,
+    #tabs TabPane {
+        height: 1fr;
+    }
     #interrupt-container {
         width: 100%;
         height: auto;
