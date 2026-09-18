@@ -23,7 +23,13 @@ objective, constraints, and reason. Use direct for bounded work (direct must NOT
 send plan or revision), discovery only for read-only evidence work with a checkpoint,
 or planned with a validated finite plan. planned/discovery REQUIRE plan: a validated
 finite plan object (or JSON string of one) with a checkpoint node; discovery plan nodes
-must all be read-only. constraints may be a string or a list of strings. A final
+must all be read-only. Minimal planned shape (copy this):
+{"mode": "planned", "objective": "<goal>", "reason": "<why>", "plan":
+{"schema_version": 1, "policy_version": "adaptive-v1", "revision": 1,
+"nodes": [{"local_id": "survey", "kind": "agent", "objective": "<survey work>"},
+{"local_id": "gate", "kind": "checkpoint", "objective": "<review evidence>"}]}}
+Unknown plan fields are rejected; use ONLY schema_version, policy_version,
+revision, nodes{local_id,kind,objective}. constraints may be a string or a list of strings. A final
 answer needs no execution_decision. When delegating, call task(description,
 subagent_type). The description may be plain text or one JSON object with: description,
 success_criteria, depends_on (persisted task IDs), priority, write_scope, model_policy,
