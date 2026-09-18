@@ -382,10 +382,11 @@ class RunController:
 
     def _finalize_assignment_budget(self, assignment: TaskAssignment) -> None:
         assignment_id = str(assignment.assignment_id)
+        self.usage_settler.complete_unmeasured_calls(assignment_id)
         with self.journal._connect() as connection:
             uncertain = connection.execute(
                 "SELECT 1 FROM provider_calls WHERE assignment_id=? "
-                "AND status IN ('started','ambiguous') LIMIT 1",
+                "AND status='ambiguous' LIMIT 1",
                 (assignment_id,),
             ).fetchone()
         if uncertain is not None:
@@ -393,6 +394,15 @@ class RunController:
                 "provider usage is uncertain; reservation remains held"
             )
         if self._has_calls(assignment_id):
+            self.usage_settler.settle_attempt(assignment_id)
+            return
+        with self.journal._connect() as connection:
+            completed = connection.execute(
+                "SELECT 1 FROM provider_calls WHERE assignment_id=? "
+                "AND status='completed' LIMIT 1",
+                (assignment_id,),
+            ).fetchone()
+        if completed is not None:
             self.usage_settler.settle_attempt(assignment_id)
         else:
             self.ledger.release(str(assignment.reservation_id))
@@ -1456,7 +1466,9 @@ class RunController:
             if not isinstance(args, Mapping):
                 continue
             description = str(args.get("description", ""))
-            profile_name = str(args.get("subagent_type", "general-purpose"))
+            profile_name = str(
+                args.get("subagent_type", args.get("profile", "general-purpose"))
+            )
             profile = builtin_profiles().get(profile_name)
             if profile is None:
                 continue

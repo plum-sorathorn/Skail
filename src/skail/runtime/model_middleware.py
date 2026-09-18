@@ -251,13 +251,12 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
                 call_id=call_id,
                 assignment_id=assignment_id,
             )
-        except Exception as error:
-            self._mark_ambiguous(call_id, error)
-            if call_id is not None:
-                raise AccountingReconciliationRequired(
-                    "provider response could not be reconciled; paid execution is blocked"
-                ) from error
-            raise
+        except Exception:
+            if call_id is None:
+                raise
+            # The provider returned successfully, so its outcome is known even when
+            # local usage normalization or persistence fails. Leave the call started;
+            # finalization will complete it conservatively from the reservation.
 
     def _bind(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
         attempt = request.state.get("attempt_id")

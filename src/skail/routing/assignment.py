@@ -737,6 +737,23 @@ class AssignmentUsageSettler:
                     ),
                 )
 
+    def complete_unmeasured_calls(self, assignment_id: str) -> int:
+        """Mark successful-but-unmeasured `started` calls completed (fail-open).
+
+        Streaming tool-call responses may carry no usage metadata, leaving a
+        `started` row when `record_call` is skipped or races. These calls
+        succeeded, so they settle via the conservative attempt-level envelope
+        in `settle_attempt`; only `ambiguous` rows stay fail-closed.
+        """
+        now = datetime.now(UTC).isoformat()
+        with self.journal.transaction() as transaction:
+            cursor = transaction.connection.execute(
+                "UPDATE provider_calls SET status='completed',authority='unknown',"
+                "updated_at=? WHERE assignment_id=? AND status='started'",
+                (now, assignment_id),
+            )
+            return cursor.rowcount
+
     def settle_attempt(self, assignment_id: str) -> None:
         with self.journal._connect() as connection:
             assignment = connection.execute(
