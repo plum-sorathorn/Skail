@@ -1061,7 +1061,7 @@ class RunController:
         recorded_child_results: list[TaskResult],
     ) -> tuple[dict[str, Any] | None, bool]:
         """Single coordinator finalization path for initial and resumed runs."""
-        return await self._dispatch_admitted_plan_agents(
+        completed_state = await self._dispatch_admitted_plan_agents(
             run_id=run_id,
             workspace_revision=workspace_revision,
             leases=leases,
@@ -1075,6 +1075,39 @@ class RunController:
             invoke_config=invoke_config,
             recorded_child_results=recorded_child_results,
         )
+        return completed_state
+
+    def _gated_noop_requires_blocked(
+        self,
+        *,
+        run_id: RunId,
+        recorded_child_results: Sequence[TaskResult],
+    ) -> bool:
+        """Detect the gated no-op signature: rejections, no decision, no work.
+
+        True only when (a) at least one operational tool call was rejected
+        with ``execution.decision_required``, (b) no execution decision was
+        ever admitted for the run, and (c) no operational tool ever completed
+        and no child work ran. A pure final answer (zero tool events) returns
+        False so P1 (ADR 0006:24) still completes successfully.
+        """
+        if recorded_child_results:
+            return False
+        if self.journal.get_execution_decision(str(run_id)) is not None:
+            return False
+        saw_required_rejection = False
+        saw_completion = False
+        for event in self.journal.events_after(run_id=str(run_id)):
+            if event.type == "tool.completed":
+                saw_completion = True
+            elif event.type == "tool.failed":
+                payload = event.payload
+                reason = payload.reason if isinstance(payload, ToolPayload) else None
+                if isinstance(reason, str) and reason.startswith(
+                    "execution.decision_required"
+                ):
+                    saw_required_rejection = True
+        return saw_required_rejection and not saw_completion
 
     async def _dispatch_admitted_plan_agents(
         self,
@@ -2266,6 +2299,55 @@ class RunController:
                 )
             self._finalize_assignment_budget(lead_assignment)
             self._release_lead_allowances()
+            return RunResult(
+                run_id=run_id,
+                lead_assignment=lead_assignment,
+                lead_context_packet=lead_context_packet,
+                output=output_text,
+                messages=messages,
+                child_results=recorded_child_results,
+                status="blocked",
+                child_wall_seconds=scheduler.gate.child_wall_seconds,
+                child_peak_active=scheduler.gate.peak_active,
+                child_count=len(scheduler.gate.completed),
+            )
+
+        if self._gated_noop_requires_blocked(
+            run_id=run_id, recorded_child_results=recorded_child_results
+        ):
+            output_text = (
+                "Execution blocked: every operational tool call was rejected "
+                "because no execution decision was recorded "
+                "(execution.decision_required), and no work was performed."
+            )
+            with self.journal.transaction() as tx:
+                tx.update_attempt_status(
+                    attempt_id=str(lead_attempt_id), status=AttemptStatus.BLOCKED
+                )
+                tx.update_task_status(task_id=str(lead_task_id), status=TaskStatus.BLOCKED)
+                tx.update_run_status(run_id=str(run_id), status="blocked")
+                tx.update_session_status(session_id=str(self.session_id), status="idle")
+                self._append_event(
+                    tx,
+                    run_id=run_id,
+                    type="diagnostic.error",
+                    payload=DiagnosticPayload(
+                        code="execution.decision_required",
+                        summary=output_text,
+                        details={"run_id": str(run_id)},
+                    ),
+                    task_id=lead_task_id,
+                    attempt_id=lead_attempt_id,
+                )
+                self._append_event(
+                    tx,
+                    run_id=run_id,
+                    type="run.blocked",
+                    payload=LifecyclePayload(status="blocked"),
+                )
+            self._finalize_assignment_budget(lead_assignment)
+            self._release_lead_allowances()
+            await _save_checkpoint("terminal", status="committed")
             return RunResult(
                 run_id=run_id,
                 lead_assignment=lead_assignment,
