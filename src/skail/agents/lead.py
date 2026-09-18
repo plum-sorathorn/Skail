@@ -50,6 +50,20 @@ class LeadControls:
     risk: TaskRisk = TaskRisk.ROUTINE
 
 
+#: Operational tools the lead must not call directly in worktree mode. The
+#: canonical checkout is read-only for the lead there; all mutations flow
+#: through ``task`` children whose edits integrate via changesets.
+LEAD_WORKTREE_BLOCKED_WRITES = frozenset({"edit_file", "write_file", "execute"})
+
+
+def lead_worktree_blocked_message(tool_name: str) -> str:
+    return (
+        f"{tool_name} is blocked for the lead in worktree mode: the canonical "
+        "checkout is read-only for the lead; delegate mutations through task "
+        "children whose edits integrate via changesets."
+    )
+
+
 def delegation_allowed(controls: LeadControls, *, requested: bool) -> bool:
     if controls.delegation == "off":
         return False
@@ -65,6 +79,7 @@ def build_production_lead(
     controls: LeadControls,
     subagents: Sequence[CompiledSubAgent] = (),
     delegation_approved: bool = False,
+    isolate_lead_writes: bool = False,
     leases: WorkspaceLeaseManager,
     extra_middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
     redactor: Any = None,
@@ -82,6 +97,7 @@ def build_production_lead(
     registry = _lead_registry(
         allow_delegation=controls.delegation != "off",
         write_allowed=controls.write_allowed is not False,
+        isolate_lead_writes=isolate_lead_writes,
     )
     return cast(
         Runnable[object, object],
@@ -92,6 +108,9 @@ def build_production_lead(
             subagents=list(subagents) if allow_children else [],
             extension_tools=extension_tools,
             registry=registry,
+            blocked_tool_message=(
+                lead_worktree_blocked_message if isolate_lead_writes else None
+            ),
             lease_manager=leases,
             extra_middleware=extra_middleware,
             redactor=redactor,
@@ -109,7 +128,12 @@ def build_production_lead(
     )
 
 
-def _lead_registry(*, allow_delegation: bool, write_allowed: bool) -> ToolRegistry:
+def _lead_registry(
+    *,
+    allow_delegation: bool,
+    write_allowed: bool,
+    isolate_lead_writes: bool = False,
+) -> ToolRegistry:
     source = default_registry()
     tools: list[ToolMetadata] = []
     for name in source.names:
@@ -118,6 +142,8 @@ def _lead_registry(*, allow_delegation: bool, write_allowed: bool) -> ToolRegist
         if not write_allowed and metadata.side_effect is not SideEffect.READ_ONLY:
             profiles = frozenset(item for item in profiles if item != "lead")
         if not allow_delegation and name == "task":
+            profiles = frozenset(item for item in profiles if item != "lead")
+        if isolate_lead_writes and name in LEAD_WORKTREE_BLOCKED_WRITES:
             profiles = frozenset(item for item in profiles if item != "lead")
         tools.append(metadata.model_copy(update={"profiles": profiles}))
     return ToolRegistry(tools)

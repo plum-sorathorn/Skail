@@ -820,6 +820,7 @@ class RunController:
             controls=controls,
             subagents=subagents,
             delegation_approved=delegation_approved,
+            isolate_lead_writes=self._workspace_snapshot is not None,
             leases=leases,
             extra_middleware=[lead_middleware, ExecutionDecisionMiddleware(decision_gate)],
             extension_tools=[execution_decision_tool(decision_gate)],
@@ -1804,6 +1805,14 @@ class RunController:
             self.workspace, self.workspace_mode
         )
         self._workspace_snapshot = None
+        if (
+            active_controls.delegation == "off"
+            and self.workspace_selection.mode is WorkspaceMode.WORKTREE
+        ):
+            self.workspace_selection = WorkspaceSelection(
+                WorkspaceMode.SHARED,
+                "workspace.isolation_unavailable: delegation-off",
+            )
         if self.workspace_selection.mode is WorkspaceMode.WORKTREE:
             try:
                 self._workspace_snapshot = self.workspace_manager.capture(self.workspace)

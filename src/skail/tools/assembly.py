@@ -311,8 +311,21 @@ def _validation_error_message(request: ToolCallRequest) -> str | None:
 
 
 class ProfileToolVisibilityMiddleware(AgentMiddleware[Any, Any, Any]):
-    def __init__(self, visible_names: frozenset[str]) -> None:
+    def __init__(
+        self,
+        visible_names: frozenset[str],
+        *,
+        blocked_message: Callable[[str], str] | None = None,
+    ) -> None:
         self._visible_names = visible_names
+        self._blocked_message = blocked_message
+
+    def _blocked_tool(self, name: str, call_id: str | None) -> ToolMessage:
+        if self._blocked_message is not None:
+            content = self._blocked_message(name)
+        else:
+            content = "tool is not permitted for this profile"
+        return ToolMessage(content=content, tool_call_id=str(call_id or ""), status="error")
 
     def wrap_model_call(
         self,
@@ -337,11 +350,7 @@ class ProfileToolVisibilityMiddleware(AgentMiddleware[Any, Any, Any]):
         handler: Callable[[ToolCallRequest], ToolMessage | Any],
     ) -> ToolMessage | Any:
         if request.tool_call["name"] not in self._visible_names:
-            return ToolMessage(
-                content="tool is not permitted for this profile",
-                tool_call_id=request.tool_call["id"],
-                status="error",
-            )
+            return self._blocked_tool(request.tool_call["name"], request.tool_call["id"])
         token = CURRENT_TOOL_CALL_ID.set(request.tool_call["id"])
         try:
             return handler(request)
@@ -354,11 +363,7 @@ class ProfileToolVisibilityMiddleware(AgentMiddleware[Any, Any, Any]):
         handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Any]],
     ) -> ToolMessage | Any:
         if request.tool_call["name"] not in self._visible_names:
-            return ToolMessage(
-                content="tool is not permitted for this profile",
-                tool_call_id=request.tool_call["id"],
-                status="error",
-            )
+            return self._blocked_tool(request.tool_call["name"], request.tool_call["id"])
         token = CURRENT_TOOL_CALL_ID.set(request.tool_call["id"])
         try:
             return await handler(request)
@@ -663,6 +668,7 @@ def build_default_agent(
     extension_tools: Sequence[Any] = (),
     lease_manager: WorkspaceLeaseManager | None = None,
     extra_middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
+    blocked_tool_message: Callable[[str], str] | None = None,
     runtime_event: Callable[[str, str], None] | None = None,
     runtime_model_name: str | None = None,
     model_response_observer: Callable[[ModelResponse[Any]], None] | None = None,
@@ -815,7 +821,7 @@ def build_default_agent(
         skills=skills,
         memory=memory,
         middleware=[
-            ProfileToolVisibilityMiddleware(visible_names),
+            ProfileToolVisibilityMiddleware(visible_names, blocked_message=blocked_tool_message),
             *activity_middleware,
             *extra_middleware,
         ],
