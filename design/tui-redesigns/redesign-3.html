@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Skail TUI Redesign 3 — FOUNDRY (dense pro-dashboard)</title>
+<style>
+/* ─────────────────────────────────────────────────────────────
+   FOUNDRY — dense pro-dashboard
+   Three permanent panes, a tabular log grid, a status ticker.
+   Colour is reserved for state; everything else is graphite.
+   Tokens mirror src/skail/tui/theme.py REQUIRED_TOKENS.
+   ───────────────────────────────────────────────────────────── */
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:#08090A;color:#8C979C;padding:34px 30px 70px;
+  font:14px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+input[name=m],input[name=t]{position:absolute;opacity:0;pointer-events:none}
+.doc{max-width:1220px;margin:0 auto}
+h1{font:600 30px/1.1 ui-sans-serif,sans-serif;letter-spacing:.16em;margin:0;color:#E6E9EA}
+h1 em{font-style:normal;color:#A8E05F}
+.sub{margin:6px 0 0;max-width:78ch;color:#7C878C}
+.sub b{color:#B6BEC1;font-weight:600}
+h2{font:600 12px/1 ui-sans-serif,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#5E686D;
+  margin:44px 0 14px;padding-bottom:8px;border-bottom:1px solid #191D20}
+h2 code{font:inherit;color:#A8E05F}
+.ctl{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:22px 0 26px}
+.ctl span{font:11px/1 ui-sans-serif,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#4C555A;margin-right:2px}
+.ctl label{cursor:pointer;font:12px/1 ui-sans-serif,sans-serif;letter-spacing:.06em;color:#8C979C;
+  border:1px solid #20262A;border-radius:3px;padding:7px 14px;background:#101315;transition:.15s}
+.ctl label:hover{color:#E6E9EA;border-color:#3C464C}
+#m-both:checked~.doc label[for=m-both],#m-wide:checked~.doc label[for=m-wide],
+#m-narrow:checked~.doc label[for=m-narrow],#t-dark:checked~.doc label[for=t-dark],
+#t-light:checked~.doc label[for=t-light]{color:#0D0F10;background:#A8E05F;border-color:#A8E05F;font-weight:600}
+#m-wide:checked~.doc .f-narrow,#m-wide:checked~.doc .f-overlay{display:none}
+#m-narrow:checked~.doc .f-wide,#m-narrow:checked~.doc .f-overlay{display:none}
+.frames{display:flex;flex-direction:column;gap:34px;align-items:flex-start}
+.cap{font:11px/1 ui-sans-serif,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:#4C555A;margin:0 0 12px 2px}
+.cap b{color:#8C979C;font-weight:600}
+.sw{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.sw i{display:block;width:26px;height:26px;border-radius:3px;border:1px solid rgba(255,255,255,.1)}
+.sw div{font:10px/1.35 ui-monospace,monospace;color:#4C555A;width:76px}
+
+.bezel{width:max-content;background:#0A0C0D;border:1px solid #1D2225;border-radius:5px;padding:8px 8px 10px;
+  box-shadow:0 24px 54px rgba(0,0,0,.6)}
+.bezel .bar{display:flex;align-items:center;gap:9px;padding:2px 4px 9px;
+  font:10.5px/1 ui-sans-serif,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#3E474C}
+.bezel .bar u{text-decoration:none;width:7px;height:7px;border-radius:1px;background:#232A2E;display:block}
+.bezel .bar u:first-child{background:#A8E05F}
+
+/* ── THE TERMINAL ── */
+.term{
+  --background:#0D0F10; --surface:#14171A; --surfaceRaised:#1C2124; --surfaceInset:#090B0C;
+  --border:#262C30; --borderStrong:#3C464C;
+  --text:#E6E9EA; --textMuted:#8C979C; --textFaint:#5E686D;
+  --accent:#A8E05F; --accentSoft:#1E2A14; --focusRing:#C7F464;
+  --modeQuality:#B79CFF; --modeEconomy:#7FD6A8; --modeManual:#F2C14E; --delegation:#B79CFF;
+  --budgetFill:#A8E05F; --budgetWarning:#F2C14E; --budgetCritical:#FF6B6B; --budgetEmpty:#232A2E;
+  --diffAdded:#7FD6A8; --diffAddedSurface:#12211A; --diffRemoved:#FF8080; --diffRemovedSurface:#241416;
+  --dimmed:#4C555A; --error:#FF6B6B; --errorSurface:#241416;
+  --approval:#F2C14E; --approvalSurface:#241F10;
+  --agentOne:#6FC7E8; --agentTwo:#B79CFF; --agentThree:#7FD6A8;
+  --shimmerBase:#5E686D; --shimmerPeak:#EAF7D2; --selection:#23301A; --link:#8FD0E8;
+
+  background:var(--background);color:var(--text);
+  font-family:"Cascadia Mono","JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12.4px;line-height:1.42;--cols:120;
+  width:calc((var(--cols) + 2) * 1ch);padding:2px 1ch 3px;
+}
+/* FOUNDRY DAY — light token set */
+body:has(#t-light:checked) .term{
+  --background:#F2F3F1;--surface:#FBFBFA;--surfaceRaised:#E8EAE6;--surfaceInset:#E2E5E0;
+  --border:#CFD3CD;--borderStrong:#98A09A;--text:#161A17;--textMuted:#5C6660;--textFaint:#8A938D;
+  --accent:#4E7A16;--accentSoft:#E4F0D2;--focusRing:#3B5E0E;
+  --modeQuality:#6545B8;--modeEconomy:#0B6B4A;--modeManual:#8A6200;--delegation:#6741C7;
+  --budgetFill:#4E7A16;--budgetWarning:#8A6200;--budgetCritical:#B42335;--budgetEmpty:#D6DAD4;
+  --error:#B42335;--errorSurface:#FBE3E5;--approval:#8A6200;--approvalSurface:#FBF0CE;
+  --agentOne:#1E6E8C;--agentTwo:#5E46A0;--agentThree:#0B6B4A;
+  --shimmerBase:#98A09A;--shimmerPeak:#161A17;--selection:#DCEBC6;--dimmed:#8A938D;--link:#1E6E8C;
+}
+.ln{white-space:pre}
+.row{display:flex;align-items:baseline;white-space:pre}
+.sp{flex:1 1 auto}
+.sc{letter-spacing:.12em;color:var(--textMuted)}
+.m{color:var(--textMuted)}.f2{color:var(--textFaint)}.a{color:var(--accent)}
+.ag1{color:var(--agentOne)}.ag2{color:var(--agentTwo)}.ag3{color:var(--agentThree)}
+.ok{color:var(--diffAdded)}.wn{color:var(--approval)}.er{color:var(--error)}.dm{color:var(--dimmed)}
+.num{font-variant-numeric:tabular-nums}
+.shim{background:linear-gradient(90deg,var(--shimmerBase),var(--shimmerPeak),var(--shimmerBase));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.caret{background:var(--accent);color:var(--background)}
+.sel{background:var(--selection)}
+.kbd{color:var(--text);background:var(--surfaceRaised);border:1px solid var(--border);border-radius:2px;padding:0 .35ch}
+.rule{border-top:1px solid var(--border);height:0;margin:1px 0}
+.vr{background:linear-gradient(var(--border),var(--border)) 50% 0/1px 100% no-repeat}
+
+/* title + ticker */
+.tbar{display:flex;align-items:baseline;gap:1ch;background:var(--surfaceRaised);padding:1px 1ch}
+.ticker{display:flex;align-items:baseline;background:var(--surfaceInset);border-top:1px solid var(--border);
+  border-bottom:1px solid var(--border);padding:1px 1ch;color:var(--textMuted);white-space:pre;overflow:hidden}
+.ticker .sep{color:var(--borderStrong);padding:0 .8ch}
+.ticker .k{color:var(--textFaint);letter-spacing:.1em}
+.ticker .v{color:var(--text)}
+
+/* three-pane grid */
+.main{display:grid;grid-template-columns:60ch 1ch 26ch 1ch 32ch}
+.pane{min-width:0;padding:0 1ch}
+.pane.log{padding-left:0}
+.pane.insp{padding-right:0}
+.narrow .main{grid-template-columns:1fr}
+.narrow .vr,.narrow .railp,.narrow .insp{display:none}
+
+.ph{display:flex;align-items:baseline;gap:1ch;padding:1px 0;border-bottom:1px solid var(--borderStrong)}
+.ph .t{letter-spacing:.16em;color:var(--text)}
+.ph i{flex:1;height:1px;background:var(--border);display:block}
+.tabs{display:flex;border-bottom:1px solid var(--borderStrong)}
+.tabs span{padding:1px 1.1ch;color:var(--textFaint);letter-spacing:.1em;border:1px solid transparent;border-bottom:0}
+.tabs span.on{color:var(--text);background:var(--surfaceRaised);border-color:var(--borderStrong);
+  box-shadow:inset 0 2px 0 var(--accent)}
+
+/* log grid */
+.lg{display:flex;align-items:baseline;border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent)}
+.lg:nth-of-type(even){background:var(--surface)}
+.lg.h{background:var(--surfaceInset);border-bottom:1px solid var(--borderStrong);color:var(--textFaint);letter-spacing:.1em}
+.lg .n{flex:0 0 4ch;color:var(--dimmed);text-align:right;padding-right:1ch}
+.lg .tm{flex:0 0 7ch;color:var(--textFaint)}
+.lg .src{flex:0 0 7ch;color:var(--textMuted);letter-spacing:.04em}
+.lg .sm{flex:1 1 auto;white-space:pre-wrap;min-width:0;color:var(--text)}
+.lg .ct{flex:0 0 8ch;text-align:right;color:var(--textMuted);font-variant-numeric:tabular-nums;padding-left:1ch}
+.lg .st{flex:0 0 3ch;text-align:center}
+.lg.cur{box-shadow:inset 2px 0 0 var(--focusRing);background:var(--selection)}
+.lg.k-you .src{color:var(--accent)}
+.lg.k-lead .src{color:var(--text)}
+.lg.k-tool .sm{color:var(--textMuted)}
+.lg.k-err{background:var(--errorSurface)}.lg.k-err .src,.lg.k-err .sm{color:var(--error)}
+.lg.k-apr{background:var(--approvalSurface)}.lg.k-apr .src,.lg.k-apr .sm{color:var(--approval)}
+.lg.k-rcp .src{color:var(--diffAdded)}
+.lg.k-sys .sm{color:var(--textMuted)}
+.dock{display:flex;align-items:center;gap:1ch;color:var(--accent);padding:1px 0}
+.dock i{flex:1;height:1px;background:var(--border);display:block}
+
+/* agent rail (always on) */
+.ar{display:grid;grid-template-columns:2ch 1fr;gap:.6ch;padding:1px 0;
+  border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent)}
+.ar.cur{background:var(--selection);box-shadow:inset 2px 0 0 var(--focusRing)}
+.ar .ix{color:var(--dimmed);text-align:right}
+.ar .l1{display:flex;align-items:baseline;gap:.8ch}
+.ar .l1 .st{letter-spacing:.08em}
+.ar .l1 .co{margin-left:auto;color:var(--textMuted);font-variant-numeric:tabular-nums}
+.ar .l2{color:var(--textMuted);white-space:pre-wrap}
+.ar .l3{color:var(--textFaint)}
+
+/* inspector content */
+.kv{display:flex;align-items:baseline;gap:1ch;padding:0}
+.kv .k{flex:0 0 11ch;color:var(--textFaint);letter-spacing:.08em}
+.kv .v{flex:1 1 auto;color:var(--textMuted);white-space:pre-wrap}
+.kv .v.r{text-align:right;font-variant-numeric:tabular-nums;color:var(--text)}
+.pi{display:flex;align-items:baseline;gap:1ch;padding:1px 0;
+  border-bottom:1px solid color-mix(in srgb,var(--border) 45%,transparent)}
+.pi .b{flex:0 0 2ch;text-align:center}
+.pi .x{flex:0 0 3ch;color:var(--dimmed)}
+.pi .s{flex:1 1 auto;white-space:pre-wrap}
+.prompt{background:var(--approvalSurface);border-left:2px solid var(--approval);padding:1px 1ch;margin-top:2px}
+.btns{display:flex;gap:1ch;flex-wrap:wrap;margin-top:2px}
+.btn{border:1px solid var(--borderStrong);border-radius:2px;padding:0 .8ch;background:var(--surfaceRaised);
+  color:var(--text);letter-spacing:.08em}
+.btn.pri{border-color:var(--accent);color:var(--accent);background:var(--accentSoft)}
+.btn.pri.focused{box-shadow:0 0 0 1px var(--focusRing)}
+
+/* approval banner across all panes */
+.banner{display:flex;align-items:baseline;gap:1.2ch;background:var(--approval);color:#1A1508;
+  padding:1px 1ch;letter-spacing:.06em}
+.banner .q{color:#1A1508}
+.abody{background:var(--approvalSurface);border-left:2px solid var(--approval);padding:2px 1ch 3px}
+.ainput{background:var(--surfaceInset);border:1px solid var(--borderStrong);border-radius:2px;
+  padding:0 1ch;margin:2px 0;color:var(--textFaint)}
+
+/* composer */
+.comp{border-top:1px solid var(--borderStrong);background:var(--surface);padding:1px 1ch 2px;margin-top:2px}
+.comp.focused{box-shadow:inset 0 0 0 1px var(--focusRing)}
+.comp .q{display:flex;align-items:baseline;gap:1ch;color:var(--approval);padding-bottom:1px}
+.comp .in{display:flex;gap:1ch;align-items:baseline}
+.comp .pr{color:var(--accent);flex:0 0 2ch}
+.comp .txt{flex:1 1 auto;white-space:pre-wrap;min-height:calc(3 * 1.42em)}
+.comp .side{flex:0 0 auto;text-align:right;color:var(--textFaint)}
+.comp .meta{display:flex;align-items:baseline;gap:1.4ch;color:var(--textFaint);border-top:1px solid var(--border);padding-top:1px;margin-top:1px}
+.send{border:1px solid var(--accent);background:var(--accentSoft);color:var(--accent);border-radius:2px;
+  padding:0 1ch;letter-spacing:.14em}
+.foot{display:flex;align-items:baseline;gap:1.1ch;flex-wrap:wrap;color:var(--textFaint);
+  border-top:1px solid var(--border);padding-top:1px;margin-top:1px}
+.foot span{display:inline-flex;gap:.5ch;align-items:baseline}
+
+.minis{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+.mini{width:max-content}
+.notes{max-width:100ch;color:#8C979C}
+.notes li{margin:5px 0}
+.notes code{font:12px/1.4 ui-monospace,monospace;color:#A8E05F;background:#12170F;
+  border:1px solid #232C1C;border-radius:3px;padding:1px 5px}
+</style>
+</head>
+<body>
+<input type="radio" name="m" id="m-both" checked><input type="radio" name="m" id="m-wide"><input type="radio" name="m" id="m-narrow">
+<input type="radio" name="t" id="t-dark" checked><input type="radio" name="t" id="t-light">
+
+<div class="doc">
+  <h1>FOUNDRY <em>·</em> REDESIGN 3</h1>
+  <p class="sub"><b>Dense pro-dashboard.</b> Built for the operator who watches three children, a budget and a plan at once.
+  The transcript becomes a <b>tabular log grid</b> (row number, time, source, summary, cost, state) with a sticky header;
+  the agent rail is <b>always on</b> instead of hiding behind a tab; a one-line <b>status ticker</b> absorbs model, mode, spend,
+  budget ratio, agent state counts, queue depth and routing — the strip that used to take a whole row now takes one and says more.
+  Colour is rationed: graphite everywhere, lime only for <i>you</i>/focus, and semantic hues only for state. Every state is a glyph
+  <b>and</b> a word.</p>
+
+  <div class="ctl">
+    <span>viewport</span>
+    <label for="m-both">Both</label><label for="m-wide">Wide 120×40</label><label for="m-narrow">Narrow 88×30</label>
+    <span style="margin-left:14px">theme</span>
+    <label for="t-dark">Foundry</label><label for="t-light">Foundry Day</label>
+  </div>
+
+  <div class="sw">
+    <div><i style="background:#0D0F10"></i>background</div><div><i style="background:#14171A"></i>surface</div>
+    <div><i style="background:#1C2124"></i>surfRaised</div><div><i style="background:#090B0C"></i>surfInset</div>
+    <div><i style="background:#262C30"></i>border</div><div><i style="background:#E6E9EA"></i>text</div>
+    <div><i style="background:#8C979C"></i>textMuted</div><div><i style="background:#A8E05F"></i>accent</div>
+    <div><i style="background:#C7F464"></i>focusRing</div><div><i style="background:#F2C14E"></i>approval</div>
+    <div><i style="background:#FF6B6B"></i>error</div><div><i style="background:#6FC7E8"></i>agentOne</div>
+    <div><i style="background:#B79CFF"></i>agentTwo</div><div><i style="background:#7FD6A8"></i>agentThree</div>
+  </div>
+
+  <h2>Wide — 120 × 40</h2>
+  <div class="frames">
+  <div class="f-wide">
+  <p class="cap">three permanent panes <b>·</b> log grid 60 + agent rail 26 + inspector 32 <b>·</b> sidebar visible (width ≥ 100)</p>
+  <div class="bezel"><div class="bar"><u></u><u></u><u></u> skail 0.1.0 — 120×40</div>
+  <div class="term" style="--cols:120">
+
+    <!-- title bar -->
+    <div class="tbar">
+      <span class="a" style="letter-spacing:.18em">✻ SKAIL</span><span class="f2">0.1.0</span>
+      <span class="dm">│</span><span class="m">run-1</span><span class="dm">│</span><span class="m">sess 8f2a</span>
+      <span class="dm">│</span><span class="sc f2">PROVIDER</span><span> anthropic</span>
+      <span class="sp"></span>
+      <span class="pill" style="border:1px solid var(--border);border-radius:2px;padding:0 .6ch" class="f2"><span class="ok">●</span> LIVE</span>
+      <span class="num m"> 14:32:07</span>
+    </div>
+    <!-- status ticker (replaces the 1-row status strip; carries model/mode/cost/agents/route/queue) -->
+    <div class="ticker">
+      <span class="k">MODEL</span> <span class="v">auto</span><span class="sep">│</span><span class="k">MODE</span> <span class="v" style="color:var(--modeQuality)">quality</span><span class="sep">│</span><span class="k">SPEND</span> <span class="v num">$0.0142 / $5.00</span><span class="sep">│</span><span class="k">BUD</span> <span class="v num">0.3%</span> <span style="color:var(--budgetFill)">▓</span><span style="color:var(--budgetEmpty)">░░░</span><span class="sep">│</span><span class="k">AG</span> <span class="v"><span class="ag1">1R</span> <span class="ag2">1W</span> <span class="ag3">1C</span> <span class="er">1F</span> <span class="dm">1X</span></span><span class="sep">│</span><span class="k">QUEUE</span> <span class="v num">2</span><span class="sep">│</span><span class="k">ROUTE</span> <span class="v">auto→lead</span><span class="sep">│</span><span class="k">EXCL</span> <span class="v er">1</span>
+    </div>
+
+    <!-- three panes -->
+    <div class="main">
+      <!-- LOG -->
+      <div class="pane log">
+        <div class="ph"><span class="t">EVENT LOG</span><i></i><span class="f2">41 rows · ⏎ expand · ^O pager</span></div>
+        <div class="lg h"><span class="n">#</span><span class="tm">TIME</span><span class="src">SOURCE</span><span class="sm">SUMMARY</span><span class="ct">COST</span><span class="st">ST</span></div>
+        <div class="lg k-sys"><span class="n">12</span><span class="tm">14:32:01</span><span class="src">TASK</span><span class="sm">✻ Starting Skail runtime…</span><span class="ct">—</span><span class="st dm">·</span></div>
+        <div class="lg k-sys"><span class="n">13</span><span class="tm">14:32:02</span><span class="src">TASK</span><span class="sm">Ready. Describe the outcome you want…</span><span class="ct">—</span><span class="st dm">·</span></div>
+        <div class="lg k-you cur"><span class="n">14</span><span class="tm">14:32:04</span><span class="src">YOU</span><span class="sm">Fix the failing budget tests, then summarize.</span><span class="ct">—</span><span class="st dm">·</span></div>
+        <div class="lg k-lead"><span class="n">15</span><span class="tm">14:32:05</span><span class="src">LEAD</span><span class="sm">Reproducing first, then patching two assertions.</span><span class="ct">0.0021</span><span class="st dm">·</span></div>
+        <div class="lg k-tool"><span class="n">16</span><span class="tm">14:32:06</span><span class="src ag1">A1</span><span class="sm">▸ read_file tests/unit/test_budget.py <span class="f2">214 ln</span></span><span class="ct">0.0000</span><span class="st ok">✓</span></div>
+        <div class="lg k-tool"><span class="n">17</span><span class="tm">14:32:09</span><span class="src ag1">A1</span><span class="sm">▸ run pytest tests/unit -q <span class="f2">exit 0 · 41 pass</span></span><span class="ct">0.0000</span><span class="st ok">✓</span></div>
+        <div class="lg k-tool"><span class="n">18</span><span class="tm">14:32:10</span><span class="src ag2">A2</span><span class="sm">▸ apply_patch runtime/budget.py <span class="f2">+18 −6</span></span><span class="ct">0.0000</span><span class="st ok">✓</span></div>
+        <div class="lg k-rcp"><span class="n">19</span><span class="tm">14:32:11</span><span class="src">RCP</span><span class="sm">RECEIPT plan@r3 · 2 changesets</span><span class="ct">0.0041</span><span class="st ok">✓</span></div>
+        <div class="lg k-lead"><span class="n">20</span><span class="tm">14:32:12</span><span class="src">LEAD</span><span class="sm">Fixed 2 assertions; 41 passed, 0 failed.</span><span class="ct">0.0031</span><span class="st ok">✓</span></div>
+        <div class="lg k-err"><span class="n">21</span><span class="tm">14:32:14</span><span class="src er">A2</span><span class="sm">ERROR reservation expired → retry 1</span><span class="ct">0.0012</span><span class="st er">✕</span></div>
+        <div class="lg k-apr"><span class="n">22</span><span class="tm">14:32:15</span><span class="src wn">APPR</span><span class="sm">APPROVAL REQUIRED command:run-1 ↓</span><span class="ct">—</span><span class="st wn">▲</span></div>
+        <div class="lg k-lead"><span class="n">23</span><span class="tm">14:32:16</span><span class="src">LEAD</span><span class="sm shim">Summarizing the diff and the receipts</span><span class="sm caret" style="flex:0 0 1ch">▌</span><span class="ct">0.0008</span><span class="st a">▌</span></div>
+        <div class="dock"><i></i><span>↓ 4 NEW · END TO PIN · ⇧⏎ COLLAPSE ALL</span><i></i></div>
+      </div>
+
+      <div class="vr"></div>
+
+      <!-- AGENT RAIL (always on) -->
+      <div class="pane railp" style="padding-right:.6ch">
+        <div class="ph"><span class="t">AGENTS</span><i></i><span class="f2">2/3 slots</span></div>
+        <div class="ar cur">
+          <span class="ix">▸1</span>
+          <div>
+            <div class="l1"><span class="ag1">●</span><span class="st ag1">RUNNING</span><span class="co num">$0.0142</span></div>
+            <div class="l2">survey tui layout + patch budget</div>
+            <div class="l3"><span class="ag1">▓▓▓▓▓▓▓▓</span><span class="dm">░░</span> 8/12 · 2 kids</div>
+          </div>
+        </div>
+        <div class="ar">
+          <span class="ix">2</span>
+          <div>
+            <div class="l1"><span class="ag2">∙</span><span class="st ag2">WAITING</span><span class="co num">$0.0000</span></div>
+            <div class="l2">write release notes</div>
+            <div class="l3"><span class="dm">▓░░░░░░░░░</span> 0/6 · slot 2</div>
+          </div>
+        </div>
+        <div class="ar">
+          <span class="ix">3</span>
+          <div>
+            <div class="l1"><span class="ag3">✓</span><span class="st ag3">COMPLETE</span><span class="co num">$0.0091</span></div>
+            <div class="l2">reproduce failure</div>
+            <div class="l3"><span class="ag3">▓▓▓▓▓▓</span><span class="dm">░░░░</span> 6/6</div>
+          </div>
+        </div>
+        <div class="ar">
+          <span class="ix">4</span>
+          <div>
+            <div class="l1"><span class="er">✕</span><span class="st er">FAILED</span><span class="co num">$0.0012</span></div>
+            <div class="l2">flaky network probe <span class="wn">↻ retry</span></div>
+          </div>
+        </div>
+        <div class="ar">
+          <span class="ix">5</span>
+          <div>
+            <div class="l1"><span class="dm">⊘</span><span class="st dm">CANCELLED</span><span class="co num">$0.0000</span></div>
+            <div class="l2 dm">superseded by AGENT 3</div>
+          </div>
+        </div>
+        <div class="row f2" style="padding-top:2px"><span class="kbd">⏎</span> detail <span class="kbd">M</span> missions</div>
+      </div>
+
+      <div class="vr"></div>
+
+      <!-- INSPECTOR (tabs) -->
+      <div class="pane insp">
+        <div class="tabs"><span>AGENTS</span><span class="on">PLAN</span><span>ROUTE</span><span>BUDGET</span></div>
+        <div class="row" style="padding:2px 0"><span class="pill num" style="border:1px solid var(--borderStrong);border-radius:2px;padding:0 .6ch">r3 / 4</span><span class="ok">✓ ACCEPTED</span><span class="sp"></span><span class="f2 num">14:32:05</span></div>
+        <div class="pi"><span class="b ok">✓</span><span class="x">1</span><span class="s">reproduce failure</span><span class="f2">A3</span></div>
+        <div class="pi"><span class="b ok">✓</span><span class="x">2</span><span class="s">patch two assertions</span><span class="f2">A1</span></div>
+        <div class="pi"><span class="b a">▌</span><span class="x">3</span><span class="s">summarize + receipt</span><span class="f2">A1</span></div>
+        <div class="pi"><span class="b dm">⊘</span><span class="x">4</span><span class="s dm">release notes <span class="f2">deferred</span></span><span class="f2">—</span></div>
+        <div class="rule"></div>
+        <div class="kv"><span class="k">REVISIONS</span><span class="v">r2 → r3 item 4 deferred<br>r1 → r2 item 3 split</span></div>
+        <div class="kv"><span class="k">INTEGRATE</span><span class="v">pytest · rtk · apply_patch</span></div>
+        <div class="kv"><span class="k">RECEIPTS</span><span class="v ok">✓ plan@r3 · 2 changesets · $0.0041</span></div>
+        <div class="rule"></div>
+        <div class="kv"><span class="k">BUDGET</span><span class="v r num">$0.0142 / $5.00 · 0.3%</span></div>
+        <div class="row"><span style="color:var(--budgetFill)">▓</span><span style="color:var(--budgetEmpty)">░░░░░░░░░░░░░░░░░░░</span><span class="f2"> warn 75 ┊ crit 90</span></div>
+        <div class="rule"></div>
+        <div class="prompt">
+          <div class="wn sc">▲ PLAN r4 PROPOSED BY LEAD</div>
+          <div class="m">add “update release notes” as item 4</div>
+          <div class="btns"><span class="btn pri focused">ACCEPT <span class="f2">A</span></span><span class="btn">REJECT <span class="f2">R</span></span><span class="btn">CHANGE <span class="f2">C</span></span></div>
+          <div class="ainput">optional change note…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- approval banner + action dock (spans all panes) -->
+    <div class="banner" style="margin-top:2px">
+      <span style="letter-spacing:.14em">▲ APPROVAL REQUIRED</span><span class="q">[command:run-1]</span>
+      <span class="sp" style="flex:1"></span><span style="letter-spacing:.08em">EnsureAllow: python -m pytest tests/unit -q</span>
+    </div>
+    <div class="abody">
+      <div class="row f2"><span class="sc" style="flex:0 0 11ch">WORKSPACE</span><span>src/skail</span><span class="dm"> │ </span><span class="sc">REASON</span><span> shell command outside the allow-list</span><span class="sp"></span><span>ESC KEEPS PENDING</span></div>
+      <div class="row"><span class="sc f2" style="flex:0 0 11ch">ANSWER</span><span class="ainput" style="flex:1;margin:0">optional answer or comment…</span></div>
+      <div class="btns"><span class="btn pri focused">⏎ APPROVE <span class="f2">A</span></span><span class="btn">REJECT <span class="f2">R</span></span><span class="btn">ADD INSTRUCTION <span class="f2">E</span></span><span class="sp"></span><span class="f2">blocks run-1 · 2 children idle</span></div>
+    </div>
+
+    <!-- composer -->
+    <div class="comp focused">
+      <div class="q"><span class="sc" style="letter-spacing:.12em">QUEUED 2</span><span class="f2"><span class="kbd">^</span> take back · newest runs after this one</span><span class="sp"></span><span class="f2 num">est. $0.004 · ~1.2 k tok</span></div>
+      <div class="in">
+        <span class="pr">❯</span>
+        <span class="txt">Fix the failing budget tests, then summarize.<span class="caret">▌</span></span>
+        <span class="side"><span class="pill" style="border:1px solid var(--modeQuality);border-radius:2px;padding:0 .6ch;color:var(--modeQuality)">MODE QUALITY</span><br><span class="send">SEND ⏎</span></span>
+      </div>
+      <div class="meta"><span class="num">44 chars</span><span class="dm">│</span><span><span class="kbd">/</span> commands</span><span><span class="kbd">?</span> shortcuts</span><span class="dm">│</span><span class="f2">3 of 8 rows · ⇧⏎ newline</span><span class="sp"></span><span class="f2">ins 2 queued · ^ take back</span></div>
+    </div>
+
+    <!-- footer -->
+    <div class="foot">
+      <span><span class="kbd">^C</span>quit</span><span><span class="kbd">^B</span>budget</span><span><span class="kbd">^A</span>agents</span><span><span class="kbd">^P</span>plan</span><span><span class="kbd">^R</span>route</span><span><span class="kbd">^T</span>missions</span><span><span class="kbd">⇧^T</span>chat</span><span><span class="kbd">^O</span>log</span><span><span class="kbd">?</span>keys</span><span><span class="kbd">⌥T</span>theme</span><span><span class="kbd">⌥P</span>model</span><span class="sp"></span><span><span class="kbd">F1</span>help</span>
+    </div>
+  </div></div>
+  </div>
+
+  <!-- ── NARROW ─────────────────────────────────────────────── -->
+  <h2>Narrow — 88 × 30 (width &lt; 100 hides the sidebar)</h2>
+  <div class="f-narrow">
+  <p class="cap">three panes collapse to one <b>·</b> a pane switcher takes the rail/inspector’s place <b>·</b> log drops # / COST / ST columns, ticker wraps to 2 rows</p>
+  <div class="bezel"><div class="bar"><u></u><u></u><u></u> skail 0.1.0 — 88×30</div>
+  <div class="term narrow" style="--cols:88">
+    <div class="tbar">
+      <span class="a" style="letter-spacing:.18em">✻ SKAIL</span><span class="f2">0.1.0</span>
+      <span class="dm">│</span><span class="m">run-1</span>
+      <span class="dm">│</span><span class="sc f2">PROV</span><span> anthropic</span>
+      <span class="sp"></span><span class="ok">●</span><span class="num m"> 14:32:07</span>
+    </div>
+    <div class="ticker"><span class="k">MODEL</span> <span class="v">auto</span><span class="sep">│</span><span class="k">MODE</span> <span class="v" style="color:var(--modeQuality)">quality</span><span class="sep">│</span><span class="k">SPEND</span> <span class="v num">$0.0142/$5.00</span><span class="sep">│</span><span class="k">BUD</span> <span class="v num">0.3%</span> <span style="color:var(--budgetFill)">▓</span><span style="color:var(--budgetEmpty)">░░</span></div>
+    <div class="ticker" style="border-top:0"><span class="k">AG</span> <span class="v"><span class="ag1">1R</span> <span class="ag2">1W</span> <span class="ag3">1C</span> <span class="er">1F</span> <span class="dm">1X</span></span><span class="sep">│</span><span class="k">QUEUE</span> <span class="v num">2</span><span class="sep">│</span><span class="k">ROUTE</span> <span class="v">auto→lead</span><span class="sep">│</span><span class="k">EXCL</span> <span class="v er">1</span></div>
+    <!-- pane switcher replaces the rail + inspector -->
+    <div class="tabs" style="margin-top:2px"><span class="on">LOG</span><span>AGENTS</span><span>PLAN</span><span>ROUTE</span><span>BUDGET</span><span class="sp"></span><span class="f2" style="padding:1px 1ch">^A ^P ^R ^B</span></div>
+    <div class="main">
+      <div class="pane log" style="padding:0 1ch">
+        <div class="lg h"><span class="tm">TIME</span><span class="src">SOURCE</span><span class="sm">SUMMARY</span></div>
+        <div class="lg k-sys"><span class="tm">14:32:02</span><span class="src">TASK</span><span class="sm">Ready. Describe the outcome you want…</span></div>
+        <div class="lg k-you cur"><span class="tm">14:32:04</span><span class="src">YOU</span><span class="sm">Fix the failing budget tests, then summarize.</span></div>
+        <div class="lg k-lead"><span class="tm">14:32:05</span><span class="src">LEAD</span><span class="sm">Reproducing first, then patching.</span></div>
+        <div class="lg k-tool"><span class="tm">14:32:06</span><span class="src ag1">A1</span><span class="sm">▸ read_file tests/unit/test_budget.py</span></div>
+        <div class="lg k-tool"><span class="tm">14:32:09</span><span class="src ag1">A1</span><span class="sm">▸ run pytest -q <span class="f2">exit 0 · 41 pass</span></span></div>
+        <div class="lg k-rcp"><span class="tm">14:32:11</span><span class="src">RCP</span><span class="sm">RECEIPT plan@r3 · $0.0041</span></div>
+        <div class="lg k-err"><span class="tm">14:32:14</span><span class="src er">A2</span><span class="sm">ERROR reservation expired → retry 1</span></div>
+        <div class="lg k-apr"><span class="tm">14:32:15</span><span class="src wn">APPR</span><span class="sm">APPROVAL REQUIRED run-1 ↓</span></div>
+        <div class="lg k-lead"><span class="tm">14:32:16</span><span class="src">LEAD</span><span class="sm shim">Summarizing the diff and receipts</span><span class="sm caret" style="flex:0 0 1ch">▌</span></div>
+        <div class="dock"><i></i><span>↓ 4 NEW · END TO PIN</span><i></i></div>
+      </div>
+      <div class="vr"></div><div class="railp"></div><div class="vr"></div><div class="insp"></div>
+    </div>
+
+    <div class="banner" style="margin-top:2px"><span style="letter-spacing:.12em">▲ APPROVAL REQUIRED</span><span class="q">[command:run-1]</span><span style="flex:1"></span><span>ESC = PENDING</span></div>
+    <div class="abody">
+      <div class="ln">EnsureAllow: python -m pytest tests/unit -q</div>
+      <div class="ainput">optional answer or comment…</div>
+      <div class="btns"><span class="btn pri focused">⏎ APPROVE <span class="f2">A</span></span><span class="btn">REJECT <span class="f2">R</span></span><span class="btn">ADD INSTR. <span class="f2">E</span></span></div>
+    </div>
+
+    <div class="comp focused">
+      <div class="q"><span class="sc" style="letter-spacing:.12em">QUEUED 2</span><span class="f2"><span class="kbd">^</span> take back</span><span class="sp"></span><span class="num f2">est. $0.004</span></div>
+      <div class="in"><span class="pr">❯</span><span class="txt">Fix the failing budget tests, then summarize.<span class="caret">▌</span></span>
+        <span class="side"><span style="color:var(--modeQuality)">QUALITY</span> <span class="send">SEND ⏎</span></span></div>
+      <div class="meta"><span class="num">44 chars</span><span class="dm">│</span><span><span class="kbd">/</span> cmd</span><span><span class="kbd">?</span> keys</span><span class="sp"></span><span class="f2">3/8 rows</span></div>
+    </div>
+    <div class="foot"><span><span class="kbd">^C</span>quit</span><span><span class="kbd">^T</span>missions</span><span><span class="kbd">^O</span>log</span><span><span class="kbd">⌥P</span>model</span><span><span class="kbd">⌥T</span>theme</span><span class="sp"></span><span><span class="kbd">F1</span>help</span></div>
+  </div></div>
+  </div>
+
+  <!-- ── OVERLAY ────────────────────────────────────────────── -->
+  <h2>Overlay — <code>^T</code> Mission Control (dense tree + concurrency + leases)</h2>
+  <div class="f-overlay">
+  <p class="cap">same grid shell serves ^O log pager · ? keys · ⌥T theme preview · ⌥P model picker</p>
+  <div class="bezel"><div class="bar"><u></u><u></u><u></u> skail — mission control</div>
+  <div class="term" style="--cols:96;background:var(--surfaceInset)">
+    <div class="tbar" style="background:var(--surfaceRaised)">
+      <span class="t a" style="letter-spacing:.16em">MISSION CONTROL</span><span class="dm">│</span><span class="m">run-1</span>
+      <span class="sp"></span><span class="f2">⏎ detail · esc close</span>
+    </div>
+    <div class="ticker"><span class="k">CONCURRENCY</span> <span class="v a">▰▰▱ 2 / 3</span><span class="sep">│</span><span class="k">CHILD ATTEMPTS</span> <span class="v">2 / 2 max</span><span class="sep">│</span><span class="k">WRITERS</span> <span class="v">1 lease · 0 overlap</span><span class="sep">│</span><span class="k">SPEND</span> <span class="v num">$0.0245</span></div>
+    <div class="lg h"><span class="n">ID</span><span class="tm">SLOT</span><span class="src">MODEL</span><span class="sm">MISSION</span><span class="ct">COST</span><span class="st">ST</span></div>
+    <div class="lg k-lead"><span class="n">L0</span><span class="tm">lead</span><span class="src">sonnet-4.5</span><span class="sm">fix budget tests + summarize</span><span class="ct">0.0052</span><span class="st a">▌</span></div>
+    <div class="lg cur"><span class="n">A1</span><span class="tm">slot 1</span><span class="src ag1">haiku-4</span><span class="sm">survey tui layout + patch budget</span><span class="ct">0.0142</span><span class="st ag1">●</span></div>
+    <div class="lg"><span class="n">A2</span><span class="tm">slot 2</span><span class="src ag2">haiku-4</span><span class="sm">write release notes</span><span class="ct">0.0000</span><span class="st ag2">∙</span></div>
+    <div class="lg k-tool"><span class="n">A3</span><span class="tm">—</span><span class="src ag3">haiku-4</span><span class="sm">reproduce failure</span><span class="ct">0.0091</span><span class="st ok">✓</span></div>
+    <div class="lg k-err"><span class="n">A4</span><span class="tm">—</span><span class="src er">haiku-4</span><span class="sm">flaky network probe · ↻ retryable</span><span class="ct">0.0012</span><span class="st er">✕</span></div>
+    <div class="lg k-sys"><span class="n">A5</span><span class="tm">—</span><span class="src dm">haiku-4</span><span class="sm dm">superseded by AGENT 3</span><span class="ct">0.0000</span><span class="st dm">⊘</span></div>
+    <div class="rule"></div>
+    <div class="kv"><span class="k">LEASES</span><span class="v">src/skail/runtime → A1 (exclusive) · tests/unit → A1 (read)</span></div>
+    <div class="kv"><span class="k">GUARDS</span><span class="v">≤ 2 child attempts per parent · ≤ 3 concurrent children · no overlapping writers</span></div>
+    <div class="kv"><span class="k">ASSIGN</span><span class="v">immutable per attempt · model pinned at spawn · re-route needs a new run</span></div>
+  </div></div>
+  </div>
+  </div>
+
+  <!-- ── remaining tab states ───────────────────────────────── -->
+  <h2>Inspector tabs — AGENTS / ROUTE / BUDGET (PLAN is live in the wide frame)</h2>
+  <div class="minis">
+    <div class="mini"><p class="cap">AGENTS tab (full detail table)</p>
+      <div class="bezel"><div class="term" style="--cols:44;padding:3px 1ch 6px">
+        <div class="tabs"><span class="on">AGENTS</span><span>PLAN</span><span>ROUTE</span><span>BUDGET</span></div>
+        <div class="lg h" style="margin-top:1px"><span class="n">ID</span><span class="src" style="flex-basis:11ch">MISSION</span><span class="sm">STATUS</span><span class="ct">COST</span></div>
+        <div class="lg cur"><span class="n">▸1</span><span class="src ag1" style="flex-basis:11ch">survey tui</span><span class="sm ag1">● RUNNING</span><span class="ct num">0.0142</span></div>
+        <div class="lg"><span class="n">2</span><span class="src ag2" style="flex-basis:11ch">rel. notes</span><span class="sm ag2">∙ WAITING</span><span class="ct num">0.0000</span></div>
+        <div class="lg"><span class="n">3</span><span class="src ag3" style="flex-basis:11ch">reproduce</span><span class="sm ag3">✓ COMPLETE</span><span class="ct num">0.0091</span></div>
+        <div class="lg k-err"><span class="n">4</span><span class="src er" style="flex-basis:11ch">net probe</span><span class="sm er">✕ FAILED</span><span class="ct num">0.0012</span></div>
+        <div class="lg"><span class="n">5</span><span class="src dm" style="flex-basis:11ch">superseded</span><span class="sm dm">⊘ CANCELLED</span><span class="ct num">0.0000</span></div>
+        <div class="rule"></div>
+        <div class="kv"><span class="k" style="flex-basis:9ch">SLOTS</span><span class="v">2 / 3 concurrent</span></div>
+        <div class="kv"><span class="k" style="flex-basis:9ch">ATTEMPTS</span><span class="v">2 / 2 child max</span></div>
+        <div class="row f2" style="padding-top:2px"><span class="kbd">⏎</span> detail · <span class="kbd">M</span> mission control</div>
+      </div></div>
+    </div>
+
+    <div class="mini"><p class="cap">ROUTE tab</p>
+      <div class="bezel"><div class="term" style="--cols:44;padding:3px 1ch 6px">
+        <div class="tabs"><span>AGENTS</span><span>PLAN</span><span class="on">ROUTE</span><span>BUDGET</span></div>
+        <div class="row" style="padding:2px 0"><span class="pill" style="border:1px solid var(--accent);border-radius:2px;padding:0 .6ch;color:var(--accent)">auto → lead</span><span class="f2"> budget-aware</span><span class="sp"></span><span class="kbd">^R</span></div>
+        <div class="rule"></div>
+        <div class="kv"><span class="k">ELIGIBLE</span><span class="v">claude-sonnet-4.5 <span class="dm">lead</span><br>claude-haiku-4 <span class="dm">child</span></span></div>
+        <div class="kv"><span class="k">EXCLUDED</span><span class="v er">✕ gpt-4o-mini · below floor<br>✕ local/qwen · no tools</span></div>
+        <div class="kv"><span class="k">FLOORS</span><span class="v">lead ≥ sonnet · child ≥ haiku</span></div>
+        <div class="kv"><span class="k">ASSIGN</span><span class="v">immutable per attempt</span></div>
+        <div class="kv"><span class="k">FAN-OUT</span><span class="v">≤ 2 child attempts · ≤ 3 concurrent</span></div>
+        <div class="kv"><span class="k">FALLBACK</span><span class="v">retry once → escalate to lead</span></div>
+        <div class="rule"></div>
+        <div class="f2 num">last re-route 14:31:58 · sticky run-1</div>
+      </div></div>
+    </div>
+
+    <div class="mini"><p class="cap">BUDGET tab (warning state)</p>
+      <div class="bezel"><div class="term" style="--cols:44;padding:3px 1ch 6px">
+        <div class="tabs"><span>AGENTS</span><span>PLAN</span><span>ROUTE</span><span class="on">BUDGET</span></div>
+        <div class="row" style="padding:2px 0"><span class="num">$3.8900 / $5.00</span><span class="sp"></span><span class="wn num">77.8% ▲</span></div>
+        <div class="row"><span style="color:var(--budgetWarning)">▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓</span><span style="color:var(--budgetEmpty)">░░░░</span></div>
+        <div class="f2">warn ┊ 75%   critical ┊ 90%</div>
+        <div class="rule"></div>
+        <div class="kv"><span class="k">RESERVED</span><span class="v r num">$0.4200 · 2 holds</span></div>
+        <div class="kv"><span class="k">COMMITTED</span><span class="v r num">$3.4700</span></div>
+        <div class="kv"><span class="k">BY AGENT</span><span class="v num">A1 2.10 · A2 0.90 · A3 0.89</span></div>
+        <div class="kv"><span class="k">BY KIND</span><span class="v num">llm 3.84 · tool 0.05</span></div>
+        <div class="kv"><span class="k">BURN</span><span class="v r num">0.042 / min</span></div>
+        <div class="kv"><span class="k">HEADROOM</span><span class="v r wn num">26 min → degrade</span></div>
+        <div class="rule"></div>
+        <div class="btns"><span class="btn pri">RAISE LIMIT</span><span class="btn">DEGRADE TO ECONOMY</span><span class="btn">HALT</span></div>
+        <div class="f2" style="padding-top:2px">critical ≥ 0.90 → auto-degrade + banner</div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- ── token states ───────────────────────────────────────── -->
+  <h2>Token states — thresholds, streaming, focus, density</h2>
+  <div class="bezel"><div class="term" style="--cols:114;padding:6px 1ch 8px">
+    <div class="row"><span class="sc f2" style="flex:0 0 20ch">FILL 0.3%</span><span style="color:var(--budgetFill)">▓</span><span style="color:var(--budgetEmpty)">░░░░░░░░░░░░░░░░░░░</span><span class="f2">  budgetFill</span></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 20ch">WARNING 78%</span><span style="color:var(--budgetWarning)">▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓</span><span style="color:var(--budgetEmpty)">░░░░</span><span class="wn">  ▲ ≥ 0.75</span></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 20ch">CRITICAL 94%</span><span style="color:var(--budgetCritical)">▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓</span><span style="color:var(--budgetEmpty)">░</span><span class="er">  ▲▲ ≥ 0.90 auto-degrade</span></div>
+    <div class="rule"></div>
+    <div class="lg k-lead" style="border:0"><span class="n">23</span><span class="tm">14:32:16</span><span class="src">LEAD</span><span class="sm shim">Summarizing the diff and the receipts</span><span class="sm caret" style="flex:0 0 1ch">▌</span><span class="ct">0.0008</span><span class="st a">▌</span></div>
+    <div class="f2" style="padding-left:1ch">streaming: shimmerBase → shimmerPeak, in-place append into the same row (#23 never re-flows the grid)</div>
+    <div class="rule"></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 20ch">FOCUS</span><span class="btn pri focused">⏎ APPROVE</span><span class="f2">  focusRing inset + inset bar on the selected grid row</span></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 20ch">SELECTION</span><span class="sel"> 16  14:32:06  A1  ▸ read_file </span><span class="f2">  selection token</span></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 20ch">DIFF</span><span style="background:var(--diffAddedSurface);color:var(--diffAdded)"> + 18 </span><span> </span><span style="background:var(--diffRemovedSurface);color:var(--diffRemoved)"> − 6 </span><span class="f2">  diffAdded/diffRemoved + surfaces</span></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 20ch">MODES</span><span style="color:var(--modeQuality)">quality</span><span class="dm"> · </span><span style="color:var(--modeEconomy)">economy</span><span class="dm"> · </span><span style="color:var(--modeManual)">manual</span><span class="dm"> · </span><span style="color:var(--delegation)">delegation</span></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 20ch">STATE GLYPHS</span><span class="f2">● running ∙ waiting ✓ complete ✕ failed ⊘ cancelled ▲ approval ▌ streaming · idle — always glyph + word</span></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 20ch">REDUCED MOTION</span><span class="f2">shimmer off → static caret in accent (SKAIL_REDUCED_MOTION)</span></div>
+  </div></div>
+
+  <!-- ── implementation notes ───────────────────────────────── -->
+  <h2>Implementation notes (Textual / TCSS)</h2>
+  <ul class="notes">
+    <li><b>The log is a real grid.</b> <code>DataTable</code> (or a <code>ListView</code> of rows with fixed-width cells) gives the
+      sticky header, zebra striping, row selection and <code>⏎</code> expand for free. Columns:
+      <code>#4 · TIME 7 · SOURCE 7 · SUMMARY flex · COST 8 · ST 3</code>. SUMMARY wraps with a hanging indent; COST/ST are
+      right/centre aligned with tabular numerals.</li>
+    <li><b>ROLE → SOURCE mapping is lossless but shorter</b> so the column fits 7 cells:
+      <code>YOU→YOU · LEAD→LEAD · AGENT n→A1/A2/A3 · TASK→TASK · TOOL ▸ title→ A1 + “▸ title” · ERROR→ERROR · APPROVAL REQUIRED→APPR · RECEIPT→RCP</code>.
+      The full word is always restored in the expanded row and in the <code>^O</code> pager.</li>
+    <li><b>Agent rail is promoted out of the tab set</b> into a permanent middle pane (the tab still exists for the detail table).
+      This is the single biggest density win: operators never lose sight of the ≤3-concurrent / ≤2-child invariants.</li>
+    <li><b>The ticker replaces the status strip</b> and absorbs route + queue + exclusion count. It is one <code>Static</code> with
+      <code>width: 1fr; overflow: hidden</code>; fields are dropped right-to-left as width shrinks (route and EXCL go first), then it
+      wraps to two rows below 100 columns.</li>
+    <li><b>Approval is a banner, not a card.</b> One inverted row (<code>$approval</code> foreground on dark text — the only place in
+      FOUNDRY where colour fills a whole line) plus an action dock. It spans all three panes so it reads as a run-level gate.</li>
+    <li><b>Narrow mode:</b> <code>.railp, .insp { display: none }</code>; a pane switcher (LOG / AGENTS / PLAN / ROUTE / BUDGET) takes
+      their place, the log drops the <code>#</code>, <code>COST</code> and <code>ST</code> columns, and the ticker wraps to two rows.</li>
+    <li><b>Contrast:</b> text on background is 13.9:1, textMuted 5.6:1, textFaint 3.4:1 — textFaint is therefore only ever used on
+      non-essential metadata (never on state or cost). Focus is an inset bar + <code>$focusRing</code>, never colour alone.</li>
+  </ul>
+</div>
+</body>
+</html>
