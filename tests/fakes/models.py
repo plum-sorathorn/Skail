@@ -141,9 +141,9 @@ def _tool_name(tool: Any) -> str:
     if isinstance(tool, dict):
         function = tool.get("function")
         if isinstance(function, dict) and isinstance(function.get("name"), str):
-            return function["name"]
+            return str(function["name"])
         if isinstance(tool.get("name"), str):
-            return tool["name"]
+            return str(tool["name"])
     name = getattr(tool, "name", None) or getattr(tool, "__name__", None)
     if not isinstance(name, str):
         raise AssertionError(f"cannot determine fake-bound tool name for {tool!r}")

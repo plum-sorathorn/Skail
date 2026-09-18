@@ -384,7 +384,8 @@ def _is_decision_gate_rejection(name: str, result: object) -> bool:
     """True only for ToolMessages produced by the execution-decision gate.
 
     The gate emits `execution.decision_required` (operational tool before a
-    decision) or `decision.*` codes (rejected `execution_decision` calls) via
+    decision), `execution.decision_exhausted` (terminal lock: repairs spent
+    with no decision), or `decision.*` codes (rejected `execution_decision` calls) via
     `_decision_required`/`_decision_rejected` with status="error". Requiring
     both the tool-call context (a named tool passing through this middleware)
     and the strict stable-code prefix avoids misfiring on arbitrary provider
@@ -400,7 +401,26 @@ def _is_decision_gate_rejection(name: str, result: object) -> bool:
     if not isinstance(content, str):
         return False
     text = content.strip()
-    return text.startswith("execution.decision_required") or text.startswith("decision.")
+    return (
+        text.startswith("execution.decision_required")
+        or text.startswith("execution.decision_exhausted")
+        or text.startswith("decision.")
+    )
+
+
+def _is_decision_exhausted_rejection(result: object) -> bool:
+    """True for the terminal-lock marker emitted once decision repairs are spent.
+
+    Unlike `execution.decision_required` (still repairable, counted as blocked),
+    an exhausted gate must surface as a monitor error so the run fails loudly
+    instead of completing silently with every tool gated.
+    """
+    content = getattr(result, "content", None)
+    if isinstance(content, list):
+        content = " ".join(str(part) for part in content)
+    if not isinstance(content, str):
+        return False
+    return content.strip().startswith("execution.decision_exhausted")
 
 
 def _tool_result_status(result: object) -> str | None:
@@ -510,9 +530,16 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         if status == "error":
             self.emit("tool.failed", name)
             if _is_decision_gate_rejection(name, result):
-                self.monitor.observe_error(
-                    getattr(result, "content", "tool blocked"), blocked=True
-                )
+                if _is_decision_exhausted_rejection(result):
+                    signal = self.monitor.observe_error(
+                        getattr(result, "content", "tool error"), tool=name
+                    )
+                    if signal is not None:
+                        raise RuntimeError(signal)
+                else:
+                    self.monitor.observe_error(
+                        getattr(result, "content", "tool blocked"), blocked=True
+                    )
             else:
                 signal = self.monitor.observe_error(
                     getattr(result, "content", "tool error"), tool=name
@@ -555,9 +582,16 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         if status == "error":
             self.emit("tool.failed", name)
             if _is_decision_gate_rejection(name, result):
-                self.monitor.observe_error(
-                    getattr(result, "content", "tool blocked"), blocked=True
-                )
+                if _is_decision_exhausted_rejection(result):
+                    signal = self.monitor.observe_error(
+                        getattr(result, "content", "tool error"), tool=name
+                    )
+                    if signal is not None:
+                        raise RuntimeError(signal)
+                else:
+                    self.monitor.observe_error(
+                        getattr(result, "content", "tool blocked"), blocked=True
+                    )
             else:
                 signal = self.monitor.observe_error(
                     getattr(result, "content", "tool error"), tool=name

@@ -25,7 +25,7 @@ def test_planned_without_plan_fails_with_actionable_hint() -> None:
     gate = ExecutionDecisionGate(admit_plan=lambda _: None)
     with pytest.raises(DecisionAdmissionError, match="decision.plan_required"):
         gate.admit(_planned_no_plan())  # type: ignore[arg-type]
-    assert gate.repairs_remaining == 0
+    assert gate.repairs_remaining == 1
 
 
 def test_constraints_string_and_json_plan_normalize() -> None:

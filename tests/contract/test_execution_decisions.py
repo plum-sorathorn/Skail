@@ -116,8 +116,11 @@ def test_invalid_plan_allows_one_repair_but_never_admits_the_invalid_record() ->
     with pytest.raises(DecisionAdmissionError, match="decision.plan_invalid"):
         gate.admit(invalid)
 
-    assert gate.repairs_remaining == 0
+    assert gate.repairs_remaining == 1
     assert admitted == []
+    with pytest.raises(DecisionAdmissionError, match="decision.plan_invalid"):
+        gate.admit(invalid)
+    assert gate.repairs_remaining == 0
     with pytest.raises(DecisionAdmissionError, match="decision.repair_exhausted"):
         gate.admit(invalid)
 
@@ -159,7 +162,7 @@ def test_invalid_decision_tool_call_consumes_only_one_repair(tmp_path) -> None:
 
     result = agent.invoke({"messages": [{"role": "user", "content": "Plan this."}]})
 
-    assert gate.repairs_remaining == 0
+    assert gate.repairs_remaining == 1
     decision_results = [
         message
         for message in result["messages"]

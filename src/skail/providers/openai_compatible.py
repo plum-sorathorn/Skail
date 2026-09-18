@@ -35,6 +35,7 @@ class OpenAICompatibleChatModel(BaseChatModel):
     model_name: str
     _adapter: OpenAICompatibleAdapter = PrivateAttr()
     _options: ModelOptions = PrivateAttr()
+    _model_timeout: float | None = PrivateAttr(default=None)
     _tools: tuple[Any, ...] = PrivateAttr(default=())
 
     def __init__(
@@ -47,6 +48,7 @@ class OpenAICompatibleChatModel(BaseChatModel):
         super().__init__(model_name=model_name)  # type: ignore[call-arg]
         self._adapter = adapter
         self._options = options
+        self._model_timeout = options.timeout
 
     @property
     def _llm_type(self) -> str:
@@ -127,7 +129,9 @@ class OpenAICompatibleChatModel(BaseChatModel):
     ) -> AsyncIterator[ChatGenerationChunk]:
         del stop, run_manager, kwargs
         body = self._body(messages, stream=True)
-        async with self._adapter.stream_request("/chat/completions", body) as response:
+        async with self._adapter.stream_request(
+            "/chat/completions", body, timeout=self._request_timeout()
+        ) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
                 if not line.startswith("data:"):
@@ -181,7 +185,9 @@ class OpenAICompatibleChatModel(BaseChatModel):
                 "type": "json_schema",
                 "json_schema": {"name": "skail_response", "schema": schema_value, "strict": True},
             }
-        response = await self._adapter.request("POST", "/chat/completions", json=body)
+        response = await self._adapter.request(
+            "POST", "/chat/completions", json=body, timeout=self._request_timeout()
+        )
         response.raise_for_status()
         raw = response.json()
         try:
@@ -213,6 +219,9 @@ class OpenAICompatibleChatModel(BaseChatModel):
         if self._options.max_tokens is not None:
             body["max_tokens"] = self._options.max_tokens
         return body
+
+    def _request_timeout(self) -> float | None:
+        return self._model_timeout
 
 
 class OpenAICompatibleAdapter:
@@ -315,27 +324,55 @@ class OpenAICompatibleAdapter:
             provider_code=str(code) if code is not None else None,
         )
 
-    async def request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+    def _timeout(self, timeout: float | None = None) -> httpx.Timeout:
+        if timeout is not None:
+            return httpx.Timeout(timeout)
+        return httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)
+
+    async def request(
+        self, method: str, path: str, timeout: float | None = None, **kwargs: Any
+    ) -> httpx.Response:
         headers = {"Authorization": f"Bearer {self._api_key}"}
+        request_timeout = self._timeout(timeout)
+        kwargs.setdefault("timeout", request_timeout)
         if self._client is not None:
-            return await self._client.request(
-                method, self.base_url + path, headers=headers, **kwargs
-            )
-        async with httpx.AsyncClient() as client:
-            return await client.request(method, self.base_url + path, headers=headers, **kwargs)
+            for attempt in (0, 1):
+                try:
+                    return await self._client.request(
+                        method, self.base_url + path, headers=headers, **kwargs
+                    )
+                except httpx.TimeoutException:
+                    if attempt == 1:
+                        raise
+            raise AssertionError("unreachable retry loop")
+        last_error: httpx.TimeoutException | None = None
+        for _ in (0, 1):
+            try:
+                async with httpx.AsyncClient(timeout=request_timeout) as client:
+                    return await client.request(
+                        method, self.base_url + path, headers=headers, **kwargs
+                    )
+            except httpx.TimeoutException as exc:
+                last_error = exc
+        assert last_error is not None
+        raise last_error
 
     @asynccontextmanager
     async def stream_request(
-        self, path: str, body: dict[str, Any]
+        self, path: str, body: dict[str, Any], timeout: float | None = None
     ) -> AsyncIterator[httpx.Response]:
         headers = {"Authorization": f"Bearer {self._api_key}"}
         if self._client is not None:
             async with self._client.stream(
-                "POST", self.base_url + path, headers=headers, json=body
+                "POST",
+                self.base_url + path,
+                headers=headers,
+                json=body,
+                timeout=self._timeout(timeout),
             ) as response:
                 yield response
             return
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=self._timeout(timeout)) as client:
             async with client.stream(
                 "POST", self.base_url + path, headers=headers, json=body
             ) as response:

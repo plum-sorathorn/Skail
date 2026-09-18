@@ -30,7 +30,14 @@ class ModelOptions(BaseModel):
     model_config = ConfigDict(frozen=True)
     temperature: float | None = None
     max_tokens: int | None = Field(default=None, ge=1)
-    timeout: float | None = Field(default=None, gt=0)
+    timeout: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Per-request timeout in seconds, threaded into the provider "
+            "httpx client by the OpenAI-compatible adapter."
+        ),
+    )
     extra: tuple[tuple[str, str], ...] = ()
 
 

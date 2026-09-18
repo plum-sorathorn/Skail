@@ -35,13 +35,19 @@ class ExecutionDecisionGate:
         self.decision: ExecutionDecision | None = None
         if restored_decision is not None:
             self.decision = restored_decision
-        self._repairs_remaining = 1
+        self._repairs_remaining = 2
         self._prepared_decision_ids: set[str] = set()
         self._rejected_tool_codes: dict[str, str] = {}
 
     @property
     def repairs_remaining(self) -> int:
         return self._repairs_remaining
+
+    @property
+    def is_exhausted(self) -> bool:
+        """Terminal lock: repairs spent with no admitted decision."""
+
+        return self.decision is None and self._repairs_remaining == 0
 
     def admit(self, value: dict[str, Any]) -> ExecutionDecision:
         if self.decision is not None:
@@ -131,7 +137,7 @@ class ExecutionDecisionGate:
                     "discovery); direct must not send plan"
                 ) from exc
             self._consume_repair()
-            raise DecisionAdmissionError("decision.plan_invalid") from exc
+            raise DecisionAdmissionError(_actionable_plan_invalid(exc)) from exc
 
     def _record(self, decision: ExecutionDecision) -> None:
         if decision.plan is not None:
@@ -225,6 +231,8 @@ class ExecutionDecisionMiddleware(AgentMiddleware[Any, Any, Any]):
             return _decision_accepted(request, self._gate)
         if self._gate.allows(name, call_id) or name == "execution_decision":
             return await handler(request)
+        if self._gate.is_exhausted:
+            return _decision_exhausted(request)
         return _decision_required(request)
 
     def _guard(
@@ -241,6 +249,8 @@ class ExecutionDecisionMiddleware(AgentMiddleware[Any, Any, Any]):
             return _decision_accepted(request, self._gate)
         if self._gate.allows(name, call_id) or name == "execution_decision":
             return handler(request)
+        if self._gate.is_exhausted:
+            return _decision_exhausted(request)
         return _decision_required(request)
 
 
@@ -278,9 +288,48 @@ def _normalize_decision_args(value: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _actionable_plan_invalid(exc: ValidationError) -> str:
+    """Render missing/unexpected fields plus a minimal valid skeleton."""
+
+    missing: list[str] = []
+    unexpected: list[str] = []
+    for error in exc.errors():
+        kind = str(error.get("type", ""))
+        loc = ".".join(str(part) for part in error.get("loc", ()))
+        if kind == "missing":
+            missing.append(loc or "<unknown>")
+        elif kind in {"extra_forbidden", "unexpected_keyword_argument"}:
+            unexpected.append(loc or "<unknown>")
+    details: list[str] = []
+    if missing:
+        details.append(f"missing={sorted(set(missing))}")
+    if unexpected:
+        details.append(f"unexpected={sorted(set(unexpected))}")
+    detail = f" ({'; '.join(details)})" if details else ""
+    return (
+        "decision.plan_invalid: resend mode=planned with objective, reason, "
+        "and a validated plan; minimal plan skeleton="
+        "{'schema_version': 1, 'policy_version': 'adaptive-v1', 'revision': 1, "
+        "'nodes': [{'local_id': '<id>', 'kind': 'checkpoint', "
+        "'objective': '<what>', 'effect_scope': 'read'}]}"
+        f"{detail}"
+    )
+
+
 def _decision_required(request: ToolCallRequest) -> ToolMessage:
     return ToolMessage(
         content="execution.decision_required: record execution_decision before operational tools",
+        tool_call_id=request.tool_call["id"],
+        status="error",
+    )
+
+
+def _decision_exhausted(request: ToolCallRequest) -> ToolMessage:
+    return ToolMessage(
+        content=(
+            "execution.decision_exhausted: decision repairs exhausted with no "
+            "admitted decision; failing loudly instead of silent completion"
+        ),
         tool_call_id=request.tool_call["id"],
         status="error",
     )
