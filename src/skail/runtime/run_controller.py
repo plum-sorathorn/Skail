@@ -390,8 +390,10 @@ class RunController:
                 (assignment_id,),
             ).fetchone()
         if uncertain is not None:
+            error_class = self._ambiguous_error_class(self.journal, assignment_id)
             raise AccountingReconciliationRequired(
-                "provider usage is uncertain; reservation remains held"
+                f"provider usage is uncertain ({error_class}); "
+                f"reservation remains held"
             )
         if self._has_calls(assignment_id):
             self.usage_settler.settle_attempt(assignment_id)
@@ -406,6 +408,31 @@ class RunController:
             self.usage_settler.settle_attempt(assignment_id)
         else:
             self.ledger.release(str(assignment.reservation_id))
+
+    @staticmethod
+    def _ambiguous_error_class(journal: Any, assignment_id: str) -> str:
+        """Return the redacted original exception class for an ambiguous call.
+
+        Reads the `ClassName: detail` prefix written by `mark_ambiguous`. The
+        class name is always code-defined, never a secret, so surfacing it is
+        safe; raw error text is never included. Falls back to "unknown" when
+        the summary is missing or unparseable.
+        """
+        with journal._connect() as connection:
+            row = connection.execute(
+                "SELECT error_summary FROM provider_calls WHERE assignment_id=? "
+                "AND status='ambiguous' LIMIT 1",
+                (assignment_id,),
+            ).fetchone()
+        if row is None:
+            return "unknown"
+        summary = row[0] if not isinstance(row, dict) else row.get("error_summary")
+        if not isinstance(summary, str) or not summary:
+            return "unknown"
+        head = summary.split(":", 1)[0].strip()
+        if not head.replace("_", "").isalnum() or len(head) > 64:
+            return "unknown"
+        return head
 
     def _release_lead_allowances(self) -> None:
         for reservation_id in self._lead_allowance_ids:

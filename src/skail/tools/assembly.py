@@ -380,6 +380,29 @@ def _tool_name(value: Any) -> str | None:
     return None
 
 
+def _is_decision_gate_rejection(name: str, result: object) -> bool:
+    """True only for ToolMessages produced by the execution-decision gate.
+
+    The gate emits `execution.decision_required` (operational tool before a
+    decision) or `decision.*` codes (rejected `execution_decision` calls) via
+    `_decision_required`/`_decision_rejected` with status="error". Requiring
+    both the tool-call context (a named tool passing through this middleware)
+    and the strict stable-code prefix avoids misfiring on arbitrary provider
+    text that merely mentions decisions. Kept here (rather than flipping the
+    gate to status="blocked") because contract tests assert gate rejections
+    surface with status=="error".
+    """
+    if not isinstance(name, str) or not name:
+        return False
+    content = getattr(result, "content", None)
+    if isinstance(content, list):
+        content = " ".join(str(part) for part in content)
+    if not isinstance(content, str):
+        return False
+    text = content.strip()
+    return text.startswith("execution.decision_required") or text.startswith("decision.")
+
+
 def _tool_result_status(result: object) -> str | None:
     status = getattr(result, "status", None)
     content = getattr(result, "content", result)
@@ -479,16 +502,23 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             result = await handler(request)
         except Exception as exc:
             self.emit("tool.failed", name)
-            signal = self.monitor.observe_error(exc)
+            signal = self.monitor.observe_error(exc, tool=name)
             if signal is not None:
                 raise RuntimeError(signal) from exc
             raise
         status = _tool_result_status(result)
         if status == "error":
             self.emit("tool.failed", name)
-            signal = self.monitor.observe_error(getattr(result, "content", "tool error"))
-            if signal is not None:
-                raise RuntimeError(signal)
+            if _is_decision_gate_rejection(name, result):
+                self.monitor.observe_error(
+                    getattr(result, "content", "tool blocked"), blocked=True
+                )
+            else:
+                signal = self.monitor.observe_error(
+                    getattr(result, "content", "tool error"), tool=name
+                )
+                if signal is not None:
+                    raise RuntimeError(signal)
         elif status == "blocked":
             self.emit("tool.failed", name)
             self.monitor.observe_error(getattr(result, "content", "tool blocked"), blocked=True)
@@ -517,16 +547,23 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             result = handler(request)
         except Exception as exc:
             self.emit("tool.failed", name)
-            signal = self.monitor.observe_error(exc)
+            signal = self.monitor.observe_error(exc, tool=name)
             if signal is not None:
                 raise RuntimeError(signal) from exc
             raise
         status = _tool_result_status(result)
         if status == "error":
             self.emit("tool.failed", name)
-            signal = self.monitor.observe_error(getattr(result, "content", "tool error"))
-            if signal is not None:
-                raise RuntimeError(signal)
+            if _is_decision_gate_rejection(name, result):
+                self.monitor.observe_error(
+                    getattr(result, "content", "tool blocked"), blocked=True
+                )
+            else:
+                signal = self.monitor.observe_error(
+                    getattr(result, "content", "tool error"), tool=name
+                )
+                if signal is not None:
+                    raise RuntimeError(signal)
         elif status == "blocked":
             self.emit("tool.failed", name)
             self.monitor.observe_error(getattr(result, "content", "tool blocked"), blocked=True)

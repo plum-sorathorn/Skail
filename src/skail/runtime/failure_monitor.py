@@ -39,14 +39,17 @@ class FailureMonitor:
             return "failure.repeated_call"
         return None
 
-    def observe_error(self, error: object, *, blocked: bool = False) -> str | None:
+    def observe_error(
+        self, error: object, *, blocked: bool = False, tool: str | None = None
+    ) -> str | None:
         if blocked:
             self._consecutive_errors = 0
             return None
         value = _normalize_error(str(self._redactor.scrub(str(error))))
+        key = f"{tool}:{value}" if tool else value
         self._consecutive_errors += 1
-        self._error_counts[value] += 1
-        if self._error_counts[value] >= 2:
+        self._error_counts[key] += 1
+        if self._error_counts[key] >= 2:
             return "failure.repeated_error"
         if self._consecutive_errors >= 2:
             return "failure.consecutive_errors"

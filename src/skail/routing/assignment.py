@@ -631,7 +631,10 @@ class AssignmentUsageSettler:
 
     def mark_ambiguous(self, call_id: str, error: Exception) -> None:
         now = datetime.now(UTC).isoformat()
-        summary = str(error) or type(error).__name__
+        detail = str(error) or type(error).__name__
+        # Prefix the exception class name (code-defined, never a secret) so
+        # finalization can surface it without emitting raw provider text.
+        summary = f"{type(error).__name__}: {detail}"
         with self.journal.transaction() as transaction:
             row = transaction.connection.execute(
                 "SELECT assignment_id,status FROM provider_calls WHERE call_id=?", (call_id,)
