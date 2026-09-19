@@ -192,7 +192,7 @@ async def test_tui_shell_early_events_before_mount() -> None:
         assert budget_view.item.reserved_usd == Decimal("2.50")
 
         # Mode in status strip shows [planned]
-        status_text = app._render_status_strip().plain
+        status_text = app._render_status_strip()
         assert "[planned]" in status_text
 
 
@@ -354,7 +354,7 @@ async def test_tui_shell_resume_snapshot() -> None:
 
         # Check active_mode
         assert app.projection.footer_data.active_mode == "planned"
-        assert "[planned]" in app._render_status_strip().plain
+        assert "[planned]" in app._render_status_strip()
 
 
 @pytest.mark.asyncio

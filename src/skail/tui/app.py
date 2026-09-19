@@ -16,7 +16,6 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
-from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
@@ -46,6 +45,7 @@ from skail.tui.theme import (
     ThemeName,
     ThemeTokens,
     as_dict,
+    budget_token_for_ratio,
     detect_system_preference,
     get_theme,
     lookup,
@@ -125,6 +125,53 @@ def format_masthead(version: str, provider_label: str | None, clock: str) -> str
     return f"{wordmark}  {version}{provider}"
 
 
+_DATELINE_METER_CELLS = 10
+
+_MODE_TOKENS = {"quality": "modeQuality", "economy": "modeEconomy", "manual": "modeManual"}
+
+
+def render_dateline(
+    model: str,
+    mode: str,
+    cost: str,
+    ratio: float | None,
+    active: int,
+    running: int,
+    queued: int,
+    badge: str | None = None,
+    badge_token: str = "textMuted",
+    active_mode: str = "direct",
+) -> str:
+    """Return the ATELIER dateline: MODEL / MODE / SPEND / AGENTS in token markup."""
+    if ratio is None:
+        pct = "0.0"
+        fill = 0
+        fill_token = "budgetEmpty"
+    else:
+        pct = f"{ratio * 100:.1f}"
+        fill = min(_DATELINE_METER_CELLS, round(ratio * _DATELINE_METER_CELLS))
+        fill_token = budget_token_for_ratio(ratio)
+    rest = _DATELINE_METER_CELLS - fill
+    mode_token = _MODE_TOKENS.get(mode, "modeQuality")
+    segments: list[str] = []
+    if badge:
+        segments.append(f"[{badge_token}]{badge}[/]")
+    segments.append(
+        f"[textFaint]MODEL[/] [text]{model}[/] [textFaint]·  MODE[/] [{mode_token}]{mode}[/]"
+    )
+    if active_mode != "direct":
+        segments.append(f"[delegation][[{active_mode}][/]")
+    segments.append(
+        f"[textFaint]·  SPEND[/] [text]{cost}[/] [{fill_token}]{'▓' * fill}[/]"
+        f"[budgetEmpty]{'░' * rest}[/] {pct}%"
+    )
+    segments.append(
+        f"[textFaint]·  AGENTS[/] [agentOne]●{active}[/] "
+        f"[textMuted]{running} running · {queued} queued[/]"
+    )
+    return " ".join(segments)
+
+
 class SkailApp(App[int]):
     """Main Textual interactive application for Skail harness."""
 
@@ -181,12 +228,13 @@ class SkailApp(App[int]):
     .reduced-motion * {
         transition: none;
     }
-    #status-strip {
+    #dateline {
         width: 100%;
         height: 1;
-        background: $surface;
-        color: $text-muted;
         padding: 0 1;
+        background: $surface;
+        border-bottom: solid $border;
+        color: $textMuted;
     }
     #masthead {
         width: 100%;
@@ -297,7 +345,7 @@ class SkailApp(App[int]):
     def compose(self) -> ComposeResult:
         yield Static(id="masthead")
         yield Static(id="rule-strong", classes="rule-strong")
-        yield Static(self._render_status_strip(), id="status-strip")
+        yield Static(self._render_status_strip(), id="dateline")
         with Horizontal(id="main-container"):
             with Vertical(id="chat-container"):
                 yield ChatTranscript(id="chat-transcript")
@@ -677,24 +725,42 @@ class SkailApp(App[int]):
             os.environ[env_var] = key
 
     # -- rendering --------------------------------------------------------
-    def _render_status_strip(self) -> Text:
+    def _render_status_strip(self) -> str:
+        """Return the ATELIER dateline markup for the current application state."""
         f = self.projection.footer_data
-        text = Text()
-        if self.app_state == "onboarding":
-            text.append("PROVIDER not configured   ", style="bold yellow")
-        elif self.app_state == "initializing":
-            text.append("STARTING   ", style="bold cyan")
-        elif self.app_state == "error":
-            text.append("SETUP FAILED   ", style="bold red")
-        text.append(f"Model: {f.lead_model} ", style="bold cyan")
-        text.append(f"| Mode: {f.routing_mode} ", style="green")
-        if f.active_mode != "direct":
-            text.append(f"[{f.active_mode}] ", style="bold magenta")
-        text.append(f"| Cost: ${f.session_cost_usd:.4f}", style="yellow")
+        ratio: float | None = None
+        if f.budget_limit_usd is not None and f.budget_limit_usd > 0:
+            ratio = min(1.0, float(f.session_cost_usd / f.budget_limit_usd))
+        cost = f"${f.session_cost_usd:.4f}"
         if f.budget_limit_usd is not None:
-            text.append(f" / ${f.budget_limit_usd:.2f}", style="dim yellow")
-        text.append(f" | Active Agents: {f.active_agents_count}", style="magenta")
-        return text
+            cost = f"{cost} / ${f.budget_limit_usd:.2f}"
+        running = 0
+        queued = 0
+        for child in self.projection.children_view():
+            if child.status == "running":
+                running += 1
+            elif child.status == "queued":
+                queued += 1
+        badge: str | None = None
+        badge_token = "textMuted"
+        if self.app_state == "onboarding":
+            badge, badge_token = "PROVIDER not configured", "approval"
+        elif self.app_state == "initializing":
+            badge, badge_token = "STARTING", "textMuted"
+        elif self.app_state == "error":
+            badge, badge_token = "SETUP FAILED", "error"
+        return render_dateline(
+            model=f.lead_model,
+            mode=f.routing_mode,
+            cost=cost,
+            ratio=ratio,
+            active=f.active_agents_count,
+            running=running,
+            queued=queued,
+            badge=badge,
+            badge_token=badge_token,
+            active_mode=f.active_mode,
+        )
 
     def render_masthead(self) -> str:
         """Render the ATELIER masthead: wordmark, version, provider, clock."""
@@ -792,8 +858,8 @@ class SkailApp(App[int]):
         except Exception:
             pass
 
-        status_strip = self.query_one("#status-strip", Static)
-        status_strip.update(self._render_status_strip())
+        dateline = self.query_one("#dateline", Static)
+        dateline.update(self._render_status_strip())
 
         interrupt_container = self.query_one("#interrupt-container", Container)
         if self.projection.pending_interrupt:
