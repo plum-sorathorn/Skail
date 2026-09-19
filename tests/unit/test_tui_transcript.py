@@ -8,10 +8,12 @@ from __future__ import annotations
 
 from skail.tui.projection import TranscriptItem
 from skail.tui.widgets.chat import (
+    ChatTranscript,
     TranscriptItemWidget,
     collapsed_preview,
     export_transcript_text,
     fold_glyph,
+    new_events_copy,
     role_edge_for_item,
     should_stay_pinned,
     transcript_diff,
@@ -194,3 +196,83 @@ def test_transcript_row_atelier_grid_in_source() -> None:
         "role-receipt",
     ):
         assert f"{role} > .msg-role" in src  # role color via TCSS, no inline
+
+
+def test_new_events_copy_wide_and_narrow() -> None:
+    assert new_events_copy(3) == "\u2193 3 new events \u00b7 End to re-pin"
+    assert new_events_copy(12, narrow=True) == "\u2193 12 new \u00b7 End"
+
+
+def test_dock_id_and_copy_wiring_in_source() -> None:
+    import pathlib
+
+    src = pathlib.Path("src/skail/tui/widgets/chat.py").read_text(
+        encoding="utf-8"
+    )
+    assert "#transcript-new-events" in src  # id preserved
+    assert "new_events_copy(" in src  # dock copy routed through the helper
+    assert "narrow=self.size.width" in src  # narrowness drives the copy
+    assert "new events  (End)" not in src  # previous copy fully replaced
+
+
+def test_streaming_class_added_by_update_body() -> None:
+    widget = TranscriptItemWidget(_item("s1", "partial"))
+    assert not widget.has_class("streaming")
+    widget.update_body("partial + more")
+    assert widget.has_class("streaming")
+    assert widget._measure_content().plain.endswith("\u258c")  # ▌ caret
+
+
+def test_finish_streaming_drops_class_and_caret() -> None:
+    widget = TranscriptItemWidget(_item("s2", "a"))
+    widget.update_body("a2")
+    widget.finish_streaming()
+    assert not widget.has_class("streaming")
+    assert not widget._measure_content().plain.endswith("\u258c")
+
+
+def test_streaming_shim_tcss_and_reduced_motion_in_source() -> None:
+    import pathlib
+
+    src = pathlib.Path("src/skail/tui/widgets/chat.py").read_text(
+        encoding="utf-8"
+    )
+    assert ".streaming .msg-measure" in src
+    assert "color: $shimmerBase" in src
+    assert ".streaming.shim-peak .msg-measure" in src
+    assert "color: $shimmerPeak" in src
+    assert ".reduced-motion .streaming .msg-measure" in src
+    assert "color: $textFaint" in src
+    assert "SHIM_INTERVAL_MS / 1000.0" in src
+    assert 'getattr(self.app, "reduced_motion", False)' in src
+
+
+async def test_shim_peak_toggles_on_streaming_row() -> None:
+    from textual.app import App
+
+    from skail.tui.theme import resolve_system_theme, to_css_variables
+
+    class _TokenHost(App[None]):
+        def get_css_variables(self) -> dict[str, str]:
+            tokens, _name = resolve_system_theme()
+            variables = super().get_css_variables()
+            variables.update(
+                {
+                    key.lstrip("-"): val
+                    for key, val in to_css_variables(tokens).items()
+                }
+            )
+            return variables
+
+    app = _TokenHost()
+    async with app.run_test() as pilot:
+        transcript = ChatTranscript()
+        await pilot.app.screen.mount(transcript)
+        widget = TranscriptItemWidget(_item("shim", "partial"))
+        widget.add_class("streaming")
+        await transcript.mount(widget)
+        await pilot.pause()
+        transcript._toggle_shim()
+        assert widget.has_class("shim-peak")
+        transcript._toggle_shim()
+        assert not widget.has_class("shim-peak")

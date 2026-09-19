@@ -6,6 +6,9 @@ focusable collapsible headers with ATELIER four-column rows
 (clock | fold | role | measure), role edges, scroll pin, streaming
 updates, plain-text export, and search hooks. All styling uses theme
 tokens via Textual CSS variables; no hardcoded hex values in this module.
+Phase 3: streaming shimmer (.streaming + 500 ms .shim-peak toggle,
+$accent caret, reduced-motion static $textFaint) and the
+#transcript-new-events dock copy (End to re-pin).
 """
 
 from __future__ import annotations
@@ -21,13 +24,16 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from skail.tui.projection import TranscriptItem
-from skail.tui.theme import agent_slot_token
+from skail.tui.theme import agent_slot_token, get_theme
 
 PIN_THRESHOLD_LINES = 2
 SPINNER_CELLS = 5
 SPINNER_GLYPH = "\u273b"  # ✻
 SPINNER_INTERVAL_MS = 90
 SPINNER_MAX_MS = 150
+SHIM_INTERVAL_MS = 500
+STREAMING_CARET = "\u258c"  # ▌
+NEW_EVENTS_NARROW_WIDTH = 40
 
 SPINNER_LABELS: tuple[str, ...] = (
     "CONNECTING",
@@ -129,6 +135,16 @@ def fold_glyph(item: TranscriptItem) -> str:
 def should_stay_pinned(lines_from_bottom: int) -> bool:
     """Stay pinned when within two lines of the bottom."""
     return lines_from_bottom <= PIN_THRESHOLD_LINES
+
+
+def new_events_copy(pending: int, narrow: bool = False) -> str:
+    """Dock copy for #transcript-new-events (pure, unit-testable).
+
+    Wide: "↓ 3 new events · End to re-pin"; narrow: "↓ 3 new · End".
+    """
+    if narrow:
+        return f"\u2193 {pending} new \u00b7 End"
+    return f"\u2193 {pending} new events \u00b7 End to re-pin"
 
 
 def export_transcript_text(items: list[TranscriptItem]) -> str:
@@ -256,6 +272,15 @@ class TranscriptItemWidget(Widget):
     TranscriptItemWidget.collapsed {
         opacity: 70%;
     }
+    .streaming .msg-measure {
+        color: $shimmerBase;
+    }
+    .streaming.shim-peak .msg-measure {
+        color: $shimmerPeak;
+    }
+    .reduced-motion .streaming .msg-measure {
+        color: $textFaint;
+    }
     """
 
     class ItemToggled(Message):
@@ -267,6 +292,7 @@ class TranscriptItemWidget(Widget):
         super().__init__(classes=f"role-{item.role}")
         self.item = item
         self._collapsed = item.collapsed
+        self._streaming = False
         if self._collapsed:
             self.add_class("collapsed")
 
@@ -287,7 +313,19 @@ class TranscriptItemWidget(Widget):
                 text.append(f"  {remaining} lines", style="dim italic")
         else:
             text.append(self.item.content)
+        if self._streaming:
+            text.append(STREAMING_CARET, style=self._caret_style())
         return text
+
+    def _caret_style(self) -> str:
+        """Streaming caret: $accent of the active Skail theme; "" = inherit."""
+        try:
+            name = getattr(self.app, "current_theme_name", None)
+            if name is None:
+                return ""
+            return get_theme(name).accent
+        except Exception:
+            return ""
 
     def _refresh_children(self) -> None:
         """Push current state into the row cells; no-ops before mount."""
@@ -321,6 +359,18 @@ class TranscriptItemWidget(Widget):
     def update_body(self, content: str) -> None:
         """Streaming in-place body update; never remounts the widget."""
         self.item.content = content
+        if not self._streaming:
+            self._streaming = True
+            self.add_class("streaming")
+        self._refresh_children()
+        self.refresh()
+
+    def finish_streaming(self) -> None:
+        """Row finished streaming: drop .streaming and the accent caret."""
+        if not self._streaming:
+            return
+        self._streaming = False
+        self.remove_class("streaming")
         self._refresh_children()
         self.refresh()
 
@@ -399,6 +449,28 @@ class ChatTranscript(VerticalScroll):
         self._order: list[str] = []
         self._pinned = True
         self._pending_new = 0
+        self._shim_peak = False
+        self._shim_timer: object | None = None
+
+    def on_mount(self) -> None:
+        """Single 500 ms shim-peak interval; skipped under reduced motion."""
+        reduced = getattr(self.app, "reduced_motion", False)
+        if not reduced:
+            self._shim_timer = self.set_interval(
+                SHIM_INTERVAL_MS / 1000.0, self._toggle_shim
+            )
+
+    def _toggle_shim(self) -> None:
+        """Flip .shim-peak on the (single) streaming row, if any."""
+        try:
+            row = self.query_one(".streaming", TranscriptItemWidget)
+        except Exception:
+            return
+        self._shim_peak = not self._shim_peak
+        if self._shim_peak:
+            row.add_class("shim-peak")
+        else:
+            row.remove_class("shim-peak")
 
     def _distance_from_bottom(self) -> int:
         try:
@@ -432,8 +504,11 @@ class ChatTranscript(VerticalScroll):
         for item_id in diff.to_keep:
             widget = self._widgets_by_id.get(item_id)
             fresh = by_id[item_id]
-            if widget is not None and widget.item.content != fresh.content:
-                widget.update_body(fresh.content)
+            if widget is not None:
+                if widget.item.content != fresh.content:
+                    widget.update_body(fresh.content)
+                else:
+                    widget.finish_streaming()
 
         self._order = list(new_ids)
 
@@ -455,17 +530,16 @@ class ChatTranscript(VerticalScroll):
         self.update_from_view_model(items)
 
     def _show_new_events_hint(self) -> None:
+        copy = new_events_copy(
+            self._pending_new,
+            narrow=self.size.width < NEW_EVENTS_NARROW_WIDTH,
+        )
         try:
             existing = self.query_one("#transcript-new-events", Static)
-            existing.update(f"\u2193 {self._pending_new} new events  (End)")
+            existing.update(copy)
         except Exception:
             try:
-                self.mount(
-                    Static(
-                        f"\u2193 {self._pending_new} new events  (End)",
-                        id="transcript-new-events",
-                    )
-                )
+                self.mount(Static(copy, id="transcript-new-events"))
             except Exception:
                 pass
 
@@ -487,15 +561,19 @@ class ChatTranscript(VerticalScroll):
 __all__ = [
     "ActivitySpinner",
     "ChatTranscript",
+    "NEW_EVENTS_NARROW_WIDTH",
     "PIN_THRESHOLD_LINES",
+    "SHIM_INTERVAL_MS",
     "SPINNER_INTERVAL_MS",
     "SPINNER_LABELS",
+    "STREAMING_CARET",
     "TranscriptDiff",
     "TranscriptItemWidget",
     "collapsed_preview",
     "export_transcript_text",
     "filter_transcript",
     "fold_glyph",
+    "new_events_copy",
     "role_edge_for_item",
     "should_stay_pinned",
     "spinner_frame",
