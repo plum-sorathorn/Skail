@@ -389,10 +389,18 @@ async def test_tui_shell_route_shadow_labels() -> None:
         assert "Economy candidate is cheaper" in item.shadow_reasons[0]
         assert item.evidence_status == "sufficient"
 
-        panel_widget = route_view.query(Static).last()
-        visual = panel_widget.render()
-        inner = getattr(visual, "_renderable", visual)
-        assert "SHADOW: economy" in str(getattr(inner, "title", inner))
+        # ROLE FLOORS mounts last (floors-last ordering); the survey row is
+        # asserted by scanning the panel, and the floors row pins the last
+        # mounted Static.
+
+        def _panel_text(widget: Static) -> str:
+            visual = widget.render()
+            inner = getattr(visual, "_renderable", visual)
+            return str(getattr(inner, "title", inner))
+
+        panel_texts = [_panel_text(w) for w in route_view.query(Static)]
+        assert any("economy \u00b7 evidence rev-9" in text for text in panel_texts)
+        assert "floor 0.70" in _panel_text(route_view.query(Static).last())
 
 
 @pytest.mark.asyncio

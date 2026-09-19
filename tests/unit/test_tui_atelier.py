@@ -1,5 +1,6 @@
 """Unit tests for the ATELIER chrome (dateline, transcript header, footer, plan/route)."""
 
+from dataclasses import replace
 from decimal import Decimal
 
 from skail.tui.app import render_dateline, render_transcript_header
@@ -14,7 +15,12 @@ from skail.tui.widgets.plan import (
     revision_lines,
     section_head,
 )
-from skail.tui.widgets.route import role_floor_line, shadow_section
+from skail.tui.widgets.route import (
+    policy_lead_line,
+    role_floor_line,
+    role_floor_lines,
+    shadow_section,
+)
 
 
 def test_render_dateline_uses_theme_tokens_and_values() -> None:
@@ -199,7 +205,7 @@ def test_shadow_section_eligible_when_evidence_sufficient() -> None:
     )
     head, lines = shadow_section(item)
     assert head == "ELIGIBLE"
-    assert lines == ["SHADOW: economy (evidence rev-9)"]
+    assert lines == ["economy \u00b7 evidence rev-9"]
 
 
 def test_shadow_section_excluded_without_sufficient_evidence() -> None:
@@ -219,9 +225,40 @@ def test_shadow_section_excluded_without_sufficient_evidence() -> None:
     )
     head, lines = shadow_section(item)
     assert head == "EXCLUDED"
-    assert lines == ["SHADOW: economy", "\u00b7 economy candidate is cheaper"]
+    assert lines == ["economy \u00b7 economy candidate is cheaper"]
 
 
 def test_shadow_section_absent_without_recommendation() -> None:
     """No shadow recommendation, no ELIGIBLE/EXCLUDED section: nothing invented."""
     assert shadow_section(_route_item()) == ("", [])
+
+
+def test_shadow_section_excluded_joins_multiple_reasons() -> None:
+    """Carried reasons join the candidate on one middle-dot detail line."""
+    item = replace(
+        _route_item(),
+        evidence_status=None,
+        shadow_recommendation="economy",
+        shadow_reasons=("cheaper", "faster"),
+    )
+    head, lines = shadow_section(item)
+    assert head == "EXCLUDED"
+    assert lines == ["economy \u00b7 cheaper \u00b7 faster"]
+
+
+def test_role_floor_lines_render_every_carried_floor() -> None:
+    """One row per carried floor; the 0.50 projection default means not carried."""
+    routes = {
+        "lead": _route_item(),
+        "t2": replace(_route_item(), task_id="t2", capability_floor=0.5),
+        "t3": replace(_route_item(), task_id="t3", capability_floor=0.9),
+    }
+    assert role_floor_lines(routes) == ["lead \u00b7 floor 0.70", "t3 \u00b7 floor 0.90"]
+    assert role_floor_lines({"lead": routes["t2"]}) == []
+    assert role_floor_lines({}) == []
+
+
+def test_policy_lead_line_mode_then_slot() -> None:
+    """The policy lead row reads mode then slot under a 'policy' label."""
+    assert policy_lead_line(_route_item()) == "policy: auto \u2192 lead"
+    assert policy_lead_line(replace(_route_item(), task_id="")) == "policy: auto \u2192 lead"

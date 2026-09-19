@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Final
 
 from textual.containers import VerticalScroll
 from textual.widgets import Static
 
 from skail.tui.projection import RouteViewItem
 from skail.tui.widgets.plan import section_head
+
+CAPABILITY_FLOOR_DEFAULT: Final = 0.50
 
 
 def immutable_label(attempt_number: int) -> str:
@@ -31,30 +33,51 @@ def render_route_lines(item: RouteViewItem | None) -> list[str]:
     return lines
 
 
+def policy_lead_line(item: RouteViewItem) -> str:
+    """Policy lead row (README #39): routing mode then slot, under a 'policy' label."""
+    slot = item.task_id or "lead"
+    return f"policy: {item.routing_mode} \u2192 {slot}"
+
+
 def role_floor_line(item: RouteViewItem) -> str:
     """One ROLE FLOORS row: which role, which capability floor."""
     slot = item.task_id or "lead"
     return f"{slot} \u00b7 floor {item.capability_floor:.2f}"
 
 
+def role_floor_lines(routes: dict[str, RouteViewItem]) -> list[str]:
+    """ROLE FLOORS rows: one per carried floor across the whole route table.
+
+    The projection defaults capability_floor to 0.50 when the routing snapshot
+    supplies none, so 0.50 reads as 'not carried' here (nothing invented);
+    every other carried value gets its own row.
+    """
+    return [
+        role_floor_line(item)
+        for item in routes.values()
+        if item.capability_floor != CAPABILITY_FLOOR_DEFAULT
+    ]
+
+
 def shadow_section(item: RouteViewItem) -> tuple[str, list[str]]:
     """ELIGIBLE/EXCLUDED survey from the routing shadow.
 
     Returns (head, lines); ('', []) when the snapshot carries no shadow
-    recommendation. Sufficient evidence elects the candidate, otherwise it is
-    excluded together with its reasons. Nothing invented.
+    recommendation. The single detail line keeps the README #40 exclusion
+    shape: the candidate, then its reasons (or the evidence marker when
+    elected) joined by the panel's middle-dot separator. Nothing invented.
     """
-    if not item.shadow_recommendation:
+    rec = item.shadow_recommendation
+    if not rec:
         return "", []
     sufficient = (item.evidence_status or "").strip().lower() == "sufficient"
-    if not sufficient:
-        lines = [f"SHADOW: {item.shadow_recommendation}"]
-        lines.extend(f"\u00b7 {reason}" for reason in item.shadow_reasons)
-        return "EXCLUDED", lines
-    detail = f"SHADOW: {item.shadow_recommendation}"
-    if item.evidence_revision:
-        detail += f" (evidence {item.evidence_revision})"
-    return "ELIGIBLE", [detail]
+    if sufficient:
+        detail = rec
+        if item.evidence_revision:
+            detail = f"{rec} \u00b7 evidence {item.evidence_revision}"
+        return "ELIGIBLE", [detail]
+    detail = " \u00b7 ".join((rec, *item.shadow_reasons))
+    return "EXCLUDED", [detail]
 
 
 class RouteView(VerticalScroll):
@@ -97,19 +120,26 @@ class RouteView(VerticalScroll):
             self.remove_children()
             self.mount(Static(" ".join("ROUTE"), classes="route-header"))
             target = self._target()
-            lines = render_route_lines(target)
-            for line in lines[:3]:
-                self.mount(Static(line))
             if target is not None:
+                # The policy lead row replaces the reversed Selected copy;
+                # Reason/Model/immutable/Fallback stay the guaranteed lines.
+                self.mount(Static(policy_lead_line(target)))
+                lines = render_route_lines(target)
+                for line in lines[1:3]:
+                    self.mount(Static(line))
                 self.mount(Static(section_head("ASSIGNMENT"), classes="sec-head"))
                 for line in lines[3:]:
                     self.mount(Static(line))
-                self.mount(Static(section_head("ROLE FLOORS"), classes="sec-head"))
-                self.mount(Static(role_floor_line(target), classes="sec-row"))
                 head, shadow = shadow_section(target)
                 if head:
                     self.mount(Static(section_head(head), classes="sec-head"))
                     for line in shadow:
+                        self.mount(Static(line, classes="sec-row"))
+                # Floors last: one row per carried floor, omitted when none.
+                floors = role_floor_lines(routes)
+                if floors:
+                    self.mount(Static(section_head("ROLE FLOORS"), classes="sec-head"))
+                    for line in floors:
                         self.mount(Static(line, classes="sec-row"))
         except Exception:
             pass
@@ -127,7 +157,9 @@ class RouteView(VerticalScroll):
 __all__ = [
     "RouteView",
     "immutable_label",
+    "policy_lead_line",
     "render_route_lines",
     "role_floor_line",
+    "role_floor_lines",
     "shadow_section",
 ]
