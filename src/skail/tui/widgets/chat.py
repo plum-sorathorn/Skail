@@ -2,9 +2,10 @@
 
 Draft source: docs/skail/TUI_REVAMP_DRAFT.md sections 5.2, 6.
 Phase 2: replace full-remount with keyed reconciliation,
-focusable collapsible headers, role edges, scroll pin, streaming updates,
-plain-text export, and search hooks. All styling uses theme tokens via
-Textual CSS variables; no hardcoded hex values in this module.
+focusable collapsible headers with ATELIER four-column rows
+(clock | fold | role | measure), role edges, scroll pin, streaming
+updates, plain-text export, and search hooks. All styling uses theme
+tokens via Textual CSS variables; no hardcoded hex values in this module.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from dataclasses import dataclass, field
 
 from rich.text import Text
 from textual import events
+from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.message import Message
 from textual.widget import Widget
@@ -33,6 +35,9 @@ SPINNER_LABELS: tuple[str, ...] = (
     "DELEGATING",
     "COMPACTING",
 )
+
+# Roles whose expanded rows render as continuation sub-rows (fold glyph `└`).
+CONTINUATION_ROLES: frozenset[str] = frozenset({"tool", "receipt"})
 
 
 @dataclass
@@ -105,6 +110,22 @@ def _slot_from_item(item: TranscriptItem) -> int:
     return 1
 
 
+def fold_glyph(item: TranscriptItem) -> str:
+    """Fold-column glyph for the ATELIER message row (pure, unit-testable).
+
+    ``+`` collapsed/new, minus (U+2212) expanded, ``└`` continuation sub-row
+    (tool/receipt, see CONTINUATION_ROLES), blank for detail rows that
+    cannot collapse.
+    """
+    if not item.can_collapse:
+        return " "
+    if item.collapsed:
+        return "+"
+    if item.role in CONTINUATION_ROLES:
+        return "\u2514"  # └ continuation
+    return "\u2212"  # − expanded
+
+
 def should_stay_pinned(lines_from_bottom: int) -> bool:
     """Stay pinned when within two lines of the bottom."""
     return lines_from_bottom <= PIN_THRESHOLD_LINES
@@ -158,35 +179,79 @@ class TranscriptItemWidget(Widget):
         margin-bottom: 1;
         padding: 0 1;
         border-left: solid $border;
+        layout: horizontal;
     }
     TranscriptItemWidget:focus-within {
         border-left: heavy $focusRing;
     }
+    TranscriptItemWidget > .msg-clock {
+        width: 9;
+        height: auto;
+        color: $textMuted;
+    }
+    TranscriptItemWidget > .msg-fold {
+        width: 2;
+        height: auto;
+        color: $textMuted;
+    }
+    TranscriptItemWidget > .msg-role {
+        width: 10;
+        height: auto;
+        text-style: bold;
+    }
+    TranscriptItemWidget > .msg-measure {
+        width: 1fr;
+        height: auto;
+    }
     TranscriptItemWidget.role-user {
         border-left: solid $accent;
+    }
+    TranscriptItemWidget.role-user > .msg-role {
+        color: $accent;
     }
     TranscriptItemWidget.role-lead {
         border-left: solid $accent;
     }
+    TranscriptItemWidget.role-lead > .msg-role {
+        color: $accent;
+    }
     TranscriptItemWidget.role-agent {
         border-left: heavy $accent;
+    }
+    TranscriptItemWidget.role-agent > .msg-role {
+        color: $accent;
     }
     TranscriptItemWidget.role-task {
         border-left: solid $modeManual;
     }
+    TranscriptItemWidget.role-task > .msg-role {
+        color: $modeManual;
+    }
     TranscriptItemWidget.role-tool {
         border-left: solid $delegation;
+    }
+    TranscriptItemWidget.role-tool > .msg-role {
+        color: $delegation;
     }
     TranscriptItemWidget.role-error {
         border-left: heavy $error;
         background: $errorSurface;
     }
+    TranscriptItemWidget.role-error > .msg-role {
+        color: $error;
+    }
     TranscriptItemWidget.role-approval {
         border: round $approval;
         background: $approvalSurface;
     }
+    TranscriptItemWidget.role-approval > .msg-role {
+        color: $approval;
+    }
     TranscriptItemWidget.role-receipt {
         border-left: solid $textMuted;
+    }
+    TranscriptItemWidget.role-receipt > .msg-role {
+        color: $textMuted;
     }
     TranscriptItemWidget.collapsed {
         opacity: 70%;
@@ -205,6 +270,33 @@ class TranscriptItemWidget(Widget):
         if self._collapsed:
             self.add_class("collapsed")
 
+    def compose(self) -> ComposeResult:
+        """ATELIER row: clock | fold | role | measure (fixed widths in TCSS)."""
+        yield Static(f"{self.item.timestamp:%H:%M:%S}", classes="msg-clock")
+        yield Static(fold_glyph(self.item), classes="msg-fold")
+        yield Static(role_edge_for_item(self.item)[0], classes="msg-role")
+        yield Static(self._measure_content(), classes="msg-measure")
+
+    def _measure_content(self) -> Text:
+        """Body for the measure cell: full text, or first-line preview."""
+        text = Text()
+        if self._collapsed:
+            first, remaining = collapsed_preview(self.item.content)
+            text.append(first)
+            if remaining:
+                text.append(f"  {remaining} lines", style="dim italic")
+        else:
+            text.append(self.item.content)
+        return text
+
+    def _refresh_children(self) -> None:
+        """Push current state into the row cells; no-ops before mount."""
+        if not self.is_mounted:
+            return
+        self.query_one(".msg-fold", Static).update(fold_glyph(self.item))
+        self.query_one(".msg-role", Static).update(role_edge_for_item(self.item)[0])
+        self.query_one(".msg-measure", Static).update(self._measure_content())
+
     def toggle_collapse(self) -> None:
         if not self.item.can_collapse:
             return
@@ -214,6 +306,7 @@ class TranscriptItemWidget(Widget):
             self.add_class("collapsed")
         else:
             self.remove_class("collapsed")
+        self._refresh_children()
         self.refresh()
         self.post_message(self.ItemToggled(self.item.id))
 
@@ -228,25 +321,8 @@ class TranscriptItemWidget(Widget):
     def update_body(self, content: str) -> None:
         """Streaming in-place body update; never remounts the widget."""
         self.item.content = content
+        self._refresh_children()
         self.refresh()
-
-    def render(self) -> Text:
-        item = self.item
-        label, edge, _ = role_edge_for_item(item)
-        text = Text()
-        indicator = "\u25be " if self._collapsed else "\u25b8 "
-        if item.can_collapse:
-            text.append(indicator, style="dim")
-        text.append(f"{label} ", style="bold")
-        text.append(f"{edge} ", style="dim")
-        if self._collapsed:
-            first, remaining = collapsed_preview(item.content)
-            text.append(first, style="white")
-            if remaining:
-                text.append(f"  {remaining} lines", style="dim italic")
-        else:
-            text.append(item.content, style="white")
-        return text
 
     async def on_key(self, event: events.Key) -> None:
         if event.key in ("enter", "space"):
@@ -419,6 +495,7 @@ __all__ = [
     "collapsed_preview",
     "export_transcript_text",
     "filter_transcript",
+    "fold_glyph",
     "role_edge_for_item",
     "should_stay_pinned",
     "spinner_frame",

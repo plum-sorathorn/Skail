@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from skail.tui.projection import TranscriptItem
 from skail.tui.widgets.chat import (
+    TranscriptItemWidget,
     collapsed_preview,
     export_transcript_text,
+    fold_glyph,
     role_edge_for_item,
     should_stay_pinned,
     transcript_diff,
@@ -97,6 +99,27 @@ def test_agent_edge_uses_slot_glyph() -> None:
     assert token in ("agentOne", "agentTwo", "agentThree")
 
 
+def test_fold_glyph_states() -> None:
+    expanded = TranscriptItem(id="f", role="lead", title="Lead", content="hi")
+    assert fold_glyph(expanded) == "\u2212"  # − expanded
+    expanded.collapsed = True
+    assert fold_glyph(expanded) == "+"  # + collapsed
+    tool = TranscriptItem(
+        id="t", role="tool", title="pytest", content="ok"
+    )
+    assert fold_glyph(tool) == "\u2514"  # └ continuation sub-row
+    tool.collapsed = True
+    assert fold_glyph(tool) == "+"  # collapse glyph wins for sub-rows
+    detail = TranscriptItem(
+        id="d",
+        role="receipt",
+        title="Receipt",
+        content="done",
+        can_collapse=False,
+    )
+    assert fold_glyph(detail) == " "  # blank detail row
+
+
 def test_scroll_pin_within_two_lines_follows() -> None:
     assert should_stay_pinned(0) is True
     assert should_stay_pinned(2) is True
@@ -138,3 +161,36 @@ def test_chat_module_has_no_hardcoded_hex() -> None:
         encoding="utf-8"
     )
     assert re.search(r"#[0-9A-Fa-f]{6}", src) is None
+
+
+def test_transcript_item_widget_composes_four_atelier_columns() -> None:
+    widget = TranscriptItemWidget(_item("c1", "body"))
+    cells = [next(iter(static.classes)) for static in widget.compose()]
+    assert cells == ["msg-clock", "msg-fold", "msg-role", "msg-measure"]
+
+
+def test_transcript_row_atelier_grid_in_source() -> None:
+    import pathlib
+
+    src = pathlib.Path("src/skail/tui/widgets/chat.py").read_text(
+        encoding="utf-8"
+    )
+    for column, width in (
+        (".msg-clock", "width: 9"),
+        (".msg-fold", "width: 2"),
+        (".msg-role", "width: 10"),
+        (".msg-measure", "width: 1fr"),
+    ):
+        assert column in src
+        assert width in src
+    for role in (
+        "role-user",
+        "role-lead",
+        "role-agent",
+        "role-task",
+        "role-tool",
+        "role-error",
+        "role-approval",
+        "role-receipt",
+    ):
+        assert f"{role} > .msg-role" in src  # role color via TCSS, no inline
