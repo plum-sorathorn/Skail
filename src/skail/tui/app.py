@@ -396,7 +396,6 @@ class SkailApp(App[int]):
             with Vertical(id="chat-container"):
                 yield Static(id="transcript-header")
                 yield ChatTranscript(id="chat-transcript")
-                yield Container(id="interrupt-container")
             yield Static(id="hairline", classes="hairline")
             with Vertical(id="sidebar-container"):
                 with TabbedContent(initial="tab-agents", id="tabs"):
@@ -409,6 +408,7 @@ class SkailApp(App[int]):
                     with TabPane("Budget", id="tab-budget"):
                         yield BudgetView(id="budget-view")
                 yield BudgetLedger(id="budget-ledger")
+        yield Container(id="interrupt-container")
         yield PromptComposer(id="prompt-composer")
         yield AtelierFooter(id="app-footer")
 

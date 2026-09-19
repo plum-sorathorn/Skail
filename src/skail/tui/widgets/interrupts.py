@@ -89,17 +89,20 @@ class InterruptWidget(Widget):
 
     can_focus = True
 
+    # ATELIER: the interrupt renders as the single tinted full-bleed band.
+    # The mock's 2px focus/edge inset is a 1-cell `heavy` border (TCSS has no
+    # 1px hairline) — documented fidelity delta, IMPLEMENTATION_PLAN §7.1.
     DEFAULT_CSS = """
     InterruptWidget {
         width: 100%;
         height: auto;
-        border: round $approval;
         background: $approvalSurface;
-        padding: 1;
-        margin: 1 0;
+        border: none;
+        border-left: heavy $approval;
+        padding: 1 2;
     }
     InterruptWidget:focus-within {
-        border: round $focusRing;
+        border-left: heavy $focusRing;
     }
     InterruptWidget.rejected {
         opacity: 60%;
@@ -108,9 +111,18 @@ class InterruptWidget(Widget):
     InterruptWidget.approved {
         color: $text;
     }
+    .interrupt-title-row {
+        width: 100%;
+        height: 1;
+    }
     .interrupt-title {
         text-style: bold;
         color: $approval;
+    }
+    .interrupt-esc {
+        width: 1fr;
+        text-align: right;
+        color: $textMuted;
     }
     .interrupt-question {
         margin: 1 0;
@@ -124,14 +136,28 @@ class InterruptWidget(Widget):
     .interrupt-hint {
         color: $textMuted;
     }
-    InterruptWidget #btn-approve:focus-within,
-    InterruptWidget #btn-reject:focus-within,
-    InterruptWidget #btn-instruct:focus-within,
-    InterruptWidget #interrupt-input:focus-within {
-        outline: solid $focusRing;
+    #interrupt-input {
+        border: none;
+        border-bottom: dashed $borderStrong;
+        background: $approvalSurface;
+        padding: 0 1;
+        height: 1;
     }
-    Button {
-        margin-right: 1;
+    #btn-approve,
+    #btn-reject,
+    #btn-instruct {
+        border: none;
+        background: transparent;
+        color: $accent;
+        margin-right: 2;
+        min-width: 0;
+        height: 1;
+        text-style: underline;
+    }
+    #btn-approve:focus,
+    #btn-reject:focus,
+    #btn-instruct:focus {
+        text-style: bold;
     }
     """
 
@@ -202,21 +228,19 @@ class InterruptWidget(Widget):
     def compose(self) -> ComposeResult:
         title_text = f"APPROVAL REQUIRED [{self.interrupt.approval_id}]"
         with Vertical():
-            yield Static(title_text, classes="interrupt-title")
+            with Horizontal(classes="interrupt-title-row"):
+                yield Static(title_text, classes="interrupt-title")
+                yield Static("esc keeps pending", classes="interrupt-esc")
             yield Static(self.interrupt.question, classes="interrupt-question")
             if should_render_buttons(self.interrupt) and not self._submitted:
-                with Horizontal(classes="interrupt-actions"):
-                    yield Button("Approve", id="btn-approve", variant="success")
-                    yield Button("Reject", id="btn-reject", variant="error")
-                    yield Button("Add instruction", id="btn-instruct")
                 yield Input(
                     placeholder="Optional answer or comment...",
                     id="interrupt-input",
                 )
-                yield Static(
-                    "[A] Approve  [R] Reject  [E] Add instruction  Esc keeps pending",
-                    classes="interrupt-hint",
-                )
+                with Horizontal(classes="interrupt-actions"):
+                    yield Button("Approve A", id="btn-approve")
+                    yield Button("Reject R", id="btn-reject")
+                    yield Button("Add instruction E", id="btn-instruct")
             else:
                 status = self.interrupt.status.strip().upper() or "RESOLVED"
                 yield Static(f"{status} — awaiting confirmation",
