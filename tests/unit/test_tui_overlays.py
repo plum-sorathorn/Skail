@@ -208,7 +208,7 @@ def test_agent_rail_messages_do_not_switch_tabs() -> None:
 def test_plan_header_and_glyphs() -> None:
     assert plan_header(1, 3) == "PLAN \u00b7 1/3"
     assert plan_glyph("succeeded") == "\u2713"
-    assert plan_glyph("running") == "\u25cf"
+    assert plan_glyph("running") == "\u258c"
     assert plan_glyph("waiting") == "\u2219"
 
 

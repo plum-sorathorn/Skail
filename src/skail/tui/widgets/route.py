@@ -8,6 +8,7 @@ from textual.containers import VerticalScroll
 from textual.widgets import Static
 
 from skail.tui.projection import RouteViewItem
+from skail.tui.widgets.plan import section_head
 
 
 def immutable_label(attempt_number: int) -> str:
@@ -30,6 +31,32 @@ def render_route_lines(item: RouteViewItem | None) -> list[str]:
     return lines
 
 
+def role_floor_line(item: RouteViewItem) -> str:
+    """One ROLE FLOORS row: which role, which capability floor."""
+    slot = item.task_id or "lead"
+    return f"{slot} \u00b7 floor {item.capability_floor:.2f}"
+
+
+def shadow_section(item: RouteViewItem) -> tuple[str, list[str]]:
+    """ELIGIBLE/EXCLUDED survey from the routing shadow.
+
+    Returns (head, lines); ('', []) when the snapshot carries no shadow
+    recommendation. Sufficient evidence elects the candidate, otherwise it is
+    excluded together with its reasons. Nothing invented.
+    """
+    if not item.shadow_recommendation:
+        return "", []
+    sufficient = (item.evidence_status or "").strip().lower() == "sufficient"
+    if not sufficient:
+        lines = [f"SHADOW: {item.shadow_recommendation}"]
+        lines.extend(f"\u00b7 {reason}" for reason in item.shadow_reasons)
+        return "EXCLUDED", lines
+    detail = f"SHADOW: {item.shadow_recommendation}"
+    if item.evidence_revision:
+        detail += f" (evidence {item.evidence_revision})"
+    return "ELIGIBLE", [detail]
+
+
 class RouteView(VerticalScroll):
     """Read-only route display; changes go through commands/runtime only."""
 
@@ -46,7 +73,13 @@ class RouteView(VerticalScroll):
     .route-header {
         text-style: bold;
         color: $accent;
-        padding-bottom: 1;
+        border-bottom: solid $border;
+    }
+    .sec-head {
+        color: $textFaint;
+    }
+    .sec-row {
+        color: $textMuted;
     }
     """
 
@@ -62,10 +95,22 @@ class RouteView(VerticalScroll):
         self.selected_task_id = selected_task_id
         try:
             self.remove_children()
-            self.mount(Static("ROUTE DECISIONS", classes="route-header"))
+            self.mount(Static(" ".join("ROUTE"), classes="route-header"))
             target = self._target()
-            for line in render_route_lines(target):
+            lines = render_route_lines(target)
+            for line in lines[:3]:
                 self.mount(Static(line))
+            if target is not None:
+                self.mount(Static(section_head("ASSIGNMENT"), classes="sec-head"))
+                for line in lines[3:]:
+                    self.mount(Static(line))
+                self.mount(Static(section_head("ROLE FLOORS"), classes="sec-head"))
+                self.mount(Static(role_floor_line(target), classes="sec-row"))
+                head, shadow = shadow_section(target)
+                if head:
+                    self.mount(Static(section_head(head), classes="sec-head"))
+                    for line in shadow:
+                        self.mount(Static(line, classes="sec-row"))
         except Exception:
             pass
 
@@ -79,4 +124,10 @@ class RouteView(VerticalScroll):
         return None
 
 
-__all__ = ["RouteView", "immutable_label", "render_route_lines"]
+__all__ = [
+    "RouteView",
+    "immutable_label",
+    "render_route_lines",
+    "role_floor_line",
+    "shadow_section",
+]

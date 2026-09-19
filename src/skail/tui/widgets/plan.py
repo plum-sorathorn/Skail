@@ -4,19 +4,24 @@ from __future__ import annotations
 
 from typing import Any
 
-from textual.containers import VerticalScroll
+from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
-from textual.widgets import Static
+from textual.widgets import Input, Static
 
-from skail.tui.projection import PlanNodeViewItem
+from skail.tui.projection import PlanNodeViewItem, WorkspaceIntegrationItem
 
 GLYPH_DONE = "\u2713"
-GLYPH_CURRENT = "\u25cf"
+GLYPH_CURRENT = "\u258c"
 GLYPH_TODO = "\u2219"
 
 DONE_STATES = ("succeeded", "complete", "done", "verified", "integrated")
 CURRENT_STATES = ("running", "executing", "ready", "launching")
 PROPOSED_TITLE = "PROPOSED PLAN"
+PROPOSED_ACTS = (
+    "[underline]Accept[/underline] A / [underline]Reject[/underline] R"
+    " / [underline]Change[/underline] C"
+)
+CHANGE_NOTE_PLACEHOLDER = "optional change note\u2026"
 REJECTED_TITLE = "REJECTED"
 
 
@@ -50,12 +55,43 @@ def plan_header(total_done: int, total: int) -> str:
     return f"PLAN \u00b7 {total_done}/{total}"
 
 
+def plan_header_spaced(total_done: int, total: int) -> str:
+    """ATELIER variant of plan_header: only the PLAN word is letterspaced."""
+    word, separator, rest = plan_header(total_done, total).partition(" ")
+    return " ".join(word) + separator + rest
+
+
 def render_plan_rows(items: dict[str, PlanNodeViewItem]) -> list[str]:
     ordered = sorted(items.values(), key=lambda i: i.local_id)
     rows: list[str] = []
     for item in ordered:
-        rows.append(f"{plan_glyph(item.state)} {item.local_id} {item.objective}")
+        row = f"{plan_glyph(item.state)} {item.local_id} {item.objective}"
+        if item.task_id:
+            row += f" [textFaint]\u00b7 {item.task_id}[/]"
+        rows.append(row)
     return rows
+
+
+def section_head(label: str) -> str:
+    """ATELIER hairline head: letterspaced label between hairline runs."""
+    return "\u2500\u2500  " + " ".join(label) + "  \u2500\u2500"
+
+
+def integration_lines(integrations: dict[str, WorkspaceIntegrationItem]) -> list[str]:
+    """INTEGRATIONS rows as key/value lines (task: status); [] when none."""
+    lines: list[str] = []
+    for changeset_id, integration in integrations.items():
+        who = integration.task_id or changeset_id
+        row = f"{who}: {integration.status}"
+        if integration.error:
+            row += f" \u00b7 {integration.error}"
+        lines.append(row)
+    return lines
+
+
+def receipt_lines(receipts: list[str]) -> list[str]:
+    """RECEIPTS rows: one faint bullet line per receipt; [] when none."""
+    return [f"\u00b7 {receipt}" for receipt in receipts]
 
 
 class PlanView(VerticalScroll):
@@ -74,15 +110,29 @@ class PlanView(VerticalScroll):
     .plan-header {
         text-style: bold;
         color: $accent;
-        padding-bottom: 1;
+        border-bottom: solid $border;
+    }
+    .sec-head {
+        color: $textFaint;
+    }
+    .sec-row {
+        color: $textMuted;
     }
     .plan-proposed {
-        border: round $approval;
         background: $approvalSurface;
+        border: none;
+        border-left: heavy $approval;
         padding: 1;
     }
     .plan-proposed:focus-within {
-        outline: solid $focusRing;
+        border-left: heavy $focusRing;
+    }
+    #plan-change-note {
+        border: none;
+        border-bottom: dashed $borderStrong;
+        background: $approvalSurface;
+        padding: 0 1;
+        height: 1;
     }
     .plan-rejected {
         border-left: solid $border;
@@ -101,7 +151,11 @@ class PlanView(VerticalScroll):
         pass
 
     class PlanChangesRequested(Message):
-        pass
+        """Request changes, carrying the note typed in #plan-change-note."""
+
+        def __init__(self, note: str = "") -> None:
+            super().__init__()
+            self.note = note
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -137,29 +191,41 @@ class PlanView(VerticalScroll):
             return
         done, total = plan_progress(self.plan_items)
         try:
-            self.mount(Static(plan_header(done, total), classes="plan-header"))
+            self.mount(Static(plan_header_spaced(done, total), classes="plan-header"))
             state = (self.plan_state or "none").strip().lower()
             if state == "proposed":
                 self.mount(
-                    Static(
-                        "PROPOSED PLAN\n[A] Accept [R] Reject [E] Request changes",
+                    Vertical(
+                        Static(PROPOSED_TITLE, classes="plan-proposed-title"),
+                        Static(PROPOSED_ACTS, classes="plan-acts"),
+                        Input(
+                            placeholder=CHANGE_NOTE_PLACEHOLDER,
+                            id="plan-change-note",
+                        ),
                         classes="plan-proposed",
                     )
                 )
                 for row in render_plan_rows(self.plan_items):
                     self.mount(Static(row))
             elif state == "rejected":
-                self.mount(Static("REJECTED", classes="plan-rejected"))
+                self.mount(Static(REJECTED_TITLE, classes="plan-rejected"))
                 if not self.rejected_collapsed:
                     for row in render_plan_rows(self.plan_items):
                         self.mount(Static(row))
             else:
                 for row in render_plan_rows(self.plan_items):
                     self.mount(Static(row))
-                for receipt in self.receipts:
-                    self.mount(Static(receipt))
             if not self.plan_items and state == "none":
                 self.mount(Static("[dim]No execution plan active[/dim]"))
+            integrations = integration_lines(self.integrations)
+            if integrations:
+                self.mount(Static(section_head("INTEGRATIONS"), classes="sec-head"))
+                for line in integrations:
+                    self.mount(Static(line, classes="sec-row"))
+            if self.receipts:
+                self.mount(Static(section_head("RECEIPTS"), classes="sec-head"))
+                for line in receipt_lines(self.receipts):
+                    self.mount(Static(line, classes="sec-row"))
         except Exception:
             pass
 
@@ -173,7 +239,11 @@ class PlanView(VerticalScroll):
         self.post_message(self.PlanRejected())
 
     def request_changes(self) -> None:
-        self.post_message(self.PlanChangesRequested())
+        try:
+            note = self.query_one("#plan-change-note", Input).value.strip()
+        except Exception:
+            note = ""
+        self.post_message(self.PlanChangesRequested(note=note))
 
     async def on_key(self, event: Any) -> None:
         if (self.plan_state or "").strip().lower() != "proposed":
@@ -206,10 +276,15 @@ class PlanView(VerticalScroll):
 
 
 __all__ = [
+    "PROPOSED_ACTS",
     "PlanView",
+    "integration_lines",
     "plan_glyph",
     "plan_header",
+    "plan_header_spaced",
     "plan_progress",
     "plan_row_kind",
+    "receipt_lines",
     "render_plan_rows",
+    "section_head",
 ]
