@@ -53,7 +53,7 @@ from skail.tui.theme import (
     resolve_system_theme,
 )
 from skail.tui.widgets.agents import AgentRail
-from skail.tui.widgets.budget import BudgetView
+from skail.tui.widgets.budget import BudgetLedger, BudgetView
 from skail.tui.widgets.chat import ChatTranscript
 from skail.tui.widgets.composer import PromptComposer
 from skail.tui.widgets.footer import AtelierFooter
@@ -408,6 +408,7 @@ class SkailApp(App[int]):
                         yield RouteView(id="route-view")
                     with TabPane("Budget", id="tab-budget"):
                         yield BudgetView(id="budget-view")
+                yield BudgetLedger(id="budget-ledger")
         yield PromptComposer(id="prompt-composer")
         yield AtelierFooter(id="app-footer")
 
@@ -900,6 +901,9 @@ class SkailApp(App[int]):
 
         budget_view = self.query_one("#budget-view", BudgetView)
         budget_view.update_budget(self.projection.budget_item)
+
+        ledger = self.query_one("#budget-ledger", BudgetLedger)
+        ledger.update_budget(self.projection.budget_item)
 
         self._refresh_masthead()
 

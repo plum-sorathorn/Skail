@@ -14,7 +14,12 @@ from skail.tui.projection import (
     budget_meter,
     budget_view_model,
 )
-from skail.tui.theme import budget_token_for_ratio, lookup
+from skail.tui.theme import (
+    BUDGET_CRITICAL_THRESHOLD,
+    BUDGET_WARNING_THRESHOLD,
+    budget_token_for_ratio,
+    lookup,
+)
 
 
 def budget_state_label(state: Any) -> str:
@@ -48,6 +53,76 @@ def render_budget_lines(
         lines.append(f"{agent_id}: ${float(cost):.2f}")
     lines.append(f"Remaining: ${max(float(limit) - float(used), 0.0):.2f}")
     return lines
+
+
+_LEDGER_CELLS = 23
+_LEDGER_INNER_WIDTH = 35
+_LEDGER_FILLED = "▓"
+_LEDGER_EMPTY = "░"
+
+
+def render_ledger_lines(item: BudgetViewItem) -> list[str]:
+    """ATELIER margin LEDGER (redesign §6): header, spend, 23-cell meter, thresholds.
+
+    Lines carry bare theme token names ([textMuted], [budgetFill], ...) resolved at
+    paint time; only fields the projection supplies are shown.
+    """
+    used = (
+        item.authoritative_actual_usd
+        + item.estimated_actual_usd
+        + item.reserved_usd
+        + item.unknown_cost_usd
+    )
+    limit = item.hard_limit_usd
+    ratio: float | None = None
+    if limit is not None and float(limit) > 0:
+        ratio = float(used) / float(limit)
+    token = budget_token_for_ratio(ratio)
+
+    lead = "──"
+    pad = "─" * (_LEDGER_INNER_WIDTH - len(lead) - 1 - len("LEDGER"))
+    header = f"[textFaint]{lead}[/] LEDGER [textFaint]{pad}[/]"
+
+    if limit is not None:
+        money = f"${float(used):.4f} of ${float(limit):.2f}"
+        if ratio is not None:
+            pct = f"{ratio * 100:.1f}%"
+            gap = max(2, _LEDGER_INNER_WIDTH - len(money) - len(pct))
+            spend = f"[textMuted]{money}[/]{' ' * gap}[textFaint]{pct}[/]"
+        else:
+            spend = f"[textMuted]{money}[/]"
+    else:
+        spend = f"[textMuted]${float(used):.4f} of —[/]"
+
+    filled = 0 if ratio is None else min(int(ratio * _LEDGER_CELLS), _LEDGER_CELLS)
+    parts: list[str] = []
+    if filled:
+        parts.append(f"[{token}]{_LEDGER_FILLED * filled}[/]")
+    spare = _LEDGER_CELLS - filled
+    if spare:
+        parts.append(f"[budgetEmpty]{_LEDGER_EMPTY * spare}[/]")
+
+    thresholds = (
+        "[textFaint]warn ┊ "
+        f"{BUDGET_WARNING_THRESHOLD * 100:.0f}%   "
+        f"critical ┊ {BUDGET_CRITICAL_THRESHOLD * 100:.0f}%[/]"
+    )
+    return [header, spend, "".join(parts), thresholds]
+
+
+class BudgetLedger(Static):
+    """ATELIER margin LEDGER: always-visible spend block under #tabs."""
+
+    DEFAULT_CSS = """
+    BudgetLedger {
+        height: auto;
+        padding: 0 1;
+    }
+    """
+
+    def update_budget(self, item: BudgetViewItem) -> None:
+        """Re-render the ledger from the projection's budget item."""
+        self.update("\n".join(render_ledger_lines(item)))
 
 
 class BudgetView(VerticalScroll):
@@ -126,7 +201,9 @@ class BudgetView(VerticalScroll):
 
 
 __all__ = [
+    "BudgetLedger",
     "BudgetView",
     "budget_state_label",
     "render_budget_lines",
+    "render_ledger_lines",
 ]

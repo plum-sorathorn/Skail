@@ -266,6 +266,45 @@ def test_budget_thresholds_and_unavailable() -> None:
     )
 
 
+def test_budget_ledger_meter_and_pct() -> None:
+    from decimal import Decimal
+
+    from skail.tui.projection import BudgetViewItem
+    from skail.tui.widgets.budget import render_ledger_lines
+
+    item = BudgetViewItem(
+        hard_limit_usd=Decimal("1.00"),
+        authoritative_actual_usd=Decimal("0.50"),
+    )
+    lines = render_ledger_lines(item)
+    meter = lines[2]
+    assert meter.count("▓") + meter.count("░") == 23
+    assert meter.count("▓") == 11  # 0.50 of 1.00 -> 11.5 -> 11 filled
+    assert "$0.5000 of $1.00" in lines[1]
+    assert "50.0%" in lines[1]
+
+
+def test_budget_ledger_fill_token_thresholds() -> None:
+    from decimal import Decimal
+
+    from skail.tui.projection import BudgetViewItem
+    from skail.tui.widgets.budget import render_ledger_lines
+
+    cases = (
+        ("0.74", "budgetFill"),
+        ("0.75", "budgetWarning"),
+        ("0.89", "budgetWarning"),
+        ("0.90", "budgetCritical"),
+    )
+    for used, token in cases:
+        item = BudgetViewItem(
+            hard_limit_usd=Decimal("1.00"),
+            authoritative_actual_usd=Decimal(used),
+        )
+        lines = render_ledger_lines(item)
+        assert f"[{token}]" in lines[2], (used, lines[2])
+
+
 # -- transcript overlay ----------------------------------------------------
 
 
