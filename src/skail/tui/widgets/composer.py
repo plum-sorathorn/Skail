@@ -118,6 +118,15 @@ def overflow_label(total: int, shown: int) -> str:
     return f"+{remaining} more"
 
 
+def mode_token(mode: str) -> str:
+    """Theme token for a routing mode (``text`` when unrecognized)."""
+    return {
+        "quality": "modeQuality",
+        "economy": "modeEconomy",
+        "manual": "modeManual",
+    }.get(mode.strip().lower(), "text")
+
+
 def should_send_on_enter(state: ComposerState) -> bool:
     """Enter sends only when the slash palette is closed."""
     if state.palette_open:
@@ -218,16 +227,18 @@ class PromptComposer(Widget):
         height: auto;
         padding: 0 1;
         background: $surface;
-        border-top: solid $border;
+        border-top: solid $borderStrong;
+        border-bottom: solid $borderStrong;
     }
     PromptComposer:focus-within {
-        outline: solid $focusRing;
+        border-top: solid $focusRing;
+        border-bottom: solid $focusRing;
     }
     #composer-queue {
         width: 100%;
         height: auto;
         background: $surface;
-        color: $text-muted;
+        color: $approval;
         padding: 0 1;
     }
     #composer-outer {
@@ -241,45 +252,52 @@ class PromptComposer(Widget):
     #composer-card {
         width: 100%;
         height: auto;
-        border: round $borderStrong;
-        background: $surfaceRaised;
-        padding: 0 1;
+        border: none;
+        background: $surface;
+        padding: 0;
     }
-    #composer-card:focus-within {
-        border: round $focusRing;
+    .composer-input-row {
+        width: 100%;
+        height: auto;
+    }
+    .composer-prompt {
+        width: 2;
+        color: $accent;
     }
     #composer-input {
-        width: 100%;
+        width: 1fr;
         height: auto;
         min-height: 3;
         max-height: 8;
         background: $surface;
         color: $text;
     }
-    #composer-input:focus-within {
-        outline: solid $focusRing;
-    }
     #composer-status {
-        width: 100%;
+        width: 1fr;
         height: 1;
-        color: $textMuted;
+        color: $textFaint;
     }
     #composer-mode {
-        color: $accent;
+        color: $modeQuality;
         text-style: bold;
+        background: $surfaceRaised;
+        padding: 0 1;
     }
     #composer-palette {
         width: 100%;
         height: auto;
         max-height: 6;
-        background: $surfaceRaised;
-        border: round $borderStrong;
+        background: $surface;
+        border-top: solid $border;
         color: $text;
     }
     #composer-send {
         width: auto;
         min-width: 10;
         margin-left: 1;
+        border: solid $accent;
+        color: $accent;
+        background: $accentSoft;
     }
     """
 
@@ -329,16 +347,22 @@ class PromptComposer(Widget):
         with Vertical(id="composer-outer"):
             yield Static("", id="composer-queue")
             with Vertical(id="composer-card"):
-                yield TextArea(
-                    "",
-                    id="composer-input",
-                    show_line_numbers=False,
-                )
+                with Horizontal(classes="composer-input-row"):
+                    yield Static("\u203a", classes="composer-prompt")
+                    yield TextArea(
+                        "",
+                        id="composer-input",
+                        show_line_numbers=False,
+                    )
                 yield Static("", id="composer-palette")
                 with Horizontal(id="composer-actions"):
                     yield Static("", id="composer-status")
-                    yield Static(f"MODE {self.composer_mode}", id="composer-mode")
-                    yield Button("Send", id="composer-send", variant="primary")
+                    yield Static(
+                        f"MODE [{mode_token(self.composer_mode)}]"
+                        f"{self.composer_mode}[/]",
+                        id="composer-mode",
+                    )
+                    yield Button("SEND \u23ce", id="composer-send")
 
     def on_mount(self) -> None:
         self._refresh_queue()
@@ -367,7 +391,10 @@ class PromptComposer(Widget):
             label.display = False
             return
         label.display = True
-        lines = [f"QUEUED {len(self.queue_items)}  ^ take back"]
+        lines = [
+            f"QUEUED {len(self.queue_items)} \u00b7 ^ take back"
+            " \u00b7 newest runs after this one"
+        ]
         for number, item in enumerate(self.queue_items, start=1):
             lines.append(f"{number}  {item}")
         label.update("\n".join(lines))
@@ -375,7 +402,9 @@ class PromptComposer(Widget):
     def _refresh_status(self) -> None:
         try:
             status = self.query_one("#composer-status", Static)
-            status.update(f"/ opens commands ? shortcuts  {len(self.draft_text)} chars")
+            status.update(
+                f"{len(self.draft_text)} chars \u00b7 / commands \u00b7 ? shortcuts"
+            )
         except Exception:
             pass
 
@@ -569,6 +598,7 @@ __all__ = [
     "PromptComposer",
     "complete_ghost",
     "fuzzy_match_commands",
+    "mode_token",
     "overflow_label",
     "recall_newer",
     "recall_older",

@@ -67,6 +67,16 @@ def test_palette_overflow_label() -> None:
     assert overflow_label(total=6, shown=6) == ""
 
 
+def test_mode_token_maps_modes_to_theme_tokens() -> None:
+    from skail.tui.widgets.composer import mode_token
+
+    assert mode_token("QUALITY") == "modeQuality"
+    assert mode_token("economy") == "modeEconomy"
+    assert mode_token("Manual") == "modeManual"
+    assert mode_token("  quality  ") == "modeQuality"
+    assert mode_token("custom") == "text"
+
+
 def test_palette_max_six_rows() -> None:
     from skail.tui.widgets.composer import MAX_PALETTE_ROWS
 
