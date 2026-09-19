@@ -342,6 +342,78 @@ def test_budget_ledger_fill_token_thresholds() -> None:
         assert f"[{token}]" in lines[2], (used, lines[2])
 
 
+def test_budget_atelier_meter_cells() -> None:
+    from skail.tui.theme import budget_token_for_ratio
+    from skail.tui.widgets.budget import budget_meter_markup
+
+    meter = budget_meter_markup(0.5)
+    expected = f"[{budget_token_for_ratio(0.5)}]" + "▓" * 11 + "[/]"
+    assert meter == expected + "[budgetEmpty]" + "░" * 12 + "[/]"
+    assert budget_meter_markup(None) == "[budgetEmpty]" + "░" * 23 + "[/]"
+    assert budget_meter_markup(0.0) == "[budgetEmpty]" + "░" * 23 + "[/]"
+    assert budget_meter_markup(1.0) == (
+        f"[{budget_token_for_ratio(1.0)}]" + "▓" * 23 + "[/]"
+    )
+    assert budget_meter_markup(1.5) == budget_meter_markup(1.0)  # capped at 23
+
+
+def test_budget_atelier_threshold_legend() -> None:
+    from skail.tui.theme import BUDGET_CRITICAL_THRESHOLD, BUDGET_WARNING_THRESHOLD
+    from skail.tui.widgets.budget import budget_threshold_legend
+
+    legend = budget_threshold_legend()
+    assert legend == (
+        "[textFaint]thresholds "
+        f"{BUDGET_WARNING_THRESHOLD:.2f} / {BUDGET_CRITICAL_THRESHOLD:.2f}[/]"
+    )
+    assert "thresholds 0.75 / 0.90" in legend
+
+
+def test_budget_atelier_breakdown_lines() -> None:
+    from decimal import Decimal
+
+    from skail.tui.projection import BudgetViewItem
+    from skail.tui.widgets.budget import budget_breakdown_lines
+
+    item = BudgetViewItem(
+        reserved_usd=Decimal("0.1000"),
+        authoritative_actual_usd=Decimal("0.2000"),
+        estimated_actual_usd=Decimal("0.0300"),
+        unknown_cost_usd=Decimal("0.0040"),
+    )
+    lines = budget_breakdown_lines(item)
+    assert len(lines) == 5
+    assert "BREAKDOWN" in lines[0] and "──" in lines[0]
+    assert "reserved" in lines[1] and "$0.1000" in lines[1]
+    assert "authoritative" in lines[2] and "$0.2000" in lines[2]
+    assert "estimated" in lines[3] and "$0.0300" in lines[3]
+    assert "unknown" in lines[4] and "$0.0040" in lines[4]
+
+
+def test_budget_atelier_panel_lines() -> None:
+    from decimal import Decimal
+
+    from skail.tui.projection import BudgetViewItem
+    from skail.tui.widgets.budget import budget_panel_lines
+
+    item = BudgetViewItem(
+        hard_limit_usd=Decimal("1.00"),
+        authoritative_actual_usd=Decimal("0.25"),
+        reserved_usd=Decimal("0.25"),
+    )
+    lines = budget_panel_lines(item)
+    assert "$0.5000 of $1.00" in lines[0]
+    assert "50.0%" in lines[0]
+    assert lines[1].count("▓") + lines[1].count("░") == 23
+    assert "thresholds 0.75 / 0.90" in lines[2]
+    assert "BREAKDOWN" in lines[3]
+    assert any("estimated" in line for line in lines[4:])
+    assert any("unknown" in line for line in lines[4:])
+    assert budget_panel_lines(BudgetViewItem(hard_limit_usd=None)) == [
+        BUDGET_UNAVAILABLE_COPY
+    ]
+
+
 # -- transcript overlay ----------------------------------------------------
 
 

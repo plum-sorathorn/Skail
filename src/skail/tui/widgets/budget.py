@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Any
 
 from textual.containers import VerticalScroll
@@ -11,14 +10,12 @@ from textual.widgets import Static
 from skail.tui.projection import (
     BUDGET_UNAVAILABLE_COPY,
     BudgetViewItem,
-    budget_meter,
     budget_view_model,
 )
 from skail.tui.theme import (
     BUDGET_CRITICAL_THRESHOLD,
     BUDGET_WARNING_THRESHOLD,
     budget_token_for_ratio,
-    lookup,
 )
 
 
@@ -125,8 +122,83 @@ class BudgetLedger(Static):
         self.update("\n".join(render_ledger_lines(item)))
 
 
+def _hairline_head(label: str, *, spaced: bool = False) -> str:
+    """Hairline section head: faint rule, label, faint filler (redesign §6)."""
+    text = " ".join(label) if spaced else label
+    pad = "─" * (_LEDGER_INNER_WIDTH - 2 - 1 - len(text) - 1)
+    return f"[textFaint]──[/] {text} [textFaint]{pad}[/]"
+
+
+def budget_meter_markup(ratio: float | None, cells: int = _LEDGER_CELLS) -> str:
+    """23-cell ▓/░ meter markup; fill token flips at 0.75/0.90 via the theme."""
+    if ratio is None:
+        return f"[budgetEmpty]{_LEDGER_EMPTY * cells}[/]"
+    filled = min(int(ratio * cells), cells)
+    parts: list[str] = []
+    if filled:
+        parts.append(f"[{budget_token_for_ratio(ratio)}]{_LEDGER_FILLED * filled}[/]")
+    spare = cells - filled
+    if spare:
+        parts.append(f"[budgetEmpty]{_LEDGER_EMPTY * spare}[/]")
+    return "".join(parts)
+
+
+def budget_threshold_legend() -> str:
+    """Legend line: ``thresholds 0.75 / 0.90`` from the theme constants."""
+    return (
+        "[textFaint]thresholds "
+        f"{BUDGET_WARNING_THRESHOLD:.2f} / {BUDGET_CRITICAL_THRESHOLD:.2f}[/]"
+    )
+
+
+def budget_breakdown_lines(item: BudgetViewItem) -> list[str]:
+    """BREAKDOWN kv rows: only the four cost components the projection supplies.
+
+    Never invents values: reserved / authoritative / estimated / unknown, 4dp.
+    """
+    fields = (
+        ("reserved", item.reserved_usd),
+        ("authoritative", item.authoritative_actual_usd),
+        ("estimated", item.estimated_actual_usd),
+        ("unknown", item.unknown_cost_usd),
+    )
+    lines = [_hairline_head("BREAKDOWN")]
+    lines.extend(
+        f"  [textFaint]{name:<13}[/] [textMuted]${float(value):.4f}[/]"
+        for name, value in fields
+    )
+    return lines
+
+
+def budget_panel_lines(item: BudgetViewItem) -> list[str]:
+    """ATELIER BUDGET tab body: money, 23-cell meter, thresholds, BREAKDOWN.
+
+    When the projection supplies no hard limit, only the unavailable copy is
+    returned; supplied components are never augmented with invented fields.
+    """
+    limit = item.hard_limit_usd
+    if limit is None:
+        return [BUDGET_UNAVAILABLE_COPY]
+    used = (
+        item.authoritative_actual_usd
+        + item.estimated_actual_usd
+        + item.reserved_usd
+        + item.unknown_cost_usd
+    )
+    ratio = float(used) / float(limit) if float(limit) > 0 else 0.0
+    money = f"${float(used):.4f} of ${float(limit):.2f}"
+    pct = f"{ratio * 100:.1f}%"
+    gap = max(2, _LEDGER_INNER_WIDTH - len(money) - len(pct))
+    return [
+        f"[textMuted]{money}[/]{' ' * gap}[textFaint]{pct}[/]",
+        budget_meter_markup(ratio),
+        budget_threshold_legend(),
+        *budget_breakdown_lines(item),
+    ]
+
+
 class BudgetView(VerticalScroll):
-    """Budget panel driven by ``budget_view_model`` + ``budget_meter``."""
+    """ATELIER BUDGET tab: hairline head, money, 23-cell meter, legend, BREAKDOWN."""
 
     DEFAULT_CSS = """
     BudgetView {
@@ -158,44 +230,14 @@ class BudgetView(VerticalScroll):
         self.budget_available = budget_available
         try:
             self.remove_children()
-            self.mount(Static("BUDGET & USAGE", classes="budget-header"))
+            self.mount(
+                Static(_hairline_head("BUDGET", spaced=True), classes="budget-header")
+            )
             if not budget_available or item is None:
                 self.mount(Static(BUDGET_UNAVAILABLE_COPY))
                 return
-            limit = item.hard_limit_usd
-            if limit is None:
-                self.mount(Static(BUDGET_UNAVAILABLE_COPY))
-                return
-            used = (
-                float(item.authoritative_actual_usd)
-                + float(item.estimated_actual_usd)
-                + float(item.reserved_usd)
-                + float(item.unknown_cost_usd)
-            )
-            ratio = used / float(limit) if float(limit) > 0 else 0.0
-            model = budget_view_model(used, float(limit))
-            meter = budget_meter(used, float(limit))
-            token = budget_token_for_ratio(ratio)
-            try:
-                from skail.tui.theme import get_theme
-
-                _ = lookup(get_theme("dark"), token)
-            except Exception:
-                pass
-            label = budget_state_label(model.state)
-            per_agent = {
-                str(k): float(v) for k, v in (item.per_agent_costs or {}).items()
-            }
-            lines = render_budget_lines(used, float(limit), per_agent)
-            for line in lines:
-                if line == label and label != "normal":
-                    self.mount(Static(f"[{token}]{line}[/{token}]"))
-                elif line == meter or line.startswith("■■") or "■" in line:
-                    self.mount(Static(f"[{token}]{line}[/{token}]"))
-                else:
-                    self.mount(Static(line))
-            if isinstance(item.hard_limit_usd, Decimal):
-                pass
+            for line in budget_panel_lines(item):
+                self.mount(Static(line))
         except Exception:
             pass
 
@@ -203,7 +245,11 @@ class BudgetView(VerticalScroll):
 __all__ = [
     "BudgetLedger",
     "BudgetView",
+    "budget_breakdown_lines",
+    "budget_meter_markup",
+    "budget_panel_lines",
     "budget_state_label",
+    "budget_threshold_legend",
     "render_budget_lines",
     "render_ledger_lines",
 ]
