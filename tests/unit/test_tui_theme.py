@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -33,81 +34,81 @@ from skail.tui.theme import (
 HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 EXPECTED_DARK = {
-    "background": "#0B0D10",
-    "surface": "#11151A",
-    "surfaceRaised": "#171C22",
-    "surfaceInset": "#0E1216",
-    "border": "#2A313A",
-    "borderStrong": "#3A4552",
-    "text": "#E8EDF2",
-    "textMuted": "#8E99A6",
-    "textFaint": "#59636F",
-    "accent": "#5CC8FF",
-    "accentSoft": "#173748",
-    "modeQuality": "#B69CFF",
-    "modeEconomy": "#58D6A7",
-    "modeManual": "#F2B866",
-    "delegation": "#A88BFA",
-    "budgetFill": "#5CC8FF",
-    "budgetWarning": "#F2B866",
-    "budgetCritical": "#FF6B7A",
-    "budgetEmpty": "#303842",
-    "diffAdded": "#4FCB8D",
-    "diffAddedSurface": "#102A20",
-    "diffRemoved": "#FF7D88",
-    "diffRemovedSurface": "#32171C",
-    "dimmed": "#66717D",
-    "error": "#FF6B7A",
-    "errorSurface": "#34171D",
-    "approval": "#F5C451",
-    "approvalSurface": "#302711",
-    "agentOne": "#5CC8FF",
-    "agentTwo": "#B69CFF",
-    "agentThree": "#58D6A7",
-    "shimmerBase": "#56616D",
-    "shimmerPeak": "#D5F3FF",
-    "focusRing": "#86D8FF",
-    "selection": "#24495D",
-    "link": "#79D1FF",
+    "background": "#14110E",
+    "surface": "#1B1714",
+    "surfaceRaised": "#221D19",
+    "surfaceInset": "#100D0A",
+    "border": "#322A24",
+    "borderStrong": "#4F4238",
+    "text": "#EDE4D6",
+    "textMuted": "#9A8C7B",
+    "textFaint": "#6E6154",
+    "accent": "#D98E4A",
+    "accentSoft": "#2E2318",
+    "modeQuality": "#B39DDB",
+    "modeEconomy": "#82C9A5",
+    "modeManual": "#D9A441",
+    "delegation": "#B39DDB",
+    "budgetFill": "#C9A227",
+    "budgetWarning": "#D98E4A",
+    "budgetCritical": "#E0645A",
+    "budgetEmpty": "#2C2620",
+    "diffAdded": "#8FBF7A",
+    "diffAddedSurface": "#182114",
+    "diffRemoved": "#E0645A",
+    "diffRemovedSurface": "#2A1614",
+    "dimmed": "#6E6154",
+    "error": "#E0645A",
+    "errorSurface": "#2A1614",
+    "approval": "#D9A441",
+    "approvalSurface": "#241E14",
+    "agentOne": "#7FB3D5",
+    "agentTwo": "#B39DDB",
+    "agentThree": "#82C9A5",
+    "shimmerBase": "#6E6154",
+    "shimmerPeak": "#F6E7D0",
+    "focusRing": "#E8B978",
+    "selection": "#3A2F22",
+    "link": "#8FC7E8",
 }
 
 EXPECTED_LIGHT = {
-    "background": "#F6F7F9",
-    "surface": "#FFFFFF",
-    "surfaceRaised": "#EEF1F4",
-    "surfaceInset": "#E8ECF0",
-    "border": "#CBD2DA",
-    "borderStrong": "#98A3AF",
-    "text": "#18202A",
-    "textMuted": "#66717D",
-    "textFaint": "#9099A3",
-    "accent": "#006F9F",
-    "accentSoft": "#D9F1FC",
-    "modeQuality": "#6545B8",
-    "modeEconomy": "#087A55",
-    "modeManual": "#98600B",
-    "delegation": "#6741C7",
-    "budgetFill": "#007AAE",
-    "budgetWarning": "#98600B",
-    "budgetCritical": "#B42335",
-    "budgetEmpty": "#D5DBE1",
-    "diffAdded": "#087A49",
-    "diffAddedSurface": "#DDF6E9",
-    "diffRemoved": "#B42335",
-    "diffRemovedSurface": "#FCE2E5",
-    "dimmed": "#89929C",
-    "error": "#B42335",
-    "errorSurface": "#FCE4E7",
+    "background": "#F4F0E7",
+    "surface": "#FBF8F1",
+    "surfaceRaised": "#EDE7DA",
+    "surfaceInset": "#E7E0D2",
+    "border": "#D6CCBB",
+    "borderStrong": "#A99C87",
+    "text": "#241E17",
+    "textMuted": "#6E6154",
+    "textFaint": "#948878",
+    "accent": "#9E5518",
+    "accentSoft": "#F0E0CB",
+    "modeQuality": "#5E46A0",
+    "modeEconomy": "#2C7355",
+    "modeManual": "#8A6200",
+    "delegation": "#5E46A0",
+    "budgetFill": "#8A6A0C",
+    "budgetWarning": "#9E5518",
+    "budgetCritical": "#AE3227",
+    "budgetEmpty": "#DCD4C5",
+    "diffAdded": "#2C7355",
+    "diffAddedSurface": "#DDF3E6",
+    "diffRemoved": "#AE3227",
+    "diffRemovedSurface": "#F6E2DE",
+    "dimmed": "#948878",
+    "error": "#AE3227",
+    "errorSurface": "#F6E2DE",
     "approval": "#8A6200",
-    "approvalSurface": "#FFF2C4",
-    "agentOne": "#006F9F",
-    "agentTwo": "#6545B8",
-    "agentThree": "#087A55",
-    "shimmerBase": "#98A3AF",
-    "shimmerPeak": "#006F9F",
-    "focusRing": "#005D86",
-    "selection": "#CBEAF8",
-    "link": "#006F9F",
+    "approvalSurface": "#FAEEC9",
+    "agentOne": "#2F6E92",
+    "agentTwo": "#5E46A0",
+    "agentThree": "#2C7355",
+    "shimmerBase": "#A99C87",
+    "shimmerPeak": "#241E17",
+    "focusRing": "#7A3F0E",
+    "selection": "#E3D3BC",
+    "link": "#2F6E92",
 }
 
 
@@ -136,9 +137,23 @@ def test_every_token_is_valid_six_digit_hex() -> None:
             assert HEX_RE.match(value), f"{name}={value}"
 
 
+def test_validate_theme_raises_on_eight_digit_and_missing_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    eight_digit = replace(DARK_THEME, diff_added_surface="#18211400")
+    with pytest.raises(ValueError):
+        validate_theme(eight_digit)
+    monkeypatch.setattr(
+        "skail.tui.theme.REQUIRED_TOKENS",
+        (*REQUIRED_TOKENS, "ghostToken"),
+    )
+    with pytest.raises(ValueError):
+        validate_theme(DARK_THEME)
+
+
 def test_lookup_and_unknown_token() -> None:
-    assert lookup(DARK_THEME, "accent") == "#5CC8FF"
-    assert lookup(LIGHT_THEME, "background") == "#F6F7F9"
+    assert lookup(DARK_THEME, "accent") == "#D98E4A"
+    assert lookup(LIGHT_THEME, "background") == "#F4F0E7"
     with pytest.raises(KeyError):
         lookup(DARK_THEME, "notAToken")
 
@@ -183,10 +198,10 @@ def test_reduced_motion_pref(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_css_variables_and_textual_css() -> None:
     variables = to_css_variables(DARK_THEME)
-    assert variables["--accent"] == "#5CC8FF"
+    assert variables["--accent"] == "#D98E4A"
     assert len(variables) == len(REQUIRED_TOKENS)
     css = to_textual_css(DARK_THEME)
-    assert "--background: #0B0D10;" in css
+    assert "--background: #14110E;" in css
     assert "theme.py" not in css
 
 
