@@ -9,6 +9,7 @@ try:
 except Exception:  # pragma: no cover
     Screen = object  # type: ignore[assignment,misc]
 
+from skail.tui.overlays.shell import OVERLAY_CSS, ovl_foot, ovl_head, ovl_rule_strong
 from skail.tui.projection import ChildView
 from skail.tui.theme import agent_slot_token
 
@@ -28,6 +29,7 @@ AT_CAP_MESSAGE = (
     "Mission capacity reached (3/3). Finish or cancel a mission first."
 )
 CONFIRM_PROMPT = "Confirm cancel? [y/N]"
+MISSIONS_FOOT = "Cancel requires confirmation; at most 3 concurrent children."
 
 
 def missions_header(children: list[ChildView]) -> str:
@@ -65,6 +67,8 @@ def detail_lines(child: ChildView, attempt: int = 1) -> list[str]:
 
 class MissionsOverlay(Screen):  # type: ignore[type-arg]
     """Enter details, C requests cancel then confirm dialog, Esc closes."""
+
+    DEFAULT_CSS = OVERLAY_CSS
 
     def __init__(
         self,
@@ -124,9 +128,12 @@ class MissionsOverlay(Screen):  # type: ignore[type-arg]
         try:
             from textual.widgets import Static
 
+            yield ovl_head("MISSION CONTROL", hint="C cancels \u00b7 esc closes")
+            yield ovl_rule_strong()
             yield Static(self.header())
             for row in self.rows():
                 yield Static(row)
+            yield ovl_foot(MISSIONS_FOOT)
         except Exception:
             return
             yield  # pragma: no cover
@@ -161,6 +168,7 @@ __all__ = [
     "AT_CAP_MESSAGE",
     "CONFIRM_PROMPT",
     "MAX_CHILDREN",
+    "MISSIONS_FOOT",
     "MissionsOverlay",
     "can_spawn",
     "detail_lines",

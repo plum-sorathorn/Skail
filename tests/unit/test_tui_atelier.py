@@ -3,7 +3,7 @@
 from dataclasses import replace
 from decimal import Decimal
 
-from skail.tui.app import render_dateline, render_transcript_header
+from skail.tui.app import ACTION_REGISTRY, render_dateline, render_transcript_header
 from skail.tui.projection import RouteViewItem, WorkspaceIntegrationItem
 from skail.tui.widgets.footer import AtelierFooter, format_footer_hints
 from skail.tui.widgets.plan import (
@@ -262,3 +262,102 @@ def test_policy_lead_line_mode_then_slot() -> None:
     """The policy lead row reads mode then slot under a 'policy' label."""
     assert policy_lead_line(_route_item()) == "policy: auto \u2192 lead"
     assert policy_lead_line(replace(_route_item(), task_id="")) == "policy: auto \u2192 lead"
+
+
+# -- overlays (P6: shared ATELIER dressing) ---------------------------------
+
+
+def test_overlay_shell_css_shared_by_all_five() -> None:
+    """All five overlay screens carry the shared ATELIER dressing TCSS."""
+    from skail.tui.overlays.missions import MissionsOverlay
+    from skail.tui.overlays.model_picker import ModelPickerOverlay
+    from skail.tui.overlays.shell import OVERLAY_CSS
+    from skail.tui.overlays.shortcuts import ShortcutsOverlay
+    from skail.tui.overlays.theme_picker import ThemePickerOverlay
+    from skail.tui.overlays.transcript import TranscriptOverlay
+
+    for screen in (
+        ShortcutsOverlay,
+        ThemePickerOverlay,
+        ModelPickerOverlay,
+        MissionsOverlay,
+        TranscriptOverlay,
+    ):
+        assert screen.DEFAULT_CSS == OVERLAY_CSS
+    for rule in (
+        "background: $surfaceInset 80%",
+        "border-bottom: double $borderStrong",
+        "color: $textFaint",
+    ):
+        assert rule in OVERLAY_CSS
+
+
+def test_overlay_shell_widget_helpers() -> None:
+    """ovl_head/ovl_rule_strong/ovl_foot produce the dressed head/rule/foot widgets."""
+    from skail.tui.overlays.shell import ovl_foot, ovl_head, ovl_rule_strong
+
+    head = ovl_head("SHORTCUTS", "esc closes")
+    assert head.has_class("ovl-head")
+    # Textual 1.0 defers constructor-children to mount time.
+    title, hint = head._pending_children
+    assert title.has_class("ovl-title")
+    assert hint.has_class("ovl-hint")
+    assert ovl_rule_strong().has_class("ovl-rule-strong")
+    assert ovl_foot("note").has_class("ovl-foot")
+
+
+def test_letterspaced_bakes_single_spaces() -> None:
+    """Titles bake their letterspacing in, matching the earlier ATELIER precedent."""
+    from skail.tui.overlays.shell import letterspaced
+
+    assert letterspaced("SHORTCUTS") == "S H O R T C U T S"
+    assert letterspaced("THEME") == "T H E M E"
+    assert letterspaced("TRANSCRIPT") == "T R A N S C R I P T"
+
+
+def test_overlay_composes_dressed_head_rule_and_foot() -> None:
+    """Every overlay compose dresses head+rule+foot; hints and feet carry the copy."""
+    import inspect
+
+    import skail.tui.overlays.missions as missions
+    import skail.tui.overlays.model_picker as model_picker
+    import skail.tui.overlays.shortcuts as shortcuts
+    import skail.tui.overlays.theme_picker as theme_picker
+    import skail.tui.overlays.transcript as transcript
+
+    for module in (shortcuts, theme_picker, model_picker, missions, transcript):
+        src = inspect.getsource(module)
+        assert "ovl_head(" in src
+        assert "ovl_rule_strong(" in src
+        assert "ovl_foot(" in src
+        assert 'hint="' in src
+    for module in (shortcuts, model_picker, missions, transcript):
+        assert "esc closes" in inspect.getsource(module)
+    assert "esc restores" in inspect.getsource(theme_picker)
+    assert "focus ring = $focusRing token" in shortcuts.SHORTCUTS_FOOT
+    assert "3" in missions.MISSIONS_FOOT
+
+
+def test_shortcuts_grid_columns_superset_with_kbd_chips() -> None:
+    """The 36/1/36 grid renders every ACTION_REGISTRY group as kbd/desc rows."""
+    from skail.tui.overlays.shortcuts import shortcut_grid_columns
+    from skail.tui.widgets.plan import section_head
+
+    left, right = shortcut_grid_columns(ACTION_REGISTRY)
+    rows = [line for line in (*left, *right) if not line.startswith("\u2500")]
+    heads = [line for line in (*left, *right) if line.startswith("\u2500")]
+    assert rows and all(line.startswith("[on $surfaceRaised] ") for line in rows)
+    assert len(rows) == len(ACTION_REGISTRY)
+    for group in (
+        "RUN",
+        "COMPOSER",
+        "NAVIGATION",
+        "AGENTS",
+        "APPROVALS",
+        "SESSION",
+        "DISPLAY",
+    ):
+        assert section_head(group) in heads
+    assert "view_chat" not in "".join(rows)  # kbd/desc rows, no (action) annotation
+    assert shortcut_grid_columns(ACTION_REGISTRY, "missions") != (left, right)
+    assert shortcut_grid_columns(ACTION_REGISTRY, "zzzz-none") == ([], [])

@@ -9,6 +9,7 @@ try:
 except Exception:  # pragma: no cover - stub fallback for headless tests
     Screen = object  # type: ignore[assignment,misc]
 
+from skail.tui.overlays.shell import OVERLAY_CSS, ovl_foot, ovl_head, ovl_rule_strong
 from skail.tui.projection import TranscriptItem
 from skail.tui.widgets.chat import (
     ChatTranscript,
@@ -21,6 +22,9 @@ NATIVE_SCROLLBACK_UNAVAILABLE = (
     "opened the system pager instead."
 )
 RETURN_PROMPT = "Press Enter to return to Skail."
+TRANSCRIPT_FOOT = (
+    "Read-only \u00b7 ctrl+shift+o pages when native scrollback is unavailable."
+)
 
 
 def _app_for(host: object) -> Any:
@@ -44,6 +48,8 @@ def transcript_plain_text(items: list[TranscriptItem]) -> str:
 
 class TranscriptOverlay(Screen):  # type: ignore[type-arg]
     """Full-area transcript; Esc/Ctrl+O closes, Ctrl+Shift+O pagers."""
+
+    DEFAULT_CSS = OVERLAY_CSS
 
     def __init__(
         self,
@@ -101,7 +107,10 @@ class TranscriptOverlay(Screen):  # type: ignore[type-arg]
                 transcript.scroll_y = self.saved_scroll_y
             except Exception:
                 pass
+            yield ovl_head("TRANSCRIPT", hint="esc closes \u00b7 ctrl+shift+o pager")
+            yield ovl_rule_strong()
             yield transcript
+            yield ovl_foot(TRANSCRIPT_FOOT)
         except Exception:
             return
             yield  # pragma: no cover - make this a generator
@@ -134,6 +143,7 @@ class TranscriptOverlay(Screen):  # type: ignore[type-arg]
 __all__ = [
     "NATIVE_SCROLLBACK_UNAVAILABLE",
     "RETURN_PROMPT",
+    "TRANSCRIPT_FOOT",
     "TranscriptOverlay",
     "transcript_plain_text",
     "transcript_search",

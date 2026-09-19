@@ -9,7 +9,10 @@ try:
 except Exception:  # pragma: no cover
     Screen = object  # type: ignore[assignment,misc]
 
+from skail.tui.overlays.shell import OVERLAY_CSS, ovl_foot, ovl_head, ovl_rule_strong
 from skail.tui.theme import ThemeName, resolve_system_theme
+
+THEME_FOOT = "Dark and Light retune all 36 tokens; System follows the OS."
 
 
 def _app_for(host: object) -> Any:
@@ -46,6 +49,8 @@ def resolve_system_note(detected: str | None) -> tuple[str, str]:
 
 class ThemePickerOverlay(Screen):  # type: ignore[type-arg]
     """List Dark/Light/System; preview on move, commit on Enter."""
+
+    DEFAULT_CSS = OVERLAY_CSS
 
     def __init__(self, current: str = "dark", **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -114,9 +119,11 @@ class ThemePickerOverlay(Screen):  # type: ignore[type-arg]
         try:
             from textual.widgets import Static
 
-            yield Static("THEME")
+            yield ovl_head("THEME", hint="enter commits \u00b7 esc restores")
+            yield ovl_rule_strong()
             for row in self.rows():
                 yield Static(row)
+            yield ovl_foot(THEME_FOOT)
         except Exception:
             return
             yield  # pragma: no cover
@@ -145,6 +152,7 @@ class ThemePickerOverlay(Screen):  # type: ignore[type-arg]
 
 __all__ = [
     "SYSTEM_FALLBACK_NOTE",
+    "THEME_FOOT",
     "THEME_OPTIONS",
     "ThemePickerOverlay",
     "resolve_system_note",

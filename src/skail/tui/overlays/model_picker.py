@@ -9,6 +9,10 @@ try:
 except Exception:  # pragma: no cover
     Screen = object  # type: ignore[assignment,misc]
 
+from skail.tui.overlays.shell import OVERLAY_CSS, ovl_foot, ovl_head, ovl_rule_strong
+
+MODEL_FOOT = "Future attempts only; the active attempt keeps its assigned model."
+
 
 def _app_for(host: object) -> Any:
     test_app = getattr(host, "_test_app", None)
@@ -30,6 +34,8 @@ def model_rows(models: list[str], current: str) -> list[str]:
 
 class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
     """Enter selects for FUTURE attempts via ``set_future_model``."""
+
+    DEFAULT_CSS = OVERLAY_CSS
 
     def __init__(
         self,
@@ -91,9 +97,11 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
         try:
             from textual.widgets import Static
 
-            yield Static("MODEL (future attempts only)")
+            yield ovl_head("MODEL", hint="enter selects \u00b7 esc closes")
+            yield ovl_rule_strong()
             for row in self.rows():
                 yield Static(row)
+            yield ovl_foot(MODEL_FOOT)
         except Exception:
             return
             yield  # pragma: no cover
@@ -120,4 +128,4 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
                 pass
 
 
-__all__ = ["ModelPickerOverlay", "model_rows"]
+__all__ = ["MODEL_FOOT", "ModelPickerOverlay", "model_rows"]

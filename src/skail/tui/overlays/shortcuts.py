@@ -1,4 +1,9 @@
-"""Shortcuts overlay: grouped bindings with type-to-filter."""
+"""Shortcuts overlay: grouped bindings with type-to-filter.
+
+The composed view is the ATELIER 36/1/36 two-column kbd/desc grid fed from the
+same grouped registry. Rendering ALL ``ACTION_REGISTRY`` groups is a documented
+superset of the mock's shortcut rows.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +14,9 @@ try:
 except Exception:  # pragma: no cover
     Screen = object  # type: ignore[assignment,misc]
 
+from skail.tui.overlays.shell import OVERLAY_CSS, ovl_foot, ovl_head, ovl_rule_strong
+from skail.tui.widgets.plan import section_head
+
 GROUP_ORDER = (
     "Run",
     "Composer",
@@ -17,6 +25,13 @@ GROUP_ORDER = (
     "Approvals",
     "Session",
     "Display",
+)
+
+GRID_LEFT_GROUPS: tuple[str, ...] = GROUP_ORDER[:3]
+GRID_RIGHT_GROUPS: tuple[str, ...] = GROUP_ORDER[3:]
+
+SHORTCUTS_FOOT = (
+    "focus ring = $focusRing token \u00b7 status is never colour-only (glyph + word)"
 )
 
 
@@ -86,8 +101,36 @@ def render_shortcut_lines(
     return lines
 
 
+def shortcut_grid_columns(
+    registry: dict[str, dict[str, str]], query: str = ""
+) -> tuple[list[str], list[str]]:
+    """Markup rows for the 36/1/36 two-column kbd/desc grid: (left, right).
+
+    Left column: Run/Composer/Navigation; right: Agents/Approvals/Session/Display
+    plus any extra registry groups. Rows are ``[on $surfaceRaised] binding [/]  desc``
+    under letterspaced hairline group heads; the focused filter applies as usual.
+    """
+    grouped = filter_shortcuts(group_shortcuts(registry), query)
+
+    def column(groups: tuple[str, ...]) -> list[str]:
+        lines: list[str] = []
+        for group in groups:
+            rows = grouped.get(group, [])
+            if not rows:
+                continue
+            lines.append(section_head(group.upper()))
+            for _action, binding, desc in rows:
+                lines.append(f"[on $surfaceRaised] {binding} [/]  {desc}")
+        return lines
+
+    extra = [group for group in grouped if group not in GROUP_ORDER]
+    return column(GRID_LEFT_GROUPS), column((*GRID_RIGHT_GROUPS, *extra))
+
+
 class ShortcutsOverlay(Screen):  # type: ignore[type-arg]
     """Shortcuts pane; Esc closes; never injects a transcript event."""
+
+    DEFAULT_CSS = OVERLAY_CSS
 
     def __init__(self, registry: dict[str, dict[str, str]] | None = None, **kw: Any) -> None:
         super().__init__(**kw)
@@ -111,11 +154,22 @@ class ShortcutsOverlay(Screen):  # type: ignore[type-arg]
 
     def compose(self) -> Any:
         try:
+            from textual.containers import Horizontal, Vertical
             from textual.widgets import Input, Static
 
+            left, right = shortcut_grid_columns(self.registry, self.filter_query)
+            yield ovl_head("SHORTCUTS", hint="esc closes")
+            yield ovl_rule_strong()
             yield Input(placeholder="Filter shortcuts", id="shortcuts-filter")
-            for line in self.lines():
-                yield Static(line)
+            with Horizontal(classes="ovl-grid"):
+                with Vertical(classes="ovl-col"):
+                    for line in left:
+                        yield Static(line)
+                yield Static("", id="hairline", classes="hairline")
+                with Vertical(classes="ovl-col"):
+                    for line in right:
+                        yield Static(line)
+            yield ovl_foot(SHORTCUTS_FOOT)
         except Exception:
             return
             yield  # pragma: no cover
@@ -130,8 +184,10 @@ class ShortcutsOverlay(Screen):  # type: ignore[type-arg]
 
 
 __all__ = [
+    "SHORTCUTS_FOOT",
     "ShortcutsOverlay",
     "filter_shortcuts",
     "group_shortcuts",
     "render_shortcut_lines",
+    "shortcut_grid_columns",
 ]
