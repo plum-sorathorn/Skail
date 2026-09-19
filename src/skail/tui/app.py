@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
@@ -19,7 +20,7 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
-from textual.widgets import Footer, Header, Input, Static, TabbedContent, TabPane
+from textual.widgets import Footer, Input, Static, TabbedContent, TabPane
 
 from skail import __version__
 from skail.agents.lead import DelegationMode, LeadControls
@@ -117,6 +118,13 @@ _RUNTIME_ERROR_COPY = (
 )
 
 
+def format_masthead(version: str, provider_label: str | None, clock: str) -> str:
+    """Return the ATELIER masthead row: letterspaced wordmark, version, provider, clock."""
+    wordmark = "S K A I L"
+    provider = f"  {provider_label}" if provider_label else ""
+    return f"{wordmark}  {version}{provider}"
+
+
 class SkailApp(App[int]):
     """Main Textual interactive application for Skail harness."""
 
@@ -179,6 +187,17 @@ class SkailApp(App[int]):
         background: $surface;
         color: $text-muted;
         padding: 0 1;
+    }
+    #masthead {
+        width: 100%;
+        height: 1;
+        padding: 0 1;
+        background: $surface;
+        color: $text;
+    }
+    .rule-strong {
+        height: 1;
+        border-bottom: double $borderStrong;
     }
     Screen:focus-within {
         outline: solid $focusRing;
@@ -276,7 +295,8 @@ class SkailApp(App[int]):
                 self.app_state = "onboarding"
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
+        yield Static(id="masthead")
+        yield Static(id="rule-strong", classes="rule-strong")
         yield Static(self._render_status_strip(), id="status-strip")
         with Horizontal(id="main-container"):
             with Vertical(id="chat-container"):
@@ -297,6 +317,7 @@ class SkailApp(App[int]):
 
     def on_mount(self) -> None:
         self._mounted = True
+        self.set_interval(1.0, self._tick_masthead)
         self.apply_theme(self.current_theme_name)
         if self.initial_snapshot is not None:
             self.projection.apply_snapshot(self.initial_snapshot)
@@ -675,6 +696,20 @@ class SkailApp(App[int]):
         text.append(f" | Active Agents: {f.active_agents_count}", style="magenta")
         return text
 
+    def render_masthead(self) -> str:
+        """Render the ATELIER masthead: wordmark, version, provider, clock."""
+        provider = self.onboarding_state.provider or None
+        clock = datetime.now().strftime("%H:%M:%S")
+        return format_masthead(__version__, provider, clock)
+
+    def _refresh_masthead(self) -> None:
+        self.query_one("#masthead", Static).update(self.render_masthead())
+
+    def _tick_masthead(self) -> None:
+        if self.reduced_motion:
+            return
+        self._refresh_masthead()
+
     def _append_system_message(self, title: str, content: str) -> None:
         self.projection.transcript_items.append(
             TranscriptItem(
@@ -724,6 +759,8 @@ class SkailApp(App[int]):
 
         budget_view = self.query_one("#budget-view", BudgetView)
         budget_view.update_budget(self.projection.budget_item)
+
+        self._refresh_masthead()
 
         try:
             from skail.tui.widgets.composer import PromptComposer as _Composer
