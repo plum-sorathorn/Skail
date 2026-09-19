@@ -1,6 +1,7 @@
-"""Unit tests for the ATELIER chrome (dateline)."""
+"""Unit tests for the ATELIER chrome (dateline, transcript header, footer)."""
 
 from skail.tui.app import render_dateline, render_transcript_header
+from skail.tui.widgets.footer import AtelierFooter, format_footer_hints
 
 
 def test_render_dateline_uses_theme_tokens_and_values() -> None:
@@ -35,3 +36,19 @@ def test_render_transcript_header_uses_bare_token_markup_and_omits_absent_fields
     assert "[textFaint]run-a1b2 · 3 events · pinned[/]" in result
     plain = render_transcript_header(None, 0, False)
     assert plain == "T R A N S C R I P T  [textFaint]0 events[/]"
+
+
+def test_atelier_footer_hints_wide_and_narrow() -> None:
+    """Footer hints: exactly 8 keys + more indicator + full hint in wide, 4 in narrow."""
+    pairs = [(f"ctrl+{index}", f"Label {index}") for index in range(12)]
+    footer = AtelierFooter(pairs, id="app-footer")
+    footer.narrow = True
+    assert footer.narrow is True
+    wide_hints, wide_hint = format_footer_hints(pairs)
+    narrow_hints, narrow_hint = format_footer_hints(pairs, narrow=True)
+    assert wide_hints.count("[surfaceRaised]") == 8
+    assert wide_hints.endswith("⋯[/]")
+    assert wide_hint == "[textMuted]? all shortcuts[/]"
+    assert narrow_hints.count("[surfaceRaised]") == 4
+    assert narrow_hints.endswith("⋯[/]")
+    assert narrow_hint == "[textMuted]? all[/]"

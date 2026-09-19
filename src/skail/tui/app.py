@@ -19,7 +19,7 @@ from typing import Any, Literal
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
-from textual.widgets import Footer, Input, Static, TabbedContent, TabPane
+from textual.widgets import Input, Static, TabbedContent, TabPane
 
 from skail import __version__
 from skail.agents.lead import DelegationMode, LeadControls
@@ -56,6 +56,7 @@ from skail.tui.widgets.agents import AgentRail
 from skail.tui.widgets.budget import BudgetView
 from skail.tui.widgets.chat import ChatTranscript
 from skail.tui.widgets.composer import PromptComposer
+from skail.tui.widgets.footer import AtelierFooter
 from skail.tui.widgets.interrupts import InterruptWidget
 from skail.tui.widgets.onboarding import OnboardingPanel
 from skail.tui.widgets.plan import PlanView
@@ -408,12 +409,22 @@ class SkailApp(App[int]):
                     with TabPane("Budget", id="tab-budget"):
                         yield BudgetView(id="budget-view")
         yield PromptComposer(id="prompt-composer")
-        yield Footer()
+        yield AtelierFooter(id="app-footer")
 
     def on_mount(self) -> None:
         self._mounted = True
         self.set_interval(1.0, self._tick_masthead)
         self.apply_theme(self.current_theme_name)
+        try:
+            self.query_one("#app-footer", AtelierFooter).set_bindings(
+                [
+                    (binding.key, binding.description)
+                    for binding in self.BINDINGS
+                    if isinstance(binding, Binding)
+                ]
+            )
+        except Exception:
+            pass
         if self.initial_snapshot is not None:
             self.projection.apply_snapshot(self.initial_snapshot)
         if self.controller is not None and self.controller.pending_interrupt is not None:
@@ -445,12 +456,17 @@ class SkailApp(App[int]):
             container = self.query_one("#main-container")
         except Exception:
             return
-        if self.size.width < 100:
+        narrow = self.size.width < 100
+        if narrow:
             container.add_class("narrow")
             container.remove_class("wide")
         else:
             container.add_class("wide")
             container.remove_class("narrow")
+        try:
+            self.query_one("#app-footer", AtelierFooter).narrow = narrow
+        except Exception:
+            pass
 
     # -- theme -----------------------------------------------------------
     def get_css_variables(self) -> dict[str, str]:
