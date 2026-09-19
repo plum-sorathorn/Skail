@@ -839,6 +839,17 @@ class SkailApp(App[int]):
             return
         self._refresh_masthead()
 
+    def _refresh_transcript_header(self) -> None:
+        """Feed #transcript-header (plan §5.4): run id, event count, pin state."""
+        chat = self.query_one("#chat-transcript", ChatTranscript)
+        run_id: str | None = None
+        if self.initial_snapshot and self.initial_snapshot.runs:
+            run_id = str(self.initial_snapshot.runs[-1].run_id)
+        header = self.query_one("#transcript-header", Static)
+        header.update(
+            render_transcript_header(run_id, len(self.projection.transcript_items), chat._pinned)
+        )
+
     def _append_system_message(self, title: str, content: str) -> None:
         self.projection.transcript_items.append(
             TranscriptItem(
@@ -855,14 +866,7 @@ class SkailApp(App[int]):
 
         chat = self.query_one("#chat-transcript", ChatTranscript)
         chat.update_items(self.projection.transcript_items)
-
-        run_id: str | None = None
-        if self.initial_snapshot and self.initial_snapshot.runs:
-            run_id = str(self.initial_snapshot.runs[-1].run_id)
-        header = self.query_one("#transcript-header", Static)
-        header.update(
-            render_transcript_header(run_id, len(self.projection.transcript_items), chat._pinned)
-        )
+        self._refresh_transcript_header()
 
         rail = self.query_one("#agent-rail", AgentRail)
         try:

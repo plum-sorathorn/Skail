@@ -24,7 +24,7 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from skail.tui.projection import TranscriptItem
-from skail.tui.theme import agent_slot_token, get_theme
+from skail.tui.theme import agent_slot_token
 
 PIN_THRESHOLD_LINES = 2
 SPINNER_CELLS = 5
@@ -116,7 +116,7 @@ def _slot_from_item(item: TranscriptItem) -> int:
     return 1
 
 
-def fold_glyph(item: TranscriptItem) -> str:
+def fold_glyph(item: TranscriptItem, collapsed: bool) -> str:
     """Fold-column glyph for the ATELIER message row (pure, unit-testable).
 
     ``+`` collapsed/new, minus (U+2212) expanded, ``└`` continuation sub-row
@@ -125,7 +125,7 @@ def fold_glyph(item: TranscriptItem) -> str:
     """
     if not item.can_collapse:
         return " "
-    if item.collapsed:
+    if collapsed:
         return "+"
     if item.role in CONTINUATION_ROLES:
         return "\u2514"  # └ continuation
@@ -144,7 +144,8 @@ def new_events_copy(pending: int, narrow: bool = False) -> str:
     """
     if narrow:
         return f"\u2193 {pending} new \u00b7 End"
-    return f"\u2193 {pending} new events \u00b7 End to re-pin"
+    rule = "\u2500" * 24  # ─ flanking runs, §5.3
+    return f"{rule} \u2193 {pending} new events \u00b7 End to re-pin {rule}"
 
 
 def export_transcript_text(items: list[TranscriptItem]) -> str:
@@ -269,8 +270,11 @@ class TranscriptItemWidget(Widget):
     TranscriptItemWidget.role-receipt > .msg-role {
         color: $textMuted;
     }
-    TranscriptItemWidget.collapsed {
-        opacity: 70%;
+    TranscriptItemWidget.collapsed > .msg-measure {
+        color: $textMuted;
+    }
+    TranscriptItemWidget > .msg-caret {
+        width: auto;
     }
     .streaming .msg-measure {
         color: $shimmerBase;
@@ -280,6 +284,9 @@ class TranscriptItemWidget(Widget):
     }
     .reduced-motion .streaming .msg-measure {
         color: $textFaint;
+    }
+    .msg-caret {
+        color: $accent;
     }
     """
 
@@ -297,11 +304,16 @@ class TranscriptItemWidget(Widget):
             self.add_class("collapsed")
 
     def compose(self) -> ComposeResult:
-        """ATELIER row: clock | fold | role | measure (fixed widths in TCSS)."""
+        """ATELIER row: clock | fold | role | measure | caret (TCSS widths)."""
         yield Static(f"{self.item.timestamp:%H:%M:%S}", classes="msg-clock")
-        yield Static(fold_glyph(self.item), classes="msg-fold")
+        yield Static(fold_glyph(self.item, self._collapsed), classes="msg-fold")
         yield Static(role_edge_for_item(self.item)[0], classes="msg-role")
         yield Static(self._measure_content(), classes="msg-measure")
+        yield Static(self._caret_content(), classes="msg-caret")
+
+    def _caret_content(self) -> str:
+        """Dedicated .msg-caret cell: ▌ only while .streaming (TCSS $accent)."""
+        return STREAMING_CARET if self._streaming else ""
 
     def _measure_content(self) -> Text:
         """Body for the measure cell: full text, or first-line preview."""
@@ -313,27 +325,16 @@ class TranscriptItemWidget(Widget):
                 text.append(f"  {remaining} lines", style="dim italic")
         else:
             text.append(self.item.content)
-        if self._streaming:
-            text.append(STREAMING_CARET, style=self._caret_style())
         return text
-
-    def _caret_style(self) -> str:
-        """Streaming caret: $accent of the active Skail theme; "" = inherit."""
-        try:
-            name = getattr(self.app, "current_theme_name", None)
-            if name is None:
-                return ""
-            return get_theme(name).accent
-        except Exception:
-            return ""
 
     def _refresh_children(self) -> None:
         """Push current state into the row cells; no-ops before mount."""
         if not self.is_mounted:
             return
-        self.query_one(".msg-fold", Static).update(fold_glyph(self.item))
+        self.query_one(".msg-fold", Static).update(fold_glyph(self.item, self._collapsed))
         self.query_one(".msg-role", Static).update(role_edge_for_item(self.item)[0])
         self.query_one(".msg-measure", Static).update(self._measure_content())
+        self.query_one(".msg-caret", Static).update(self._caret_content())
 
     def toggle_collapse(self) -> None:
         if not self.item.can_collapse:
@@ -435,8 +436,8 @@ class ChatTranscript(VerticalScroll):
         dock: bottom;
         width: 100%;
         height: 1;
-        background: $surfaceRaised;
-        color: $accent;
+        background: $background;
+        color: $textFaint;
         text-align: center;
     }
     """

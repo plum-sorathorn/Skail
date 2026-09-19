@@ -103,15 +103,13 @@ def test_agent_edge_uses_slot_glyph() -> None:
 
 def test_fold_glyph_states() -> None:
     expanded = TranscriptItem(id="f", role="lead", title="Lead", content="hi")
-    assert fold_glyph(expanded) == "\u2212"  # − expanded
-    expanded.collapsed = True
-    assert fold_glyph(expanded) == "+"  # + collapsed
+    assert fold_glyph(expanded, collapsed=False) == "\u2212"  # − expanded
+    assert fold_glyph(expanded, collapsed=True) == "+"  # + collapsed
     tool = TranscriptItem(
         id="t", role="tool", title="pytest", content="ok"
     )
-    assert fold_glyph(tool) == "\u2514"  # └ continuation sub-row
-    tool.collapsed = True
-    assert fold_glyph(tool) == "+"  # collapse glyph wins for sub-rows
+    assert fold_glyph(tool, collapsed=False) == "\u2514"  # └ continuation sub-row
+    assert fold_glyph(tool, collapsed=True) == "+"  # collapse glyph wins for sub-rows
     detail = TranscriptItem(
         id="d",
         role="receipt",
@@ -119,7 +117,7 @@ def test_fold_glyph_states() -> None:
         content="done",
         can_collapse=False,
     )
-    assert fold_glyph(detail) == " "  # blank detail row
+    assert fold_glyph(detail, collapsed=False) == " "  # blank detail row
 
 
 def test_scroll_pin_within_two_lines_follows() -> None:
@@ -168,7 +166,14 @@ def test_chat_module_has_no_hardcoded_hex() -> None:
 def test_transcript_item_widget_composes_four_atelier_columns() -> None:
     widget = TranscriptItemWidget(_item("c1", "body"))
     cells = [next(iter(static.classes)) for static in widget.compose()]
-    assert cells == ["msg-clock", "msg-fold", "msg-role", "msg-measure"]
+    # Four ATELIER columns + the dedicated §5.2 caret node.
+    assert cells == [
+        "msg-clock",
+        "msg-fold",
+        "msg-role",
+        "msg-measure",
+        "msg-caret",
+    ]
 
 
 def test_transcript_row_atelier_grid_in_source() -> None:
@@ -199,7 +204,11 @@ def test_transcript_row_atelier_grid_in_source() -> None:
 
 
 def test_new_events_copy_wide_and_narrow() -> None:
-    assert new_events_copy(3) == "\u2193 3 new events \u00b7 End to re-pin"
+    rule = "\u2500" * 24  # flanking ─ runs, §5.3
+    assert (
+        new_events_copy(3)
+        == f"{rule} \u2193 3 new events \u00b7 End to re-pin {rule}"
+    )
     assert new_events_copy(12, narrow=True) == "\u2193 12 new \u00b7 End"
 
 
@@ -213,6 +222,9 @@ def test_dock_id_and_copy_wiring_in_source() -> None:
     assert "new_events_copy(" in src  # dock copy routed through the helper
     assert "narrow=self.size.width" in src  # narrowness drives the copy
     assert "new events  (End)" not in src  # previous copy fully replaced
+    # §5.3 dock TCSS: $background / $textFaint (was $surfaceRaised / $accent).
+    flat = " ".join(src.split())
+    assert "height: 1; background: $background; color: $textFaint;" in flat
 
 
 def test_streaming_class_added_by_update_body() -> None:
@@ -220,7 +232,8 @@ def test_streaming_class_added_by_update_body() -> None:
     assert not widget.has_class("streaming")
     widget.update_body("partial + more")
     assert widget.has_class("streaming")
-    assert widget._measure_content().plain.endswith("\u258c")  # ▌ caret
+    assert widget._caret_content() == "\u258c"  # ▌ in the dedicated .msg-caret
+    assert not widget._measure_content().plain.endswith("\u258c")  # not in measure
 
 
 def test_finish_streaming_drops_class_and_caret() -> None:
@@ -228,7 +241,7 @@ def test_finish_streaming_drops_class_and_caret() -> None:
     widget.update_body("a2")
     widget.finish_streaming()
     assert not widget.has_class("streaming")
-    assert not widget._measure_content().plain.endswith("\u258c")
+    assert widget._caret_content() == ""
 
 
 def test_streaming_shim_tcss_and_reduced_motion_in_source() -> None:
@@ -243,6 +256,9 @@ def test_streaming_shim_tcss_and_reduced_motion_in_source() -> None:
     assert "color: $shimmerPeak" in src
     assert ".reduced-motion .streaming .msg-measure" in src
     assert "color: $textFaint" in src
+    # 4th prescribed rule (§5.2): dedicated $accent caret, format-insensitive.
+    flat = " ".join(src.split())
+    assert ".msg-caret { color: $accent; }" in flat
     assert "SHIM_INTERVAL_MS / 1000.0" in src
     assert 'getattr(self.app, "reduced_motion", False)' in src
 
