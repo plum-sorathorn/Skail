@@ -142,8 +142,14 @@ def render_dateline(
     badge: str | None = None,
     badge_token: str = "textMuted",
     active_mode: str = "direct",
+    narrow: bool = False,
 ) -> str:
-    """Return the ATELIER dateline: MODEL / MODE / SPEND / AGENTS in token markup."""
+    """Return the ATELIER dateline: MODEL / MODE / SPEND / AGENTS in token markup.
+
+    With ``narrow=True`` the markup wraps into two rows joined by a newline:
+    row 1 = MODEL/MODE (plus badge) + ``●N running``; row 2 = SPEND + meter +
+    ``N queued`` (mock narrow frame, plan §8.3).
+    """
     if ratio is None:
         pct = "0.0"
         fill = 0
@@ -170,6 +176,12 @@ def render_dateline(
         f"[textFaint]·  AGENTS[/] [agentOne]●{active}[/] "
         f"[textMuted]{running} running · {queued} queued[/]"
     )
+    if narrow:
+        # §8.3 narrow: row 1 = MODEL/MODE (+badge, delegation) + ●N running;
+        # row 2 = SPEND + meter + queued (AGENTS label rides with queued).
+        head = [*segments[:-2], f"[agentOne]●{active}[/] [textMuted]{running} running[/]"]
+        tail = segments[-2] + f" [textFaint]·  AGENTS[/] [textMuted]{queued} queued[/]"
+        return " ".join(head) + "\n" + tail
     return " ".join(segments)
 
 
@@ -184,6 +196,18 @@ def render_transcript_header(run_id: str | None, event_count: int, pinned: bool)
         segments.append("pinned")
     right = " · ".join(segments)
     return f"{left}  [textFaint]{right}[/]"
+
+
+_MARGIN_DRAWER_KEYS = ("^A", "^P", "^R", "^B")
+
+
+def render_margin_drawer(active_tab: str) -> str:
+    """Return the narrow #margin-drawer: letterspaced active tab + faint kbd chips."""
+    label = " ".join(active_tab.upper())
+    chips = "  ".join(
+        f"[on $surfaceRaised] [textFaint]{key}[/] [/]" for key in _MARGIN_DRAWER_KEYS
+    )
+    return f"[text]{label}[/]  [textFaint]…[/]  {chips}"
 
 
 class SkailApp(App[int]):
@@ -230,6 +254,9 @@ class SkailApp(App[int]):
     .narrow .hairline {
         display: none;
     }
+    .narrow #hairline {
+        display: none;
+    }
     #tabs {
         height: 1fr;
         background: $surface;
@@ -261,6 +288,7 @@ class SkailApp(App[int]):
     .narrow #chat-container {
         width: 100%;
         border-right: none;
+        padding-right: 0;
     }
     .narrow #sidebar-container {
         display: none;
@@ -270,6 +298,26 @@ class SkailApp(App[int]):
     }
     .wide #sidebar-container {
         display: block;
+    }
+    #margin-drawer {
+        display: none;
+        width: 100%;
+        height: 1;
+        padding: 0 1;
+        background: $surface;
+        color: $textMuted;
+    }
+    .narrow #margin-drawer {
+        display: block;
+    }
+    .narrow #dateline {
+        height: 2;
+    }
+    .narrow .msg-clock {
+        display: none;
+    }
+    .narrow .msg-role {
+        width: 11;
     }
     .reduced-motion * {
         transition: none;
@@ -408,6 +456,7 @@ class SkailApp(App[int]):
                     with TabPane("Budget", id="tab-budget"):
                         yield BudgetView(id="budget-view")
                 yield BudgetLedger(id="budget-ledger")
+        yield Static(render_margin_drawer("Agents"), id="margin-drawer")
         yield Container(id="interrupt-container")
         yield PromptComposer(id="prompt-composer")
         yield AtelierFooter(id="app-footer")
@@ -464,6 +513,31 @@ class SkailApp(App[int]):
         else:
             container.add_class("wide")
             container.remove_class("narrow")
+        try:
+            screen = container.screen
+        except Exception:
+            return
+        was_narrow = screen.has_class("narrow")
+        if narrow:
+            screen.add_class("narrow")
+            screen.remove_class("wide")
+        else:
+            screen.add_class("wide")
+            screen.remove_class("narrow")
+        # §8.3: the hidden/shown state must be observable via Widget.visible, which in
+        # Textual 1.0.0 tracks the visibility flag, not the TCSS display rule.
+        try:
+            self.query_one("#hairline").visible = not narrow
+            self.query_one("#sidebar-container").visible = not narrow
+            self.query_one("#margin-drawer").visible = narrow
+        except Exception:
+            pass
+        if narrow != was_narrow and self._mounted:
+            # Narrow flips the #dateline markup (1 <-> 2 rows); re-render it now.
+            try:
+                self.query_one("#dateline", Static).update(self._render_status_strip())
+            except Exception:
+                pass
         try:
             self.query_one("#app-footer", AtelierFooter).narrow = narrow
         except Exception:
@@ -813,6 +887,10 @@ class SkailApp(App[int]):
             badge, badge_token = "STARTING", "textMuted"
         elif self.app_state == "error":
             badge, badge_token = "SETUP FAILED", "error"
+        try:
+            narrow = self.screen.has_class("narrow")
+        except Exception:
+            narrow = False
         return render_dateline(
             model=f.lead_model,
             mode=f.routing_mode,
@@ -824,6 +902,7 @@ class SkailApp(App[int]):
             badge=badge,
             badge_token=badge_token,
             active_mode=f.active_mode,
+            narrow=narrow,
         )
 
     def render_masthead(self) -> str:
@@ -1358,16 +1437,37 @@ class SkailApp(App[int]):
         return NATIVE_SCROLLBACK_UNAVAILABLE
 
     def action_view_budget(self) -> None:
-        self.query_one("#tabs", TabbedContent).active = "tab-budget"
+        self._activate_tab("tab-budget", "Budget")
 
     def action_view_agents(self) -> None:
-        self.query_one("#tabs", TabbedContent).active = "tab-agents"
+        self._activate_tab("tab-agents", "Agents")
+
+    def _activate_tab(self, tab: str, label: str) -> None:
+        """Switch #tabs and keep #margin-drawer in sync (§6.1/§8.3).
+
+        Textual 1.0.0 delivers no TabActivated for programmatic activation, so the
+        drawer is fed synchronously from the same single source as the activation.
+        """
+        self.query_one("#tabs", TabbedContent).active = tab
+        try:
+            self.query_one("#margin-drawer", Static).update(render_margin_drawer(label))
+        except Exception:
+            pass
 
     def action_view_plan(self) -> None:
-        self.query_one("#tabs", TabbedContent).active = "tab-plan"
+        self._activate_tab("tab-plan", "Plan")
 
     def action_view_route(self) -> None:
-        self.query_one("#tabs", TabbedContent).active = "tab-route"
+        self._activate_tab("tab-route", "Route")
+
+    def on_tabbed_content_activated(self, event: TabbedContent.TabActivated) -> None:
+        """Feed #margin-drawer: single source of the active tab name (§6.1/§8.3)."""
+        try:
+            drawer = self.query_one("#margin-drawer", Static)
+        except Exception:
+            return
+        # ContentTab.label_text is a `str` property in Textual 1.0 (not Tab's method).
+        drawer.update(render_margin_drawer(event.tab.label_text))
 
     def action_view_chat(self) -> None:
         try:

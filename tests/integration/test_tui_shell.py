@@ -45,9 +45,22 @@ async def test_tui_shell_mounts_and_renders() -> None:
 @pytest.mark.asyncio
 async def test_tui_shell_responsive_narrow_fallback() -> None:
     app = SkailApp()
-    async with app.run_test(size=(80, 40)):
+    async with app.run_test(size=(80, 40)) as pilot:
         # Width 80 < 100 triggers .narrow class
         assert app.query_one("#main-container").has_class("narrow")
+        # §8.3: the SCREEN carries narrow/wide too; margin hidden, drawer strip shown.
+        assert app.screen.has_class("narrow")
+        assert not app.screen.has_class("wide")
+        await pilot.pause()
+        assert not app.query_one("#hairline").visible
+        assert not app.query_one("#sidebar-container").visible
+        assert app.query_one("#margin-drawer").visible
+        # Dateline wraps to the 2-row variant; the drawer tracks the active tab.
+        # (Static.render() returns a Visual in Textual 1.0; .renderable is the markup string.)
+        assert "\n" in app.query_one("#dateline").renderable
+        app.action_view_route()
+        await pilot.pause()
+        assert "R O U T E" in str(app.query_one("#margin-drawer").render())
 
 
 @pytest.mark.asyncio
