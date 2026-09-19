@@ -88,10 +88,13 @@ from skail.tui.projection import (  # noqa: E402
     budget_view_model,
 )
 from skail.tui.widgets.agents import (  # noqa: E402
+    LEDGER_ROW_WIDTH,
     AgentRail,
     agent_glyph,
     agent_label,
     agent_row_text,
+    ledger_status_glyph,
+    render_agent_ledger_row,
     render_agent_rows,
 )
 from skail.tui.widgets.budget import (  # noqa: E402
@@ -142,6 +145,40 @@ def test_agent_row_text_cost() -> None:
     proj = _child_proj()
     child = proj.children_view()[0]
     assert "$" in agent_row_text(child)
+
+
+def test_ledger_status_glyph_map() -> None:
+    assert ledger_status_glyph("running") == "\u25cf"
+    assert ledger_status_glyph("waiting") == "\u2219"
+    assert ledger_status_glyph("complete") == "\u2713"
+    assert ledger_status_glyph("failed") == "\u2715"
+    assert ledger_status_glyph("cancelled") == "\u2298"
+    assert ledger_status_glyph("unknown-state") == "\u2219"
+
+
+def test_render_agent_ledger_row_cost_alignment() -> None:
+    proj = _child_proj()
+    row = render_agent_ledger_row(proj.children_view()[0])
+    assert row.startswith("\u25cf  AGENT 1  RUNNING")
+    assert "AGENT 2" not in row
+    cost_text = row.split()[-1]
+    assert cost_text.startswith("$")
+    assert len(cost_text.split(".")[1]) == 4
+    assert len(row) == LEDGER_ROW_WIDTH
+    narrow = render_agent_ledger_row(proj.children_view()[0], width=30)
+    assert narrow.startswith("\u25cf  AGENT 1  RUNNING")
+    assert len(narrow) == 30
+    assert narrow.split()[-1] == cost_text
+    proj.mark_child_status("c2", "waiting")
+    waiting = render_agent_ledger_row(proj.children_view()[1])
+    assert waiting.startswith("\u2219  AGENT 2  WAITING")
+
+
+def test_agent_ledger_selected_row_uses_selection_background() -> None:
+    assert "background: $selection" in AgentRail.DEFAULT_CSS
+    src = inspect.getsource(AgentRail._mount_child_rows)
+    assert "focused_task_id" in src
+    assert "selected" in src
 
 
 def test_agent_select_never_jumps_to_route() -> None:

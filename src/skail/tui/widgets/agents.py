@@ -29,6 +29,19 @@ ALLOWED_STATUSES: tuple[str, ...] = (
 
 GLYPH_RUNNING = "\u25cf"
 GLYPH_IDLE = "\u2219"
+GLYPH_COMPLETE = "\u2713"
+GLYPH_FAILED = "\u2715"
+GLYPH_CANCELLED = "\u2298"
+
+LEDGER_GLYPHS: dict[str, str] = {
+    "running": GLYPH_RUNNING,
+    "waiting": GLYPH_IDLE,
+    "complete": GLYPH_COMPLETE,
+    "failed": GLYPH_FAILED,
+    "cancelled": GLYPH_CANCELLED,
+}
+
+LEDGER_ROW_WIDTH = 33
 
 
 def agent_glyph(status: str) -> str:
@@ -65,6 +78,20 @@ def render_agent_rows(children: list[ChildView]) -> list[str]:
     return [agent_row_text(c) for c in ordered]
 
 
+def ledger_status_glyph(status: str) -> str:
+    """ATELIER ledger glyph: ● running, ∙ waiting, ✓ complete, ✕ failed, ⊘ cancelled."""
+    return LEDGER_GLYPHS[normalize_status(status)]
+
+
+def render_agent_ledger_row(child: ChildView, width: int = LEDGER_ROW_WIDTH) -> str:
+    """Pure ledger line: ``●  AGENT 1  RUNNING       $0.0142`` (cost right-aligned, 4dp)."""
+    status = normalize_status(child.status)
+    cost = child.cost if isinstance(child.cost, Decimal) else Decimal(str(child.cost))
+    cost_text = f"${cost:.4f}"
+    lead = f"{ledger_status_glyph(status)}  {agent_label(child.slot).upper()}  {status.upper()}"
+    return lead.ljust(max(width - len(cost_text), len(lead) + 1)) + cost_text
+
+
 def slot_style_inline(slot: int, theme: Any = None) -> str:
     """Inline style color for a slot via ``agent_slot_token``."""
     token = agent_slot_token(slot)
@@ -96,6 +123,13 @@ class AgentRail(VerticalScroll):
     }
     .agent-row:focus-within {
         outline: solid $focusRing;
+    }
+    .ledger-row.selected {
+        background: $selection;
+    }
+    .ledger-hint {
+        color: $textMuted;
+        padding-top: 1;
     }
     """
 
@@ -139,7 +173,7 @@ class AgentRail(VerticalScroll):
     def _render_legacy(self) -> None:
         try:
             self.remove_children()
-            self.mount(Static("AGENT RAIL", classes="rail-header"))
+            self.mount(Static("A G E N T S", classes="rail-header"))
             if not self.items:
                 if not self.child_rows:
                     self.mount(Static("[dim]No active agents[/dim]"))
@@ -151,35 +185,44 @@ class AgentRail(VerticalScroll):
     def _render_children(self) -> None:
         try:
             self.remove_children()
-            self.mount(Static("AGENT RAIL", classes="rail-header"))
+            self.mount(Static("A G E N T S", classes="rail-header"))
             if not self.child_rows:
                 self.mount(Static("[dim]No active agents[/dim]"))
                 return
             self._mount_child_rows()
+            hint = (
+                "[dim]\u23ce detail \u00b7[/dim]"
+                " [on $surfaceRaised] M [/] [dim]mission control[/dim]"
+            )
+            self.mount(Static(hint, classes="ledger-hint"))
         except Exception:
             pass
 
     def _mount_child_rows(self) -> None:
         for child in self.child_rows:
             status = normalize_status(child.status)
-            glyph = agent_glyph(status)
+            glyph = ledger_status_glyph(status)
             token = agent_slot_token(child.slot)
-            cost = child.cost if isinstance(child.cost, Decimal) else Decimal("0.00")
-            label = agent_label(child.slot)
-            selected = ">" if child.id == self.focused_task_id else " "
+            cost = child.cost if isinstance(child.cost, Decimal) else Decimal(str(child.cost))
+            label = agent_label(child.slot).upper()
+            status_word = status.upper()
+            lead = f"{glyph}  {label}  {status_word}"
+            cost_text = f"${cost:.4f}"
+            pad = " " * max(LEDGER_ROW_WIDTH - len(lead) - len(cost_text), 1)
             text = Text()
-            text.append(f"{selected} ", style="dim")
-            text.append(f"{glyph} ", style=f"{token}")
-            text.append(f"{label} ", style="bold")
-            text.append(f"{child.task} ", style="white")
-            text.append(f"{status} ", style="dim")
-            text.append(f"${Decimal(cost):.2f}", style="green")
-            row = Static(text)
+            text.append(f"{glyph}  ", style=token)
+            text.append(f"{label}  ", style="bold")
+            text.append(f"{status_word}{pad}", style="textFaint")
+            text.append(cost_text, style="textMuted")
+            selected = " selected" if child.id == self.focused_task_id else ""
+            row = Static(text, classes=f"ledger-row{selected}")
             try:
                 row.styles.border_left = ("solid", token)
             except Exception:
                 pass
             self.mount(row)
+            task_line = Text(f"   {child.task}", style="textMuted")
+            self.mount(Static(task_line, classes="ledger-task"))
 
     def select_child(self, task_id: str) -> None:
         """Focus a child row; the Agents tab stays active."""
@@ -224,11 +267,14 @@ class AgentRail(VerticalScroll):
 
 __all__ = [
     "ALLOWED_STATUSES",
+    "LEDGER_ROW_WIDTH",
     "AgentRail",
     "agent_glyph",
     "agent_label",
     "agent_row_text",
+    "ledger_status_glyph",
     "normalize_status",
+    "render_agent_ledger_row",
     "render_agent_rows",
     "slot_style_inline",
 ]

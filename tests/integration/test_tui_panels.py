@@ -86,7 +86,7 @@ async def test_agent_rail_renders_all_fields_and_distinct_states() -> None:
 
         # Render output check
         rendered_text = str(rail.render())
-        assert "AGENT RAIL" in rendered_text or len(rail.children) > 0
+        assert "A G E N T S" in rendered_text or len(rail.children) > 0
 
 
 @pytest.mark.asyncio
