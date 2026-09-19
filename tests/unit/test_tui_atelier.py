@@ -3,7 +3,12 @@
 from dataclasses import replace
 from decimal import Decimal
 
-from skail.tui.app import ACTION_REGISTRY, render_dateline, render_transcript_header
+from skail.tui.app import (
+    ACTION_REGISTRY,
+    render_dateline,
+    render_margin_drawer,
+    render_transcript_header,
+)
 from skail.tui.projection import RouteViewItem, WorkspaceIntegrationItem
 from skail.tui.widgets.footer import AtelierFooter, format_footer_hints
 from skail.tui.widgets.plan import (
@@ -361,3 +366,80 @@ def test_shortcuts_grid_columns_superset_with_kbd_chips() -> None:
     assert "view_chat" not in "".join(rows)  # kbd/desc rows, no (action) annotation
     assert shortcut_grid_columns(ACTION_REGISTRY, "missions") != (left, right)
     assert shortcut_grid_columns(ACTION_REGISTRY, "zzzz-none") == ([], [])
+
+
+def test_render_dateline_narrow_wraps_to_two_rows() -> None:
+    """Narrow dateline: MODEL/MODE (+badge) then SPEND/AGENTS; wide output unchanged."""
+    wide = render_dateline(
+        model="auto",
+        mode="quality",
+        cost="$1.2345 / $10.00",
+        ratio=0.1234,
+        active=1,
+        running=1,
+        queued=2,
+        badge="STARTING",
+        badge_token="textMuted",
+        active_mode="planned",
+    )
+    narrow = render_dateline(
+        model="auto",
+        mode="quality",
+        cost="$1.2345 / $10.00",
+        ratio=0.1234,
+        active=1,
+        running=1,
+        queued=2,
+        badge="STARTING",
+        badge_token="textMuted",
+        active_mode="planned",
+        narrow=True,
+    )
+    assert "\n" not in wide
+    first, second = narrow.split("\n")
+    assert "STARTING" in first
+    assert "[textFaint]MODEL[/]" in first
+    assert "[modeQuality]quality[/]" in first
+    assert "SPEND" in second and "AGENTS" in second
+    assert "[budgetFill]" in second
+    assert "#" not in narrow  # no hex; theme tokens only
+
+
+def test_render_margin_drawer_label_and_kbd_chips() -> None:
+    """Drawer = letterspaced active-tab label + four faint [on $surfaceRaised] chips."""
+    markup = render_margin_drawer("Agents")
+    assert "A G E N T S" in markup
+    for key in ("^A", "^P", "^R", "^B"):
+        assert key in markup
+    assert markup.count("[on $surfaceRaised]") == 4
+    for name, spaced in (
+        ("Plan", "P L A N"),
+        ("Route", "R O U T E"),
+        ("Budget", "B U D G E T"),
+    ):
+        assert spaced in render_margin_drawer(name)
+    assert "#" not in markup  # tokens only, no hex
+
+
+def test_narrow_rules_tcss_and_screen_plumbing() -> None:
+    """§8.3: narrow TCSS rules exist; _check_screen_width keys the SCREEN, #main too."""
+    import inspect
+
+    from skail.tui.app import SkailApp
+
+    app_source = inspect.getsource(SkailApp)
+    for rule in (
+        ".narrow #dateline",
+        ".narrow .msg-clock",
+        ".narrow .msg-role",
+        "width: 11",
+        "height: 2",
+        "#margin-drawer",
+        ".narrow #margin-drawer",
+    ):
+        assert rule in app_source
+    compose_source = inspect.getsource(SkailApp.compose)
+    assert 'id="margin-drawer"' in compose_source
+    check_source = inspect.getsource(SkailApp._check_screen_width)
+    assert 'screen.add_class("narrow")' in check_source
+    assert 'screen.add_class("wide")' in check_source

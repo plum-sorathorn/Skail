@@ -169,9 +169,19 @@ async def test_narrow_viewport_hides_sidebar_but_keeps_bindings(
         container = app.query_one("#main-container")
         assert container.has_class("narrow")
         assert not container.has_class("wide")
+        # §8.3: the SCREEN carries narrow/wide; margin hidden, drawer strip shown.
+        assert app.screen.has_class("narrow")
+        assert not app.screen.has_class("wide")
+        await pilot.pause()
+        assert not app.query_one("#hairline").visible
+        assert app.query_one("#margin-drawer").visible
         app.action_view_agents()
         tabs = app.query_one("#tabs")
         assert tabs.active == "tab-agents"
+        # Tab state keeps switching even though the panels stay hidden (§8.3).
+        app.action_view_budget()
+        await pilot.pause()
+        assert tabs.active == "tab-budget"
         app.action_view_budget()
         assert tabs.active == "tab-budget"
         await pilot.pause()
