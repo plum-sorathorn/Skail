@@ -231,10 +231,27 @@ class SkailApp(App[int]):
     }
     #tabs {
         height: 1fr;
+        background: $surface;
     }
     #tabs ContentSwitcher,
     #tabs TabPane {
         height: 1fr;
+    }
+    #tabs Tabs {
+        background: $surface;
+    }
+    #tabs Tab {
+        color: $textFaint;
+        background: $surface;
+        padding: 0 1;
+    }
+    #tabs Tab.-active {
+        color: $text;
+        background: $surface;
+        text-style: bold;
+    }
+    #tabs .underline--bar {
+        color: $accent;
     }
     #interrupt-container {
         width: 100%;
