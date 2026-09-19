@@ -9,7 +9,9 @@ from skail.tui.widgets.plan import (
     PROPOSED_ACTS,
     integration_lines,
     plan_header_spaced,
+    plan_header_state,
     receipt_lines,
+    revision_lines,
     section_head,
 )
 from skail.tui.widgets.route import role_floor_line, shadow_section
@@ -71,8 +73,8 @@ def test_section_head_is_letterspaced_hairline() -> None:
     assert section_head("ELIGIBLE") == "\u2500\u2500  E L I G I B L E  \u2500\u2500"
 
 
-def test_integration_lines_render_key_value_or_nothing() -> None:
-    """Integrations render as 'task: status' (+ error) and vanish when absent."""
+def test_integration_lines_render_glyph_name_status_or_nothing() -> None:
+    """Integrations render the ATELIER glyph+name+status row and vanish when absent."""
     assert integration_lines({}) == []
     integrated = WorkspaceIntegrationItem(
         changeset_id="cs-1",
@@ -81,7 +83,7 @@ def test_integration_lines_render_key_value_or_nothing() -> None:
         status="integrated",
         base_head="main",
     )
-    assert integration_lines({"cs-1": integrated}) == ["task-1: integrated"]
+    assert integration_lines({"cs-1": integrated}) == ["\u2713 task-1 \u00b7 integrated"]
     blocked = WorkspaceIntegrationItem(
         changeset_id="cs-2",
         task_id="task-2",
@@ -90,15 +92,32 @@ def test_integration_lines_render_key_value_or_nothing() -> None:
         base_head="main",
         error="lease lost",
     )
-    assert integration_lines({"cs-2": blocked}) == ["task-2: in_doubt \u00b7 lease lost"]
+    assert integration_lines({"cs-2": blocked}) == ["? task-2 \u00b7 in_doubt \u00b7 lease lost"]
+    unnamed = WorkspaceIntegrationItem(
+        changeset_id="cs-3",
+        task_id="",
+        attempt_id="attempt-3",
+        status="applying",
+        base_head="main",
+    )
+    assert integration_lines({"cs-3": unnamed}) == ["\u258c cs-3 \u00b7 applying"]
 
 
-def test_receipt_lines_bullet_and_empty() -> None:
-    """Each receipt becomes one bullet row; no receipts, no rows."""
+def test_receipt_lines_bold_primary_and_faint_continuation() -> None:
+    """Each receipt renders a bold checked primary; extra lines become faint continuations."""
     assert receipt_lines([]) == []
     assert receipt_lines(["wrote 3 files", "passed 5 checks"]) == [
-        "\u00b7 wrote 3 files",
-        "\u00b7 passed 5 checks",
+        "[b]\u2713 wrote 3 files[/]",
+        "[b]\u2713 passed 5 checks[/]",
+    ]
+    # mirrors the fork receipt's newline layout (commands.fork_receipt)
+    forked = receipt_lines(
+        ["Session forked: 01JDEF\nResume this fork with:\nskail -r 01JDEF"]
+    )
+    assert forked == [
+        "[b]\u2713 Session forked: 01JDEF[/]",
+        "[textFaint]  Resume this fork with:[/]",
+        "[textFaint]  skail -r 01JDEF[/]",
     ]
 
 
@@ -106,6 +125,33 @@ def test_plan_header_spaced_letterspaces_only_the_word() -> None:
     """The PLAN word is letterspaced; the counts keep their compact shape."""
     assert plan_header_spaced(1, 3) == "P L A N \u00b7 1/3"
     assert plan_header_spaced(0, 0) == "P L A N \u00b7 0/0"
+
+
+def test_plan_header_state_appends_the_plan_state_word() -> None:
+    """The header carries the current plan state; 'none' keeps the counts alone."""
+    assert plan_header_state(1, 3, "accepted") == "P L A N \u00b7 1/3 \u00b7 accepted"
+    assert plan_header_state(0, 0, "none") == "P L A N \u00b7 0/0"
+    assert plan_header_state(2, 5, "") == "P L A N \u00b7 2/5"
+
+
+def test_revision_lines_current_plus_receipt_carried_history() -> None:
+    """REVISIONS shows the current revision + state; history only from receipt arrows."""
+    assert revision_lines(None, None, "none", []) == []
+    assert revision_lines(None, 1, "none", []) == []
+    assert revision_lines("plan-3", 1, "none", []) == ["plan-3 \u00b7 r1"]
+    assert revision_lines("plan-3", 2, "accepted", []) == ["plan-3 \u00b7 r2 \u00b7 accepted"]
+    # receipts without the 'r1 -> r2' shape: just the current revision, no invented history
+    assert revision_lines("plan-3", 2, "accepted", ["wrote 3 files", "passed 5 checks"]) == [
+        "plan-3 \u00b7 r2 \u00b7 accepted"
+    ]
+    assert revision_lines("plan-3", 2, "accepted", ["r1 \u2192 r2: answers leveraged"]) == [
+        "plan-3 \u00b7 r2 \u00b7 accepted",
+        "[textFaint]  r1 \u2192 r2[/]",
+    ]
+    assert revision_lines(None, 2, "proposed", ["r1 -> r2 answers leveraged"]) == [
+        "r2 \u00b7 proposed",
+        "[textFaint]  r1 -> r2[/]",
+    ]
 
 
 def test_plan_proposed_acts_copy() -> None:

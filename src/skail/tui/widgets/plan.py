@@ -1,7 +1,8 @@
-"""Plan sidebar: header, rows, proposed/rejected cards, receipts."""
+"""Plan sidebar: header, rows, proposed/rejected cards, revisions, integrations, receipts."""
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from textual.containers import Vertical, VerticalScroll
@@ -23,6 +24,21 @@ PROPOSED_ACTS = (
 )
 CHANGE_NOTE_PLACEHOLDER = "optional change note\u2026"
 REJECTED_TITLE = "REJECTED"
+
+# Receipts are the only history carrier in the projection: when none matches the
+# "r1 -> r2" shape (either arrow) the REVISIONS section shows just the current
+# revision rather than inventing history.
+REVISION_HISTORY = re.compile(r"r\d+\s*(?:\u2192|->)\s*r\d+")
+
+# WorkspaceIntegrationItem.status (projection.py) -> display glyph; rendered next to
+# the status word, so the pairing is never colour-only.
+INTEGRATION_GLYPHS: dict[str, str] = {
+    "captured": GLYPH_TODO,
+    "applying": GLYPH_CURRENT,
+    "integrated": GLYPH_DONE,
+    "in_doubt": "?",
+    "blocked": "\u2715",
+}
 
 
 def plan_row_kind(state: str) -> str:
@@ -61,6 +77,19 @@ def plan_header_spaced(total_done: int, total: int) -> str:
     return " ".join(word) + separator + rest
 
 
+def plan_header_state(total_done: int, total: int, state: str) -> str:
+    """ATELIER header: letterspaced PLAN, the counts, then the current plan state.
+
+    The header carries the state word (e.g. ``accepted``) next to the counts; when no
+    state is known (``none``) the counts stand alone instead of inventing one.
+    """
+    base = plan_header_spaced(total_done, total)
+    word = (state or "").strip().lower()
+    if not word or word == "none":
+        return base
+    return f"{base} \u00b7 {word}"
+
+
 def render_plan_rows(items: dict[str, PlanNodeViewItem]) -> list[str]:
     ordered = sorted(items.values(), key=lambda i: i.local_id)
     rows: list[str] = []
@@ -77,12 +106,22 @@ def section_head(label: str) -> str:
     return "\u2500\u2500  " + " ".join(label) + "  \u2500\u2500"
 
 
+def integration_glyph(status: str) -> str:
+    """Status glyph for an integration row; paired with the status word, never colour-only."""
+    return INTEGRATION_GLYPHS.get(status.strip().lower(), GLYPH_TODO)
+
+
 def integration_lines(integrations: dict[str, WorkspaceIntegrationItem]) -> list[str]:
-    """INTEGRATIONS rows as key/value lines (task: status); [] when none."""
+    """INTEGRATIONS rows, ATELIER form: glyph, then name, then status; [] when none.
+
+    The design's mock dot-joins integration names (``pytest · rtk · apply_patch``);
+    WorkspaceIntegrationItem carries no integration name, so ``task_id`` (the changeset
+    id when unnamed) stands in and the status rides the glyph + word. Nothing invented.
+    """
     lines: list[str] = []
     for changeset_id, integration in integrations.items():
         who = integration.task_id or changeset_id
-        row = f"{who}: {integration.status}"
+        row = f"{integration_glyph(integration.status)} {who} \u00b7 {integration.status}"
         if integration.error:
             row += f" \u00b7 {integration.error}"
         lines.append(row)
@@ -90,8 +129,48 @@ def integration_lines(integrations: dict[str, WorkspaceIntegrationItem]) -> list
 
 
 def receipt_lines(receipts: list[str]) -> list[str]:
-    """RECEIPTS rows: one faint bullet line per receipt; [] when none."""
-    return [f"\u00b7 {receipt}" for receipt in receipts]
+    """RECEIPTS rows, ATELIER 2-line receipt: bold primary + faint indented continuation.
+
+    A receipt's first line becomes the checked primary row; any remaining lines become
+    the faint, indented continuation. Single-line receipts render the primary line only
+    (the continuation is never invented); [] when none.
+    """
+    lines: list[str] = []
+    for receipt in receipts:
+        parts = receipt.splitlines() or [receipt]
+        lines.append(f"[b]{GLYPH_DONE} {parts[0]}[/]")
+        lines.extend(f"[textFaint]  {part}[/]" for part in parts[1:])
+    return lines
+
+
+def revision_lines(
+    plan_id: str | None,
+    revision: int | None,
+    plan_state: str,
+    receipts: list[str],
+) -> list[str]:
+    """REVISIONS rows: the current revision + state, plus receipt-carried history.
+
+    History: receipts are the only carrier of revision transitions in the projection,
+    so when no receipt matches the ``r1 -> r2`` (or unicode-arrow) shape we render just
+    the current revision instead of inventing history; [] when nothing is stored.
+    """
+    word = (plan_state or "none").strip().lower()
+    if not plan_id and word == "none":
+        return []
+    parts: list[str] = []
+    if plan_id:
+        parts.append(plan_id)
+    if revision is not None:
+        parts.append(f"r{revision}")
+    if word != "none":
+        parts.append(word)
+    lines: list[str] = [" \u00b7 ".join(parts)]
+    for receipt in receipts:
+        match = REVISION_HISTORY.search(receipt)
+        if match:
+            lines.append(f"[textFaint]  {' '.join(match.group(0).split())}[/]")
+    return lines
 
 
 class PlanView(VerticalScroll):
@@ -126,6 +205,13 @@ class PlanView(VerticalScroll):
     }
     .plan-proposed:focus-within {
         border-left: heavy $focusRing;
+    }
+    .plan-proposed-title {
+        text-style: bold;
+        color: $text;
+    }
+    .plan-acts {
+        color: $textMuted;
     }
     #plan-change-note {
         border: none;
@@ -191,8 +277,8 @@ class PlanView(VerticalScroll):
             return
         done, total = plan_progress(self.plan_items)
         try:
-            self.mount(Static(plan_header_spaced(done, total), classes="plan-header"))
             state = (self.plan_state or "none").strip().lower()
+            self.mount(Static(plan_header_state(done, total, state), classes="plan-header"))
             if state == "proposed":
                 self.mount(
                     Vertical(
@@ -206,17 +292,22 @@ class PlanView(VerticalScroll):
                     )
                 )
                 for row in render_plan_rows(self.plan_items):
-                    self.mount(Static(row))
+                    self.mount(Static(row, classes="plan-row"))
             elif state == "rejected":
                 self.mount(Static(REJECTED_TITLE, classes="plan-rejected"))
                 if not self.rejected_collapsed:
                     for row in render_plan_rows(self.plan_items):
-                        self.mount(Static(row))
+                        self.mount(Static(row, classes="plan-row"))
             else:
                 for row in render_plan_rows(self.plan_items):
-                    self.mount(Static(row))
+                    self.mount(Static(row, classes="plan-row"))
             if not self.plan_items and state == "none":
                 self.mount(Static("[dim]No execution plan active[/dim]"))
+            revisions = revision_lines(self.plan_id, self.revision, self.plan_state, self.receipts)
+            if revisions:
+                self.mount(Static(section_head("REVISIONS"), classes="sec-head"))
+                for line in revisions:
+                    self.mount(Static(line, classes="sec-row"))
             integrations = integration_lines(self.integrations)
             if integrations:
                 self.mount(Static(section_head("INTEGRATIONS"), classes="sec-head"))
@@ -278,13 +369,16 @@ class PlanView(VerticalScroll):
 __all__ = [
     "PROPOSED_ACTS",
     "PlanView",
+    "integration_glyph",
     "integration_lines",
     "plan_glyph",
     "plan_header",
     "plan_header_spaced",
+    "plan_header_state",
     "plan_progress",
     "plan_row_kind",
     "receipt_lines",
     "render_plan_rows",
+    "revision_lines",
     "section_head",
 ]
