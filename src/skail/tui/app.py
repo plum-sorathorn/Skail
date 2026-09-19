@@ -172,6 +172,19 @@ def render_dateline(
     return " ".join(segments)
 
 
+def render_transcript_header(run_id: str | None, event_count: int, pinned: bool) -> str:
+    """Return the ATELIER transcript header: letterspaced TRANSCRIPT + faint run state."""
+    left = "T R A N S C R I P T"
+    segments: list[str] = []
+    if run_id:
+        segments.append(f"run-{run_id}")
+    segments.append(f"{event_count} events")
+    if pinned:
+        segments.append("pinned")
+    right = " · ".join(segments)
+    return f"{left}  [textFaint]{right}[/]"
+
+
 class SkailApp(App[int]):
     """Main Textual interactive application for Skail harness."""
 
@@ -192,13 +205,29 @@ class SkailApp(App[int]):
         height: 1fr;
     }
     #chat-container {
-        width: 60%;
+        width: 1fr;
         height: 100%;
-        border-right: solid $border;
+        padding-right: 2;
+    }
+    #transcript-header {
+        width: 100%;
+        height: 1;
+        padding: 0 1;
+        border-bottom: solid $border;
+        color: $textMuted;
     }
     #sidebar-container {
-        width: 40%;
+        width: 39;
         height: 100%;
+        padding-left: 2;
+    }
+    .hairline {
+        width: 1;
+        height: 100%;
+        background: $border;
+    }
+    .narrow .hairline {
+        display: none;
     }
     #tabs {
         height: 1fr;
@@ -219,8 +248,7 @@ class SkailApp(App[int]):
         display: none;
     }
     .wide #chat-container {
-        width: 60%;
-        border-right: solid $border;
+        width: 1fr;
     }
     .wide #sidebar-container {
         display: block;
@@ -348,8 +376,10 @@ class SkailApp(App[int]):
         yield Static(self._render_status_strip(), id="dateline")
         with Horizontal(id="main-container"):
             with Vertical(id="chat-container"):
+                yield Static(id="transcript-header")
                 yield ChatTranscript(id="chat-transcript")
                 yield Container(id="interrupt-container")
+            yield Static(id="hairline", classes="hairline")
             with Vertical(id="sidebar-container"):
                 with TabbedContent(initial="tab-agents", id="tabs"):
                     with TabPane("Agents", id="tab-agents"):
@@ -792,6 +822,14 @@ class SkailApp(App[int]):
 
         chat = self.query_one("#chat-transcript", ChatTranscript)
         chat.update_items(self.projection.transcript_items)
+
+        run_id: str | None = None
+        if self.initial_snapshot and self.initial_snapshot.runs:
+            run_id = str(self.initial_snapshot.runs[-1].run_id)
+        header = self.query_one("#transcript-header", Static)
+        header.update(
+            render_transcript_header(run_id, len(self.projection.transcript_items), chat._pinned)
+        )
 
         rail = self.query_one("#agent-rail", AgentRail)
         try:
