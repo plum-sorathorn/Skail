@@ -60,3 +60,5 @@ automatic-routing eligibility remain Skail-owned, lazy, evidence-bearing decisio
 Framework upgrades are deliberately explicit. The stable event, assignment, task, executor, and
 error contracts do not expose framework types. Optional v3 event streaming and preview async
 subagents remain outside the stable boundary until separately proven.
+
+D-5 (message-sequence, "Message as a sequence must be (role, template)"): unreproducible/monitored, pinned to the installed `langchain_core` version — reopen on a second occurrence. The messages-channel producer invariant is pinned by `tests/contract/test_messages_invariant.py`.

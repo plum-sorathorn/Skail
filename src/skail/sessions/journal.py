@@ -1387,6 +1387,22 @@ class Journal:
                 None if row["result_json"] is None else json.loads(row["result_json"]),
             )
 
+    def plan_node_execution(self, node_id: str) -> PlanNodeExecution | None:
+        """Return the persisted execution row for a node, if the dispatch pump began it."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT execution_key,status,result_json FROM plan_node_executions WHERE node_id=?",
+                (node_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return PlanNodeExecution(
+            node_id,
+            row["execution_key"],
+            row["status"],
+            None if row["result_json"] is None else json.loads(row["result_json"]),
+        )
+
     def settle_plan_node_execution(self, *, node_id: str, result: dict[str, Any]) -> None:
         payload = json.dumps(self.redactor.scrub(result), sort_keys=True, separators=(",", ":"))
         with self.transaction() as transaction:
@@ -1425,12 +1441,18 @@ class Journal:
             )
 
     def reconcile_plan_node_executions(
-        self, *, exclude_node_ids: frozenset[str] = frozenset()
+        self,
+        *,
+        exclude_node_ids: frozenset[str] = frozenset(),
+        include_node_ids: frozenset[str] = frozenset(),
     ) -> tuple[PlanNodeSnapshot, ...]:
         """Finish durable settlements and block ambiguous launches without replaying them.
 
         Nodes in ``exclude_node_ids`` (already admitted by this resume) are left
         untouched so fresh LAUNCHING work is never reconciled to BLOCKED.
+        When ``include_node_ids`` is non-empty it mirrors that allowlist: only
+        the listed node_ids are considered; when it is empty nothing is
+        filtered.
         """
         with self._connect() as connection:
             rows = connection.execute(
@@ -1442,6 +1464,8 @@ class Journal:
             ).fetchall()
         reconciled: list[PlanNodeSnapshot] = []
         for row in rows:
+            if include_node_ids and row["node_id"] not in include_node_ids:
+                continue
             if row["node_id"] in exclude_node_ids:
                 continue
             state = PlanNodeState(row["status"])

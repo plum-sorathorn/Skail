@@ -75,3 +75,50 @@ def test_configured_call_time_and_budget_limits_fail_deterministically() -> None
     )
     monitor.observe_success()
     assert monitor.observe_call("read", {"a": 1, "b": 2}) is None
+
+
+def test_never_executed_calls_are_exempt_from_the_repeated_call_window() -> None:
+    orphan = FailureMonitor()
+    assert orphan.observe_call("read", {"path": "a"}, executed=False) is None
+    assert orphan.observe_call("read", {"path": "a"}, executed=False) is None
+    assert orphan.observe_call("read", {"path": "a"}, executed=False) is None
+
+    executed = FailureMonitor()
+    assert executed.observe_call("read", {"path": "a"}, executed=True) is None
+    assert executed.observe_call("read", {"path": "a"}, executed=True) is None
+    assert executed.observe_call("read", {"path": "a"}, executed=True) == "failure.repeated_call"
+
+
+def test_interleaved_orphans_do_not_count_toward_the_call_window() -> None:
+    monitor = FailureMonitor()
+    assert monitor.observe_call("read", {"path": "a"}, executed=False) is None
+    assert monitor.observe_call("read", {"path": "a"}) is None
+    assert monitor.observe_call("read", {"path": "a"}, executed=False) is None
+    assert monitor.observe_call("read", {"path": "a"}) is None
+    assert monitor.observe_call("read", {"path": "a"}, executed=False) is None
+    # Only the two executed calls ever entered the window; the third executed
+    # call completes it and trips.
+    assert monitor.observe_call("read", {"path": "a"}) == "failure.repeated_call"
+    # observe_success still clears the window.
+    monitor.observe_success()
+    assert monitor.observe_call("read", {"path": "a"}) is None
+    assert monitor.observe_call("read", {"path": "a"}) is None
+    assert monitor.observe_call("read", {"path": "a"}) == "failure.repeated_call"
+
+
+def test_orphan_surfaces_as_tool_scoped_repeated_error_without_call_window() -> None:
+    monitor = FailureMonitor()
+    # Orphan #1: the call never reached a handler; the defect is counted
+    # tool-scoped and the call contributes nothing to the repeated-call window.
+    assert monitor.observe_call("task", {"description": "x"}, executed=False) is None
+    assert monitor.observe_error("validation failed: args", tool="task") is None
+    # Orphan #2: the tool-scoped repeated_error trips at the second occurrence.
+    assert monitor.observe_call("task", {"description": "x"}, executed=False) is None
+    assert monitor.observe_error("validation failed: args", tool="task") == (
+        "failure.repeated_error"
+    )
+    # Regression: a third identical call that finally executes trips nothing
+    # (no failure.repeated_call), so the run is not aborted.
+    assert monitor.observe_call("task", {"description": "x"}) is None
+    assert monitor.observe_call("task", {"description": "x"}) is None
+    assert monitor.observe_call("task", {"description": "x"}) == "failure.repeated_call"

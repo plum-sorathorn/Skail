@@ -76,6 +76,7 @@ from skail.domain.tasks import (
     TaskSpec,
     TaskStatus,
 )
+from skail.domain.usage import NormalizedUsage
 from skail.providers.base import ProviderAdapter
 from skail.providers.fake import FakeProviderAdapter
 from skail.providers.fallback import FallbackBinding
@@ -443,9 +444,11 @@ class RunController:
             ).fetchone()
         if uncertain is not None:
             error_class = self._ambiguous_error_class(self.journal, assignment_id)
+            detail = self._ambiguous_error_detail(self.journal, assignment_id)
+            detail_suffix = f": {detail}" if detail is not None else ""
             raise AccountingReconciliationRequired(
                 f"provider usage is uncertain ({error_class}); "
-                f"reservation remains held"
+                f"reservation remains held{detail_suffix}"
             )
         if self._has_calls(assignment_id):
             self.usage_settler.settle_attempt(assignment_id)
@@ -485,6 +488,29 @@ class RunController:
         if not head.replace("_", "").isalnum() or len(head) > 64:
             return "unknown"
         return head
+
+    @staticmethod
+    def _ambiguous_error_detail(journal: Any, assignment_id: str) -> str | None:
+        """Return the stored, size-bounded ambiguity detail after the class.
+
+        Reads the `ClassName: detail` summary written by `mark_ambiguous` and
+        returns only the detail portion; the class prefix is parsed separately
+        by `_ambiguous_error_class`. Returns None when the summary is missing,
+        unparseable, or carries no detail.
+        """
+        with journal._connect() as connection:
+            row = connection.execute(
+                "SELECT error_summary FROM provider_calls WHERE assignment_id=? "
+                "AND status='ambiguous' LIMIT 1",
+                (assignment_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        summary = row[0] if not isinstance(row, dict) else row.get("error_summary")
+        if not isinstance(summary, str) or ":" not in summary:
+            return None
+        detail = summary.split(":", 1)[1].strip()
+        return detail or None
 
     def _release_lead_allowances(self) -> None:
         for reservation_id in self._lead_allowance_ids:
@@ -866,6 +892,16 @@ class RunController:
                 decision_gate=decision_gate,
             )
 
+        lead_provider = lead_assignment.provider
+
+        def usage_normalizer(response: ModelResponse[Any]) -> NormalizedUsage | None:
+            # D-12(1): reuse the settler's accounting normalization verbatim;
+            # this stays telemetry-only (record_call remains the journaled
+            # source of truth).
+            return AssignmentUsageSettler._normalize_response(
+                self.usage_settler.providers[lead_provider], response
+            )
+
         return build_production_lead(
             lead_chat_model,
             workspace=self.workspace,
@@ -887,6 +923,7 @@ class RunController:
             ),
             runtime_model_name=lead_assignment.model,
             model_response_observer=observe_response,
+            usage_normalizer=usage_normalizer,
             session_id=str(self.session_id),
             run_id=str(run_id),
         )
@@ -1840,15 +1877,25 @@ class RunController:
         attempt_id: AttemptId,
     ) -> Callable[..., None]:
         def emit(
-            event_type: str, subject: str, reason: str | None = None
+            event_type: str, subject: str, reason: str | NormalizedUsage | None = None
         ) -> None:
             suffix = event_type.split(".", 1)[1]
             payload: EventPayload
             if event_type.startswith("model."):
-                payload = ModelPayload(model=subject)
+                # D-12(1): telemetry only. Usage rides the third positional
+                # slot; counts/decimals and the authority constant are safe,
+                # non-secret.
+                usage = reason if isinstance(reason, NormalizedUsage) else None
+                payload = ModelPayload(
+                    model=subject,
+                    input_tokens=usage.input_tokens if usage is not None else None,
+                    output_tokens=usage.output_tokens if usage is not None else None,
+                    cost_usd=float(usage.cost_usd) if usage is not None else None,
+                    usage_authority=usage.authority.value if usage is not None else None,
+                )
             else:
                 clean_reason: str | None = None
-                if reason:
+                if isinstance(reason, str) and reason:
                     clean_reason = self.redaction.scrub_text(reason)[:500]
                 payload = ToolPayload(
                     tool=subject, status=suffix, reason=clean_reason
@@ -2164,6 +2211,7 @@ class RunController:
                         error_message=error_message,
                     ),
                 )
+                self._reconcile_unlaunched_admissions()
             await _save_checkpoint(
                 "terminal_cancelled" if is_cancelled else "terminal_failed",
                 status="committed",
@@ -2205,6 +2253,7 @@ class RunController:
                 tx.update_task_status(task_id=str(lead_task_id), status=TaskStatus.RUNNING)
                 tx.update_run_status(run_id=str(run_id), status="blocked")
                 tx.update_session_status(session_id=str(self.session_id), status="interrupted")
+                self._reconcile_unlaunched_admissions()
             await _save_checkpoint(
                 "interrupted",
                 status="interrupted",
@@ -2608,6 +2657,27 @@ class RunController:
                     }
             return True
         return False
+
+    def _reconcile_unlaunched_admissions(self) -> None:
+        """Block admitted-but-unlaunched dispatches and forget them.
+
+        Called inside the exiting journal transaction: the savepoint-nested
+        writes join it, so the terminal statuses and this reconciliation commit
+        atomically.  Only dispatches the dispatch pump never began — those
+        without a persisted execution row — are swept to BLOCKED; mid-flight
+        children (with an execution row) keep their state.  Nothing launches
+        here, and resumes never re-admit these: only persisted READY nodes
+        re-enter the admission path.
+        """
+        include = frozenset(
+            dispatch.node_id
+            for dispatch in self._planned_node_dispatches
+            if self.journal.plan_node_execution(dispatch.node_id) is None
+        )
+        if not include:
+            return
+        self.journal.reconcile_plan_node_executions(include_node_ids=include)
+        self._planned_node_dispatches.clear()
 
     def _rebuild_safe_resume_frontier(
         self,

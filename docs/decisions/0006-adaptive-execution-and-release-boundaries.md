@@ -84,7 +84,9 @@ serialized shared-workspace path remains the correctness fallback.
 ## Consequences
 
 - Direct work remains cheap, while accepted plans can release ready nodes without a lead call after
-  every ordinary completion.
+  every ordinary completion; interrupt, block, and failure exits are not ordinary completions —
+  admitted-but-unlaunched nodes are reconciled to BLOCKED there (emitting `plan.node_blocked`), and
+  only persisted READY nodes are re-admitted on resume.
 - Plan admission, revisions, dispatch, recovery, routing, projections, and evaluation share durable
   versioned records.
 - The compatibility `task` surface and existing two-attempt lifecycle remain valid during migration.

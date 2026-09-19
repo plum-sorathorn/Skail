@@ -1114,3 +1114,94 @@ async def test_recovery_dispatches_independent_ready_despite_bound_sibling(
     fresh_binding = journal.plan_node_task_binding(fresh_id)
     assert fresh_binding is not None
     assert fresh_binding.task_id != bound_task_id
+
+
+@pytest.mark.asyncio
+async def test_interrupt_between_admission_and_launch_blocks_unlaunched_node(
+    tmp_path: Path,
+) -> None:
+    """D-3: an interrupt after admission blocks the unlaunched agent idempotently.
+
+    The lead admits a planned AGENT node and then asks a question, so the
+    dispatch pump never runs.  The blocked exit must persist the node as
+    BLOCKED (not LAUNCHING) with exactly one plan.node_blocked, and the
+    resume must not sweep it again, re-admit it, or mint new attempts.
+    """
+    journal, checkpoints, questions, approvals = _stores(tmp_path, "d3-exit")
+    session_id = _session(journal)
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        _planned_decision([_agent_node("inspect", "Inspect the evidence file")]),
+                        "decision-1",
+                    ),
+                    (
+                        "ask_user",
+                        {"prompt": "Proceed?", "reason": "confirmation"},
+                        "ask-1",
+                    ),
+                ]
+            ),
+        ],
+    )
+    controller = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {"lead-model": lead},
+        profile_models={"explorer": "implementer-model"},
+    )
+    first = await controller.run_instruction("Inspect before reporting")
+    assert first.status == "blocked"
+    assert first.interrupted is True
+
+    plan = journal.plans_for_run(str(first.run_id))[0]
+    assert plan.node_states == {"inspect": PlanNodeState.BLOCKED}
+    blocked = [
+        event
+        for event in journal.events_after(run_id=str(first.run_id))
+        if event.type == "plan.node_blocked"
+    ]
+    assert len(blocked) == 1
+    attempts = journal.plans_for_run(str(first.run_id))  # the node keeps its binding
+    binding = journal.plan_node_task_binding(
+        attempts[0].node_ids["inspect"]
+    )
+    assert binding is not None
+
+    resumed_lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[AIMessage(content="No further work needed.")],
+    )
+    resumed = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {"lead-model": resumed_lead},
+        profile_models={"explorer": "implementer-model"},
+    )
+    assert resumed.restore_interrupted() is True
+    result = await resumed.resume_interrupted("yes")
+
+    # Nothing launches: the reconciled node stays BLOCKED, no LAUNCHING
+    # orphans, no duplicate plan.node_blocked, and the child cap holds.
+    assert result.status == "blocked"
+    assert result.child_peak_active <= 3
+    plan = journal.plans_for_run(str(result.run_id))[0]
+    assert plan.node_states == {"inspect": PlanNodeState.BLOCKED}
+    still = [
+        event
+        for event in journal.events_after(run_id=str(result.run_id))
+        if event.type == "plan.node_blocked"
+    ]
+    assert len(still) == 1

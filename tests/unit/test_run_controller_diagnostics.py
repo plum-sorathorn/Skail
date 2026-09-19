@@ -1,4 +1,5 @@
 import pytest
+from langchain_core.messages import HumanMessage
 
 from skail.runtime.run_controller import (
     _collect_message_sequence_diagnostics,
@@ -48,3 +49,25 @@ async def test_shape_dump_guards_against_diagnostics_failures() -> None:
     shapes = await _collect_message_sequence_diagnostics(lead_agent, {})
 
     assert shapes == "message-shape diagnostics unavailable"
+
+
+@pytest.mark.asyncio
+async def test_failure_dump_reports_element_type_and_length_per_element() -> None:
+    lead_agent = _FabricatedLeadAgent(
+        {
+            "messages": [
+                HumanMessage(content="hello"),
+                ("role", "template"),
+                "plain",
+                42,
+            ]
+        }
+    )
+
+    shapes = await _collect_message_sequence_diagnostics(lead_agent, {"configurable": {}})
+
+    assert "messages[4]=[" in shapes
+    assert "0:HumanMessage" in shapes
+    assert "1:tuple(len=2,first=str)" in shapes
+    assert "2:str" in shapes
+    assert "3:int" in shapes

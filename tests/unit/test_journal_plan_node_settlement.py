@@ -19,7 +19,12 @@ from pathlib import Path
 import pytest
 
 from skail.domain.ids import new_run_id, new_session_id
-from skail.domain.plans import ExecutionPlan, PlanNode, PlanNodeKind
+from skail.domain.plans import (
+    ExecutionPlan,
+    PlanNode,
+    PlanNodeKind,
+    PlanNodeState,
+)
 from skail.sessions.journal import Journal
 
 RUN_ID = str(new_run_id())
@@ -103,3 +108,67 @@ def test_settle_after_launch_settles_then_double_settle_is_idempotent(tmp_path: 
     )
     assert again.status == "settled"
     assert again.result == {"status": "succeeded"}
+
+def test_reconcile_include_allowlist_only_touches_listed_ids(tmp_path: Path) -> None:
+    """include_node_ids mirrors exclude_node_ids: only listed nodes reconcile.
+
+    A launched (execution-row-bearing) node outside the allowlist must keep its
+    LAUNCHING state and its unsettled running row, while the listed
+    unlaunched node is reconciled to BLOCKED exactly once.
+    """
+    journal = _journal(tmp_path / "journal-include.sqlite")
+    plan = ExecutionPlan(
+        schema_version=1,
+        policy_version="adaptive-v1",
+        revision=1,
+        nodes=(
+            PlanNode(local_id="launched", kind=PlanNodeKind.TOOL, objective="Launched"),
+            PlanNode(local_id="unlaunched", kind=PlanNodeKind.TOOL, objective="Unlaunched"),
+        ),
+    )
+    admitted = journal.admit_plan(run_id=RUN_ID, plan=plan)
+    launched_id = admitted.node_ids["launched"]
+    unlaunched_id = admitted.node_ids["unlaunched"]
+
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=launched_id,
+        expected=PlanNodeState.READY,
+        target=PlanNodeState.LAUNCHING,
+    )
+    journal.begin_plan_node_execution(node_id=launched_id, execution_key=f"task:{launched_id}")
+    journal.transition_plan_node_state(
+        plan_id=admitted.plan_id,
+        node_id=unlaunched_id,
+        expected=PlanNodeState.READY,
+        target=PlanNodeState.LAUNCHING,
+    )
+
+    reconciled = journal.reconcile_plan_node_executions(
+        include_node_ids=frozenset({unlaunched_id})
+    )
+    assert [snapshot.node_id for snapshot in reconciled] == [unlaunched_id]
+    states = journal.get_plan(admitted.plan_id).node_states
+    assert states["unlaunched"] is PlanNodeState.BLOCKED
+    assert states["launched"] is PlanNodeState.LAUNCHING
+    launched_execution = journal.plan_node_execution(launched_id)
+    assert launched_execution is not None
+    assert launched_execution.status == "running"
+    blocked = [
+        event
+        for event in journal.events_after(run_id=RUN_ID)
+        if event.type == "plan.node_blocked"
+    ]
+    assert [str(event.payload.node_id) for event in blocked] == [unlaunched_id]
+
+    # An empty include mirrors the exclude-allowlist: nothing is filtered.
+    again = journal.reconcile_plan_node_executions()
+    assert [snapshot.node_id for snapshot in again] == [launched_id]
+    states = journal.get_plan(admitted.plan_id).node_states
+    assert states["launched"] is PlanNodeState.BLOCKED
+    still = [
+        event
+        for event in journal.events_after(run_id=RUN_ID)
+        if event.type == "plan.node_blocked"
+    ]
+    assert len(still) == 2, "the already-blocked node must not produce a second event"

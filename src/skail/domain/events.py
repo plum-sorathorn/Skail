@@ -149,6 +149,10 @@ class ModelPayload(PayloadBase):
     family: Literal["model"] = "model"
     model: str
     delta: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cost_usd: float | None = None
+    usage_authority: str | None = None
 
 
 class TaskPayload(PayloadBase):

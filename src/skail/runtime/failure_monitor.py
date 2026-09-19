@@ -32,7 +32,13 @@ class FailureMonitor:
         self.max_seconds = max_seconds
         self.max_budget_usd = max_budget_usd
 
-    def observe_call(self, name: str, arguments: object) -> str | None:
+    def observe_call(
+        self, name: str, arguments: object, *, executed: bool = True
+    ) -> str | None:
+        if not executed:
+            # The call never reached a handler: it must not consume the
+            # repeated-call window.
+            return None
         value = f"{name}:{_canonical(arguments, self._redactor)}"
         self._calls.append(value)
         if len(self._calls) == 3 and len(set(self._calls)) == 1:

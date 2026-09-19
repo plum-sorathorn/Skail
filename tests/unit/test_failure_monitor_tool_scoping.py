@@ -176,7 +176,12 @@ def test_ambiguous_handler_surfaces_class_name_redacted(tmp_path: Path) -> None:
         controller._finalize_assignment_budget(assignment)  # type: ignore[attr-defined]
     except AccountingReconciliationRequired as exc:
         assert "ReadTimeout" in str(exc)
-        assert "transport blew up" not in str(exc)
+        # D-12(3): the stored (redacted) ambiguity detail is surfaced for
+        # operators while the class-only prefix is preserved.
+        assert (
+            "provider usage is uncertain (ReadTimeout); reservation "
+            "remains held: transport blew up mid-stream" in str(exc)
+        )
 
     with journal._connect() as connection:
         reservation = connection.execute(
@@ -184,3 +189,36 @@ def test_ambiguous_handler_surfaces_class_name_redacted(tmp_path: Path) -> None:
             (reservation_id,),
         ).fetchone()
     assert reservation["status"] == "reserved"
+
+
+def test_ambiguous_detail_defaults_to_legacy_message_without_summary(
+    tmp_path: Path,
+) -> None:
+    from tests.fakes.provider import FakeProviderAdapter
+
+    journal, assignment_id, reservation_id, _run_id = _setup_journal(tmp_path)
+    ledger = BudgetLedger(journal)
+    settler = AssignmentUsageSettler(journal, ledger, {"fake": FakeProviderAdapter()})
+    call_id = settler.begin_call(assignment_id)
+    settler.mark_ambiguous(call_id, ReadTimeout("transport blew up mid-stream"))
+    with journal._connect() as connection:
+        connection.execute(
+            "UPDATE provider_calls SET error_summary='NoColonDetail' WHERE call_id=?",
+            (call_id,),
+        )
+
+    from skail.runtime.run_controller import RunController
+
+    controller = RunController.__new__(RunController)
+    controller.journal = journal  # type: ignore[attr-defined]
+    controller.ledger = ledger  # type: ignore[attr-defined]
+    controller.usage_settler = settler  # type: ignore[attr-defined]
+    assignment = SimpleNamespace(
+        assignment_id=assignment_id, reservation_id=reservation_id
+    )
+
+    with pytest.raises(
+        AccountingReconciliationRequired,
+        match=r"provider usage is uncertain \(NoColonDetail\); reservation remains held$",
+    ):
+        controller._finalize_assignment_budget(assignment)  # type: ignore[attr-defined]

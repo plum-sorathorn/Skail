@@ -623,6 +623,28 @@ States: `active`, `idle`, `interrupted`, `completed`, `archived`. Exiting the TU
 
 Resume restores transcript, lead/task graph states, assignments, task tree, usage, reservations, pending questions, and trust context. Orphaned in-flight provider calls become interrupted; Skail does not charge or replay them without reconciliation evidence.
 
+### Planned dispatch and plan-node recovery
+
+Admitted AGENT plan nodes launch exactly once. Admission binds the node to a
+fresh queued task and attempt and moves it READY→LAUNCHING; the dispatch pump
+later opens the persisted execution row (`plan_node_executions`) and runs it.
+
+- Launch/reconcile: LAUNCHING/RUNNING/settled/retired/ambiguous provider work
+  is never replayed. Ambiguous launches are reconciled to BLOCKED first, and
+  settled rows resolve to their recorded terminal state. Nodes that already
+  have a persisted task binding or execution record are skipped individually,
+  so the LAUNCHING→RUNNING lifecycle is never re-entered from READY.
+- Interrupt/block/failure exits: admitted-but-unlaunched nodes (no execution
+  row) are reconciled to BLOCKED inside the same journal transaction that
+  writes the terminal statuses, each emitting `plan.node_blocked`; the admitted
+  dispatches are then cleared. Mid-flight children (with an execution row)
+  keep their state, and nothing launches on the exit.
+- Only READY nodes are re-admitted on resume, through the normal agent
+  admission path (which rebuilds task/attempt/assignment records);
+  already-admitted LAUNCHING work from the current resume is excluded from
+  reconciliation so fresh work is never blocked as ambiguous, while
+  independent READY nodes still dispatch.
+
 ### Compaction
 
 Compaction summarizes conversational context while preserving:

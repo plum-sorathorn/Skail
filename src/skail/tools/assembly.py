@@ -19,6 +19,7 @@ from langchain_core.tools import tool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import interrupt
 
+from skail.domain.usage import NormalizedUsage
 from skail.runtime.deepagents_adapter import build_lead_agent
 from skail.runtime.failure_monitor import FailureMonitor
 from skail.runtime.interrupts import QuestionStore
@@ -478,12 +479,14 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         emit: Callable[..., None],
         redactor: Any,
         model_response_observer: Callable[[ModelResponse[Any]], None] | None = None,
+        usage_normalizer: Callable[[ModelResponse[Any]], NormalizedUsage | None] | None = None,
     ) -> None:
         self.model_name = model_name
         self.emit = emit
         self.monitor = FailureMonitor(redactor)
         self._redactor = redactor
         self.model_response_observer = model_response_observer
+        self.usage_normalizer = usage_normalizer
 
     def _emit_failure(self, name: str, reason_value: object) -> None:
         reason = _failure_reason(reason_value, self._redactor)
@@ -491,6 +494,25 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             self.emit("tool.failed", name, reason)
         except TypeError:
             self.emit("tool.failed", name)
+
+    def _usage_for(self, response: ModelResponse[Any]) -> NormalizedUsage | None:
+        """Best-effort usage extraction; telemetry failures never propagate."""
+        if self.usage_normalizer is None:
+            return None
+        try:
+            return self.usage_normalizer(response)
+        except Exception:
+            return None
+
+    def _emit_model_completed(self, response: ModelResponse[Any]) -> None:
+        usage = self._usage_for(response)
+        if usage is None:
+            self.emit("model.completed", self.model_name)
+            return
+        try:
+            self.emit("model.completed", self.model_name, usage)
+        except TypeError:
+            self.emit("model.completed", self.model_name)
 
     def wrap_model_call(
         self,
@@ -503,7 +525,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         except Exception:
             self.emit("model.failed", self.model_name)
             raise
-        self.emit("model.completed", self.model_name)
+        self._emit_model_completed(response)
         self.monitor.observe_success()
         if self.model_response_observer is not None:
             self.model_response_observer(response)
@@ -520,7 +542,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         except Exception:
             self.emit("model.failed", self.model_name)
             raise
-        self.emit("model.completed", self.model_name)
+        self._emit_model_completed(response)
         self.monitor.observe_success()
         if self.model_response_observer is not None:
             self.model_response_observer(response)
@@ -542,7 +564,10 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         hint = _validation_error_message(request)
         if hint is not None:
             self._emit_failure(name, hint)
-            self.monitor.observe_call(name, request.tool_call.get("args", {}))
+            # Orphan (pre-handler) path: exempt the call from the repeated-call
+            # window but still count the defect tool-scoped.
+            self.monitor.observe_call(name, request.tool_call.get("args", {}), executed=False)
+            self.monitor.observe_error(hint, tool=name)
             return ToolMessage(content=hint, tool_call_id=request.tool_call["id"], status="error")
         request = _normalize_request_args(request)
         signal = self.monitor.observe_call(name, request.tool_call.get("args", {}))
@@ -594,7 +619,10 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         hint = _validation_error_message(request)
         if hint is not None:
             self._emit_failure(name, hint)
-            self.monitor.observe_call(name, request.tool_call.get("args", {}))
+            # Orphan (pre-handler) path: exempt the call from the repeated-call
+            # window but still count the defect tool-scoped.
+            self.monitor.observe_call(name, request.tool_call.get("args", {}), executed=False)
+            self.monitor.observe_error(hint, tool=name)
             return ToolMessage(content=hint, tool_call_id=request.tool_call["id"], status="error")
         request = _normalize_request_args(request)
         signal = self.monitor.observe_call(name, request.tool_call.get("args", {}))
@@ -698,6 +726,7 @@ def build_default_agent(
     runtime_event: Callable[[str, str], None] | None = None,
     runtime_model_name: str | None = None,
     model_response_observer: Callable[[ModelResponse[Any]], None] | None = None,
+    usage_normalizer: Callable[[ModelResponse[Any]], NormalizedUsage | None] | None = None,
     allowed_write_paths: tuple[str, ...] = (),
     forbidden_host_paths: tuple[Path, ...] = (),
     execute_allowed: bool = True,
@@ -830,6 +859,7 @@ def build_default_agent(
                 emit=runtime_event,
                 redactor=redaction,
                 model_response_observer=model_response_observer,
+                usage_normalizer=usage_normalizer,
             )
         )
     return build_lead_agent(

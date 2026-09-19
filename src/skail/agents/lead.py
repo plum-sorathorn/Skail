@@ -11,6 +11,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import Runnable
 
 from skail.domain.routing import RoutingMode
+from skail.domain.usage import NormalizedUsage
 from skail.routing.requirements import TaskRisk
 from skail.runtime.leases import WorkspaceLeaseManager
 from skail.tools.assembly import build_default_agent, default_registry
@@ -95,6 +96,7 @@ def build_production_lead(
     runtime_event: Callable[[str, str], None] | None = None,
     runtime_model_name: str | None = None,
     model_response_observer: Callable[[Any], None] | None = None,
+    usage_normalizer: Callable[[Any], NormalizedUsage | None] | None = None,
     extension_tools: Sequence[Any] = (),
     session_id: str = "",
     run_id: str = "",
@@ -126,6 +128,7 @@ def build_production_lead(
             runtime_event=runtime_event,
             runtime_model_name=runtime_model_name,
             model_response_observer=model_response_observer,
+            usage_normalizer=usage_normalizer,
             system_prompt=TASK_PACKET_GUIDANCE,
             session_id=session_id,
             run_id=run_id,
