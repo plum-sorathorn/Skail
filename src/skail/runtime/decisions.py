@@ -5,7 +5,12 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from langchain.agents.middleware import AgentMiddleware, ModelResponse, ToolCallRequest
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    ModelRequest,
+    ModelResponse,
+    ToolCallRequest,
+)
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import BaseTool, tool
 from pydantic import ValidationError
@@ -68,13 +73,25 @@ class ExecutionDecisionGate:
     def prepare_response(self, response: ModelResponse[Any]) -> None:
         """Admit an ordered response before DeepAgents starts its parallel tool fan-out."""
 
-        for message in response.result:
+        result = getattr(response, "result", None)
+        messages: list[Any] = []
+        if isinstance(result, (list, tuple)):
+            messages = list(result)
+        elif isinstance(result, AIMessage):
+            messages = [result]
+
+        for message in messages:
             if not isinstance(message, AIMessage):
                 continue
             for call in message.tool_calls:
                 name = call.get("name")
                 call_id = call.get("id")
                 if not isinstance(name, str) or not isinstance(call_id, str):
+                    continue
+                if (
+                    call_id in self._prepared_decision_ids
+                    or call_id in self._rejected_tool_codes
+                ):
                     continue
                 if name == "execution_decision":
                     args = call.get("args")
@@ -209,6 +226,24 @@ class ExecutionDecisionMiddleware(AgentMiddleware[Any, Any, Any]):
 
     def __init__(self, gate: ExecutionDecisionGate) -> None:
         self._gate = gate
+
+    def wrap_model_call(
+        self,
+        request: ModelRequest[Any],
+        handler: Callable[[ModelRequest[Any]], ModelResponse[Any]],
+    ) -> ModelResponse[Any]:
+        response = handler(request)
+        self._gate.prepare_response(response)
+        return response
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest[Any],
+        handler: Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]],
+    ) -> ModelResponse[Any]:
+        response = await handler(request)
+        self._gate.prepare_response(response)
+        return response
 
     def wrap_tool_call(
         self,
