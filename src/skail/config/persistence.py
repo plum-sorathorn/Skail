@@ -79,6 +79,8 @@ def save_user_provider_models(
             if provider in {"llmgateway", "devpass", "openai"}
             else provider
         )
+    if provider == "llmgateway" and "base_url" not in provider_entry:
+        provider_entry["base_url"] = "https://api.llmgateway.io/v1"
 
     try:
         import tomli_w

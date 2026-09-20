@@ -161,6 +161,26 @@ def test_llm_gateway_accepts_only_its_exact_canonical_v1_url() -> None:
     assert resolved.config.providers["llmgateway"].base_url == "https://api.llmgateway.io/v1"
 
 
+def test_llm_gateway_missing_base_url_defaults_to_canonical(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[providers.llmgateway]",
+                'type = "openai-compatible"',
+                'api_key_env = "LLMGATEWAY_API_KEY"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    resolved = load_config(user_path=config_path)
+
+    assert resolved.config.providers["llmgateway"].base_url == (
+        "https://api.llmgateway.io/v1"
+    )
+
+
 @pytest.mark.parametrize(
     "base_url",
     [

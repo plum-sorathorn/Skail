@@ -417,6 +417,20 @@ def test_model_picker_commit_with_enabled_models(tmp_path) -> None:
     assert calls["closed"] == "model_picker"
 
 
+def test_llmgateway_model_persistence_keeps_canonical_base_url(tmp_path) -> None:
+    import tomllib
+
+    from skail.config.persistence import save_user_provider_models
+
+    target_cfg = tmp_path / "config.toml"
+    save_user_provider_models("llmgateway", ["llmgateway:model-a"], config_path=target_cfg)
+
+    with target_cfg.open("rb") as handle:
+        data = tomllib.load(handle)
+
+    assert data["providers"]["llmgateway"]["base_url"] == "https://api.llmgateway.io/v1"
+
+
 
 @pytest.mark.asyncio
 async def test_onboarding_interactive_flow(monkeypatch: pytest.MonkeyPatch) -> None:
