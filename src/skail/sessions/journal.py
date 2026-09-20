@@ -669,8 +669,7 @@ class JournalTransaction:
         )
 
     def append_event(self, event: EventEnvelope) -> None:
-        redacted_event = event.redacted(self.redactor)
-        envelope = redacted_event.to_json()
+        envelope = event.to_json(self.redactor)
         try:
             self.connection.execute(
                 "INSERT INTO events(event_id,run_id,sequence,envelope_json) VALUES (?,?,?,?)",

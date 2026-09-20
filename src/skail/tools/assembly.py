@@ -874,13 +874,13 @@ def build_default_agent(
     if "ask_user" in visible_names:
         custom_tools.append(ask_user)
     activity_middleware: list[AgentMiddleware[Any, Any, Any]] = []
-    if runtime_event is not None:
+    if runtime_event is not None or model_response_observer is not None:
         activity_middleware.append(
             RuntimeActivityMiddleware(
                 model_name=str(
                     runtime_model_name or getattr(model, "model_name", "unknown")
                 ),
-                emit=runtime_event,
+                emit=runtime_event or (lambda *_args: None),
                 redactor=redaction,
                 model_response_observer=model_response_observer,
                 usage_normalizer=usage_normalizer,
