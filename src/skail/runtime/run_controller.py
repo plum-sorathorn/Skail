@@ -576,7 +576,21 @@ class RunController:
         routing_mode: RoutingMode = RoutingMode.AUTO,
     ) -> RoutingSnapshot:
         if self.candidates_fn is not None:
-            return self.candidates_fn()
+            snapshot = self.candidates_fn()
+            if for_lead and target_lead_model and target_lead_model != "auto":
+                provider, model = (
+                    target_lead_model.split(":", 1)
+                    if ":" in target_lead_model
+                    else ("fake", target_lead_model)
+                )
+                matching = tuple(
+                    candidate
+                    for candidate in snapshot.candidates
+                    if candidate.profile.provider == provider
+                    and candidate.profile.model == model
+                )
+                return snapshot.model_copy(update={"candidates": matching})
+            return snapshot
 
         effective_lead_model = target_lead_model or self.default_lead_model
         clean_lead_model = (
@@ -2078,7 +2092,7 @@ class RunController:
             lambda: self._estimate_snapshot(
                 self._get_candidates(
                     for_lead=True,
-                    target_lead_model=lead_model_name,
+                    target_lead_model=active_controls.model,
                     routing_mode=active_controls.routing_mode,
                 ),
                 packet=lead_preflight_packet,
@@ -3156,7 +3170,7 @@ class RunController:
                 )
                 snapshot = self._get_candidates(
                     for_lead=False,
-                    target_lead_model=controls.model or self.default_lead_model,
+                    target_lead_model=controls.model,
                     routing_mode=controls.routing_mode,
                 )
                 snapshot = self._estimate_snapshot(

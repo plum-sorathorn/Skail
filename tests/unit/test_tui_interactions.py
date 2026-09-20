@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 import pytest
-from textual.widgets import Button, TabbedContent
+from textual.widgets import Button, Static, TabbedContent
 
+from skail.cli.main import RuntimeModelSet
+from skail.providers.fake import DeterministicFakeChatModel, FakeProviderAdapter
+from skail.runtime.redaction import RedactionRegistry
+from skail.sessions.checkpoints import CheckpointStore
+from skail.sessions.journal import Journal
+from skail.sessions.service import SessionService
 from skail.tui.app import SkailApp
 from skail.tui.commands import command_requires_args
 from skail.tui.overlays.model_picker import ModelPickerOverlay
 from skail.tui.overlays.theme_picker import ThemePickerOverlay
+from skail.tui.projection import TuiProjection
 from skail.tui.widgets.composer import ComposerTextArea
 
 
@@ -49,6 +57,23 @@ async def test_composer_enter_dispatches_model_slash_command() -> None:
         top_screen = app.screen_stack[-1]
         assert isinstance(top_screen, ModelPickerOverlay)
         assert "fake:auto" in top_screen.models or len(top_screen.models) > 0
+
+
+@pytest.mark.asyncio
+async def test_model_slash_command_rejects_unknown_discovered_model() -> None:
+    app = SkailApp(bootstrap={"fake_provider": True})
+    app.runtime_models = type("RuntimeModels", (), {"models": {"fake:known": object()}})()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.click("#composer-input")
+        for char in "/model fake:unknown":
+            await pilot.press(char)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.projection.model_for_future() == "auto"
+        assert any(
+            "Unknown or inaccessible model" in item.content
+            for item in app.projection.transcript_items
+        )
 
 
 @pytest.mark.asyncio
@@ -101,16 +126,18 @@ async def test_view_slash_commands_switch_tabs() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cycle_mode_keybinding() -> None:
+async def test_shift_tab_keybinding_cycles_panels() -> None:
     app = SkailApp(bootstrap={"fake_provider": True})
     async with app.run_test(size=(120, 40)) as pilot:
-        initial_mode = (app.projection.footer_data.routing_mode or "auto").lower()
+        tabs = app.query_one("#tabs", TabbedContent)
+        composer = app.query_one("#composer-input", ComposerTextArea)
+        composer.focus()
         await pilot.press("shift+tab")
-        next_mode = (app.projection.footer_data.routing_mode or "").lower()
-        assert next_mode != initial_mode
-        assert next_mode == "quality"
+        assert tabs.active == "tab-plan"
+        assert app.focused is composer
         await pilot.press("shift+tab")
-        assert (app.projection.footer_data.routing_mode or "").lower() == "economy"
+        assert tabs.active == "tab-route"
+        assert app.focused is composer
 
 
 @pytest.mark.asyncio
@@ -125,6 +152,194 @@ async def test_send_button_submits_draft() -> None:
         assert area.text == ""
         assert len(app.projection.transcript_items) >= 1
         assert app.projection.transcript_items[-1].content == "test from button"
+
+
+def _runtime_set(model: DeterministicFakeChatModel) -> RuntimeModelSet:
+    return RuntimeModelSet(
+        models={"lead-model": model},
+        lead_model="lead-model",
+        child_model="lead-model",
+        providers={"fake": FakeProviderAdapter(model)},
+    )
+
+
+def _session_dependencies(tmp_path: Any) -> tuple[Journal, CheckpointStore, SessionService, str]:
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.migrate()
+    checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
+    checkpoints.initialize()
+    service = SessionService(
+        journal=journal,
+        checkpoints=checkpoints,
+        sessions_dir=tmp_path / "sessions",
+    )
+    session = service.create_session(title="pilot")
+    return journal, checkpoints, service, session.session_id
+
+
+@pytest.mark.asyncio
+async def test_composer_submission_during_initialization_is_replayed(tmp_path: Any) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="booted")
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+
+    def factory() -> RuntimeModelSet:
+        started.set()
+        assert release.wait(3)
+        return _runtime_set(model)
+
+    app = SkailApp(
+        runtime_factory=factory,
+        bootstrap={
+            "fake_provider": True,
+            "workspace": str(tmp_path),
+            "session_id": session_id,
+        },
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    async with app.run_test(size=(120, 40)) as pilot:
+        assert started.wait(1)
+        await pilot.click("#composer-input")
+        for char in "run after boot":
+            await pilot.press(char)
+        await pilot.press("enter")
+        await pilot.pause()
+        area = app.query_one("#composer-input", ComposerTextArea)
+        assert area.text == "run after boot"
+
+        release.set()
+        for _ in range(10):
+            await pilot.pause()
+        if app._active_worker is not None:
+            await app._active_worker.wait()
+        assert any(item.content == "booted" for item in app.projection.transcript_items)
+
+
+@pytest.mark.asyncio
+async def test_composer_enter_and_send_button_drive_real_controller(tmp_path: Any) -> None:
+    from skail.domain.ids import SessionId
+    from skail.providers.fake import DeterministicFakeChatModel
+    from skail.runtime.run_controller import RunController
+
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="controller reply")
+    controller = RunController(
+        session_id=SessionId(session_id),
+        workspace=tmp_path,
+        journal=journal,
+        checkpoints=checkpoints,
+        models={"lead-model": model},
+        default_lead_model="lead-model",
+        default_child_model="lead-model",
+    )
+    app = SkailApp(
+        controller=controller,
+        session_service=service,
+        session_id=SessionId(session_id),
+    )
+    async with app.run_test(size=(180, 40)) as pilot:
+        await pilot.click("#composer-input")
+        for char in "enter path":
+            await pilot.press(char)
+        await pilot.press("enter")
+        if app._active_worker is not None:
+            await app._active_worker.wait()
+        await pilot.pause()
+
+        area = app.query_one("#composer-input", ComposerTextArea)
+        area.text = "button path"
+        app.query_one("#composer-send", Button).press()
+        if app._active_worker is not None:
+            await app._active_worker.wait()
+        for _ in range(10):
+            await pilot.pause()
+            if sum(
+                item.content == "controller reply"
+                for item in app.projection.transcript_items
+            ) == 2:
+                break
+
+        user_prompts = [
+            item.content
+            for item in app.projection.transcript_items
+            if item.role == "user"
+        ]
+        assert user_prompts == ["enter path", "button path"]
+        assert (
+            sum(item.content == "controller reply" for item in app.projection.transcript_items)
+            == 2
+        )
+
+
+@pytest.mark.asyncio
+async def test_model_picker_checked_marker_is_visible_after_render() -> None:
+    app = SkailApp(projection=TuiProjection())
+    async with app.run_test(size=(100, 30)) as pilot:
+        overlay = ModelPickerOverlay(["model-a"], current="model-a")
+        app.push_screen(overlay)
+        await pilot.pause()
+        rendered = app.query_one("#model-row-0", Static).render()
+        renderable = getattr(rendered, "renderable", getattr(rendered, "_renderable", rendered))
+        assert "[x] model-a" in str(renderable)
+
+
+@pytest.mark.asyncio
+async def test_model_picker_filters_a_full_catalog_and_restores_composer_focus() -> None:
+    app = SkailApp(projection=TuiProjection())
+    async with app.run_test(size=(120, 40)) as pilot:
+        overlay = ModelPickerOverlay(
+            [f"llmgateway:model-{index:03d}" for index in range(300)],
+            current="llmgateway:model-000",
+        )
+        app.open_overlay("model_picker")
+        app.push_screen(overlay)
+        await pilot.pause()
+        assert len(overlay.models) == 300
+        assert len(list(overlay.query(".model-row"))) <= 40
+
+        await pilot.click("#model-search")
+        for char in "model-299":
+            await pilot.press(char)
+        await pilot.pause()
+        assert len(list(overlay.query(".model-row"))) == 1
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert getattr(app.focused, "id", None) == "composer-input"
+
+
+@pytest.mark.asyncio
+async def test_passive_panels_do_not_take_focus_or_switch_tabs() -> None:
+    app = SkailApp(projection=TuiProjection())
+    async with app.run_test(size=(120, 40)) as pilot:
+        composer = app.query_one("#composer-input", ComposerTextArea)
+        composer.focus()
+        active = app.query_one("#tabs", TabbedContent).active
+        await pilot.click("#chat-transcript")
+        await pilot.click("#tabs")
+        await pilot.pause()
+        assert app.focused is composer
+        assert app.query_one("#tabs", TabbedContent).active == active
+
+
+@pytest.mark.asyncio
+async def test_shift_tab_cycles_panels_without_leaving_composer() -> None:
+    app = SkailApp(projection=TuiProjection())
+    async with app.run_test(size=(120, 40)) as pilot:
+        composer = app.query_one("#composer-input", ComposerTextArea)
+        composer.focus()
+        tabs = app.query_one("#tabs", TabbedContent)
+        expected = ["tab-plan", "tab-route", "tab-budget", "tab-agents", "tab-plan"]
+        for target in expected:
+            await pilot.press("shift+tab")
+            await pilot.pause()
+            assert tabs.active == target
+            assert app.focused is composer
 
 
 @pytest.mark.asyncio

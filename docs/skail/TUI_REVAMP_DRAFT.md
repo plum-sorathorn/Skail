@@ -149,26 +149,26 @@ Cell-by-cell visual structure:
 
 **Character:** friendlier onboarding mark, but the top beacon can read as a star or notification.
 
-## Selected mark: Variant A, “Windward”
+## Selected mark: Design C, “Twin sail”
 
 Reasons:
 
 - Legible in one terminal color.
-- Distinct at six rows.
-- No decorative beacon that could be mistaken for status.
-- Secondary `▪` pixel subtly represents a child agent without dominating the sail.
-- Fits both an onboarding cockpit and compact documentation blocks.
+- Distinct at six rows and stable in monospace output.
+- Twin sails express lead/child collaboration without animation.
+- The full lockup is used in README, help, and onboarding; the compact `/\| S K A I L`
+  form is used in the always-visible masthead.
 
 ## Placement rules
 
 | Location | Rendering |
 |---|---|
 | Welcome cockpit | Full six-row logo, left-aligned, followed by `SKAIL` and the current version |
-| Header | Compact mark `◢│` where Unicode width is reliable; otherwise literal `S│` fallback |
+| Header | Compact text mark `/\| S K A I L` |
 | `/help` | Full six-row monochrome mark above command groups |
 | README | Full six-row logo in a fenced `text` block; optional SVG may reproduce the same exact grid |
 | Errors/loading | Do not repeat the logo; errors should remain terse and functional |
-| Narrow header | Use `S│` only to protect model and budget space |
+| Narrow header | Keep the compact text mark only when status fields still fit |
 
 Do not animate the logo. The spinner may shimmer; the identity mark must remain stable.
 
@@ -276,7 +276,7 @@ Target proportions:
 │ │ / opens commands · ? shortcuts                          127 chars  [Send] ││
 │ ╰──────────────────────────────────────────────────────────────────────────╯│
 ├────────────────────────────────────────────────────────────────────────────┤
-│ Esc interrupt · Shift+Tab mode · Alt+P model · Ctrl+O transcript · F1 help │
+│ Esc interrupt · Shift+Tab panels · Alt+P model · Ctrl+O transcript · F1 help │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -317,8 +317,8 @@ The sidebar is not merely hidden with inaccessible content. Its tabs become over
 
 Narrow behavior:
 
-- `Ctrl+A`, `Ctrl+B`, `Ctrl+P`, and `Ctrl+R` open a full-width dismissible panel.
-- Closing a panel returns focus to the previous widget.
+- `Shift+Tab` cycles Agents → Plan → Route → Budget while the composer retains focus.
+- Mouse clicks and keyboard focus cannot activate the passive transcript or side panels.
 - Header session/workspace text is removed before model, mode, run state, budget, or agent count.
 - At extremely narrow widths, use abbreviated labels but preserve values:
   - `M sonnet-4`
@@ -413,7 +413,7 @@ Budget meter:
 
 Mode control:
 
-- `Shift+Tab` cycles `QUALITY → ECONOMY → MANUAL → QUALITY`.
+- `/mode <auto|economy|quality|manual>` changes routing mode for future assignments.
 - Mode color applies only to the bracketed mode value.
 - The composer repeats the active mode in its top-right corner.
 
@@ -768,13 +768,13 @@ Example:
 ╭ SHORTCUTS ─────────────────────────────────────────────────────╮
 │ Run                                                           │
 │ Esc                 Interrupt active run                      │
-│ Shift+Tab           Cycle quality/economy/manual              │
+│ Shift+Tab           Cycle Agents/Plan/Route/Budget            │
 │ Alt+P               Choose model                              │
 │                                                               │
 │ Display                                                       │
 │ Ctrl+O              Full transcript                           │
 │ Ctrl+T              Mission Control                           │
-│ Ctrl+A/B/P/R        Agents/Budget/Plan/Route                  │
+│ /mode               Change routing mode                       │
 │                                                               │
 │ Type to filter                                      Esc close │
 ╰────────────────────────────────────────────────────────────────╯
@@ -892,7 +892,7 @@ Exact copy:
 Ready.
 
 Describe the outcome you want, paste an error, or type /help.
-Shift+Tab changes mode. ? shows shortcuts.
+Shift+Tab cycles panels while the composer stays focused. /mode changes routing mode. ? shows shortcuts.
 ```
 
 ## 7.2 Runtime starting
@@ -1204,7 +1204,7 @@ Bindings must be represented in one centralized action registry used by the Foot
 | `Esc` | Palette/overlay | Close topmost transient first |
 | `Esc`, `Esc` within 400 ms | Idle, draft non-empty | Clear draft after placing it in recoverable draft stash |
 | `Esc`, `Esc` within 400 ms | Idle, draft empty | Open rewind chooser at prior user turn |
-| `Shift+Tab` | Global except modal text navigation | Cycle Quality → Economy → Manual |
+| `Shift+Tab` | Global except modal text navigation | Cycle Agents → Plan → Route → Budget; composer remains focused |
 | `Alt+P` | Global | Open model picker |
 | `Ctrl+S` | Composer | Stash draft and clear composer |
 | `Enter` | Composer | Send; during active run, queue |
@@ -1219,10 +1219,7 @@ Bindings must be represented in one centralized action registry used by the Foot
 | `Ctrl+O` | Global | Toggle full-screen transcript |
 | `Ctrl+Shift+O` | Transcript overlay | Native scrollback/plain transcript escape |
 | `Ctrl+T` | Global | Toggle Mission Control |
-| `Ctrl+A` | Global | Focus/open Agents |
-| `Ctrl+B` | Global | Focus/open Budget |
-| `Ctrl+P` | Global | Focus/open Plan |
-| `Ctrl+R` | Global | Focus/open Route |
+| `/agents`, `/plan`, `/route`, `/budget` | Composer | Switch the passive view from the single interaction point |
 | `F1` | Global | Preserve existing help transcript injection |
 | `A` | Pending approval card focused | Approve |
 | `R` | Pending approval card focused | Reject |
@@ -1289,20 +1286,6 @@ Do not delay interruption merely to detect a double press:
 - Opens Mission Control.
 - Alias may be `/children`, but only `/missions` needs primary documentation.
 
-### `/fork [event-or-turn]`
-
-- Without argument: open rewind/fork chooser.
-- With a valid target: create/focus the fork according to existing session architecture.
-- Required receipt:
-
-```text
-Session forked: 01JDEF
-Resume this fork with:
-skail -r 01JDEF
-```
-
-Never emit only “forked successfully.”
-
 ## 10.3 Resume receipts
 
 After any successful resume:
@@ -1313,7 +1296,7 @@ Resume later with:
 skail -r 01JABC
 ```
 
-If a resumed session is automatically forked due to immutable history or a rewind operation, print the new session ID rather than the parent ID.
+Active assignments remain immutable; future session branching requires a separate persisted-session contract.
 
 ## 10.4 Quit receipt and semantics
 
@@ -1561,7 +1544,6 @@ Add:
 - `/theme`
 - `/model`
 - `/missions`
-- `/fork`
 
 Use the same registry for:
 
@@ -1590,7 +1572,7 @@ Whether inline or in `.tcss`:
 
 ### README/help
 
-- Add selected Windward logo.
+- Add selected Twin sail logo.
 - Update interactive startup and onboarding explanation.
 - Document:
   - `Shift+Tab`,
@@ -1718,7 +1700,7 @@ python scripts\smoke.py --fake-provider
 - New commands parse.
 - Invalid arguments return exact usage strings.
 - Command registry drives palette and help.
-- `/fork` and `/resume` receipts contain:
+- `/resume` receipts contain:
   `skail -r <SESSION>`
 
 ## 13.3 TUI pilot tests
@@ -1737,7 +1719,7 @@ Using Textual’s app pilot:
 10. Width 99 hides sidebar and panel bindings remain usable.
 11. `Ctrl+O`, `?`, and `Ctrl+T` open and close correctly.
 12. Overlay close restores focus.
-13. `Shift+Tab` cycles all modes.
+13. `Shift+Tab` cycles all four passive panels while focus remains in the composer.
 14. `Alt+P` changes future model selection without mutating active attempt display.
 15. Clicking an agent does not switch to Route.
 16. `F1` still injects help into transcript.
@@ -1865,7 +1847,7 @@ rtk diff
 | `/cancel` | Retained |
 | `/quit` | Retained with cancellation, idle cleanup, exit `0` |
 | `Ctrl+C` | Retained quit behavior |
-| `Ctrl+B/A/P/R/T` | Existing panel actions retained or explicitly reconciled; `Ctrl+T` becomes Mission Control |
+| `Ctrl+T` | Mission Control; direct Ctrl+A/B/P/R panel bindings are removed |
 | `F1` help injection | Retained exactly |
 | Headless `-p` | Unchanged runtime-first path |
 | `--jsonl` | Unchanged, no TUI contamination |
@@ -1889,7 +1871,7 @@ rtk diff
 ## 14.3 Onboarding acceptance
 
 - [ ] `skail` in an interactive TTY with no credentials mounts the TUI.
-- [ ] Windward logo appears in the welcome cockpit.
+- [ ] Twin sail logo appears in the welcome cockpit.
 - [ ] Step ladder shows Welcome, Provider, Trust, Theme, Ready.
 - [ ] Provider key input is masked and asynchronously validated.
 - [ ] Fake provider is offered with the exact hint `skail --fake-provider`.
@@ -1906,7 +1888,7 @@ rtk diff
 - [ ] Every mouse action has a keyboard equivalent.
 - [ ] Approval works through A/R/E.
 - [ ] Transcript collapse works without a mouse.
-- [ ] Shift+Tab cycles all three modes.
+- [ ] Shift+Tab cycles Agents, Plan, Route, and Budget while focus remains in the composer.
 - [ ] Alt+P opens model selection.
 - [ ] Ctrl+S stashes a draft.
 - [ ] Up takes back a queued prompt before navigating history.

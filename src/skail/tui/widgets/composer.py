@@ -341,7 +341,7 @@ class PromptComposer(Widget):
     #composer-send {
         width: auto;
         min-width: 10;
-        margin-left: 1;
+        margin-left: 0;
         border: solid $accent;
         color: $accent;
         background: $accentSoft;
@@ -425,6 +425,16 @@ class PromptComposer(Widget):
             return area.text
         except Exception:
             return ""
+
+    def restore_draft(self, text: str) -> None:
+        """Restore a submission that cannot run until runtime initialization finishes."""
+        try:
+            area = self.query_one("#composer-input", TextArea)
+            area.text = text
+            area.cursor_location = (0, len(text))
+            self._refresh_status()
+        except Exception:
+            pass
 
     def set_queue(self, queue: list[str]) -> None:
         """Replace the projection-derived FIFO queue view."""

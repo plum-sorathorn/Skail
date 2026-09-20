@@ -194,20 +194,20 @@ def test_child_view_repr_carries_no_secret() -> None:
     assert SECRET not in repr(child)
 
 
-def test_windward_logo_placed_onboarding_help_readme() -> None:
+def test_twin_sail_logo_placed_onboarding_help_readme() -> None:
     from skail.tui.commands import HELP_TEXT
-    from skail.tui.logo import COMPACT_MARK, WINDWARD_LOGO, render_logo_text
+    from skail.tui.logo import COMPACT_MARK, TWIN_SAIL_LOGO, render_logo_text
 
-    assert WINDWARD_LOGO == [
-        "   \u25a0",
-        "  \u25a0\u25a0\u2502",
-        " \u25a0\u25a0\u25a0\u2502",
-        "\u25a0\u25a0\u25a0\u25a0\u2502",
-        "  \u25aa \u2502",
-        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501",
+    assert TWIN_SAIL_LOGO == [
+        "     /\\|\\",
+        "    /  | \\",
+        "    /___|__\\",
+        "   /____|___\\",
+        "   \\________/",
+        "    S K A I L",
     ]
-    assert len(WINDWARD_LOGO) == 6
-    assert COMPACT_MARK == "S\u2502"
+    assert len(TWIN_SAIL_LOGO) == 6
+    assert COMPACT_MARK == "/\\| S K A I L"
     # /help header carries the monochrome logo.
     assert render_logo_text() in HELP_TEXT
     # Onboarding welcome panel renders the full logo.

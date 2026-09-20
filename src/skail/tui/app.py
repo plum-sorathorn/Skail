@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections import deque
 from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
@@ -67,10 +68,6 @@ AppState = Literal["onboarding", "initializing", "ready", "error", "quitting"]
 
 ACTION_REGISTRY: dict[str, dict[str, str]] = {
     "quit": {"binding": "ctrl+c", "description": "Quit", "group": "Session"},
-    "view_budget": {"binding": "ctrl+b", "description": "Budget", "group": "Navigation"},
-    "view_agents": {"binding": "ctrl+a", "description": "Agents", "group": "Navigation"},
-    "view_plan": {"binding": "ctrl+p", "description": "Plan", "group": "Navigation"},
-    "view_route": {"binding": "ctrl+r", "description": "Route", "group": "Navigation"},
     "view_chat": {
         "binding": "ctrl+shift+t",
         "description": "Chat (focus composer)",
@@ -91,7 +88,11 @@ ACTION_REGISTRY: dict[str, dict[str, str]] = {
     "missions_overlay": {"binding": "ctrl+t", "description": "Missions", "group": "Agents"},
     "agent_detail": {"binding": "enter", "description": "Agent detail", "group": "Agents"},
     "agent_missions": {"binding": "m", "description": "Mission Control", "group": "Agents"},
-    "cycle_mode": {"binding": "shift+tab", "description": "Cycle mode", "group": "Run"},
+    "cycle_panels": {
+        "binding": "shift+tab",
+        "description": "Cycle panels (composer stays focused)",
+        "group": "Navigation",
+    },
     "model_picker": {"binding": "alt+p", "description": "Model picker", "group": "Run"},
     "composer_submit": {"binding": "enter", "description": "Send prompt", "group": "Composer"},
     "composer_queue": {
@@ -122,7 +123,7 @@ _RUNTIME_ERROR_COPY = (
 
 def format_masthead(version: str, provider_label: str | None, clock: str) -> str:
     """Return the ATELIER masthead row: letterspaced wordmark, version, provider, clock."""
-    wordmark = "S K A I L"
+    wordmark = COMPACT_MARK
     provider = f"  {provider_label}" if provider_label else ""
     return f"{wordmark}  {version}{provider}"
 
@@ -199,7 +200,7 @@ def render_transcript_header(run_id: str | None, event_count: int, pinned: bool)
     return f"{left}  [textFaint]{right}[/]"
 
 
-_MARGIN_DRAWER_KEYS = ("^A", "^P", "^R", "^B")
+_MARGIN_DRAWER_KEYS = ("⇧TAB",)
 
 
 def render_margin_drawer(active_tab: str) -> str:
@@ -349,17 +350,13 @@ class SkailApp(App[int]):
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit", priority=True),
-        Binding("ctrl+b", "view_budget", "Budget"),
-        Binding("ctrl+a", "view_agents", "Agents"),
-        Binding("ctrl+p", "view_plan", "Plan", priority=True),
-        Binding("ctrl+r", "view_route", "Route"),
         Binding("ctrl+t", "missions_overlay", "Missions (Ctrl+T)"),
         Binding("ctrl+shift+t", "view_chat", "Chat"),
         Binding("ctrl+o", "transcript_overlay", "Transcript (Ctrl+O)"),
         Binding("question_mark", "shortcuts_overlay", "Shortcuts (?)"),
         Binding("alt+t", "theme_picker", "Theme"),
         Binding("alt+p", "model_picker", "Model"),
-        Binding("shift+tab", "cycle_mode", "Cycle mode", priority=True),
+        Binding("shift+tab", "cycle_panels", "Cycle panels", priority=True),
         Binding("f1", "show_help", "Help"),
     ]
 
@@ -414,6 +411,7 @@ class SkailApp(App[int]):
         self.profile_models = profile_models or {}
         self.simulated: bool = False
         self._active_worker: Any = None
+        self._pending_prompts: deque[str] = deque()
         self._mounted: bool = False
         self.app_state: AppState = "ready"
         self.startup_error: str | None = None
@@ -494,6 +492,7 @@ class SkailApp(App[int]):
             self._start_runtime_worker()
         else:
             self.update_views()
+        self._make_panels_passive()
         self._check_screen_width()
         if self.initial_prompt and self.app_state == "ready":
             self.on_prompt_composer_prompt_submitted(
@@ -542,6 +541,18 @@ class SkailApp(App[int]):
                 pass
         try:
             self.query_one("#app-footer", AtelierFooter).narrow = narrow
+        except Exception:
+            pass
+
+    def _make_panels_passive(self) -> None:
+        """Keep the composer as the only focus owner on the main screen."""
+        try:
+            tabs = self.query_one("#tabs", TabbedContent)
+            tabs.can_focus = False
+            tabs.can_focus_children = False
+            tabs_widget = tabs.query_one("Tabs")
+            tabs_widget.can_focus = False
+            tabs_widget.disabled = True
         except Exception:
             pass
 
@@ -633,13 +644,14 @@ class SkailApp(App[int]):
                     self.pop_screen()
             except Exception:
                 pass
-        previous = self._focus_before_overlay
         self._focus_before_overlay = None
-        if previous is not None:
-            try:
-                previous.focus()
-            except Exception:
-                pass
+        self._restore_composer_focus()
+
+    def _restore_composer_focus(self) -> None:
+        try:
+            self.query_one("#composer-input").focus()
+        except Exception:
+            pass
 
     # -- boot / runtime worker -------------------------------------------
     def _start_runtime_worker(self) -> None:
@@ -719,9 +731,9 @@ class SkailApp(App[int]):
             self._append_system_message("Receipt", receipt)
         self.update_views()
         if self.initial_prompt:
-            self.on_prompt_composer_prompt_submitted(
-                PromptComposer.PromptSubmitted(self.initial_prompt)
-            )
+            self._start_prompt(self.initial_prompt)
+        while self._pending_prompts:
+            self._start_prompt(self._pending_prompts.popleft(), record=False)
 
     def _enter_error_state(self, detail: str) -> None:
         secret = self.onboarding_credentials.reveal()
@@ -730,7 +742,16 @@ class SkailApp(App[int]):
         self.app_state = "error"
         self.startup_error = detail
         self._append_system_message("Startup error", _RUNTIME_ERROR_COPY + f"\nDetail: {detail}")
+        if self._pending_prompts:
+            self._restore_composer_draft(self._pending_prompts[-1])
         self.update_views()
+
+    def _restore_composer_draft(self, text: str) -> None:
+        try:
+            composer = self.query_one("#prompt-composer", PromptComposer)
+            composer.restore_draft(text)
+        except Exception:
+            pass
 
     def _sanitize_startup_error(self, exc: BaseException) -> str:
         message = str(exc)[:300] or exc.__class__.__name__
@@ -743,6 +764,63 @@ class SkailApp(App[int]):
         """Retry recoverable runtime initialization from the error screen."""
         self.startup_error = None
         self._start_runtime_worker()
+
+    def _record_user_prompt(self, text: str) -> None:
+        self.projection.transcript_items.append(
+            TranscriptItem(
+                id=f"user-{len(self.projection.transcript_items)}",
+                role="user",
+                title="User Prompt",
+                content=text,
+            )
+        )
+
+    def _queue_initializing_prompt(self, text: str) -> None:
+        self._record_user_prompt(text)
+        self._pending_prompts.append(text)
+        self.projection.transcript_items.append(
+            TranscriptItem(
+                id=f"queue-init-{len(self.projection.transcript_items)}",
+                role="system",
+                title="Queued while starting",
+                content=(
+                    "Runtime initialization is in progress. "
+                    "This prompt will run when Skail is ready."
+                ),
+            )
+        )
+        self._restore_composer_draft(text)
+        self.update_views()
+
+    def _start_prompt(self, text: str, *, record: bool = True) -> None:
+        """Start a prompt on the attached controller, preserving FIFO follow-ups."""
+        if self.controller is None:
+            if self.runtime_factory is not None or self.app_state in {"initializing", "error"}:
+                self._queue_initializing_prompt(text)
+            else:
+                self._record_user_prompt(text)
+                self.update_views()
+            return
+        if record:
+            self._record_user_prompt(text)
+            self.update_views()
+        previous = self._active_worker
+        if previous is not None and not previous.is_finished:
+            self.projection.transcript_items.append(
+                TranscriptItem(
+                    id=f"queue-{len(self.projection.transcript_items)}",
+                    role="system",
+                    title="Follow-up queued",
+                    content="This prompt will run after the active foreground request.",
+                )
+            )
+            self._active_worker = self.run_worker(
+                self._execute_follow_up(previous, text), exclusive=False
+            )
+        else:
+            self._active_worker = self.run_worker(
+                self._execute_prompt(text), exclusive=False
+            )
 
     # -- onboarding -------------------------------------------------------
     def _mount_onboarding(self) -> None:
@@ -1186,18 +1264,38 @@ class SkailApp(App[int]):
     ) -> None:
         text = event.text
         if text.startswith("/"):
+            background_capable = self._background_commands_supported()
             result = dispatch_slash_command(
                 text,
                 self.projection,
-                background_supported=self.background_supported,
+                background_supported=background_capable,
+                available_models=self._accessible_model_ids(),
             )
             if result.command == "config" and self.controller is not None:
                 result.output_message = json.dumps(
                     self.controller.redaction.scrub(self.controller.config_snapshot),
                     sort_keys=True,
                 )
-            elif result.command == "trust" and self.controller is not None:
-                trusted = bool(self.controller.config_snapshot.get("project_trusted", False))
+            elif result.command == "config":
+                result.output_message = json.dumps(
+                    {
+                        "app_state": self.app_state,
+                        "workspace": self.bootstrap.get("workspace"),
+                        "provider": self.onboarding_state.provider or (
+                            "fake" if self.bootstrap.get("fake_provider") else None
+                        ),
+                        "routing_mode": self.projection.footer_data.routing_mode,
+                        "source": "bootstrap",
+                    },
+                    sort_keys=True,
+                )
+            if result.command == "trust":
+                snapshot = (
+                    self.controller.config_snapshot
+                    if self.controller is not None
+                    else self.bootstrap
+                )
+                trusted = bool(snapshot.get("project_trusted", False))
                 result.output_message = (
                     "Project is trusted." if trusted else "Project is untrusted."
                 )
@@ -1217,9 +1315,16 @@ class SkailApp(App[int]):
                 if tab_id in ("tab-agents", "tab-plan", "tab-route", "tab-budget"):
                     tabs.active = tab_id
             elif result.action == "cancel":
-                if self._active_worker is not None:
+                if result.target_id:
+                    self.request_child_cancel(result.target_id)
+                elif self._active_worker is not None:
                     self._active_worker.cancel()
                     self._active_worker = None
+            elif result.action == "steer":
+                controller = self.controller
+                request_steer = getattr(controller, "request_steer", None)
+                if callable(request_steer):
+                    request_steer(result.target_id, str(result.payload.get("message", "")))
             elif result.action == "resume" and self.session_service is not None:
                 selected_id = result.target_id or (
                     str(self.session_id) if self.session_id is not None else None
@@ -1292,33 +1397,36 @@ class SkailApp(App[int]):
             self.update_views()
             return
 
-        self.projection.transcript_items.append(
-            TranscriptItem(
-                id=f"user-{len(self.projection.transcript_items)}",
-                role="user",
-                title="User Prompt",
-                content=text,
-            )
+        self._start_prompt(text)
+
+    def _background_commands_supported(self) -> bool:
+        controller = self.controller
+        return bool(
+            self.background_supported
+            and controller is not None
+            and callable(getattr(controller, "request_cancel", None))
+            and callable(getattr(controller, "request_steer", None))
         )
-        self.update_views()
+
+    def _accessible_model_ids(self) -> set[str] | None:
+        model_ids: set[str] = {"auto"}
+        sources: list[Any] = []
         if self.controller is not None:
-            previous = self._active_worker
-            if previous is not None and not previous.is_finished:
-                self.projection.transcript_items.append(
-                    TranscriptItem(
-                        id=f"queue-{len(self.projection.transcript_items)}",
-                        role="system",
-                        title="Follow-up queued",
-                        content="This prompt will run after the active foreground request.",
-                    )
+            sources.append(getattr(self.controller, "models", {}))
+        runtime_models = getattr(self, "runtime_models", None)
+        if runtime_models is not None:
+            sources.append(getattr(runtime_models, "models", {}))
+            catalog = getattr(runtime_models, "catalog", None)
+            if catalog is not None:
+                model_ids.update(
+                    f"{provider}:{model}"
+                    for provider, model in getattr(catalog, "profiles", {})
                 )
-                self._active_worker = self.run_worker(
-                    self._execute_follow_up(previous, text), exclusive=False
-                )
-            else:
-                self._active_worker = self.run_worker(
-                    self._execute_prompt(text), exclusive=False
-                )
+        for source in sources:
+            if isinstance(source, dict):
+                for key in source:
+                    model_ids.add(str(key))
+        return model_ids if len(model_ids) > 1 else None
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """Route onboarding key-field edits into memory-only credentials."""
@@ -1651,6 +1759,7 @@ class SkailApp(App[int]):
             from skail.tui.overlays.model_picker import ModelPickerOverlay
 
             model_set: set[str] = set()
+            model_details: dict[str, dict[str, str]] = {}
             if self.profile_models:
                 model_set.update(self.profile_models.values())
             if self.controller is not None:
@@ -1678,7 +1787,24 @@ class SkailApp(App[int]):
                             model_set.add(cand.model_name)
                 if hasattr(rm, "catalog") and hasattr(rm.catalog, "profiles"):
                     for p, m in rm.catalog.profiles.keys():
-                        model_set.add(f"{p}:{m}")
+                        key = f"{p}:{m}"
+                        model_set.add(key)
+                        profile = rm.catalog.profiles[(p, m)]
+                        model_details[key] = {
+                            "provider": p,
+                            "routing": (
+                                "routing-enabled" if profile.auto_eligible else "manual-only"
+                            ),
+                            "input": f"in ${profile.input_usd_per_million}/M"
+                            if profile.input_usd_per_million is not None
+                            else "in unavailable",
+                            "output": f"out ${profile.output_usd_per_million}/M"
+                            if profile.output_usd_per_million is not None
+                            else "out unavailable",
+                            "context": f"ctx {profile.context_tokens}"
+                            if profile.context_tokens is not None
+                            else "ctx unknown",
+                        }
 
             # Provider-specific standard model sets
             active_p: str | None = self.onboarding_state.provider or None
@@ -1712,15 +1838,6 @@ class SkailApp(App[int]):
                     "anthropic:claude-3-5-haiku-latest",
                     "anthropic:claude-3-opus-latest",
                 })
-            elif active_p in {"llmgateway", "devpass"}:
-                model_set.update({
-                    f"{active_p}:gpt-4o",
-                    f"{active_p}:gpt-4o-mini",
-                    f"{active_p}:claude-3-5-sonnet",
-                    f"{active_p}:gemini-1.5-pro",
-                    f"{active_p}:deepseek-chat",
-                })
-
             if self.bootstrap:
                 if self.bootstrap.get("lead_model"):
                     model_set.add(str(self.bootstrap["lead_model"]))
@@ -1750,7 +1867,14 @@ class SkailApp(App[int]):
             if not enabled_set:
                 enabled_set = set(models)
 
-            self.push_screen(ModelPickerOverlay(models, current, enabled=enabled_set))
+            self.push_screen(
+                ModelPickerOverlay(
+                    models,
+                    current,
+                    enabled=enabled_set,
+                    details=model_details,
+                )
+            )
         except Exception:
             pass
 
@@ -1775,6 +1899,18 @@ class SkailApp(App[int]):
             )
         except Exception:
             pass
+        self.update_views()
+
+    def action_cycle_panels(self) -> None:
+        """Cycle passive panels while returning focus to the composer."""
+        order = ("tab-agents", "tab-plan", "tab-route", "tab-budget")
+        tabs = self.query_one("#tabs", TabbedContent)
+        try:
+            index = order.index(tabs.active)
+        except ValueError:
+            index = 0
+        self._activate_tab(order[(index + 1) % len(order)], order[(index + 1) % len(order)][4:])
+        self._restore_composer_focus()
         self.update_views()
 
     def on_prompt_composer_mode_cycle_requested(self, event: Any) -> None:

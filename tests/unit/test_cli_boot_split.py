@@ -205,10 +205,11 @@ def test_recoverable_startup_failure_enters_error_state() -> None:
     assert "<redacted>" in app.startup_error
 
 
-def test_action_registry_covers_quit_and_panels() -> None:
+def test_action_registry_covers_quit_and_composer_panel_cycle() -> None:
     assert ACTION_REGISTRY["quit"]["binding"] == "ctrl+c"
+    assert ACTION_REGISTRY["cycle_panels"]["binding"] == "shift+tab"
     for action in ("view_budget", "view_agents", "view_plan", "view_route"):
-        assert action in ACTION_REGISTRY
+        assert action not in ACTION_REGISTRY
 
 
 def test_headless_print_delegates_without_mounting_tui(

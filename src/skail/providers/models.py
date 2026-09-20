@@ -29,6 +29,7 @@ class FieldEvidence(BaseModel):
     source: CatalogSource
     as_of: datetime
     trusted: bool
+    provenance: str = ""
 
 
 class EvidenceRecord(BaseModel):

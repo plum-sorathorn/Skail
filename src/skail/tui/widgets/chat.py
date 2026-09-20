@@ -187,7 +187,7 @@ def spinner_frame(tick: int, reduced_motion: bool = False) -> str:
 class TranscriptItemWidget(Widget):
     """Focusable single transcript item with collapse toggling."""
 
-    can_focus = True
+    can_focus = False
 
     DEFAULT_CSS = """
     TranscriptItemWidget {
@@ -442,7 +442,7 @@ class ChatTranscript(VerticalScroll):
     }
     """
 
-    can_focus = True
+    can_focus = False
 
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)  # type: ignore[arg-type]

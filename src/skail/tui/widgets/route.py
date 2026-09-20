@@ -83,6 +83,8 @@ def shadow_section(item: RouteViewItem) -> tuple[str, list[str]]:
 class RouteView(VerticalScroll):
     """Read-only route display; changes go through commands/runtime only."""
 
+    can_focus = False
+
     DEFAULT_CSS = """
     RouteView {
         width: 100%;

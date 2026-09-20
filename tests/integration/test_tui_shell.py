@@ -105,16 +105,6 @@ async def test_tui_shell_transcript_collapse_click() -> None:
 async def test_tui_shell_keyboard_navigation_and_prompt_submit() -> None:
     app = SkailApp()
     async with app.run_test(size=(120, 40)) as pilot:
-        # Check tab navigation keybindings
-        await pilot.press("ctrl+b")
-        assert app.query_one("#tabs", TabbedContent).active == "tab-budget"
-
-        await pilot.press("ctrl+a")
-        assert app.query_one("#tabs", TabbedContent).active == "tab-agents"
-
-        await pilot.press("ctrl+r")
-        assert app.query_one("#tabs", TabbedContent).active == "tab-route"
-
         # Submit a user prompt through composer.
         # The composer input is a TextArea; it consumes plain enter (newline),
         # so submission is driven with the Ctrl+Enter binding.
@@ -129,17 +119,9 @@ async def test_tui_shell_keyboard_navigation_and_prompt_submit() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tui_shell_plan_navigation_ctrl_p_and_slash() -> None:
+async def test_tui_shell_plan_navigation_slash() -> None:
     app = SkailApp()
     async with app.run_test(size=(120, 40)) as pilot:
-        # ctrl+p navigates to Plan tab
-        await pilot.press("ctrl+p")
-        assert app.query_one("#tabs", TabbedContent).active == "tab-plan"
-
-        # ctrl+b navigates to Budget tab
-        await pilot.press("ctrl+b")
-        assert app.query_one("#tabs", TabbedContent).active == "tab-budget"
-
         # slash command /plan switches to tab-plan
         inp = app.query_one("#composer-input", TextArea)
         inp.text = "/plan"
@@ -436,4 +418,3 @@ async def test_tui_shell_cancellation_preserves_state() -> None:
         )
         assert app.query_one("#chat-transcript") is not None
         assert app.query_one("#plan-view") is not None
-

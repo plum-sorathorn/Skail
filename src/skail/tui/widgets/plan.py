@@ -176,6 +176,8 @@ def revision_lines(
 class PlanView(VerticalScroll):
     """Plan panel with proposed/rejected cards and receipts."""
 
+    can_focus = False
+
     DEFAULT_CSS = """
     PlanView {
         width: 100%;

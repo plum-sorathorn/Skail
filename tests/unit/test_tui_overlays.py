@@ -644,7 +644,7 @@ def test_search_commands_drives_palette() -> None:
     assert search_commands("model")[0]["command"] == "/model"
 
 
-def test_overlay_stack_push_pop_with_focus_restore() -> None:
+def test_overlay_stack_push_pop_restores_composer_focus() -> None:
     src = inspect.getsource(app_module.SkailApp.close_overlay)
     assert "pop_screen" in src
     assert "focus" in src
@@ -658,8 +658,11 @@ def test_overlay_stack_push_pop_with_focus_restore() -> None:
 
     app = app_module.SkailApp.__new__(app_module.SkailApp)
     app._overlay_stack = ["shortcuts"]
-    widget = _Widget()
-    app._focus_before_overlay = widget
+    previous = _Widget()
+    composer = _Widget()
+    app._focus_before_overlay = previous
+    app.query_one = lambda selector: composer  # type: ignore[method-assign]
     app_module.SkailApp.close_overlay(app, "shortcuts")
     assert app._overlay_stack == []
-    assert widget.focused is True
+    assert previous.focused is False
+    assert composer.focused is True

@@ -68,18 +68,33 @@ def _exclusion_reason(
         return "model_disabled"
     if requirements.mode is not RoutingMode.MANUAL and not profile.auto_eligible:
         return "auto_ineligible"
-    if requirements.tools_required and profile.supports_tools is not True:
+    if requirements.tools_required and (
+        profile.supports_tools is False
+        or (requirements.mode is not RoutingMode.MANUAL and profile.supports_tools is not True)
+    ):
         return "tools_unsupported"
-    if requirements.structured_output_required and profile.supports_structured_output is not True:
+    if requirements.structured_output_required and (
+        profile.supports_structured_output is False
+        or (
+            requirements.mode is not RoutingMode.MANUAL
+            and profile.supports_structured_output is not True
+        )
+    ):
         return "structured_output_unsupported"
     if (
         profile.context_tokens is None
-        or profile.context_tokens < requirements.minimum_context_tokens
+        and requirements.mode is not RoutingMode.MANUAL
+    ) or (
+        profile.context_tokens is not None
+        and profile.context_tokens < requirements.minimum_context_tokens
     ):
         return "context_too_small"
     if (
         profile.max_output_tokens is None
-        or profile.max_output_tokens < requirements.minimum_output_tokens
+        and requirements.mode is not RoutingMode.MANUAL
+    ) or (
+        profile.max_output_tokens is not None
+        and profile.max_output_tokens < requirements.minimum_output_tokens
     ):
         return "output_too_small"
     if not frozenset(requirements.modalities).issubset(frozenset(profile.input_modalities)):

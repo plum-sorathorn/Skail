@@ -414,6 +414,16 @@ Required commands:
 | `/config` | Inspect effective layered configuration and sources. |
 | `/quit` | Exit after safely flushing local metadata. |
 
+Interactive help also exposes `/help`, `/theme [dark|light|system]`, `/model`, and
+`/missions` (`/children` is an alias). These entries use the same registry as parsing,
+completion, and dispatch. `/fork` is intentionally not exposed: durable session forking has no
+persisted contract yet.
+
+The composer is the main-screen interaction anchor. The transcript and side panels are passive;
+mouse clicks and keyboard focus cannot activate them. `Shift+Tab` cycles Agents → Plan → Route →
+Budget while focus remains in the composer. Routing mode is changed with `/mode`; the former
+Ctrl+A/B/P/R panel bindings are not part of the interface.
+
 ## 14. CLI contract
 
 ```text

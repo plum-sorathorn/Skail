@@ -9,7 +9,6 @@ from skail.tui.commands import (
     COMMAND_REGISTRY,
     THEME_USAGE,
     dispatch_slash_command,
-    fork_receipt,
     parse_slash_command,
     resume_receipt,
     search_commands,
@@ -42,7 +41,12 @@ def test_parse_new_commands() -> None:
     assert parse_slash_command("/model foo") == ("model", ["foo"])
     assert parse_slash_command("/missions") == ("missions", [])
     assert parse_slash_command("/children") == ("children", [])
-    assert parse_slash_command("/fork") == ("fork", [])
+    assert parse_slash_command("/agent task-1") == ("agent", ["task-1"])
+    assert parse_slash_command("/tasks") == ("tasks", [])
+    assert parse_slash_command("/steer task-1 update") == (
+        "steer",
+        ["task-1", "update"],
+    )
 
 
 def test_theme_usage_exact() -> None:
@@ -87,21 +91,13 @@ def test_missions_and_alias() -> None:
     assert alias.command == "missions"
 
 
-def test_fork_and_resume_receipts_contain_skail_r() -> None:
-    receipt = fork_receipt("01JDEF")
-    assert receipt == "Session forked: 01JDEF\nResume this fork with:\nskail -r 01JDEF"
-    assert "skail -r " in fork_receipt()
+def test_resume_receipt_contains_skail_r() -> None:
     assert "skail -r " in resume_receipt("01JABC")
     assert resume_receipt("01JABC") == (
         "Session resumed: 01JABC\nResume later with:\nskail -r 01JABC"
     )
-    proj = TuiProjection()
-    res = dispatch_slash_command("/fork", proj)
-    assert "skail -r " in (res.output_message or "")
-
-
-def test_registry_has_15_commands_and_drives_help() -> None:
-    assert len(COMMAND_REGISTRY) == 15
+def test_registry_has_required_commands_and_drives_help() -> None:
+    assert len(COMMAND_REGISTRY) == 18
     for entry in COMMAND_REGISTRY:
         assert set(entry) >= {
             "command",

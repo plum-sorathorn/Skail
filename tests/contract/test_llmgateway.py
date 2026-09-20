@@ -255,6 +255,7 @@ async def test_llmgateway_discovers_models_with_untrusted_provider_provenance() 
     assert entry.as_of <= datetime.now(tz=entry.as_of.tzinfo)
     assert entry.fields["input_usd_per_million"] == Decimal("1.25")
     assert entry.fields["output_usd_per_million"] == Decimal("10.00")
+    assert entry.fields["cached_input_usd_per_million"] == Decimal("0.125")
     assert entry.fields["context_tokens"] == 128000
     assert entry.fields["max_output_tokens"] == 16384
     assert entry.fields["supports_tools"] is True
@@ -262,6 +263,37 @@ async def test_llmgateway_discovers_models_with_untrusted_provider_provenance() 
     assert "capability" not in entry.fields
     assert transport.last_request.method == "GET"
     assert transport.last_request.path == "/v1/models"
+    assert transport.last_request.query["exclude_deprecated"] == "true"
+    assert entry.provenance == "llmgateway:/v1/models?exclude_deprecated=true"
+
+
+@pytest.mark.asyncio
+async def test_llmgateway_keeps_malformed_prices_unavailable() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "data": [
+                    {
+                        "id": "bad-price",
+                        "pricing": {"prompt": "not-a-price", "completion": None},
+                        "context_length": 4096,
+                        "max_output": 1024,
+                        "supported_parameters": [],
+                    }
+                ]
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        adapter = LLMGatewayAdapter(
+            _config(), api_key="fixture-credential", http_async_client=client
+        )
+        entry = (await adapter.discover_models())[0]
+
+    assert entry.fields["input_usd_per_million"] is None
+    assert entry.fields["output_usd_per_million"] is None
 
 
 @pytest.mark.parametrize(

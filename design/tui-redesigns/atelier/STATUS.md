@@ -31,9 +31,22 @@ Pre-existing integration failures: `test_live_child_failure_monitor_escalates_re
 - **Active-tab letterspacing skipped** — the mock's tracked-letterspacing on the active margin tab is not replicated (only section-head letterspacing where permitted; README honest #3 / R1).
 - **Integrations rail renders a name list, not workspace ids** — `WorkspaceIntegrationItem` surfaces names only; id-level fidelity deferred.
 - **Role-floor 0.50 ambiguity** — the 0.50 role-floor semantics in the margin/role weighting remain documented-but-unresolved; implementation follows the existing projection behavior.
-- **Event-driven margin drawer inert under Textual 1.0** — the drawer strip is shown in narrow mode but the event-driven switch path does not fire on Textual 1.0; drawer/tab selection therefore relies on the explicit bindings/action path (§8.3).
+- **Narrow drawer is display-only** — the drawer shows the active panel and the Shift+Tab gesture;
+  panel navigation remains composer-focused and does not depend on clicking the drawer.
 - **D-12(2) flags residual** — r8 remediation cleared D-3/D-6/D-12(1) and hardened D-5; the D-12(2) flag decisions remain recorded as residual/accepted (`6c76dbc`).
 
 ## Accepted fidelity deltas (mock ↔ terminal)
 
 Enumerated in `IMPLEMENTATION_PLAN.md` §9: 2px inset focus → 1-cell border (R2), kbd chips as `$surfaceRaised` fill without border/radius (R12), dateline/LEDGER meter rounding (R7), footer 8+`?` hint overflow (deliberate), 18-binding `?` overlay superset, 9 light-theme tokens sourced from the README table (R8), mock-only fields rendered only when the projection supplies them (R6), `Screen:focus-within` outline retained for a11y, narrow shows no panel content (design intent, R15).
+
+## Reliability and catalog follow-up (2026-09-20)
+
+The composer is now the main-screen interaction anchor. Passive transcript and side panels do not
+take focus or respond to direct panel navigation; `Shift+Tab` cycles Agents, Plan, Route, and
+Budget while restoring focus to the composer. View slash commands remain composer-driven, and the
+removed Ctrl+A/B/P/R bindings are not part of the surface.
+
+The model picker consumes the authenticated provider catalog, renders a bounded scroll window for
+large catalogs, filters by provider/model, and preserves literal checked markers. The visual
+confirmation covered 120×40 and 88×30 dark frames, light and reduced-motion variants, empty,
+loading, error, approval, running/long-content, and a 300-model picker state.

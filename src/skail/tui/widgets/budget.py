@@ -200,6 +200,8 @@ def budget_panel_lines(item: BudgetViewItem) -> list[str]:
 class BudgetView(VerticalScroll):
     """ATELIER BUDGET tab: hairline head, money, 23-cell meter, legend, BREAKDOWN."""
 
+    can_focus = False
+
     DEFAULT_CSS = """
     BudgetView {
         width: 100%;

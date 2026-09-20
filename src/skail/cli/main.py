@@ -5,6 +5,7 @@ import asyncio
 import os
 import sys
 from collections.abc import Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -47,6 +48,7 @@ if TYPE_CHECKING:
     from skail.config.models import SkailConfig
     from skail.providers.base import ProviderAdapter
     from skail.providers.catalog import ModelCatalog
+    from skail.providers.catalog_sources import CatalogEntry
     from skail.providers.models import ModelProfile
     from skail.routing.assignment import RoutingSnapshot
     from skail.routing.selector import RouteCandidate
@@ -86,7 +88,12 @@ class RuntimeModelSet:
         )
 
 
-def _route_candidate(profile: ModelProfile, *, hard_budget: bool) -> RouteCandidate:
+def _route_candidate(
+    profile: ModelProfile,
+    *,
+    hard_budget: bool,
+    enabled: bool | None = None,
+) -> RouteCandidate:
     from skail.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
     from skail.routing.selector import RouteCandidate
     estimate = estimate_attempt_cost(
@@ -105,8 +112,22 @@ def _route_candidate(profile: ModelProfile, *, hard_budget: bool) -> RouteCandid
         estimate_assumptions=estimate.assumptions,
         configured=True,
         healthy=True,
-        enabled=(not hard_budget or estimate.cost_usd is not None),
+        enabled=(
+            (not hard_budget or estimate.cost_usd is not None)
+            if enabled is None
+            else enabled
+        ),
     )
+
+
+def _run_discovery(adapter: ProviderAdapter) -> tuple[CatalogEntry, ...]:
+    """Run an async provider discovery call from both sync and async bootstrap paths."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(adapter.discover_models())
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(lambda: asyncio.run(adapter.discover_models())).result()
 
 
 KNOWN_SUBCOMMANDS = frozenset({"auth", "models", "sessions", "config", "smoke"})
@@ -608,6 +629,7 @@ def _build_runtime_models(
 ) -> RuntimeModelSet:
     from skail.config.models import SkailConfig
     from skail.providers.catalog import ModelCatalog
+    from skail.providers.catalog_sources import load_catalog_cache, save_catalog_cache
     from skail.providers.credentials import EnvironmentCredentialResolver
     from skail.providers.errors import ProviderConfigurationError
     from skail.providers.fake import DeterministicFakeChatModel
@@ -734,6 +756,47 @@ def _build_runtime_models(
             "or pass --fake-provider for deterministic offline execution.",
         )
 
+    if selected_provider == "llmgateway":
+        from skail.config.models import ProviderConfig
+        from skail.config.paths import user_data_dir
+        from skail.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
+
+        discovery_config = selected_config or ProviderConfig(
+            type="openai-compatible",
+            base_url=LLMGATEWAY_BASE_URL,
+            models=("__catalog_discovery__",),
+        )
+        if not discovery_config.models:
+            discovery_config = discovery_config.model_copy(
+                update={"models": ("__catalog_discovery__",)}
+            )
+        discovery_adapter = LLMGatewayAdapter(
+            discovery_config,
+            api_key=resolved_cred.reveal(),
+        )
+        configured_cache_path = getattr(args, "catalog_cache_path", None)
+        cache_path = (
+            Path(configured_cache_path)
+            if configured_cache_path is not None
+            else user_data_dir() / "catalog" / "llmgateway.json"
+        )
+        try:
+            discovered_entries = _run_discovery(discovery_adapter)
+        except Exception as exc:
+            discovered_entries = load_catalog_cache(cache_path)
+            if not discovered_entries:
+                raise ProviderConfigurationError(
+                    "llmgateway",
+                    "model discovery failed and no catalog cache is available",
+                ) from exc
+        else:
+            save_catalog_cache(cache_path, discovered_entries)
+        catalog = ModelCatalog.from_entries(
+            (*config.catalog.entries, *discovered_entries),
+            now=datetime.now(UTC),
+            price_max_age=timedelta(days=30),
+        )
+
     if ":" not in lead_model_name:
         eligible = [
             profile
@@ -746,12 +809,11 @@ def _build_runtime_models(
             and catalog.is_auto_eligible(profile, hard_budget=args.budget is not None)
         ]
         if not eligible:
-            fallback = (
-                "gpt-4o"
-                if selected_provider in {"llmgateway", "openai"}
-                else "claude-3-5-sonnet-latest"
+            raise ProviderConfigurationError(
+                selected_provider,
+                "no discovered model has trusted capability and pricing evidence "
+                "for automatic routing",
             )
-            lead_model_name = f"{selected_provider}:{fallback}"
         else:
             lead_model_name = f"{selected_provider}:{eligible[0].model}"
     child_model_name = lead_model_name
@@ -763,12 +825,24 @@ def _build_runtime_models(
         from skail.providers.base import ModelOptions
         from skail.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
 
-        actual_model = (
-            lead_model_name.split(":")[-1] if ":" in lead_model_name else "gpt-4o"
+        actual_model = lead_model_name.split(":", 1)[-1]
+        catalog_profiles = tuple(
+            profile
+            for (provider, _), profile in catalog.profiles.items()
+            if provider == selected_provider
         )
+        allowed_models = tuple(profile.model for profile in catalog_profiles)
+        if not allowed_models:
+            raise ProviderConfigurationError(
+                selected_provider,
+                "no accessible models are present in the provider catalog",
+            )
         cfg = selected_config or ProviderConfig(
-            type="openai-compatible", base_url=LLMGATEWAY_BASE_URL, models=(actual_model,)
+            type="openai-compatible",
+            base_url=LLMGATEWAY_BASE_URL,
+            models=allowed_models,
         )
+        cfg = cfg.model_copy(update={"models": allowed_models})
         adapter: ProviderAdapter
         if selected_provider == "devpass":
             from skail.providers.devpass import DevPassAdapter
@@ -777,14 +851,28 @@ def _build_runtime_models(
         else:
             adapter = LLMGatewayAdapter(cfg, api_key=resolved_cred.reveal())
         provider_adapters[selected_provider] = adapter
-        try:
-            profile = catalog.profile(selected_provider, actual_model)
-        except KeyError as exc:
+        if not any(profile.model == actual_model for profile in catalog_profiles):
             raise ProviderConfigurationError(
-                "llmgateway", "model is absent from the configured catalog"
-            ) from exc
-        chat_model = adapter.create_model(profile, ModelOptions())
-        models_dict[f"{selected_provider}:{actual_model}"] = chat_model
+                selected_provider,
+                "requested model is absent from the accessible provider catalog",
+            )
+        for profile in catalog_profiles:
+            models_dict[f"{selected_provider}:{profile.model}"] = adapter.create_model(
+                profile, ModelOptions()
+            )
+        profile = next(profile for profile in catalog_profiles if profile.model == actual_model)
+        candidates = tuple(
+            _route_candidate(
+                item,
+                hard_budget=args.budget is not None,
+                enabled=(
+                    catalog.price_is_current(item)
+                    if args.budget is not None
+                    else None
+                ),
+            )
+            for item in catalog_profiles
+        )
     else:
         from skail.providers.langchain import LangChainModelFactory, LangChainUsageAdapter
         from skail.providers.registry import LangChainProviderRegistry, ProviderRegistration
@@ -828,7 +916,6 @@ def _build_runtime_models(
     if args.default_model is None:
         child_model_name = f"{selected_provider}:{actual_model}"
         lead_model_name = f"{selected_provider}:{actual_model}"
-        models_dict[lead_model_name] = chat_model
 
     return RuntimeModelSet(
         models_dict,
@@ -838,7 +925,21 @@ def _build_runtime_models(
         catalog=catalog,
         config=config,
         redaction=redaction,
-        candidates=(_route_candidate(profile, hard_budget=args.budget is not None),),
+        candidates=(
+            candidates
+            if selected_provider in {"llmgateway", "devpass"}
+            else (
+                _route_candidate(
+                    profile,
+                    hard_budget=args.budget is not None,
+                    enabled=(
+                        catalog.price_is_current(profile)
+                        if args.budget is not None
+                        else None
+                    ),
+                ),
+            )
+        ),
     )
 
 

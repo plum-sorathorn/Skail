@@ -327,6 +327,12 @@ Validate and use the exact model. If it cannot satisfy a required capability, re
 - replayable Skail evaluations;
 - provider pricing/capability metadata where authoritative.
 
+For LLM Gateway, the authenticated `GET /v1/models?exclude_deprecated=true` response is the
+runtime model and pricing source. Prompt, completion, and input cache-read prices remain exact
+`Decimal` values normalized to per-million-token fields; retrieval time and endpoint provenance
+are retained. A bounded stale cache is displayable for offline recovery but cannot authorize a
+hard-budget route.
+
 ### Merge order
 
 User overrides > evaluated Skail evidence > maintained entries > discovered metadata. A higher source may fill or explicitly replace fields, and provenance is retained per field.

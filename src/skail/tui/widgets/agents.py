@@ -106,6 +106,8 @@ def slot_style_inline(slot: int, theme: Any = None) -> str:
 class AgentRail(VerticalScroll):
     """Side panel: agent rows from ``children_view()`` + legacy rail."""
 
+    can_focus = False
+
     DEFAULT_CSS = """
     AgentRail {
         width: 100%;

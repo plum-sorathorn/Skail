@@ -21,6 +21,13 @@ responses so fragmented tool arguments and gateway usage fields remain observabl
 reports tokens but omits `usage.cost`, token counts are observed but cost remains estimated; zero is
 never presented as an authoritative charge.
 
+The authenticated `GET /v1/models?exclude_deprecated=true` response is the runtime catalog source.
+Prompt, completion, and input cache-read prices are parsed as `Decimal` per-token values and
+normalized to per-million-token fields. Discovered entries retain retrieval time and endpoint
+provenance. Malformed, missing, or stale prices remain unavailable for hard-budget authorization;
+unknown capability evidence remains manual-only until trusted evidence is supplied. A bounded local
+cache may display stale entries for offline inspection, but it cannot authorize a hard-budget route.
+
 DevPass retains a separate Skail provider/catalog identity but uses the same current LLM Gateway
 base URL and bearer credential. Its distinction is plan billing and canonical model namespace, not
 a separate inference endpoint.

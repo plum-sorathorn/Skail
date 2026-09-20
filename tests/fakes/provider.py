@@ -26,6 +26,7 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "providers"
 class RecordedRequest:
     method: str
     path: str
+    query: Mapping[str, str]
     headers: Mapping[str, str]
     json: Mapping[str, Any] | None
 
@@ -59,6 +60,7 @@ class ProviderHTTPFixtureTransport(httpx.AsyncBaseTransport):
             RecordedRequest(
                 method=request.method,
                 path=request.url.path,
+                query=dict(request.url.params),
                 headers=dict(request.headers),
                 json=body,
             )
