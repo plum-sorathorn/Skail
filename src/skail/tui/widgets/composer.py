@@ -216,6 +216,53 @@ class ComposerHistory:
         return STASH_RECEIPT
 
 
+class ComposerTextArea(TextArea):
+    """Multiline input delegating Enter/Shift+Enter/Tab/Esc/Up/Down to PromptComposer."""
+
+    async def _on_key(self, event: events.Key) -> None:
+        self._restart_blink()
+        if self.read_only:
+            return
+
+        key = event.key
+        composer: PromptComposer | None = None
+        node = self.parent
+        while node is not None:
+            if isinstance(node, PromptComposer):
+                composer = node
+                break
+            node = node.parent
+
+        if composer is not None:
+            handled = await composer.handle_composer_key(self, event)
+            if handled:
+                event.stop()
+                event.prevent_default()
+                return
+
+        insert_values = {
+            "enter": "\n",
+        }
+        if self.tab_behavior == "indent":
+            if key == "escape":
+                event.stop()
+                event.prevent_default()
+                self.screen.focus_next()
+                return
+            if self.indent_type == "tabs":
+                insert_values["tab"] = "\t"
+            else:
+                insert_values["tab"] = " " * self._find_columns_to_next_tab_stop()
+
+        if event.is_printable or key in insert_values:
+            event.stop()
+            event.prevent_default()
+            insert = insert_values.get(key, event.character)
+            assert insert is not None
+            start, end = self.selection
+            self._replace_via_keyboard(insert, start, end)
+
+
 class PromptComposer(Widget):
     """Multiline input card with queue-above view and slash palette."""
 
@@ -322,6 +369,9 @@ class PromptComposer(Widget):
             super().__init__()
             self.receipt = receipt
 
+    class ModeCycleRequested(Message):
+        """Dispatched when the mode corner is clicked."""
+
     def __init__(
         self,
         mode: str = "QUALITY",
@@ -349,7 +399,7 @@ class PromptComposer(Widget):
             with Vertical(id="composer-card"):
                 with Horizontal(classes="composer-input-row"):
                     yield Static("\u203a", classes="composer-prompt")
-                    yield TextArea(
+                    yield ComposerTextArea(
                         "",
                         id="composer-input",
                         show_line_numbers=False,
@@ -430,7 +480,7 @@ class PromptComposer(Widget):
         palette.update("\n".join(lines))
 
     def _update_palette_for_draft(self, draft: str) -> None:
-        if draft.startswith("/") and "\n" not in draft:
+        if draft.startswith("/") and "\n" not in draft and " " not in draft:
             entries = [
                 PaletteMatch(
                     command=name,
@@ -483,110 +533,145 @@ class PromptComposer(Widget):
         self._refresh_status()
         self.post_message(self.PromptQueued(cleaned))
 
-    async def on_key(self, event: events.Key) -> None:
-        try:
-            area = self.query_one("#composer-input", TextArea)
-            focused = self.app.focused is area
-        except Exception:
-            focused = False
-        if not focused:
-            return
+    async def handle_composer_key(self, area: TextArea, event: events.Key) -> bool:
         draft = self.draft_text
         if event.key == "escape" and self._palette_open:
             self._palette_open = False
             self._matches = []
             self._refresh_palette()
-            event.stop()
-            return
+            return True
         if event.key == "tab" and self._palette_open and self._matches:
             match = self._matches[self._palette_index % len(self._matches)]
             completed, _ = complete_ghost(draft, match.command)
-            try:
-                area.text = completed
-            except Exception:
-                pass
+            area.text = completed
+            area.cursor_location = (0, len(area.text))
             self._refresh_status()
-            event.stop()
-            return
+            return True
         if event.key == "ctrl+enter":
-            if self.queue_items:
-                self._queue_text(draft)
-            else:
-                self._submit_text(draft)
-            event.stop()
-            return
+            if draft.strip():
+                if self.queue_items:
+                    self._queue_text(draft)
+                else:
+                    self._submit_text(draft)
+            return True
         if event.key == "shift+enter":
-            return
+            start, end = area.selection
+            area._replace_via_keyboard("\n", start, end)
+            self._refresh_status()
+            return True
         if event.key == "enter":
             state = ComposerState(draft=draft, palette_open=self._palette_open)
             if not should_send_on_enter(state):
+                if self._matches:
+                    match = self._matches[self._palette_index % len(self._matches)]
+                    from skail.tui.commands import command_requires_args
+
+                    if command_requires_args(match.command):
+                        completed, _ = complete_ghost(draft, match.command)
+                        area.text = f"{completed} "
+                        area.cursor_location = (0, len(area.text))
+                        self._palette_open = False
+                        self._matches = []
+                        self._refresh_palette()
+                        self._refresh_status()
+                    else:
+                        self._submit_text(f"/{match.command}")
+                return True
+            if draft.strip():
+                if self.queue_items:
+                    self._queue_text(draft)
+                else:
+                    self._submit_text(draft)
+            return True
+        if event.key == "up":
+            if self._palette_open and self._matches:
+                self._palette_index = (self._palette_index - 1) % len(self._matches)
+                self._refresh_palette()
+                return True
+            if not draft.strip():
+                if self.queue_items:
+                    remaining, restored = take_back_newest(self.queue_items)
+                    self.queue_items = remaining
+                    self._refresh_queue()
+                    if restored is not None:
+                        area.text = restored
+                        area.cursor_location = (0, len(area.text))
+                        self._refresh_status()
+                else:
+                    recalled = self.history.move_older(draft)
+                    if recalled:
+                        area.text = recalled
+                        area.cursor_location = (0, len(area.text))
+                        self._refresh_status()
+                return True
+        if event.key == "down":
+            if self._palette_open and self._matches:
+                self._palette_index = (self._palette_index + 1) % len(self._matches)
+                self._refresh_palette()
+                return True
+            if self.history.cursor is not None:
+                recalled = self.history.move_newer(draft)
+                area.text = recalled
+                area.cursor_location = (0, len(area.text))
+                self._refresh_status()
+                return True
+        if event.key == "ctrl+s":
+            receipt = self.history.stash(draft)
+            self._stashed = draft
+            area.text = ""
+            self._refresh_status()
+            self.post_message(self.DraftStashed(receipt))
+            return True
+        return False
+
+    async def on_key(self, event: events.Key) -> None:
+        try:
+            area = self.query_one("#composer-input", TextArea)
+            handled = await self.handle_composer_key(area, event)
+            if handled:
+                event.stop()
+        except Exception:
+            pass
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "composer-send":
+            draft = self.draft_text.strip()
+            if not draft:
+                return
+            if self._palette_open and self._matches:
                 match = self._matches[self._palette_index % len(self._matches)]
-                if " " in draft.strip() or match.command in ("help",):
+                from skail.tui.commands import command_requires_args
+
+                if command_requires_args(match.command):
                     completed, _ = complete_ghost(draft, match.command)
                     try:
-                        area.text = completed
+                        area = self.query_one("#composer-input", TextArea)
+                        area.text = f"{completed} "
+                        area.cursor_location = (0, len(area.text))
                     except Exception:
                         pass
+                    self._palette_open = False
+                    self._matches = []
+                    self._refresh_palette()
                     self._refresh_status()
-                event.stop()
+                    return
+                self._submit_text(f"/{match.command}")
                 return
             if self.queue_items:
                 self._queue_text(draft)
             else:
                 self._submit_text(draft)
-            event.stop()
-            return
-        if event.key == "up" and not draft.strip():
-            if self.queue_items:
-                _, restored = take_back_newest(self.queue_items)
-                self.queue_items = take_back_newest(self.queue_items)[0]
-                self._refresh_queue()
-                if restored is not None:
-                    try:
-                        area.text = restored
-                    except Exception:
-                        pass
-                    self._refresh_status()
-            else:
-                recalled = self.history.move_older(draft)
-                try:
-                    area.text = recalled
-                except Exception:
-                    pass
-                self._refresh_status()
-            event.stop()
-            return
-        if event.key == "down" and self.history.cursor is not None:
-            recalled = self.history.move_newer(draft)
-            try:
-                area.text = recalled
-            except Exception:
-                pass
-            self._refresh_status()
-            event.stop()
-            return
-        if event.key == "ctrl+s":
-            receipt = self.history.stash(draft)
-            self._stashed = draft
-            try:
-                area.text = ""
-            except Exception:
-                pass
-            self._refresh_status()
-            self.post_message(self.DraftStashed(receipt))
-            event.stop()
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "composer-send":
-            state = ComposerState(
-                draft=self.draft_text, palette_open=self._palette_open
-            )
-            if should_send_on_enter(state):
-                self._submit_text(self.draft_text)
+    def on_click(self, event: events.Click) -> None:
+        widget = getattr(event, "widget", None)
+        if widget is not None and getattr(widget, "id", "") == "composer-mode":
+            self.post_message(self.ModeCycleRequested())
+            event.stop()
 
 
 __all__ = [
     "COMPOSER_PLACEHOLDER",
+    "ComposerTextArea",
     "COMPOSER_VALIDATING_TEXT",
     "MAX_COMPOSER_ROWS",
     "MAX_PALETTE_ROWS",

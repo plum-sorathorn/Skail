@@ -365,6 +365,9 @@ class PlanView(VerticalScroll):
             except Exception:
                 pass
 
+    def on_input_submitted(self, event: Any) -> None:
+        self.request_changes()
+
 
 __all__ = [
     "PROPOSED_ACTS",

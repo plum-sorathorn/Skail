@@ -674,7 +674,11 @@ def _build_runtime_models(
 
     cred_resolver = EnvironmentCredentialResolver(redaction)
     provider_configs = getattr(args, "provider_configs", {})
-    candidate_providers = tuple(provider_configs)
+    candidate_providers = (
+        tuple(provider_configs)
+        if provider_configs
+        else ("llmgateway", "openai", "anthropic")
+    )
     resolved_cred = None
     selected_provider = None
     selected_config = None
@@ -735,15 +739,21 @@ def _build_runtime_models(
             profile
             for (provider, _), profile in catalog.profiles.items()
             if provider == selected_provider
-            and profile.model in provider_configs[selected_provider].models
+            and (
+                selected_provider not in provider_configs
+                or profile.model in provider_configs[selected_provider].models
+            )
             and catalog.is_auto_eligible(profile, hard_budget=args.budget is not None)
         ]
         if not eligible:
-            raise ProviderConfigurationError(
-                selected_provider,
-                "no configured catalog model is eligible for automatic routing",
+            fallback = (
+                "gpt-4o"
+                if selected_provider in {"llmgateway", "openai"}
+                else "claude-3-5-sonnet-latest"
             )
-        lead_model_name = f"{selected_provider}:{eligible[0].model}"
+            lead_model_name = f"{selected_provider}:{fallback}"
+        else:
+            lead_model_name = f"{selected_provider}:{eligible[0].model}"
     child_model_name = lead_model_name
 
     models_dict: dict[str, Any] = {}

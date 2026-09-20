@@ -285,6 +285,18 @@ def _resolve_alias(cmd: str) -> str:
     return cmd
 
 
+def command_requires_args(command: str) -> bool:
+    """Return True if the command strictly requires arguments."""
+    cmd = command.lstrip("/").lower()
+    if cmd in ("agent", "mode", "steer"):
+        return True
+    resolved = _resolve_alias(cmd)
+    for entry in COMMAND_REGISTRY:
+        if str(entry["command"]).lstrip("/").lower() == resolved:
+            return bool(entry.get("args_required", False))
+    return False
+
+
 def dispatch_slash_command(
     line: str,
     projection: TuiProjection,
@@ -552,6 +564,7 @@ __all__ = [
     "HELP_TEXT",
     "THEME_USAGE",
     "SlashCommandResult",
+    "command_requires_args",
     "dispatch_slash_command",
     "fork_receipt",
     "parse_slash_command",

@@ -7,6 +7,7 @@ from skail.config.loader import (
     merge_config_layers,
 )
 from skail.config.models import SkailConfig
+from skail.config.persistence import save_user_provider_models
 from skail.config.trust import ProjectTrustStore
 
 __all__ = [
@@ -18,4 +19,6 @@ __all__ = [
     "SkailConfig",
     "load_config",
     "merge_config_layers",
+    "save_user_provider_models",
 ]
+

@@ -259,6 +259,16 @@ class AgentRail(VerticalScroll):
                 event.stop()
             except Exception:
                 pass
+        elif key in ("up", "down"):
+            delta = -1 if key == "up" else 1
+            self._selected_index = (self._selected_index + delta) % len(self.child_rows)
+            current = self.child_rows[self._selected_index]
+            self.select_child(current.id)
+            self._render_children()
+            try:
+                event.stop()
+            except Exception:
+                pass
 
     def on_click(self, event: Any = None) -> None:
         """Clicking selects; never switches to the Route tab."""

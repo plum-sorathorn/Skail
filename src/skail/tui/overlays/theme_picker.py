@@ -115,6 +115,16 @@ class ThemePickerOverlay(Screen):  # type: ignore[type-arg]
             pass
         return str(previous)
 
+    def _refresh_rows(self) -> None:
+        try:
+            row_widgets = list(self.query(".theme-row"))
+            new_rows = self.rows()
+            for widget, text in zip(row_widgets, new_rows):
+                if hasattr(widget, "update"):
+                    widget.update(text)
+        except Exception:
+            pass
+
     def compose(self) -> Any:
         try:
             from textual.widgets import Static
@@ -122,7 +132,7 @@ class ThemePickerOverlay(Screen):  # type: ignore[type-arg]
             yield ovl_head("THEME", hint="enter commits \u00b7 esc restores")
             yield ovl_rule_strong()
             for row in self.rows():
-                yield Static(row)
+                yield Static(row, classes="theme-row")
             yield ovl_foot(THEME_FOOT)
         except Exception:
             return
@@ -144,6 +154,7 @@ class ThemePickerOverlay(Screen):  # type: ignore[type-arg]
                 pass
         elif key in ("up", "down"):
             self.move(-1 if key == "up" else 1)
+            self._refresh_rows()
             try:
                 event.stop()
             except Exception:

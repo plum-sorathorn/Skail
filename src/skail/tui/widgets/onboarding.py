@@ -8,6 +8,8 @@ a fixed-length mask.
 
 from __future__ import annotations
 
+from typing import Any
+
 from rich.text import Text
 from textual.binding import Binding
 from textual.widgets import Input, Static
@@ -35,6 +37,23 @@ class OnboardingPanel(Static):
 
     can_focus = True
 
+    DEFAULT_CSS = """
+    OnboardingPanel {
+        width: 100%;
+        height: auto;
+        padding: 1 2;
+        background: $surfaceRaised;
+        border: solid $borderStrong;
+    }
+    OnboardingPanel:focus-within {
+        border: double $accent;
+    }
+    #onboarding-key {
+        width: 60;
+        margin: 1 0;
+    }
+    """
+
     BINDINGS = [
         Binding("enter", "onboarding_confirm", "Continue"),
         Binding("escape", "onboarding_back", "Back"),
@@ -43,6 +62,8 @@ class OnboardingPanel(Static):
         Binding("r", "onboarding_restricted", "Restricted mode"),
         Binding("b", "onboarding_back", "Back"),
         Binding("v", "onboarding_validate", "Validate"),
+        Binding("up", "onboarding_up", "Up", show=False),
+        Binding("down", "onboarding_down", "Down", show=False),
     ]
 
     def __init__(
@@ -154,7 +175,16 @@ class OnboardingPanel(Static):
         has_input = self._key_input() is not None
         if self.onboarding.step == "provider" and self.onboarding.provider != "fake":
             if not has_input:
-                self.mount(Input(password=True, id="onboarding-key"))
+                inp = Input(
+                    password=True,
+                    id="onboarding-key",
+                    placeholder="Enter API key and press Enter",
+                )
+                self.mount(inp)
+                try:
+                    inp.focus()
+                except Exception:
+                    pass
         elif has_input:
             input_widget = self._key_input()
             if input_widget is not None:
@@ -197,6 +227,49 @@ class OnboardingPanel(Static):
 
     def action_onboarding_validate(self) -> None:
         self._app_action("validate_onboarding_key")
+
+    def action_onboarding_up(self) -> None:
+        self._move_selection(-1)
+
+    def action_onboarding_down(self) -> None:
+        self._move_selection(1)
+
+    def _move_selection(self, delta: int) -> None:
+        if self.onboarding.step == "provider":
+            options = PROVIDER_OPTIONS
+            try:
+                idx = options.index(self.onboarding.provider)
+            except ValueError:
+                idx = 0
+            new_idx = (idx + delta) % len(options)
+            self.onboarding.provider = options[new_idx]
+            self.refresh_step()
+        elif self.onboarding.step == "theme":
+            themes = ("dark", "light", "system")
+            try:
+                idx = themes.index(self.onboarding.theme)
+            except ValueError:
+                idx = 0
+            new_idx = (idx + delta) % len(themes)
+            self.onboarding.theme = themes[new_idx]
+            self.refresh_step()
+            preview = getattr(self.app, "preview_theme", None)
+            if callable(preview):
+                preview(self.onboarding.theme)
+
+    def on_key(self, event: Any) -> None:
+        key = getattr(event, "key", "")
+        if key in ("up", "down"):
+            self._move_selection(-1 if key == "up" else 1)
+            try:
+                event.stop()
+            except Exception:
+                pass
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "onboarding-key":
+            self.credentials.set_key(event.value)
+            self.action_onboarding_validate()
 
 
 __all__ = ["OnboardingPanel"]

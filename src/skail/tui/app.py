@@ -19,6 +19,7 @@ from typing import Any, Literal
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
+from textual.css.query import NoMatches
 from textual.widgets import Input, Static, TabbedContent, TabPane
 
 from skail import __version__
@@ -358,6 +359,7 @@ class SkailApp(App[int]):
         Binding("question_mark", "shortcuts_overlay", "Shortcuts (?)"),
         Binding("alt+t", "theme_picker", "Theme"),
         Binding("alt+p", "model_picker", "Model"),
+        Binding("shift+tab", "cycle_mode", "Cycle mode", priority=True),
         Binding("f1", "show_help", "Help"),
     ]
 
@@ -657,6 +659,7 @@ class SkailApp(App[int]):
     def _attach_runtime_models(self, runtime_models: Any) -> None:
         from skail.runtime.run_controller import RunController
 
+        self.runtime_models = runtime_models
         models, lead_model_name, child_model_name = runtime_models
         assert self.journal is not None, "journal required for runtime attach"
         assert self.checkpoints is not None, "checkpoints required for runtime attach"
@@ -750,16 +753,20 @@ class SkailApp(App[int]):
         )
         self.update_views()
         try:
+            self.query_one("#prompt-composer").visible = False
+        except Exception:
+            pass
+        try:
             container = self.query_one("#interrupt-container", Container)
             if not container.query("OnboardingPanel"):
-                container.mount(
-                    OnboardingPanel(
-                        self.onboarding_state,
-                        self.onboarding_credentials,
-                        workspace=str(self.bootstrap.get("workspace", "")),
-                        session_id=str(self.bootstrap.get("session_id", "")),
-                    )
+                panel = OnboardingPanel(
+                    self.onboarding_state,
+                    self.onboarding_credentials,
+                    workspace=str(self.bootstrap.get("workspace", "")),
+                    session_id=str(self.bootstrap.get("session_id", "")),
                 )
+                container.mount(panel)
+                panel.focus()
         except Exception:
             pass
 
@@ -767,6 +774,12 @@ class SkailApp(App[int]):
         try:
             for panel in self.query("OnboardingPanel"):
                 panel.remove()
+        except Exception:
+            pass
+        try:
+            composer = self.query_one("#prompt-composer")
+            composer.visible = True
+            self.query_one("#composer-input").focus()
         except Exception:
             pass
 
@@ -790,7 +803,16 @@ class SkailApp(App[int]):
                 self.onboarding_state.advance()
                 self._refresh_onboarding_panel()
             else:
-                self.validate_onboarding_key()
+                key = self.onboarding_credentials.reveal()
+                if len(key.strip()) >= 8:
+                    self.validate_onboarding_key()
+                else:
+                    try:
+                        for panel in self.query("OnboardingPanel"):
+                            key_input = panel.query_one("#onboarding-key", Input)
+                            key_input.focus()
+                    except Exception:
+                        self.validate_onboarding_key()
         elif step == "trust":
             if self.onboarding_state.trusted is None:
                 self.onboarding_state.trusted = False
@@ -912,7 +934,10 @@ class SkailApp(App[int]):
         return format_masthead(__version__, provider, clock)
 
     def _refresh_masthead(self) -> None:
-        self.query_one("#masthead", Static).update(self.render_masthead())
+        try:
+            self.query_one("#masthead", Static).update(self.render_masthead())
+        except NoMatches:
+            pass
 
     def _tick_masthead(self) -> None:
         if self.reduced_motion:
@@ -921,14 +946,18 @@ class SkailApp(App[int]):
 
     def _refresh_transcript_header(self) -> None:
         """Feed #transcript-header (plan §5.4): run id, event count, pin state."""
-        chat = self.query_one("#chat-transcript", ChatTranscript)
-        run_id: str | None = None
-        if self.initial_snapshot and self.initial_snapshot.runs:
-            run_id = str(self.initial_snapshot.runs[-1].run_id)
-        header = self.query_one("#transcript-header", Static)
-        header.update(
-            render_transcript_header(run_id, len(self.projection.transcript_items), chat._pinned)
-        )
+        try:
+            chat = self.query_one("#chat-transcript", ChatTranscript)
+            run_id: str | None = None
+            if self.initial_snapshot and self.initial_snapshot.runs:
+                run_id = str(self.initial_snapshot.runs[-1].run_id)
+            pinned = chat._pinned
+            header = self.query_one("#transcript-header", Static)
+            header.update(
+                render_transcript_header(run_id, len(self.projection.transcript_items), pinned)
+            )
+        except NoMatches:
+            pass
 
     def _append_system_message(self, title: str, content: str) -> None:
         self.projection.transcript_items.append(
@@ -944,47 +973,64 @@ class SkailApp(App[int]):
         if not self._mounted:
             return
 
-        chat = self.query_one("#chat-transcript", ChatTranscript)
-        chat.update_items(self.projection.transcript_items)
-        self._refresh_transcript_header()
-
-        rail = self.query_one("#agent-rail", AgentRail)
         try:
-            from skail.tui.projection import ChildView as _ChildView  # noqa: F401
+            chat = self.query_one("#chat-transcript", ChatTranscript)
+            chat.update_items(self.projection.transcript_items)
+            self._refresh_transcript_header()
         except Exception:
             pass
-        children = self.projection.children_view()
-        if children:
-            rail.update_children(children, focused_id=self.projection.focused_agent_id)
-        else:
-            rail.update_items(
-                self.projection.agent_rail_items,
-                focused_id=self.projection.focused_agent_id,
+
+        try:
+            rail = self.query_one("#agent-rail", AgentRail)
+            children = self.projection.children_view()
+            if children:
+                rail.update_children(children, focused_id=self.projection.focused_agent_id)
+            else:
+                rail.update_items(
+                    self.projection.agent_rail_items,
+                    focused_id=self.projection.focused_agent_id,
+                )
+        except Exception:
+            pass
+
+        try:
+            plan_view = self.query_one("#plan-view", PlanView)
+            plan_view.update_plan(
+                self.projection.plan_items,
+                plan_id=self.projection.current_plan_id,
+                revision=self.projection.current_plan_revision,
+                integrations=self.projection.workspace_integrations,
+                plan_state=self.projection.plan_state,
+                receipts=self.projection.receipts,
             )
+        except Exception:
+            pass
 
-        plan_view = self.query_one("#plan-view", PlanView)
-        plan_view.update_plan(
-            self.projection.plan_items,
-            plan_id=self.projection.current_plan_id,
-            revision=self.projection.current_plan_revision,
-            integrations=self.projection.workspace_integrations,
-            plan_state=self.projection.plan_state,
-            receipts=self.projection.receipts,
-        )
+        try:
+            route_view = self.query_one("#route-view", RouteView)
+            route_view.update_routes(
+                self.projection.route_items,
+                selected_task_id=self.projection.focused_agent_id,
+            )
+        except Exception:
+            pass
 
-        route_view = self.query_one("#route-view", RouteView)
-        route_view.update_routes(
-            self.projection.route_items,
-            selected_task_id=self.projection.focused_agent_id,
-        )
+        try:
+            budget_view = self.query_one("#budget-view", BudgetView)
+            budget_view.update_budget(self.projection.budget_item)
+        except Exception:
+            pass
 
-        budget_view = self.query_one("#budget-view", BudgetView)
-        budget_view.update_budget(self.projection.budget_item)
+        try:
+            ledger = self.query_one("#budget-ledger", BudgetLedger)
+            ledger.update_budget(self.projection.budget_item)
+        except Exception:
+            pass
 
-        ledger = self.query_one("#budget-ledger", BudgetLedger)
-        ledger.update_budget(self.projection.budget_item)
-
-        self._refresh_masthead()
+        try:
+            self._refresh_masthead()
+        except Exception:
+            pass
 
         try:
             from skail.tui.widgets.composer import PromptComposer as _Composer
@@ -1016,16 +1062,22 @@ class SkailApp(App[int]):
         except Exception:
             pass
 
-        dateline = self.query_one("#dateline", Static)
-        dateline.update(self._render_status_strip())
+        try:
+            dateline = self.query_one("#dateline", Static)
+            dateline.update(self._render_status_strip())
+        except Exception:
+            pass
 
-        interrupt_container = self.query_one("#interrupt-container", Container)
-        if self.projection.pending_interrupt:
-            if not interrupt_container.query("InterruptWidget"):
-                interrupt_container.mount(InterruptWidget(self.projection.pending_interrupt))
-        else:
-            for widget in interrupt_container.query("InterruptWidget"):
-                widget.remove()
+        try:
+            interrupt_container = self.query_one("#interrupt-container", Container)
+            if self.projection.pending_interrupt:
+                if not interrupt_container.query("InterruptWidget"):
+                    interrupt_container.mount(InterruptWidget(self.projection.pending_interrupt))
+            else:
+                for widget in interrupt_container.query("InterruptWidget"):
+                    widget.remove()
+        except Exception:
+            pass
         if self.app_state == "onboarding":
             self._refresh_onboarding_panel()
 
@@ -1213,6 +1265,20 @@ class SkailApp(App[int]):
                     str(self.session_id)
                 )
                 self.apply_snapshot(refreshed)
+            elif result.action == "model_picker":
+                self.action_model_picker()
+            elif result.action == "theme_picker":
+                self.action_theme_picker()
+            elif result.action == "missions":
+                self.action_missions_overlay()
+
+            if "theme" in result.payload:
+                self.apply_theme_preview(str(result.payload["theme"]))
+            if "model" in result.payload:
+                self.set_future_model(str(result.payload["model"]))
+            if "routing_mode" in result.payload:
+                self.projection.footer_data.routing_mode = str(result.payload["routing_mode"])
+                self.update_views()
 
             if result.output_message:
                 self.projection.transcript_items.append(
@@ -1412,6 +1478,48 @@ class SkailApp(App[int]):
         self.projection.set_future_model(name)
         self.update_views()
 
+    def set_enabled_models(self, enabled_models: list[str]) -> None:
+        """Apply ticked models to routing candidates and persist to config."""
+        self._enabled_models: set[str] = set(enabled_models)
+        if hasattr(self, "runtime_models") and self.runtime_models is not None:
+            rm = self.runtime_models
+            if hasattr(rm, "candidates") and rm.candidates:
+                new_cands = []
+                for cand in rm.candidates:
+                    p = cand.profile
+                    is_enabled = (
+                        p.model in self._enabled_models
+                        or f"{p.provider}:{p.model}" in self._enabled_models
+                        or any(m.endswith(f":{p.model}") for m in self._enabled_models)
+                    )
+                    new_cands.append(cand.model_copy(update={"enabled": is_enabled}))
+                object.__setattr__(rm, "candidates", tuple(new_cands))
+
+        # Persist to user config so the user doesn't have to edit config.toml
+        provider = self.onboarding_state.provider
+        if not provider and self.bootstrap.get("fake_provider"):
+            provider = "fake"
+        elif not provider and hasattr(self, "runtime_models") and self.runtime_models:
+            if hasattr(self.runtime_models, "providers") and self.runtime_models.providers:
+                provider = next(iter(self.runtime_models.providers.keys()), "default")
+        if provider and provider != "fake":
+            try:
+                from skail.config.persistence import save_user_provider_models
+
+                save_user_provider_models(provider, enabled_models)
+            except Exception:
+                pass
+
+        count = len(enabled_models)
+        summary = ", ".join(sorted(enabled_models)[:4])
+        if count > 4:
+            summary += f" +{count - 4} more"
+        self._append_system_message(
+            "Routing", f"Updated eligible models ({count} ticked): {summary}"
+        )
+        self.update_views()
+
+
     def request_child_cancel(self, child_id: str) -> None:
         """Forward a confirmed child-cancel request to the controller."""
         controller = self.controller
@@ -1542,11 +1650,136 @@ class SkailApp(App[int]):
         try:
             from skail.tui.overlays.model_picker import ModelPickerOverlay
 
-            models = sorted(set(self.profile_models.values())) if self.profile_models else []
+            model_set: set[str] = set()
+            if self.profile_models:
+                model_set.update(self.profile_models.values())
+            if self.controller is not None:
+                if hasattr(self.controller, "models") and self.controller.models:
+                    model_set.update(self.controller.models.keys())
+                if getattr(self.controller, "default_lead_model", None):
+                    model_set.add(self.controller.default_lead_model)
+                if getattr(self.controller, "default_child_model", None):
+                    model_set.add(self.controller.default_child_model)
+            if hasattr(self, "runtime_models") and self.runtime_models is not None:
+                rm = self.runtime_models
+                if hasattr(rm, "models") and rm.models:
+                    model_set.update(rm.models.keys())
+                if getattr(rm, "lead_model_name", None):
+                    model_set.add(rm.lead_model_name)
+                if getattr(rm, "child_model_name", None):
+                    model_set.add(rm.child_model_name)
+                if hasattr(rm, "candidates") and rm.candidates:
+                    for cand in rm.candidates:
+                        if hasattr(cand, "profile"):
+                            model_set.add(f"{cand.profile.provider}:{cand.profile.model}")
+                        elif hasattr(cand, "model") and cand.model:
+                            model_set.add(cand.model)
+                        elif hasattr(cand, "model_name") and cand.model_name:
+                            model_set.add(cand.model_name)
+                if hasattr(rm, "catalog") and hasattr(rm.catalog, "profiles"):
+                    for p, m in rm.catalog.profiles.keys():
+                        model_set.add(f"{p}:{m}")
+
+            # Provider-specific standard model sets
+            active_p: str | None = self.onboarding_state.provider or None
+            if not active_p:
+                if self.bootstrap.get("fake_provider"):
+                    active_p = "fake"
+                elif self.controller and getattr(self.controller, "providers", None):
+                    p_keys = list(self.controller.providers.keys())
+                    if p_keys:
+                        active_p = str(p_keys[0])
+
+            if active_p == "fake" or self.bootstrap.get("fake_provider"):
+                model_set.update({
+                    "fake:auto",
+                    "fake:fast-model",
+                    "fake:smart-model",
+                    "fake:lead-model",
+                    "fake:implementer-model",
+                })
+            elif active_p == "openai":
+                model_set.update({
+                    "openai:gpt-4o",
+                    "openai:gpt-4o-mini",
+                    "openai:o1",
+                    "openai:o1-mini",
+                    "openai:o3-mini",
+                })
+            elif active_p == "anthropic":
+                model_set.update({
+                    "anthropic:claude-3-5-sonnet-latest",
+                    "anthropic:claude-3-5-haiku-latest",
+                    "anthropic:claude-3-opus-latest",
+                })
+            elif active_p in {"llmgateway", "devpass"}:
+                model_set.update({
+                    f"{active_p}:gpt-4o",
+                    f"{active_p}:gpt-4o-mini",
+                    f"{active_p}:claude-3-5-sonnet",
+                    f"{active_p}:gemini-1.5-pro",
+                    f"{active_p}:deepseek-chat",
+                })
+
+            if self.bootstrap:
+                if self.bootstrap.get("lead_model"):
+                    model_set.add(str(self.bootstrap["lead_model"]))
+                if self.bootstrap.get("default_model"):
+                    model_set.add(str(self.bootstrap["default_model"]))
             current = self.projection.model_for_future()
-            self.push_screen(ModelPickerOverlay(models, current))
+            if current and current != "auto":
+                model_set.add(current)
+            if not model_set:
+                model_set.add("auto")
+            models = sorted(model_set)
+
+            # Determine initially ticked models
+            enabled_set: set[str] = set()
+            if hasattr(self, "_enabled_models") and self._enabled_models:
+                enabled_set = set(self._enabled_models)
+            elif hasattr(self, "runtime_models") and self.runtime_models is not None:
+                rm = self.runtime_models
+                if hasattr(rm, "candidates") and rm.candidates:
+                    for cand in rm.candidates:
+                        if getattr(cand, "enabled", True):
+                            if hasattr(cand, "profile"):
+                                enabled_set.add(f"{cand.profile.provider}:{cand.profile.model}")
+                                enabled_set.add(cand.profile.model)
+                            elif hasattr(cand, "model"):
+                                enabled_set.add(cand.model)
+            if not enabled_set:
+                enabled_set = set(models)
+
+            self.push_screen(ModelPickerOverlay(models, current, enabled=enabled_set))
         except Exception:
             pass
+
+    def action_cycle_mode(self) -> None:
+        """Cycle routing mode between Quality, Economy, and Manual."""
+        current = (self.projection.footer_data.routing_mode or "quality").lower()
+        order = ("quality", "economy", "manual")
+        try:
+            idx = order.index(current)
+            next_mode = order[(idx + 1) % len(order)]
+        except ValueError:
+            next_mode = "quality"
+        self.projection.footer_data.routing_mode = next_mode
+        try:
+            from skail.tui.widgets.composer import PromptComposer, mode_token
+
+            composer = self.query_one("#prompt-composer", PromptComposer)
+            composer.composer_mode = next_mode.upper()
+            mode_static = composer.query_one("#composer-mode", Static)
+            mode_static.update(
+                f"MODE [{mode_token(next_mode.upper())}]{next_mode.upper()}[/]"
+            )
+        except Exception:
+            pass
+        self.update_views()
+
+    def on_prompt_composer_mode_cycle_requested(self, event: Any) -> None:
+        _ = event
+        self.action_cycle_mode()
 
     def action_show_help(self) -> None:
         result = dispatch_slash_command("/help", self.projection)

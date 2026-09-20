@@ -345,6 +345,7 @@ class InterruptWidget(Widget):
             try:
                 approve = self.query_one("#btn-approve", Button)
                 reject = self.query_one("#btn-reject", Button)
+                inp = self.query_one("#interrupt-input", Input)
             except Exception:
                 return
             if focused is approve:
@@ -352,6 +353,9 @@ class InterruptWidget(Widget):
                 event.stop()
             elif focused is reject:
                 self._submit_reject()
+                event.stop()
+            elif focused is inp:
+                self._submit_approve()
                 event.stop()
             return
         decision = approval_keyboard_action(key, self.interrupt, self._is_typing())
@@ -367,6 +371,9 @@ class InterruptWidget(Widget):
             except Exception:
                 pass
             event.stop()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self._submit_approve()
 
 
 __all__ = [
