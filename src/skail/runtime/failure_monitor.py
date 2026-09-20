@@ -65,6 +65,15 @@ class FailureMonitor:
         self._consecutive_errors = 0
         self._calls.clear()
 
+    def discard_call_window(self) -> None:
+        """Drop the repeated-call window after an unresolved call.
+
+        A call that ended in an error or block is a failure repetition
+        (tracked by observe_error), not a completed no-op repetition, so
+        it must not accumulate toward failure.repeated_call.
+        """
+        self._calls.clear()
+
     def observe_progress(self) -> None:
         self._consecutive_errors = 0
 

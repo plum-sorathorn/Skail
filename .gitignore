@@ -66,6 +66,7 @@ logs/
 # Entries below are local safety-nets for repo checkout.
 # ============================================================
 .rudder/
+.skail/
 backups/
 *.pem
 *.key

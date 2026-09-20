@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from textual.widgets import Input, Static, TabbedContent
+from textual.widgets import Static, TabbedContent, TextArea
 
 from skail.domain.changesets import ChangeSet, ChangeSetPath, ChangeSetStatus, ContentImage
 from skail.domain.events import (
@@ -115,11 +115,13 @@ async def test_tui_shell_keyboard_navigation_and_prompt_submit() -> None:
         await pilot.press("ctrl+r")
         assert app.query_one("#tabs", TabbedContent).active == "tab-route"
 
-        # Submit a user prompt through composer
-        inp = app.query_one("#composer-input", Input)
-        inp.value = "Test task instruction"
+        # Submit a user prompt through composer.
+        # The composer input is a TextArea; it consumes plain enter (newline),
+        # so submission is driven with the Ctrl+Enter binding.
+        inp = app.query_one("#composer-input", TextArea)
+        inp.text = "Test task instruction"
         inp.focus()
-        await pilot.press("enter")
+        await pilot.press("ctrl+enter")
 
         # Verify prompt appeared in transcript
         items = app.projection.transcript_items
@@ -139,17 +141,17 @@ async def test_tui_shell_plan_navigation_ctrl_p_and_slash() -> None:
         assert app.query_one("#tabs", TabbedContent).active == "tab-budget"
 
         # slash command /plan switches to tab-plan
-        inp = app.query_one("#composer-input", Input)
-        inp.value = "/plan"
+        inp = app.query_one("#composer-input", TextArea)
+        inp.text = "/plan"
         inp.focus()
-        await pilot.press("enter")
+        await pilot.press("ctrl+enter")
         await pilot.pause()
         assert app.query_one("#tabs", TabbedContent).active == "tab-plan"
 
         # slash command /help lists /plan
-        inp.value = "/help"
+        inp.text = "/help"
         inp.focus()
-        await pilot.press("enter")
+        await pilot.press("ctrl+enter")
         await pilot.pause()
         assert any("/plan" in item.content for item in app.projection.transcript_items)
 
@@ -421,10 +423,10 @@ async def test_tui_shell_cancellation_preserves_state() -> None:
     app = SkailApp()
     async with app.run_test(size=(120, 40)) as pilot:
         # Submit /cancel command
-        inp = app.query_one("#composer-input", Input)
-        inp.value = "/cancel"
+        inp = app.query_one("#composer-input", TextArea)
+        inp.text = "/cancel"
         inp.focus()
-        await pilot.press("enter")
+        await pilot.press("ctrl+enter")
         await pilot.pause()
 
         # Transcript retains cancellation notice and UI is intact

@@ -514,6 +514,14 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         except TypeError:
             self.emit("model.completed", self.model_name)
 
+    @staticmethod
+    def _response_has_tool_calls(response: ModelResponse[Any]) -> bool:
+        """Whether the model response requests tool execution (loop continues)."""
+        result = getattr(response, "result", None)
+        if isinstance(result, (list, tuple)):
+            return any(getattr(message, "tool_calls", None) for message in result)
+        return bool(getattr(result, "tool_calls", None))
+
     def wrap_model_call(
         self,
         request: ModelRequest[Any],
@@ -526,7 +534,12 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             self.emit("model.failed", self.model_name)
             raise
         self._emit_model_completed(response)
-        self.monitor.observe_success()
+        if self._response_has_tool_calls(response):
+            # The agent loop continues: reset only the error streak so the
+            # repeated-call window still accumulates across model turns.
+            self.monitor.observe_progress()
+        else:
+            self.monitor.observe_success()
         if self.model_response_observer is not None:
             self.model_response_observer(response)
         return response
@@ -543,7 +556,12 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             self.emit("model.failed", self.model_name)
             raise
         self._emit_model_completed(response)
-        self.monitor.observe_success()
+        if self._response_has_tool_calls(response):
+            # The agent loop continues: reset only the error streak so the
+            # repeated-call window still accumulates across model turns.
+            self.monitor.observe_progress()
+        else:
+            self.monitor.observe_success()
         if self.model_response_observer is not None:
             self.model_response_observer(response)
         return response
@@ -577,6 +595,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         try:
             result = await handler(request)
         except Exception as exc:
+            self.monitor.discard_call_window()
             self._emit_failure(name, exc)
             signal = self.monitor.observe_error(exc, tool=name)
             if signal is not None:
@@ -584,6 +603,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             raise
         status = _tool_result_status(result)
         if status == "error":
+            self.monitor.discard_call_window()
             self._emit_failure(name, getattr(result, "content", "tool error"))
             if _is_decision_gate_rejection(name, result):
                 if _is_decision_exhausted_rejection(result):
@@ -603,6 +623,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
                 if signal is not None:
                     raise RuntimeError(signal)
         elif status == "blocked":
+            self.monitor.discard_call_window()
             self._emit_failure(name, getattr(result, "content", "tool blocked"))
             self.monitor.observe_error(getattr(result, "content", "tool blocked"), blocked=True)
         else:
@@ -632,6 +653,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         try:
             result = handler(request)
         except Exception as exc:
+            self.monitor.discard_call_window()
             self._emit_failure(name, exc)
             signal = self.monitor.observe_error(exc, tool=name)
             if signal is not None:
@@ -639,6 +661,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             raise
         status = _tool_result_status(result)
         if status == "error":
+            self.monitor.discard_call_window()
             self._emit_failure(name, getattr(result, "content", "tool error"))
             if _is_decision_gate_rejection(name, result):
                 if _is_decision_exhausted_rejection(result):
@@ -658,6 +681,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
                 if signal is not None:
                     raise RuntimeError(signal)
         elif status == "blocked":
+            self.monitor.discard_call_window()
             self._emit_failure(name, getattr(result, "content", "tool blocked"))
             self.monitor.observe_error(getattr(result, "content", "tool blocked"), blocked=True)
         else:

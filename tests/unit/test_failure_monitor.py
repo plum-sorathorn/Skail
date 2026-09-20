@@ -1,8 +1,14 @@
 from decimal import Decimal
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+from langchain.agents.middleware import ModelResponse, ToolCallRequest
+from langchain_core.messages import AIMessage, ToolMessage
 
 from skail.domain.events import SecretRedactor
 from skail.runtime.failure_monitor import FailureMonitor
-from skail.tools.assembly import _tool_result_status
+from skail.tools.assembly import RuntimeActivityMiddleware, _tool_result_status
 
 
 def test_monitor_triggers_only_on_deterministic_repetition() -> None:
@@ -122,3 +128,103 @@ def test_orphan_surfaces_as_tool_scoped_repeated_error_without_call_window() -> 
     assert monitor.observe_call("task", {"description": "x"}) is None
     assert monitor.observe_call("task", {"description": "x"}) is None
     assert monitor.observe_call("task", {"description": "x"}) == "failure.repeated_call"
+
+
+def _tool_call_model_response() -> ModelResponse[None]:
+    return ModelResponse(
+        result=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "read",
+                        "args": {"path": "a"},
+                        "id": "call-1",
+                        "type": "tool_call",
+                    }
+                ],
+            )
+        ]
+    )
+
+
+def _final_model_response() -> ModelResponse[None]:
+    return ModelResponse(result=[AIMessage(content="done")])
+
+
+def test_middleware_keeps_repeated_call_window_across_model_turns() -> None:
+    middleware = RuntimeActivityMiddleware(
+        model_name="m", emit=lambda *_args: None, redactor=None
+    )
+    request: Any = SimpleNamespace()
+    middleware.wrap_model_call(request, lambda _req: _tool_call_model_response())
+    assert middleware.monitor.observe_call("read", {"path": "a"}) is None
+    middleware.wrap_model_call(request, lambda _req: _tool_call_model_response())
+    assert middleware.monitor.observe_call("read", {"path": "a"}) is None
+    middleware.wrap_model_call(request, lambda _req: _tool_call_model_response())
+    assert middleware.monitor.observe_call("read", {"path": "a"}) == "failure.repeated_call"
+
+
+def test_middleware_clears_repeated_call_window_on_final_response() -> None:
+    middleware = RuntimeActivityMiddleware(
+        model_name="m", emit=lambda *_args: None, redactor=None
+    )
+    request: Any = SimpleNamespace()
+    middleware.wrap_model_call(request, lambda _req: _tool_call_model_response())
+    assert middleware.monitor.observe_call("read", {"path": "a"}) is None
+    middleware.wrap_model_call(request, lambda _req: _final_model_response())
+    assert middleware.monitor.observe_call("read", {"path": "a"}) is None
+
+
+@pytest.mark.asyncio
+async def test_awrap_model_call_keeps_repeated_call_window_across_model_turns() -> None:
+    middleware = RuntimeActivityMiddleware(
+        model_name="m", emit=lambda *_args: None, redactor=None
+    )
+
+    async def handler(_request: Any) -> ModelResponse[None]:
+        return _tool_call_model_response()
+
+    await middleware.awrap_model_call(SimpleNamespace(), handler)
+    assert middleware.monitor.observe_call("read", {"path": "a"}) is None
+    await middleware.awrap_model_call(SimpleNamespace(), handler)
+    assert middleware.monitor.observe_call("read", {"path": "a"}) is None
+    await middleware.awrap_model_call(SimpleNamespace(), handler)
+    assert middleware.monitor.observe_call("read", {"path": "a"}) == "failure.repeated_call"
+
+
+def _gate_rejection_request(name: str, call_id: str) -> Any:
+    return ToolCallRequest(
+        tool_call={"name": name, "id": call_id, "args": {}, "type": "tool_call"},
+        tool=None,
+        state={},
+        runtime=None,  # type: ignore[arg-type]
+    )
+
+
+def _gate_rejection(request: Any) -> ToolMessage:
+    return ToolMessage(
+        content=(
+            "execution.decision_required: record execution_decision "
+            "before operational tools"
+        ),
+        tool_call_id=request.tool_call["id"],
+        status="error",
+    )
+
+
+def test_rejected_calls_do_not_accumulate_the_repeated_call_window() -> None:
+    middleware = RuntimeActivityMiddleware(
+        model_name="m", emit=lambda *_args: None, redactor=None
+    )
+    for index in range(3):
+        middleware.wrap_tool_call(
+            _gate_rejection_request("read_file", f"call-{index}"), _gate_rejection
+        )
+    # Each gate rejection discarded the window: the rejected calls are failure
+    # repetitions (decision exhaustion), not completed no-op repetitions.
+    assert middleware.monitor.observe_call("read_file", {"path": "a"}) is None
+    assert middleware.monitor.observe_call("read_file", {"path": "a"}) is None
+    assert middleware.monitor.observe_call("read_file", {"path": "a"}) == (
+        "failure.repeated_call"
+    )

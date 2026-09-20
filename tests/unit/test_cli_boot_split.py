@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from argparse import Namespace
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -12,6 +13,19 @@ from skail.cli.main import main
 from skail.config.models import SkailConfig
 from skail.tui.app import ACTION_REGISTRY, SkailApp
 from skail.tui.onboarding import NON_TTY_USAGE_ERROR
+
+
+@pytest.fixture(autouse=True)
+def isolate_cli_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # These tests call main() in-process; the CLI resolves its workspace via
+    # Path.cwd() (src/skail/cli/main.py:440) and creates approvals/questions
+    # stores under workspace/.skail (main.py:547-548). Keep that inside tmp.
+    home = tmp_path / "home"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("APPDATA", str(home / "AppData"))
+    monkeypatch.setenv("LOCALAPPDATA", str(home / "AppData" / "Local"))
+    monkeypatch.setenv("HOME", str(home))
 
 
 class _FakeJournal:
