@@ -330,8 +330,11 @@ Validate and use the exact model. If it cannot satisfy a required capability, re
 For LLM Gateway, the authenticated `GET /v1/models?exclude_deprecated=true` response is the
 runtime model and pricing source. Prompt, completion, and input cache-read prices remain exact
 `Decimal` values normalized to per-million-token fields; retrieval time and endpoint provenance
-are retained. A bounded stale cache is displayable for offline recovery but cannot authorize a
-hard-budget route.
+are retained. The validated local snapshot lives at `~/.skail/catalog/llmgateway.json` and is
+atomically replaced after a successful refresh. A transient refresh failure may use that snapshot;
+authentication, malformed-response, and successful-empty-access failures do not silently fall back.
+Unknown, malformed, or stale prices cannot authorize a hard-budget route. A discovered model without
+trusted quality capability evidence remains manual-only but is executable after explicit selection.
 
 ### Merge order
 
@@ -366,7 +369,9 @@ LLM Gateway is first-class. Skail uses its OpenAI-compatible `/v1` endpoint, mod
 
 ### DevPass
 
-DevPass is retained through the same explicit OpenAI-compatible adapter shape and its own base URL/configuration. It does not share hardcoded credentials or catalog identity with LLM Gateway.
+DevPass is retained through the same explicit OpenAI-compatible adapter shape and canonical gateway
+endpoint, with its own credential and catalog identity. It uses the shared authenticated model
+discovery contract while preserving the `devpass:` namespace.
 
 ### Other providers
 

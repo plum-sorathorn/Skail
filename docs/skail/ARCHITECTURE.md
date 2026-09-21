@@ -613,7 +613,7 @@ Provider adapters receive resolved credentials out-of-band. Events store provide
 - `~/.skail/skail.sqlite`: Skail-owned session, task, route, usage, approval, and event journal;
 - `~/.skail/config.toml`: user configuration;
 - `~/.skail/agents/` and `~/.skail/skills/`: user extensions;
-- `~/.skail/cache/`: model catalog and non-authoritative caches;
+- `~/.skail/catalog/`: validated provider model catalog snapshots and non-authoritative catalog cache;
 - `~/.skail/logs/`: scrubbed diagnostic logs under retention policy.
 
 Do not depend on undocumented checkpointer tables for product queries.

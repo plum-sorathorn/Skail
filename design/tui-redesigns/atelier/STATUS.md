@@ -50,3 +50,10 @@ The model picker consumes the authenticated provider catalog, renders a bounded 
 large catalogs, filters by provider/model, and preserves literal checked markers. The visual
 confirmation covered 120×40 and 88×30 dark frames, light and reduced-motion variants, empty,
 loading, error, approval, running/long-content, and a 300-model picker state.
+
+The runtime catalog follow-up adds an explicit `selection_required` state for discovered catalogs
+without evaluated automatic-routing evidence. The picker opens from that state, preserves queued
+composer prompts, and returns focus to the composer after selection. A bounded confirmation pass
+reran the live 120×40 and 80×40 captures after the catalog/startup changes; the existing ATELIER
+unit matrix continues to cover dark/light/reduced-motion, loading/empty/error/approval/running,
+long-content, and full-catalog picker rendering.
