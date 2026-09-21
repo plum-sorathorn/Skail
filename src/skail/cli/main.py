@@ -775,7 +775,7 @@ def _build_runtime_models(
             "or pass --fake-provider for deterministic offline execution.",
         )
 
-    if selected_provider == "llmgateway":
+    if selected_provider in {"llmgateway", "devpass"}:
         from skail.config.models import ProviderConfig
         from skail.config.paths import user_data_dir
         from skail.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
@@ -789,15 +789,24 @@ def _build_runtime_models(
             discovery_config = discovery_config.model_copy(
                 update={"models": ("__catalog_discovery__",)}
             )
-        discovery_adapter = LLMGatewayAdapter(
-            discovery_config,
-            api_key=resolved_cred.reveal(),
-        )
+        discovery_adapter: ProviderAdapter
+        if selected_provider == "devpass":
+            from skail.providers.devpass import DevPassAdapter
+
+            discovery_adapter = DevPassAdapter(
+                discovery_config,
+                api_key=resolved_cred.reveal(),
+            )
+        else:
+            discovery_adapter = LLMGatewayAdapter(
+                discovery_config,
+                api_key=resolved_cred.reveal(),
+            )
         configured_cache_path = getattr(args, "catalog_cache_path", None)
         cache_path = (
             Path(configured_cache_path)
             if configured_cache_path is not None
-            else user_data_dir() / "catalog" / "llmgateway.json"
+            else user_data_dir() / "catalog" / f"{selected_provider}.json"
         )
         catalog_endpoint = f"{LLMGATEWAY_BASE_URL}/models"
         catalog_query = {"exclude_deprecated": True}
@@ -810,17 +819,17 @@ def _build_runtime_models(
 
             if classified.kind not in {ProviderErrorKind.TRANSIENT, ProviderErrorKind.RATE_LIMIT}:
                 raise ProviderConfigurationError(
-                    "llmgateway",
+                    selected_provider,
                     classified.summary,
                 ) from exc
             cached_snapshot = load_catalog_snapshot(
                 cache_path,
-                provider="llmgateway",
+                provider=selected_provider,
                 endpoint=catalog_endpoint,
             )
             if cached_snapshot is None:
                 raise ProviderConfigurationError(
-                    "llmgateway",
+                    selected_provider,
                     "model discovery failed and no valid catalog cache is available",
                 ) from exc
             discovered_entries = cached_snapshot.entries
@@ -834,7 +843,7 @@ def _build_runtime_models(
             save_catalog_cache(
                 cache_path,
                 discovered_entries,
-                provider="llmgateway",
+                provider=selected_provider,
                 endpoint=catalog_endpoint,
                 query=catalog_query,
             )
