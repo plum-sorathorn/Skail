@@ -39,6 +39,25 @@ class RouteFailure(BaseModel):
     code: Literal["route.no_qualified_model"] = "route.no_qualified_model"
     excluded_counts: dict[str, int]
     binding_constraint: str | None
+    required_capability_floor: float | None = None
+    best_candidates: tuple[str, ...] = ()
+
+
+def describe_route_failure(failure: RouteFailure) -> str:
+    floor = (
+        f"{failure.required_capability_floor:.2f}"
+        if failure.required_capability_floor is not None
+        else "the lead hard requirements"
+    )
+    candidates = ", ".join(failure.best_candidates) or "none"
+    binding = failure.binding_constraint or "no candidate satisfied the hard requirements"
+    return (
+        "No capable lead model is available. "
+        f"Required capability floor: {floor}. Binding constraint: {binding}. "
+        f"Best available candidates: {candidates}. "
+        "Enable a qualified model or select one that meets the floor, then retry; "
+        "Skail will not silently weaken the lead requirements."
+    )
 
 
 def _capability_fit(profile: ModelProfile) -> float | None:
@@ -179,4 +198,70 @@ def select_model(
         excluded_counts=counts,
         binding_constraint=binding,
         ranking_reasons=(ranking,),
+    )
+
+
+def select_lead_model(
+    candidates: tuple[RouteCandidate, ...],
+    requirements: RoutingRequirements,
+    *,
+    available_budget_usd: Decimal | None = None,
+    manual_model: tuple[str, str] | None = None,
+) -> RouteSelection | RouteFailure:
+    """Select the strongest hard-qualified lead candidate with stable ties."""
+    effective = requirements
+    if manual_model is not None:
+        effective = requirements.model_copy(update={"mode": RoutingMode.MANUAL})
+    included: list[RouteCandidate] = []
+    excluded: Counter[str] = Counter()
+    for candidate in sorted(
+        candidates, key=lambda item: (item.profile.provider, item.profile.model)
+    ):
+        reason = _exclusion_reason(
+            candidate,
+            effective,
+            available_budget_usd=available_budget_usd,
+            manual_model=manual_model,
+        )
+        if reason is None:
+            included.append(candidate)
+        else:
+            excluded[reason] += 1
+    if not included:
+        available = sorted(
+            candidates,
+            key=lambda item: (
+                -(_capability_fit(item.profile) or 0.0),
+                item.profile.provider,
+                item.profile.model,
+            ),
+        )
+        return RouteFailure(
+            excluded_counts=dict(sorted(excluded.items())),
+            binding_constraint=(
+                min(excluded, key=lambda reason: (-excluded[reason], reason))
+                if excluded
+                else None
+            ),
+            required_capability_floor=requirements.capability_floor,
+            best_candidates=tuple(
+                f"{item.profile.provider}:{item.profile.model}" for item in available[:3]
+            ),
+        )
+
+    def rank(candidate: RouteCandidate) -> tuple[object, ...]:
+        profile = candidate.profile
+        capability = profile.capability
+        fit = _capability_fit(profile)
+        assert capability is not None and fit is not None
+        return (-fit, -capability.tool_reliability, profile.provider, profile.model)
+
+    chosen = min(included, key=rank)
+    return RouteSelection(
+        candidate=chosen,
+        capability_fit=_capability_fit(chosen.profile),
+        included_count=len(included),
+        excluded_counts=dict(sorted(excluded.items())),
+        binding_constraint=None,
+        ranking_reasons=("capability_fit,tool_reliability,stable_key",),
     )

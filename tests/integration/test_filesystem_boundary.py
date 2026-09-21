@@ -56,6 +56,20 @@ def test_write_records_task_tool_call_and_hashes(tmp_path: Path) -> None:
     assert second.after_hash != second.before_hash
 
 
+def test_boundary_lock_uses_explicit_global_state_without_creating_local_skail(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    state_dir = tmp_path / "global-state" / "workspaces" / "identity"
+    workspace.mkdir()
+    boundary = FilesystemBoundary(workspace, state_dir=state_dir)
+
+    boundary.write_text("a.txt", "content", task_id="task-1", tool_call_id="call-1")
+
+    assert (state_dir / "filesystem-boundary.lock").exists()
+    assert not (workspace / ".skail").exists()
+
+
 def test_deepagents_backend_enforces_sensitive_reads_and_records_writes(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()

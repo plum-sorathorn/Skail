@@ -19,6 +19,8 @@ from langchain_core.tools import tool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import interrupt
 
+from skail.config.paths import workspace_state_dir
+from skail.domain.security import identify_workspace
 from skail.domain.usage import NormalizedUsage
 from skail.runtime.deepagents_adapter import build_lead_agent
 from skail.runtime.failure_monitor import FailureMonitor
@@ -757,6 +759,7 @@ def build_default_agent(
     system_prompt: str | None = None,
     session_id: str = "",
     run_id: str = "",
+    state_dir: Path | None = None,
 ) -> Any:
     """Assemble pinned DeepAgents tools behind Skail's workspace and shell policy."""
 
@@ -765,7 +768,10 @@ def build_default_agent(
         raise ValueError(f"unknown tool profile: {profile}")
     policy = ExecutionPolicy(workspace, execution_context)
     redaction = redactor or RedactionRegistry()
-    artifacts = ArtifactStore(workspace / ".skail" / "artifacts", redaction)
+    artifacts = ArtifactStore(
+        (state_dir or workspace_state_dir(identify_workspace(workspace))) / "artifacts",
+        redaction,
+    )
 
     @tool("execute")
     def execute(command: str, arguments: tuple[str, ...] = ()) -> dict[str, Any]:
@@ -897,6 +903,7 @@ def build_default_agent(
             lease_manager=lease_manager,
             allowed_write_paths=allowed_write_paths,
             forbidden_host_paths=forbidden_host_paths,
+            state_dir=state_dir,
         ),
         skills=skills,
         memory=memory,

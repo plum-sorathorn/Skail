@@ -105,8 +105,7 @@ def test_cli_subprocess_does_not_write_runtime_state_to_checkout() -> None:
     result = run_cli("-p", "say hello", "--fake-provider")
 
     assert result.returncode == EXIT_OK
-    assert not (ROOT / ".skail").exists()
-    assert (CLI_WORKSPACE / ".skail").exists()
+    assert not (CLI_WORKSPACE / ".skail").exists()
     assert (CLI_HOME / ".skail").exists()
 
 

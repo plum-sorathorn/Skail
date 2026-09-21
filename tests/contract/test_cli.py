@@ -53,6 +53,12 @@ def test_fake_provider_smoke_is_offline_and_deterministic() -> None:
 
 
 def test_developer_smoke_script_uses_the_same_contract() -> None:
+    legacy_state = ROOT / ".skail"
+    before = (
+        tuple(sorted(path.name for path in legacy_state.iterdir()))
+        if legacy_state.is_dir()
+        else ()
+    )
     result = subprocess.run(
         [sys.executable, ROOT / "scripts" / "smoke.py", "--fake-provider"],
         cwd=CLI_WORKSPACE,
@@ -62,7 +68,12 @@ def test_developer_smoke_script_uses_the_same_contract() -> None:
     assert result.returncode == 0
     assert result.stdout.strip() == "Skail fake-provider smoke: ok"
     assert result.stderr == ""
-    assert not (ROOT / ".skail").exists()
+    after = (
+        tuple(sorted(path.name for path in legacy_state.iterdir()))
+        if legacy_state.is_dir()
+        else ()
+    )
+    assert after == before
 
 
 def test_installed_console_script_exposes_help_and_version() -> None:

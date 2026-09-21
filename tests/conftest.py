@@ -14,9 +14,18 @@ def reject_release_test_runtime_state() -> Iterator[None]:
         return
     root = Path(__file__).resolve().parents[1]
     runtime_dir = root / ".skail"
-    assert not runtime_dir.exists(), f"release test created runtime state before {runtime_dir}"
+    before = (
+        tuple(sorted(path.relative_to(runtime_dir).as_posix() for path in runtime_dir.rglob("*")))
+        if runtime_dir.is_dir()
+        else ()
+    )
     yield
-    assert not runtime_dir.exists(), f"release test created runtime state at {runtime_dir}"
+    after = (
+        tuple(sorted(path.relative_to(runtime_dir).as_posix() for path in runtime_dir.rglob("*")))
+        if runtime_dir.is_dir()
+        else ()
+    )
+    assert after == before, f"release test changed runtime state at {runtime_dir}"
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

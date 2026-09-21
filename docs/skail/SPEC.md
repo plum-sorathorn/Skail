@@ -386,6 +386,19 @@ Safety denials and missing user authority produce `blocked`, not `failed`, and d
 - Local telemetry is enabled; external telemetry and LangSmith tracing are disabled unless explicitly configured.
 - Credentials never appear in checkpoints, event payloads, prompts, or exports.
 
+### 12.1 Global state and root instructions
+
+Skail creates one physical `.skail` directory per user at `~/.skail`. Workspace-scoped state is
+namespaced below `~/.skail/workspaces/<canonical-workspace-identity>/`; repositories and isolated
+worktrees do not receive runtime `.skail` directories. Legacy local state may be imported
+non-destructively and idempotently, with a redacted migration receipt and no automatic deletion.
+
+Before each lead or child attempt, context assembly appends applicable root instructions in this
+order: built-in Skail rules, `~/.skail/AGENTS.md`, then trusted `<workspace>/AGENTS.md`. Components
+are bounded, secret-redacted, source-labelled, revision-hashed, and pinned for the attempt. A
+workspace file found in an untrusted project is reported as ignored. These instructions cannot
+relax code-owned safety, approval, permission, budget, concurrency, or filesystem boundaries.
+
 ## 13. Terminal experience
 
 The default screen prioritizes the conversation rather than a configuration dashboard:
@@ -455,11 +468,15 @@ With no prompt in a terminal, `skail` starts interactive mode. Print mode emits 
 Precedence, highest first:
 
 1. CLI flags and explicit current-session changes.
-2. Trusted project `.skail/config.toml`.
+2. Trusted workspace configuration in the global workspace namespace.
 3. User `~/.skail/config.toml`.
 4. Built-in defaults.
 
 Secrets are resolved from environment variables or an OS credential store. Project configuration may reference a secret's environment-variable name but may not contain the secret value.
+
+Onboarding choices are device-global and versioned. Credential resolution is explicit environment
+variable, OS credential store, then interactive entry; interactive values are never persisted in
+Skail files, logs, checkpoints, exports, screenshots, or test evidence.
 
 Illustrative configuration:
 
@@ -645,3 +662,5 @@ Neither engineering readiness nor a release tag proves a broad savings claim.
 5. Target Python 3.12+. Pin the exact DeepAgents/LangGraph compatibility range only after Phase 1 contract spikes verify it.
 6. Use the adaptive execution and release boundaries accepted in
    [ADR 0006](../decisions/0006-adaptive-execution-and-release-boundaries.md).
+7. Use the global-state and instruction-precedence contract accepted in
+   [ADR 0007](../decisions/0007-global-state-and-instruction-precedence.md).

@@ -650,8 +650,40 @@ def test_mixed_usage_authority_settles_as_estimated_actual(
     settler.settle_attempt(str(assignment.assignment_id))
 
     usage = journal.get_session_snapshot(str(SESSION_ID)).usage_records[0]
-    assert usage.amount_usd == Decimal("0.20")
+    assert usage.amount_usd == Decimal("0.04")
     assert usage.authoritative is False
+
+
+def test_short_hi_call_settles_from_measured_tokens_and_frozen_prices(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service, journal = _service(tmp_path, limit="1.00")
+    assignment = service.assign(
+        _request(), lambda: _snapshot(_candidate(cost="0.30"))
+    )
+    assert not isinstance(assignment, RouteFailure)
+    adapter = FakeProviderAdapter()
+
+    def normalize(_response: object) -> NormalizedUsage:
+        return NormalizedUsage(
+            input_tokens=3_000,
+            output_tokens=1_500,
+            cost_usd=None,
+            authority=UsageAuthority.TOKEN_DERIVED_ESTIMATE,
+        )
+
+    monkeypatch.setattr(adapter, "normalize_usage", normalize)
+    settler = AssignmentUsageSettler(journal, service.ledger, {"fake": adapter})
+    call_id = settler.begin_call(str(assignment.assignment_id))
+    settler.record_call(
+        str(assignment.assignment_id), adapter.model.invoke("hi"), call_id=call_id
+    )
+    settler.settle_attempt(str(assignment.assignment_id))
+
+    usage = journal.get_session_snapshot(str(SESSION_ID)).usage_records[0]
+    assert usage.amount_usd == Decimal("0.006000")
+    assert usage.authoritative is False
+    assert usage.authority == "token_derived_estimate"
 
 
 def test_restart_allocates_next_call_without_collision(tmp_path: Path) -> None:

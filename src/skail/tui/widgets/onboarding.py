@@ -147,7 +147,11 @@ class OnboardingPanel(Static):
 
     def _theme_copy(self) -> str:
         lines = ["THEME", ""]
-        for option in ("dark", "light", "system"):
+        for option in (
+            "pistachio-night",
+            "pistachio-paper",
+            "mint-porcelain",
+        ):
             marker = "●" if option == self.onboarding.theme else " "
             lines.append(f"{marker} {option.capitalize()}")
         lines.append("")
@@ -245,7 +249,7 @@ class OnboardingPanel(Static):
             self.onboarding.provider = options[new_idx]
             self.refresh_step()
         elif self.onboarding.step == "theme":
-            themes = ("dark", "light", "system")
+            themes = ("pistachio-night", "pistachio-paper", "mint-porcelain")
             try:
                 idx = themes.index(self.onboarding.theme)
             except ValueError:

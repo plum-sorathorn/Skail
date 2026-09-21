@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from decimal import Decimal
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -75,11 +74,14 @@ class LangChainUsageAdapter:
         metadata = getattr(response, "usage_metadata", None)
         if not isinstance(metadata, dict):
             return None
+        details = metadata.get("input_token_details", {})
+        cached_tokens = int(details.get("cache_read", 0)) if isinstance(details, dict) else 0
         return NormalizedUsage(
             input_tokens=int(metadata.get("input_tokens", 0)),
             output_tokens=int(metadata.get("output_tokens", 0)),
-            cost_usd=Decimal("0"),
-            authority=UsageAuthority.ESTIMATED_ACTUAL,
+            cached_input_tokens=cached_tokens,
+            cost_usd=None,
+            authority=UsageAuthority.TOKEN_DERIVED_ESTIMATE,
         )
 
     def classify_error(self, error: Exception) -> ProviderError:

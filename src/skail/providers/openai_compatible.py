@@ -266,19 +266,28 @@ class OpenAICompatibleAdapter:
         if response.usage_metadata is None:
             return None
         raw_cost = response.response_metadata.get("skail_cost_usd")
-        if raw_cost is None:
-            return None
-        try:
-            cost_usd = Decimal(str(raw_cost))
-        except (ArithmeticError, TypeError, ValueError):
-            return None
-        if not cost_usd.is_finite() or cost_usd < 0:
-            return None
+        cost_usd: Decimal | None = None
+        if raw_cost is not None:
+            try:
+                cost_usd = Decimal(str(raw_cost))
+            except (ArithmeticError, TypeError, ValueError):
+                return None
+            if not cost_usd.is_finite() or cost_usd < 0:
+                return None
         return NormalizedUsage(
             input_tokens=response.usage_metadata["input_tokens"],
             output_tokens=response.usage_metadata["output_tokens"],
+            cached_input_tokens=int(
+                response.usage_metadata.get("input_token_details", {}).get("cache_read", 0)
+            )
+            if isinstance(response.usage_metadata.get("input_token_details"), Mapping)
+            else 0,
             cost_usd=cost_usd,
-            authority=UsageAuthority.AUTHORITATIVE_ACTUAL,
+            authority=(
+                UsageAuthority.AUTHORITATIVE_ACTUAL
+                if cost_usd is not None
+                else UsageAuthority.TOKEN_DERIVED_ESTIMATE
+            ),
         )
 
     def classify_error(self, error: Exception) -> ProviderError:

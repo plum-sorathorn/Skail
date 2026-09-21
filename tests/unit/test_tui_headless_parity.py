@@ -17,8 +17,7 @@ from skail.tui.onboarding import NON_TTY_USAGE_ERROR
 @pytest.fixture(autouse=True)
 def isolate_cli_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # These tests call main() in-process; the CLI resolves its workspace via
-    # Path.cwd() (src/skail/cli/main.py:440) and creates approvals/questions
-    # stores under workspace/.skail (main.py:547-548). Keep that inside tmp.
+    # Path.cwd() and stores workspace state below the injected user root.
     home = tmp_path / "home"
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("USERPROFILE", str(home))

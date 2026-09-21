@@ -82,6 +82,57 @@ async def test_lead_completes_direct_coding_flow_without_delegation(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+async def test_no_qualified_lead_returns_actionable_result_without_calling_provider(
+    tmp_path: Path,
+) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="No lead", created_at=datetime.now(UTC)
+    )
+    weak = ModelProfile(
+        provider="fake",
+        model="weak-lead",
+        input_usd_per_million=Decimal("1"),
+        output_usd_per_million=Decimal("2"),
+        context_tokens=32_000,
+        max_output_tokens=4_000,
+        supports_tools=True,
+        supports_structured_output=False,
+        capability=CapabilityVector(
+            coding=0.5, reasoning=0.5, tool_reliability=0.5, latency=0.5
+        ),
+        auto_eligible=True,
+    )
+    model = ScriptedChatModel(responses=[AIMessage(content="must not run")])
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"weak-lead": model},
+        default_lead_model="weak-lead",
+        candidates_fn=lambda: RoutingSnapshot(
+            catalog_revision="catalog-v1",
+            config_revision=config_revision({"routing": {"mode": "auto"}}),
+            health_revision="health-v1",
+            candidates=(
+                RouteCandidate(
+                    profile=weak,
+                    estimated_cost_usd=Decimal("0.10"),
+                ),
+            ),
+        ),
+    )
+
+    result = await controller.run_instruction("answer hi")
+
+    assert result.status == "blocked"
+    assert "No capable lead model is available" in result.output
+    assert "Required capability floor" in result.output
+    assert not model.calls
+
+
+@pytest.mark.asyncio
 async def test_planned_decision_is_persisted_before_the_lead_continues(tmp_path: Path) -> None:
     journal = _journal(tmp_path)
     session_id = new_session_id()

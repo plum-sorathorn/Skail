@@ -90,7 +90,38 @@ promptly with a model-selection diagnostic instead of waiting indefinitely.
 ### `skail smoke`
 - `skail smoke --fake-provider`: Offline deterministic package smoke verification.
 
-## 5. Security and Removed Architecture
+## 5. Global State, Themes, and Live Validation
+
+Normal operation creates one Skail state root at `~/.skail`. Workspace configuration, approvals,
+questions, artifacts, and locks are namespaced below that root; `skail config path` reports those
+resolved paths. A repository-local `.skail` directory is legacy input only and is never created by
+the CLI. Recognized legacy files are imported non-destructively and idempotently.
+
+Onboarding choices are device-global and non-secret. Provider credentials resolve from an explicit
+environment variable, then the OS credential store, then secure interactive entry. If secure
+storage is unavailable, set the named environment variable; Skail never writes a key to TOML,
+JSON, SQLite, logs, screenshots, or exported sessions. Project trust remains workspace-specific.
+
+The picker is keyboard-only: printable input filters, Up/Down moves, Enter selects, Ctrl+Space
+toggles the highlighted model, Ctrl+Shift+A toggles the filtered set, and Escape closes. Available
+themes are Dark, Light, System, Pistachio Night, Pistachio Paper, and Mint Porcelain; preview is
+temporary until Enter commits it.
+
+Budget output distinguishes provider-authoritative actual, token-derived estimate, conservative
+estimate, unknown cost, and reserved amount. Token-derived amounts use prices frozen on the
+assignment and are not replaced by the full preflight reservation.
+
+Provider-live validation is explicit and bounded:
+
+```powershell
+python scripts\live_check.py --max-cost-usd 1.00
+```
+
+The runner reads only allowlisted credential names from the repository `.env`, injects them into an
+isolated child process, redacts diagnostics, and writes evidence only below ignored
+`out/live-validation/`. It never falls back to fake execution.
+
+## 6. Security and Removed Architecture
 
 Skail is a native multi-agent harness that interacts directly with provider APIs. It does not run background daemons, HTTP proxy servers, or sidecar classifiers.
 

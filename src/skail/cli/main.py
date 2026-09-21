@@ -26,6 +26,8 @@ from skail.cli.render import (
     render_print_stdout,
 )
 from skail.config.loader import ConfigValidationError, load_config
+from skail.config.migration import StateMigrationError, migrate_legacy_workspace_state
+from skail.config.onboarding import onboarding_path
 from skail.config.paths import (
     default_checkpoints_path,
     default_journal_path,
@@ -33,6 +35,7 @@ from skail.config.paths import (
     sessions_dir,
     user_config_path,
     user_data_dir,
+    workspace_state_path,
 )
 from skail.config.trust import ProjectTrustStore
 from skail.domain.ids import SessionId, new_invocation_id, new_run_id
@@ -51,7 +54,7 @@ if TYPE_CHECKING:
     from skail.providers.catalog_sources import CatalogEntry
     from skail.providers.models import ModelProfile
     from skail.routing.assignment import RoutingSnapshot
-    from skail.routing.selector import RouteCandidate
+    from skail.routing.selector import RouteCandidate, RouteFailure
     from skail.sessions.checkpoints import CheckpointStore
     from skail.sessions.journal import Journal
 
@@ -71,6 +74,7 @@ class RuntimeModelSet:
     redaction: RedactionRegistry | None = None
     candidates: tuple[RouteCandidate, ...] = ()
     selection_required: bool = False
+    lead_failure: RouteFailure | None = None
     catalog_degraded: bool = False
 
     def __iter__(self) -> Iterator[Any]:
@@ -472,6 +476,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     workspace = Path.cwd()
 
     identity = identify_workspace(workspace)
+    try:
+        migrate_legacy_workspace_state(identity, workspace)
+    except (OSError, StateMigrationError) as exc:
+        render_print_stderr(f"Configuration error: cannot migrate legacy state: {exc}")
+        return EXIT_USAGE
     trust_store = ProjectTrustStore(user_data_dir() / "trust.sqlite")
     trusted = trust_store.assess(identity).level is ProjectTrustLevel.TRUSTED
     cli_overrides: dict[str, Any] = {}
@@ -576,8 +585,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             render_print_stderr(NON_TTY_USAGE_ERROR)
             return EXIT_FAILURE
 
-    approvals = ApprovalStore(workspace / ".skail" / "approvals.sqlite")
-    question_store = QuestionStore(workspace / ".skail" / "questions.sqlite")
+    approvals = ApprovalStore(workspace_state_path(identity, "approvals.sqlite"))
+    question_store = QuestionStore(workspace_state_path(identity, "questions.sqlite"))
 
     # 8. Interactive TUI execution: mount shell first, build runtime lazily.
     if interactive_tty:
@@ -603,6 +612,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 for provider in resolved_config.config.providers.values()
                 if provider.api_key_env
             ),
+            "onboarding_path": str(onboarding_path()),
         }
         app = SkailApp(
             session_service=session_service,
@@ -879,8 +889,6 @@ def _build_runtime_models(
                 "no discovered model has trusted capability and pricing evidence "
                 "for automatic routing",
             )
-        elif eligible:
-            lead_model_name = f"{selected_provider}:{eligible[0].model}"
     child_model_name = lead_model_name
 
     models_dict: dict[str, Any] = {}
@@ -901,11 +909,16 @@ def _build_runtime_models(
                 selected_provider,
                 "no accessible models are present in the provider catalog",
             )
-        actual_model = (
+        requested_model = (
             lead_model_name.split(":", 1)[-1]
             if lead_model_name != "auto"
-            else catalog_profiles[0].model
+            else None
         )
+        actual_model = requested_model or catalog_profiles[0].model
+        if requested_model is not None and not any(
+            profile.model == requested_model for profile in catalog_profiles
+        ):
+            actual_model = catalog_profiles[0].model
         cfg = selected_config or ProviderConfig(
             type="openai-compatible",
             base_url=LLMGATEWAY_BASE_URL,
@@ -982,13 +995,54 @@ def _build_runtime_models(
             ) from exc
         models_dict[f"{selected_provider}:{actual_model}"] = chat_model
 
-    if args.default_model is None and lead_model_name != "auto":
-        child_model_name = f"{selected_provider}:{actual_model}"
-        lead_model_name = f"{selected_provider}:{actual_model}"
-
-    selection_required = lead_model_name == "auto" and not any(
-        candidate.profile.auto_eligible for candidate in candidates
+    candidate_tuple = (
+        candidates
+        if selected_provider in {"llmgateway", "devpass"}
+        else (
+            _route_candidate(
+                profile,
+                hard_budget=args.budget is not None,
+                enabled=(
+                    catalog.price_is_current(profile)
+                    if args.budget is not None
+                    else None
+                ),
+            ),
+        )
     )
+    from skail.agents.profiles import builtin_profiles
+    from skail.routing.requirements import RequirementBuilder, TaskRisk
+    from skail.routing.selector import RouteFailure, select_lead_model
+
+    lead_profile = builtin_profiles()["lead"]
+    lead_requirements = RequirementBuilder().build(
+        role="lead",
+        risk=TaskRisk.ROUTINE,
+        mode=RoutingMode.AUTO,
+        role_hard_min=lead_profile.role_floor,
+        required_tools=True,
+        required_structured_output=True,
+    )
+    manual_model = None
+    if ":" in lead_model_name and lead_model_name != "auto":
+        manual_provider, manual_name = lead_model_name.split(":", 1)
+        manual_model = (manual_provider, manual_name)
+    selection = select_lead_model(
+        candidate_tuple,
+        lead_requirements,
+        available_budget_usd=(
+            Decimal(str(args.budget)) if args.budget is not None else None
+        ),
+        manual_model=manual_model,
+    )
+    lead_failure = selection if isinstance(selection, RouteFailure) else None
+    if lead_failure is None:
+        assert not isinstance(selection, RouteFailure)
+        chosen = selection.candidate.profile
+        lead_model_name = f"{chosen.provider}:{chosen.model}"
+        if args.default_model is None:
+            child_model_name = lead_model_name
+    selection_required = lead_failure is not None
 
     return RuntimeModelSet(
         models_dict,
@@ -998,22 +1052,9 @@ def _build_runtime_models(
         catalog=catalog,
         config=config,
         redaction=redaction,
-        candidates=(
-            candidates
-            if selected_provider in {"llmgateway", "devpass"}
-            else (
-                _route_candidate(
-                    profile,
-                    hard_budget=args.budget is not None,
-                    enabled=(
-                        catalog.price_is_current(profile)
-                        if args.budget is not None
-                        else None
-                    ),
-                ),
-            )
-        ),
+        candidates=candidate_tuple,
         selection_required=selection_required,
+        lead_failure=lead_failure,
         catalog_degraded=degraded_catalog,
     )
 
@@ -1040,9 +1081,13 @@ async def _execute_instruction(
             args, redaction, prompt
         )
         if runtime_models.selection_required:
+            from skail.routing.selector import describe_route_failure
+
+            failure = runtime_models.lead_failure
             render_print_stderr(
-                "Model selection required: pass --model PROVIDER:MODEL "
-                "or run interactive skail and choose a discovered model."
+                describe_route_failure(failure)
+                if failure is not None
+                else "No capable lead model is available. Select a qualified model and retry."
             )
             return EXIT_FAILURE
         assert runtime_models.catalog is not None

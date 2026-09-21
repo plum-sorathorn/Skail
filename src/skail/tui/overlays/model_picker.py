@@ -1,15 +1,14 @@
-"""Model picker: configured models only; future attempts only."""
+"""Keyboard-only model picker with a bounded, non-scrollable viewport."""
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 try:
-    from textual.containers import VerticalScroll
+    from textual.binding import Binding
     from textual.screen import Screen
 except Exception:  # pragma: no cover
     Screen = object  # type: ignore[assignment,misc]
-    VerticalScroll = object  # type: ignore[assignment,misc]
 
 from skail.tui.overlays.shell import OVERLAY_CSS, ovl_foot, ovl_head, ovl_rule_strong
 
@@ -18,7 +17,7 @@ MODEL_FOOT = (
     "Automatic routing still requires trusted capability evidence. "
     "Future attempts only; the active attempt keeps its assigned model."
 )
-MAX_RENDERED_ROWS = 40
+DEFAULT_VIEWPORT_ROWS = 8
 
 
 def _app_for(host: object) -> Any:
@@ -48,9 +47,13 @@ def model_rows(
 
 
 class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
-    """Enter selects for FUTURE attempts via ``set_future_model``."""
+    """Keep the filter focused while typing, navigating, toggling, and selecting."""
 
     DEFAULT_CSS = OVERLAY_CSS
+    BINDINGS = [
+        Binding("ctrl+space", "toggle_selected", show=False, priority=True),
+        Binding("ctrl+shift+a", "toggle_filtered", show=False, priority=True),
+    ]
 
     def __init__(
         self,
@@ -69,6 +72,7 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
         self._rendered_models: list[str] = []
         self.window_start = 0
         self.index = 0
+        self.viewport_rows = DEFAULT_VIEWPORT_ROWS
         for i, name in enumerate(self.models):
             if name == current:
                 self.index = i
@@ -78,11 +82,15 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
         if not self.models:
             return ["[dim]No configured models[/dim]"]
         visible = self.visible_models()
-        rows = model_rows(visible, self.current, self.enabled, self.index)
-        return [f"{row}{self._detail_suffix(name)}" for row, name in zip(rows, visible)]
+        return [
+            f"{row}{self._detail_suffix(name)}"
+            for row, name in zip(
+                model_rows(visible, self.current, self.enabled, self.index), visible
+            )
+        ]
 
     def visible_models(self) -> list[str]:
-        needle = self.filter_text.strip().lower()
+        needle = self.filter_text.lower()
         if not needle:
             return list(self.models)
         return [
@@ -105,13 +113,19 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
         visible = self.visible_models()
         if visible:
             self.index = (self.index + delta) % len(visible)
-            self.window_start = min(
-                max(0, self.index - MAX_RENDERED_ROWS + 1),
-                max(0, len(visible) - MAX_RENDERED_ROWS),
-            )
+            self._ensure_highlight_visible(len(visible))
+
+    def _ensure_highlight_visible(self, visible_count: int) -> None:
+        if self.index < self.window_start:
+            self.window_start = self.index
+        elif self.index >= self.window_start + self.viewport_rows:
+            self.window_start = self.index - self.viewport_rows + 1
+        self.window_start = min(
+            max(0, self.window_start),
+            max(0, visible_count - self.viewport_rows),
+        )
 
     def toggle_tick(self) -> None:
-        """Toggle tick for the currently highlighted model."""
         visible = self.visible_models()
         if visible:
             target = visible[self.index % len(visible)]
@@ -121,7 +135,6 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
                 self.enabled.add(target)
 
     def toggle_all(self) -> None:
-        """Toggle all models between enabled and disabled."""
         visible = self.visible_models()
         if visible:
             if set(visible).issubset(self.enabled):
@@ -129,10 +142,27 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
             else:
                 self.enabled.update(visible)
 
+    def action_toggle_selected(self) -> None:
+        self.toggle_tick()
+        self._refresh_rows(force=True)
+
+    def action_toggle_filtered(self) -> None:
+        self.toggle_all()
+        self._refresh_rows(force=True)
+
+    def key_ctrl_space(self, event: Any) -> None:
+        self.action_toggle_selected()
+        event.stop()
+
+    def key_ctrl_at(self, event: Any) -> None:
+        self.action_toggle_selected()
+        event.stop()
+
+    def key_ctrl_shift_a(self, event: Any) -> None:
+        self.action_toggle_filtered()
+        event.stop()
+
     def commit(self) -> str | None:
-        """Select for future attempts; never mutates the active attempt."""
-        if not self.models:
-            return None
         visible = self.visible_models()
         if not visible:
             return None
@@ -164,19 +194,23 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
             from rich.text import Text
             from textual.widgets import Static
 
-            container = self.query_one("#model-list", VerticalScroll)
             visible = self.visible_models()
             if not force and visible == self._rendered_models:
                 return
-            new_rows = self.rows()[
-                self.window_start : self.window_start + MAX_RENDERED_ROWS
-            ]
-            row_widgets = cast(list[Static], list(container.query(".model-row")))
-            content = Text("\n".join(new_rows))
-            if row_widgets:
-                row_widgets[0].update(content)
+            self._ensure_highlight_visible(len(visible))
+            if not self.models:
+                lines = self.rows()
+            elif not visible:
+                lines = ["[dim]No matching models[/dim]"]
             else:
-                container.mount(Static(content, classes="model-row", id="model-row-0"))
+                rows = self.rows()[
+                    self.window_start : self.window_start + self.viewport_rows
+                ]
+                hidden_above = f"↑ {self.window_start} more" if self.window_start else ""
+                hidden_count = max(0, len(visible) - self.window_start - len(rows))
+                hidden_below = f"↓ {hidden_count} more" if hidden_count else ""
+                lines = [line for line in (hidden_above, *rows, hidden_below) if line]
+            self.query_one("#model-list", Static).update(Text("\n".join(lines)))
             self._rendered_models = visible
         except Exception:
             pass
@@ -186,19 +220,29 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
             from rich.text import Text
             from textual.widgets import Input, Static
 
+            class FilterInput(Input):
+                async def _on_key(self, event: Any) -> None:
+                    key = getattr(event, "key", "")
+                    screen = getattr(self, "screen", None)
+                    if key in ("ctrl+space", "ctrl+@") and screen is not None:
+                        screen.action_toggle_selected()
+                        event.stop()
+                        event.prevent_default()
+                        return
+                    if key in ("ctrl+a", "ctrl+shift+a", "ctrl+shift+at") and screen is not None:
+                        screen.action_toggle_filtered()
+                        event.stop()
+                        event.prevent_default()
+                        return
+                    await super()._on_key(event)
+
             yield ovl_head(
                 "MODEL SELECTION",
-                hint="space: tick \u00b7 a: all \u00b7 enter: select \u00b7 esc closes",
+                hint="↑/↓ move · ctrl+space tick · ctrl+shift+a all · enter select · esc closes",
             )
-
             yield ovl_rule_strong()
-            yield Input(placeholder="Filter model or provider", id="model-search")
-            with VerticalScroll(id="model-list"):
-                yield Static(
-                    Text("\n".join(self.rows()[:MAX_RENDERED_ROWS])),
-                    classes="model-row",
-                    id="model-row-0",
-                )
+            yield FilterInput(placeholder="Filter model or provider", id="model-search")
+            yield Static(Text("\n".join(self.rows())), id="model-list", classes="model-row")
             yield ovl_foot(MODEL_FOOT)
         except Exception:
             return
@@ -208,37 +252,23 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
         key = getattr(event, "key", "")
         if key == "escape":
             self.cancel()
-            try:
-                event.stop()
-            except Exception:
-                pass
         elif key == "enter":
             self.commit()
-            try:
-                event.stop()
-            except Exception:
-                pass
-        elif key in ("up", "down", "k", "j"):
-            self.move(-1 if key in ("up", "k") else 1)
+        elif key in ("up", "down"):
+            self.move(-1 if key == "up" else 1)
             self._refresh_rows(force=True)
-            try:
-                event.stop()
-            except Exception:
-                pass
-        elif key == "space":
+        elif key in ("ctrl+space", "ctrl+@"):
             self.toggle_tick()
             self._refresh_rows(force=True)
-            try:
-                event.stop()
-            except Exception:
-                pass
-        elif key == "a":
+        elif key in ("ctrl+a", "ctrl+shift+a", "ctrl+shift+at"):
             self.toggle_all()
             self._refresh_rows(force=True)
-            try:
-                event.stop()
-            except Exception:
-                pass
+        else:
+            return
+        try:
+            event.stop()
+        except Exception:
+            pass
 
     def on_input_changed(self, event: Any) -> None:
         if getattr(event.input, "id", None) != "model-search":
@@ -246,12 +276,20 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
         self.filter_text = str(event.value)
         self.index = 0
         self.window_start = 0
-        if len(self.filter_text) < 3:
-            return
-        self._refresh_rows()
+        self._refresh_rows(force=True)
 
     def on_mount(self) -> None:
         self._rendered_models = self.visible_models()
+        try:
+            self.viewport_rows = max(1, self.size.height - 7)
+            self.query_one("#model-search").focus()
+            self._refresh_rows(force=True)
+        except Exception:
+            pass
+
+    def on_resize(self, event: Any) -> None:
+        self.viewport_rows = max(1, event.size.height - 7)
+        self._refresh_rows(force=True)
 
 
-__all__ = ["MAX_RENDERED_ROWS", "MODEL_FOOT", "ModelPickerOverlay", "model_rows"]
+__all__ = ["DEFAULT_VIEWPORT_ROWS", "MODEL_FOOT", "ModelPickerOverlay", "model_rows"]

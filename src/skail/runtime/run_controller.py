@@ -24,6 +24,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.runnables import RunnableConfig
 
 from skail.agents.context import ContextAssembler, ContextComponent, ContextPacket
+from skail.agents.instructions import load_root_instructions
 from skail.agents.lead import LeadControls, build_production_lead
 from skail.agents.profile_loader import AgentProfile
 from skail.agents.profiles import builtin_profiles
@@ -33,6 +34,7 @@ from skail.agents.task_graph import (
     build_compiled_profile_subagent,
     decode_task_request,
 )
+from skail.config.paths import workspace_state_dir
 from skail.domain.changesets import ChangeSetStatus
 from skail.domain.decisions import ExecutionMode
 from skail.domain.events import (
@@ -67,6 +69,7 @@ from skail.domain.plans import (
     PlanRevision,
 )
 from skail.domain.routing import RoutingMode, TaskAssignment
+from skail.domain.security import ProjectTrustLevel, identify_workspace
 from skail.domain.tasks import (
     TERMINAL_TASK_STATUSES,
     ArtifactRef,
@@ -94,7 +97,7 @@ from skail.routing.assignment import (
 from skail.routing.budget import BudgetLedger
 from skail.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
 from skail.routing.requirements import RequirementBuilder, TaskRisk
-from skail.routing.selector import RouteCandidate, RouteFailure
+from skail.routing.selector import RouteCandidate, RouteFailure, describe_route_failure
 from skail.runtime.changeset_integration import ChangeSetIntegrator
 from skail.runtime.decisions import (
     ExecutionDecisionGate,
@@ -262,9 +265,15 @@ class RunController:
         project_trusted: bool = False,
         workspace_mode: str = "shared",
         workspace_manager: WorkspaceManager | None = None,
+        state_dir: Path | None = None,
     ) -> None:
         self.session_id = session_id
         self.workspace = workspace
+        self.state_dir = (
+            state_dir.resolve(strict=False)
+            if state_dir is not None
+            else workspace_state_dir(identify_workspace(workspace))
+        )
         self.journal = journal
         self.models = dict(models)
         self.default_lead_model = default_lead_model
@@ -297,7 +306,21 @@ class RunController:
         )
         self._requirements = RequirementBuilder()
         self.registry = task_registry or TaskRegistry()
-        self.assembler = context_assembler or ContextAssembler(redactor=self.redactor)
+        root_instructions = load_root_instructions(
+            workspace=self.workspace,
+            trust=(
+                ProjectTrustLevel.TRUSTED
+                if project_trusted
+                else ProjectTrustLevel.UNTRUSTED
+            ),
+            redactor=self.redaction,
+        )
+        self.assembler = context_assembler or ContextAssembler(
+            redactor=self.redactor,
+            base_references=root_instructions,
+        )
+        if context_assembler is not None:
+            self.assembler.base_references = root_instructions
         self.budget_limit_usd = budget_limit_usd
         self.child_assigner = child_assigner
         self.delegation_approval_check: Callable[[TaskSpec, AgentProfile], bool] | None = None
@@ -790,6 +813,7 @@ class RunController:
         lead_assignment: TaskAssignment,
         lead_task_id: TaskId,
         lead_attempt_id: AttemptId,
+        lead_context_packet: ContextPacket | None = None,
         restored_decision: Any | None = None,
     ) -> Any:
         delegation_approved = delegation_approved or controls.delegation == "auto"
@@ -940,6 +964,12 @@ class RunController:
             usage_normalizer=usage_normalizer,
             session_id=str(self.session_id),
             run_id=str(run_id),
+            state_dir=self.state_dir,
+            context_prompt=(
+                _format_context_packet(lead_context_packet)
+                if lead_context_packet is not None
+                else None
+            ),
         )
 
     def _resolve_planned_spec(self, description: str, profile: str) -> TaskSpec | None:
@@ -1908,7 +1938,11 @@ class RunController:
                     model=subject,
                     input_tokens=usage.input_tokens if usage is not None else None,
                     output_tokens=usage.output_tokens if usage is not None else None,
-                    cost_usd=float(usage.cost_usd) if usage is not None else None,
+                    cost_usd=(
+                        float(usage.cost_usd)
+                        if usage is not None and usage.cost_usd is not None
+                        else None
+                    ),
                     usage_authority=usage.authority.value if usage is not None else None,
                 )
             else:
@@ -2137,7 +2171,7 @@ class RunController:
                 run_id=run_id,
                 lead_assignment=None,
                 lead_context_packet=lead_context_packet,
-                output="",
+                output=describe_route_failure(assigned_lead),
                 messages=(),
                 status="blocked",
             )
@@ -2174,6 +2208,7 @@ class RunController:
             lead_assignment=lead_assignment,
             lead_task_id=lead_task_id,
             lead_attempt_id=lead_attempt_id,
+            lead_context_packet=lead_context_packet,
         )
 
         input_message = HumanMessage(content=instruction)
@@ -2789,6 +2824,7 @@ class RunController:
                 lead_assignment=pending.lead_assignment,
                 lead_task_id=pending.lead_task_id,
                 lead_attempt_id=pending.lead_attempt_id,
+                lead_context_packet=pending.lead_context_packet,
                 restored_decision=restored,
             )
             try:
@@ -3302,6 +3338,7 @@ class RunController:
                     and isolated_workspace is None
                 ),
                 forbidden_host_paths=(self.workspace,) if isolated_workspace is not None else (),
+                state_dir=self.state_dir,
             )
 
             formatted_prompt = _format_context_packet(packet)

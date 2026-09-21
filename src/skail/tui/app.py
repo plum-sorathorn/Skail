@@ -25,9 +25,19 @@ from textual.widgets import Input, Static, TabbedContent, TabPane
 
 from skail import __version__
 from skail.agents.lead import DelegationMode, LeadControls
+from skail.config.onboarding import (
+    OnboardingReceipt,
+    load_onboarding_receipt,
+    save_onboarding_receipt,
+)
 from skail.domain.events import EventEnvelope, UserPayload
 from skail.domain.ids import SessionId, new_event_id, new_run_id, new_session_id
 from skail.domain.routing import RoutingMode
+from skail.providers.credentials import (
+    CredentialStore,
+    CredentialStoreUnavailable,
+    KeyringCredentialStore,
+)
 from skail.runtime.interrupts import QuestionStore
 from skail.sessions.journal import SessionSnapshot
 from skail.sessions.service import SessionService
@@ -363,6 +373,8 @@ class SkailApp(App[int]):
         Binding("question_mark", "shortcuts_overlay", "Shortcuts (?)"),
         Binding("alt+t", "theme_picker", "Theme"),
         Binding("alt+p", "model_picker", "Model"),
+        Binding("ctrl+space", "model_picker_toggle", show=False, priority=True),
+        Binding("ctrl+shift+a", "model_picker_toggle_all", show=False, priority=True),
         Binding("shift+tab", "cycle_panels", "Cycle panels", priority=True),
         Binding("f1", "show_help", "Help"),
     ]
@@ -389,15 +401,28 @@ class SkailApp(App[int]):
         theme_name: ThemeName = "system",
         reduced_motion: bool | None = None,
     ) -> None:
-        self.current_theme_name: ThemeName = theme_name
-        if theme_name == "dark":
-            self.current_tokens: ThemeTokens = get_theme("dark")
-        elif theme_name == "light":
-            self.current_tokens = get_theme("light")
-        else:
+        self.bootstrap: dict[str, Any] = dict(bootstrap or {})
+        onboarding_path_value = self.bootstrap.get("onboarding_path")
+        try:
+            self.onboarding_receipt = (
+                load_onboarding_receipt(path=Path(onboarding_path_value))
+                if onboarding_path_value
+                else OnboardingReceipt()
+            )
+        except ValueError:
+            self.onboarding_receipt = OnboardingReceipt()
+        persisted_theme = (
+            self.onboarding_receipt.theme
+            if self.onboarding_receipt.completed
+            else theme_name
+        )
+        self.current_theme_name: ThemeName = persisted_theme  # type: ignore[assignment]
+        if persisted_theme == "system":
             self.current_tokens = resolve_system_theme(
                 detect_system_preference()
             )[0]
+        else:
+            self.current_tokens = get_theme(persisted_theme)  # type: ignore[arg-type]
         super().__init__()
         self.projection = projection or TuiProjection()
         self.background_supported = background_supported
@@ -411,7 +436,6 @@ class SkailApp(App[int]):
         self.delegation = delegation
         self.initial_snapshot = initial_snapshot
         self.runtime_factory = runtime_factory
-        self.bootstrap: dict[str, Any] = dict(bootstrap or {})
         self.journal = journal
         self.checkpoints = checkpoints
         self.redaction = redaction
@@ -423,9 +447,27 @@ class SkailApp(App[int]):
         self.app_state: AppState = "ready"
         self.startup_error: str | None = None
         self.onboarding_state = OnboardingState(
+            step=(
+                "ready"
+                if self.onboarding_receipt.completed
+                and bool(self.bootstrap.get("project_trusted", False))
+                else "trust"
+                if self.onboarding_receipt.completed
+                else "welcome"
+            ),
+            provider=(
+                self.onboarding_receipt.provider
+                if self.onboarding_receipt.completed
+                else str(self.bootstrap.get("provider", "llmgateway"))
+            ),
             workspace=str(self.bootstrap.get("workspace", "")),
             session_id=str(self.bootstrap.get("session_id", "")),
-            theme=theme_name,
+            theme=persisted_theme,
+        )
+        self._enabled_models: set[str] = (
+            set(self.onboarding_receipt.enabled_models)
+            if self.onboarding_receipt.completed
+            else set()
         )
         self.onboarding_credentials = BootstrapCredentials()
         self._previous_theme: str = self.onboarding_state.theme
@@ -436,7 +478,15 @@ class SkailApp(App[int]):
             self.controller.subscribe_events(self.apply_event)
             self.app_state = "ready"
         elif self.runtime_factory is not None:
-            if bool(self.bootstrap.get("fake_provider", False)):
+            if self.onboarding_receipt.completed and not bool(
+                self.bootstrap.get("project_trusted", False)
+            ):
+                self.app_state = "onboarding"
+            elif self.onboarding_receipt.completed and bool(
+                self.bootstrap.get("project_trusted", False)
+            ) and self._provider_credential_available():
+                self.app_state = "initializing"
+            elif bool(self.bootstrap.get("fake_provider", False)):
                 self.app_state = "initializing"
             elif has_env_credentials(
                 env_vars=tuple(self.bootstrap.get("credential_envs", ())) or None
@@ -618,12 +668,7 @@ class SkailApp(App[int]):
 
     def restore_theme(self) -> ThemeTokens:
         """Restore the previously committed theme (Escape in picker)."""
-        previous = self._previous_theme
-        if previous == "dark":
-            return self.apply_theme("dark")
-        if previous == "light":
-            return self.apply_theme("light")
-        return self.apply_theme("system")
+        return self.apply_theme(self._previous_theme)  # type: ignore[arg-type]
 
     # -- overlay stack scaffold ------------------------------------------
     def open_overlay(self, name: str) -> None:
@@ -732,8 +777,7 @@ class SkailApp(App[int]):
         self._append_system_message(
             "Choose a model" if selection_required else "Ready",
             (
-                "The discovered catalog has no evaluated automatic-routing candidate. "
-                "Choose a model for manual routing."
+                self._lead_failure_message(runtime_models)
                 if selection_required
                 else _READY_COPY
             ),
@@ -774,6 +818,15 @@ class SkailApp(App[int]):
         if self._pending_prompts:
             self._restore_composer_draft(self._pending_prompts[-1])
         self.update_views()
+
+    @staticmethod
+    def _lead_failure_message(runtime_models: Any) -> str:
+        failure = getattr(runtime_models, "lead_failure", None)
+        if failure is None:
+            return "Select an accessible lead model that meets the hard requirements."
+        from skail.routing.selector import describe_route_failure
+
+        return describe_route_failure(failure)
 
     def _restore_composer_draft(self, text: str) -> None:
         try:
@@ -940,6 +993,7 @@ class SkailApp(App[int]):
             self.onboarding_state.advance()
             self._refresh_onboarding_panel()
         elif step == "ready":
+            self._save_onboarding_receipt(completed=True)
             self._remove_onboarding_panel()
             self._start_runtime_worker()
 
@@ -984,22 +1038,67 @@ class SkailApp(App[int]):
         key = self.onboarding_credentials.reveal()
         self.onboarding_state.validating = False
         if len(key.strip()) >= 8:
-            self.onboarding_state.validation_error = None
-            self._inject_onboarding_key_into_env()
-            self.onboarding_state.advance()
+            if self._store_onboarding_key():
+                self.onboarding_state.validation_error = None
+                self.onboarding_state.advance()
         else:
             self.onboarding_state.validation_error = VALIDATION_FAILURE_COPY
         self._refresh_onboarding_panel()
         self.update_views()
 
-    def _inject_onboarding_key_into_env(self) -> None:
+    def _credential_store(self) -> CredentialStore:
+        configured = self.bootstrap.get("credential_store")
+        return configured if configured is not None else KeyringCredentialStore()
+
+    def _provider_credential_available(self) -> bool:
         import os
 
         provider = self.onboarding_state.provider
         env_var = _PROVIDER_ENV_VARS.get(provider)
+        if not env_var:
+            return provider == "fake"
+        if os.environ.get(env_var):
+            return True
+        try:
+            return bool(self._credential_store().get(provider, env_var))
+        except CredentialStoreUnavailable:
+            return False
+
+    def _store_onboarding_key(self) -> bool:
+        provider = self.onboarding_state.provider
+        env_var = _PROVIDER_ENV_VARS.get(provider)
         key = self.onboarding_credentials.reveal()
-        if env_var and key and not os.environ.get(env_var):
-            os.environ[env_var] = key
+        if not env_var or not key:
+            self.onboarding_state.validation_error = VALIDATION_FAILURE_COPY
+            return False
+        try:
+            self._credential_store().set(provider, env_var, key)
+        except CredentialStoreUnavailable:
+            self.onboarding_state.validation_error = (
+                f"Secure credential storage is unavailable. Set {env_var} in the environment, "
+                "then retry."
+            )
+            return False
+        return True
+
+    def _save_onboarding_receipt(self, *, completed: bool) -> None:
+        onboarding_path_value = self.bootstrap.get("onboarding_path")
+        if not onboarding_path_value:
+            return
+        selected = self.projection.model_for_future() or "auto"
+        enabled = tuple(sorted(getattr(self, "_enabled_models", set())))
+        receipt = OnboardingReceipt(
+            completed=completed,
+            provider=self.onboarding_state.provider,
+            selected_model=selected,
+            enabled_models=enabled,
+            theme=self.onboarding_state.theme,
+        )
+        save_onboarding_receipt(
+            receipt,
+            path=Path(onboarding_path_value) if onboarding_path_value else None,
+        )
+        self.onboarding_receipt = receipt
 
     # -- rendering --------------------------------------------------------
     def _render_status_strip(self) -> str:
@@ -1616,15 +1715,28 @@ class SkailApp(App[int]):
 
     # -- theme preview / future model (overlay hooks) ----------------------
     def apply_theme_preview(self, name: Any) -> Any:
-        """Live preview hook for the theme picker (commits immediately)."""
+        """Apply a live preview without persisting the selected theme."""
         normalized = str(name).strip().lower()
-        if normalized not in ("dark", "light", "system"):
+        if normalized not in (
+            "dark", "light", "system", "pistachio-night", "pistachio-paper", "mint-porcelain"
+        ):
             normalized = "dark"
         return self.apply_theme(normalized)  # type: ignore[arg-type]
+
+    def commit_theme(self, name: str) -> None:
+        normalized = name.strip().lower()
+        self.apply_theme_preview(normalized)
+        self.onboarding_state.theme = normalized
+        self._previous_theme = normalized
+        self._save_onboarding_receipt(completed=self.onboarding_receipt.completed)
 
     def set_future_model(self, name: str) -> None:
         """Select model for FUTURE attempts only; active attempt untouched."""
         self.projection.set_future_model(name)
+        if name != "auto" and self.controller is not None:
+            self.controller.default_lead_model = name
+        if name != "auto" and getattr(self, "runtime_models", None) is not None:
+            object.__setattr__(self.runtime_models, "lead_model", name)
         if name != "auto" and ":" in name and not name.startswith("fake:"):
             try:
                 from skail.config.persistence import save_user_routing_model
@@ -1635,6 +1747,7 @@ class SkailApp(App[int]):
                     "Config warning",
                     "Model selected for this session but could not be persisted.",
                 )
+        self._save_onboarding_receipt(completed=self.onboarding_receipt.completed)
         if self.app_state == "selection_required" and name != "auto":
             self.app_state = "ready"
             self._append_system_message("Ready", _READY_COPY)
@@ -1646,7 +1759,7 @@ class SkailApp(App[int]):
 
     def set_enabled_models(self, enabled_models: list[str]) -> None:
         """Apply ticked models to routing candidates and persist to config."""
-        self._enabled_models: set[str] = set(enabled_models)
+        self._enabled_models = set(enabled_models)
         if hasattr(self, "runtime_models") and self.runtime_models is not None:
             rm = self.runtime_models
             if hasattr(rm, "candidates") and rm.candidates:
@@ -1675,6 +1788,8 @@ class SkailApp(App[int]):
                 save_user_provider_models(provider, enabled_models)
             except Exception:
                 pass
+
+        self._save_onboarding_receipt(completed=self.onboarding_receipt.completed)
 
         count = len(enabled_models)
         summary = ", ".join(sorted(enabled_models)[:4])
@@ -1935,6 +2050,16 @@ class SkailApp(App[int]):
             )
         except Exception:
             pass
+
+    def action_model_picker_toggle(self) -> None:
+        overlay = self.screen_stack[-1] if self.screen_stack else None
+        if overlay is not None and hasattr(overlay, "action_toggle_selected"):
+            overlay.action_toggle_selected()
+
+    def action_model_picker_toggle_all(self) -> None:
+        overlay = self.screen_stack[-1] if self.screen_stack else None
+        if overlay is not None and hasattr(overlay, "action_toggle_filtered"):
+            overlay.action_toggle_filtered()
 
     def action_cycle_mode(self) -> None:
         """Cycle routing mode between Quality, Economy, and Manual."""

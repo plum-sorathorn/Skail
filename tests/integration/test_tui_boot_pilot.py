@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from skail.config.onboarding import OnboardingReceipt, save_onboarding_receipt
 from skail.tui.app import SkailApp
 from skail.tui.widgets.onboarding import OnboardingPanel
 
@@ -28,6 +29,37 @@ async def test_no_credential_boot_mounts_onboarding(
         panels = app.query(OnboardingPanel)
         assert len(panels) == 1
         await pilot.pause()
+
+
+async def test_completed_device_onboarding_is_reused_without_inheriting_project_trust(
+    tmp_path,
+) -> None:
+    receipt_path = tmp_path / "home" / "onboarding.json"
+    save_onboarding_receipt(
+        OnboardingReceipt(
+            completed=True,
+            provider="fake",
+            selected_model="fake:smart-model",
+            enabled_models=("fake:smart-model",),
+            theme="dark",
+        ),
+        path=receipt_path,
+    )
+    app = SkailApp(
+        runtime_factory=lambda: None,
+        bootstrap=_bootstrap(
+            workspace=str(tmp_path / "second-workspace"),
+            project_trusted=False,
+            fake_provider=True,
+            onboarding_path=receipt_path,
+        ),
+    )
+
+    assert app.app_state == "onboarding"
+    assert app.onboarding_state.step == "trust"
+    assert app.onboarding_state.provider == "fake"
+    assert app.current_theme_name == "dark"
+    assert app.onboarding_receipt.selected_model == "fake:smart-model"
 
 
 async def test_welcome_step_is_visible(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -22,6 +22,7 @@ class ContextComponent:
     rationale: str
     estimated_tokens: int
     disposition: str = "selected"
+    source: str = ""
 
 
 @dataclass(frozen=True)
@@ -53,9 +54,11 @@ class ContextAssembler:
         *,
         max_tokens: int = 2_000,
         redactor: ContextRedactor | None = None,
+        base_references: tuple[ContextComponent, ...] = (),
     ) -> None:
         self.max_tokens = max_tokens
         self.redactor = redactor or SecretRedactor()
+        self.base_references = base_references
 
     def assemble(
         self,
@@ -84,7 +87,11 @@ class ContextAssembler:
         )
         selected = [self._scrub(item) for item in required]
         omissions: list[str] = []
-        for raw_component in references:
+        seen: set[tuple[str, str]] = set()
+        for raw_component in (*self.base_references, *references):
+            if (raw_component.label, raw_component.revision) in seen:
+                continue
+            seen.add((raw_component.label, raw_component.revision))
             component = self._scrub(raw_component)
             used = sum(item.estimated_tokens for item in selected)
             if used + component.estimated_tokens <= self.max_tokens:
@@ -108,6 +115,7 @@ class ContextAssembler:
             component.rationale,
             _tokens(content),
             component.disposition,
+            component.source,
         )
 
 

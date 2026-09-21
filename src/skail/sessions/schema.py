@@ -338,4 +338,17 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
             );
         """,
     ),
+    (
+        17,
+        "ALTER TABLE assignment_call_usage ADD COLUMN cost_known INTEGER NOT NULL DEFAULT 1;",
+    ),
+    (
+        18,
+        "ALTER TABLE usage_records ADD COLUMN authority TEXT NOT NULL DEFAULT 'estimated_actual';",
+    ),
+    (
+        19,
+        "ALTER TABLE assignment_call_usage ADD COLUMN cached_input_tokens "
+        "INTEGER NOT NULL DEFAULT 0;",
+    ),
 )

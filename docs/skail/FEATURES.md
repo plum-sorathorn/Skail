@@ -799,3 +799,19 @@ paired live evaluation with preregistered completion, cost, latency, and safety 
 10. Terminal state and cost survive resume without duplicate execution.
 11. User changes and partial child work are never discarded silently.
 12. Legacy Skail code is reference-only and cannot be imported by Skail.
+
+## 28. Global state, instructions, and cost truth
+
+- Skail creates only `~/.skail`; workspace state is namespaced by canonical workspace identity
+  below that root, and normal CLI, TUI, tool, resume, and failure flows create no repository-local
+  `.skail` directory.
+- Legacy local state is imported at most once, non-destructively and idempotently, with a redacted
+  source/outcome receipt. The old directory is never silently deleted or overwritten.
+- Device-global onboarding persists only versioned provider, model, and theme choices. Credentials
+  resolve from environment, OS credential store, then interactive entry; plaintext persistence is
+  forbidden.
+- Root instructions are additive and source-labelled in built-in, global, trusted-workspace order.
+  Their bounded, redacted, pinned context cannot widen code-owned safety, permission, budget,
+  concurrency, delegation, or filesystem boundaries.
+- Reservation, provider-authoritative actual, token-derived actual estimate, conservative fallback,
+  and unknown cost remain separate through the journal, events, projections, resume, and export.

@@ -533,6 +533,32 @@ def test_theme_commit_and_system_note() -> None:
     assert note == "System preference unavailable; using Dark."
 
 
+def test_theme_picker_commits_new_theme_separately_from_preview() -> None:
+    overlay = ThemePickerOverlay("dark")
+    overlay.index = 3
+    seen: list[str] = []
+
+    class _App:
+        def apply_theme_preview(self, name: str) -> str:
+            seen.append(f"preview:{name}")
+            return name
+
+        def commit_theme(self, name: str) -> None:
+            seen.append(f"commit:{name}")
+
+        def close_overlay(self, name: str) -> None:
+            seen.append(f"close:{name}")
+
+    overlay._test_app = _App()  # type: ignore[attr-defined]
+    assert overlay.move(0) == "pistachio-night"
+    assert overlay.commit() == "pistachio-night"
+    assert seen == [
+        "preview:pistachio-night",
+        "commit:pistachio-night",
+        "close:theme_picker",
+    ]
+
+
 # -- model picker ----------------------------------------------------------
 
 

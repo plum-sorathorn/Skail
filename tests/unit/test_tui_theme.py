@@ -15,10 +15,14 @@ from skail.tui.theme import (
     BUDGET_WARNING_THRESHOLD,
     DARK_THEME,
     LIGHT_THEME,
+    MINT_PORCELAIN_THEME,
+    PISTACHIO_NIGHT_THEME,
+    PISTACHIO_PAPER_THEME,
     REQUIRED_TOKENS,
     agent_slot_token,
     as_dict,
     budget_token_for_ratio,
+    contrast_ratio,
     detect_system_preference,
     get_theme,
     lookup,
@@ -128,6 +132,30 @@ def test_light_theme_matches_draft_table() -> None:
 
 def test_dark_and_light_expose_identical_token_names() -> None:
     assert set(as_dict(DARK_THEME)) == set(as_dict(LIGHT_THEME))
+
+
+def test_pistachio_themes_expose_the_complete_semantic_palette() -> None:
+    for theme in (PISTACHIO_NIGHT_THEME, PISTACHIO_PAPER_THEME, MINT_PORCELAIN_THEME):
+        validate_theme(theme)
+        assert set(as_dict(theme)) == set(REQUIRED_TOKENS)
+
+
+def test_new_theme_text_and_focus_contrast_meets_wcag_targets() -> None:
+    for theme in (PISTACHIO_NIGHT_THEME, PISTACHIO_PAPER_THEME, MINT_PORCELAIN_THEME):
+        assert contrast_ratio(theme.text, theme.background) >= 4.5
+        assert contrast_ratio(theme.focus_ring, theme.surface) >= 3.0
+
+
+def test_new_theme_preview_escape_restores_the_committed_theme() -> None:
+    from skail.tui.app import SkailApp
+
+    app = SkailApp(theme_name="pistachio-night")
+    app._previous_theme = "pistachio-night"  # type: ignore[attr-defined]
+    app.apply_theme_preview("pistachio-paper")
+
+    app.restore_theme()
+
+    assert app.current_theme_name == "pistachio-night"
 
 
 def test_every_token_is_valid_six_digit_hex() -> None:

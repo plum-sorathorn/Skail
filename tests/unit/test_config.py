@@ -13,9 +13,88 @@ from skail.config import (
     load_config,
     merge_config_layers,
 )
+from skail.config.migration import StateMigrationError, migrate_legacy_workspace_state
+from skail.config.paths import project_config_path, workspace_state_dir
+from skail.domain.security import WorkspaceIdentity
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "config"
 pytestmark = pytest.mark.unit
+
+
+def test_workspace_state_is_global_namespaced_and_stable_for_one_identity(
+    tmp_path: Path,
+) -> None:
+    user_root = tmp_path / "user-state"
+    identity = WorkspaceIdentity(
+        canonical_path=str(tmp_path / "repo"),
+        device=1,
+        inode=2,
+    )
+
+    first = workspace_state_dir(identity, root=user_root)
+    second = workspace_state_dir(identity, root=user_root)
+
+    assert first == second
+    assert first.parent == user_root.resolve() / "workspaces"
+    assert first.is_relative_to(user_root.resolve())
+    assert not first.is_relative_to(tmp_path / "repo")
+    assert project_config_path(identity, root=user_root) == first / "config.toml"
+
+
+def test_workspace_state_namespaces_distinct_filesystem_identities_without_path_fragments(
+    tmp_path: Path,
+) -> None:
+    user_root = tmp_path / "user-state"
+    first = WorkspaceIdentity(canonical_path="C:/repo-a", device=1, inode=10)
+    second = WorkspaceIdentity(canonical_path="C:/repo-b", device=1, inode=11)
+
+    first_state = workspace_state_dir(first, root=user_root)
+    second_state = workspace_state_dir(second, root=user_root)
+
+    assert first_state != second_state
+    assert first_state.name not in {"repo-a", "repo-b"}
+    assert second_state.name not in {"repo-a", "repo-b"}
+
+
+def test_legacy_workspace_state_is_imported_once_without_mutating_the_source(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    legacy = workspace / ".skail"
+    legacy.mkdir()
+    legacy_config = legacy / "config.toml"
+    legacy_config.write_text('[routing]\nmode = "quality"\n', encoding="utf-8")
+    identity = WorkspaceIdentity(canonical_path=str(workspace), device=1, inode=2)
+
+    first = migrate_legacy_workspace_state(identity, workspace, root=tmp_path / "state")
+    second = migrate_legacy_workspace_state(identity, workspace, root=tmp_path / "state")
+
+    destination = project_config_path(identity, root=tmp_path / "state")
+    assert destination.read_text(encoding="utf-8") == legacy_config.read_text(encoding="utf-8")
+    assert legacy_config.exists()
+    assert first[0].outcome == "imported"
+    assert second[0].outcome == "already_imported"
+
+
+def test_legacy_workspace_state_conflict_is_visible_and_does_not_overwrite_global_copy(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    legacy = workspace / ".skail"
+    legacy.mkdir()
+    (legacy / "config.toml").write_text('[routing]\nmode = "quality"\n', encoding="utf-8")
+    identity = WorkspaceIdentity(canonical_path=str(workspace), device=1, inode=2)
+    state_root = tmp_path / "state"
+    destination = project_config_path(identity, root=state_root)
+    destination.parent.mkdir(parents=True)
+    destination.write_text('[routing]\nmode = "auto"\n', encoding="utf-8")
+
+    with pytest.raises(StateMigrationError, match="conflicts"):
+        migrate_legacy_workspace_state(identity, workspace, root=state_root)
+
+    assert 'mode = "auto"' in destination.read_text(encoding="utf-8")
 
 
 def test_defaults_are_typed_and_match_the_stable_product_contract() -> None:

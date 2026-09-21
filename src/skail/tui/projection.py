@@ -103,6 +103,8 @@ class BudgetViewItem:
     hard_limit_usd: Decimal | None = None
     authoritative_actual_usd: Decimal = Decimal("0.00")
     estimated_actual_usd: Decimal = Decimal("0.00")
+    token_derived_actual_usd: Decimal = Decimal("0.00")
+    conservative_estimate_usd: Decimal = Decimal("0.00")
     reserved_usd: Decimal = Decimal("0.00")
     unknown_cost_usd: Decimal = Decimal("0.00")
     available_usd: Decimal | None = None
@@ -538,12 +540,20 @@ class TuiProjection:
 
         total_authoritative = Decimal("0.00")
         total_estimated = Decimal("0.00")
+        total_token_derived = Decimal("0.00")
+        total_conservative = Decimal("0.00")
         total_unknown = Decimal("0.00")
         agent_costs: dict[str, Decimal] = {}
 
         for u in snapshot.usage_records:
-            if u.authoritative:
+            if u.authoritative or u.authority == "authoritative_actual":
                 total_authoritative += u.amount_usd
+            elif u.authority == "token_derived_estimate":
+                total_token_derived += u.amount_usd
+                total_estimated += u.amount_usd
+            elif u.authority == "conservative_estimate":
+                total_conservative += u.amount_usd
+                total_estimated += u.amount_usd
             else:
                 total_estimated += u.amount_usd
             if getattr(u, "unknown", False):
@@ -558,6 +568,8 @@ class TuiProjection:
 
         self.budget_item.authoritative_actual_usd = total_authoritative
         self.budget_item.estimated_actual_usd = total_estimated
+        self.budget_item.token_derived_actual_usd = total_token_derived
+        self.budget_item.conservative_estimate_usd = total_conservative
         self.budget_item.reserved_usd = active_reservations
         self.budget_item.unknown_cost_usd = total_unknown
         self.budget_item.per_agent_costs = agent_costs

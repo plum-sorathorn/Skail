@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from skail.config.onboarding import (
+    OnboardingReceipt,
+    load_onboarding_receipt,
+    save_onboarding_receipt,
+)
 from skail.tui.onboarding import (
     KEY_ENTRY_COPY,
     NON_TTY_USAGE_ERROR,
@@ -140,6 +147,25 @@ def test_onboarding_state_advance_and_back_clamp() -> None:
         assert state.step == expected
     state.go_back()
     assert state.step == "welcome"
+
+
+def test_device_onboarding_receipt_persists_only_non_secret_choices(tmp_path: Path) -> None:
+    path = tmp_path / "onboarding.json"
+    receipt = OnboardingReceipt(
+        completed=True,
+        provider="openai",
+        selected_model="openai:gpt-4o-mini",
+        enabled_models=("openai:gpt-4o-mini",),
+        theme="pistachio-night",
+    )
+
+    save_onboarding_receipt(receipt, path=path)
+    loaded = load_onboarding_receipt(path=path)
+
+    assert loaded == receipt
+    raw = path.read_text(encoding="utf-8")
+    assert "api_key" not in raw.lower()
+    assert "secret" not in raw.lower()
 
 
 def test_has_env_credentials_precedence() -> None:

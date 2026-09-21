@@ -76,6 +76,7 @@ class SessionExporter:
                 "task_id": u.task_id,
                 "amount_usd": str(u.amount_usd),
                 "authoritative": u.authoritative,
+                "authority": u.authority,
                 "idempotency_key": u.idempotency_key,
             }
             for u in snapshot.usage_records

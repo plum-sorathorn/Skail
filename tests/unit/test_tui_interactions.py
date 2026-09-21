@@ -312,7 +312,7 @@ async def test_model_picker_checked_marker_is_visible_after_render() -> None:
         overlay = ModelPickerOverlay(["model-a"], current="model-a")
         app.push_screen(overlay)
         await pilot.pause()
-        rendered = app.query_one("#model-row-0", Static).render()
+        rendered = app.query_one("#model-list", Static).render()
         renderable = getattr(rendered, "renderable", getattr(rendered, "_renderable", rendered))
         assert "[x] model-a" in str(renderable)
 
@@ -338,8 +338,65 @@ async def test_model_picker_filters_a_full_catalog_and_restores_composer_focus()
         assert len(list(overlay.query(".model-row"))) == 1
 
         await pilot.press("escape")
+        assert getattr(app.focused, "id", None) == "composer-input"
+
+
+@pytest.mark.asyncio
+async def test_model_picker_keeps_filter_focus_and_printable_keys_edit_query() -> None:
+    app = SkailApp(projection=TuiProjection())
+    async with app.run_test(size=(120, 40)) as pilot:
+        overlay = ModelPickerOverlay(["model-a", "model-b", "a model"], current="model-a")
+        app.push_screen(overlay)
+        await pilot.pause()
+        assert getattr(app.focused, "id", None) == "model-search"
+
+        await pilot.press("a", "j", "k", "space")
+        assert overlay.filter_text == "ajk "
+        assert overlay.index == 0
+        assert getattr(app.focused, "id", None) == "model-search"
+
+
+@pytest.mark.asyncio
+async def test_model_picker_chords_navigate_toggle_and_select_without_scrollbars() -> None:
+    app = SkailApp(projection=TuiProjection())
+    async with app.run_test(size=(60, 12)) as pilot:
+        overlay = ModelPickerOverlay([f"model-{i}" for i in range(20)], current="model-0")
+        app.open_overlay("model_picker")
+        app.push_screen(overlay)
+        await pilot.pause()
+        await pilot.press("down", "down")
+        assert overlay.index == 2
+        assert getattr(app.focused, "id", None) == "model-search"
+        from textual.events import Key
+
+        await overlay.on_key(Key("ctrl+space", None))
+        await pilot.pause()
+        assert "model-2" not in overlay.enabled
+        await overlay.on_key(Key("ctrl+space", None))
+        assert len(overlay.enabled) == 20
+        await overlay.on_key(Key("ctrl+shift+a", None))
+        await pilot.pause()
+        assert len(overlay.enabled) == 0
+        assert not overlay.query("VerticalScroll")
+        assert not overlay.query("ScrollBar")
+        await overlay.on_key(Key("escape", None))
         await pilot.pause()
         assert getattr(app.focused, "id", None) == "composer-input"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("size", [(120, 40), (99, 30), (60, 12)])
+async def test_model_picker_has_no_scroll_widgets_at_supported_viewports(
+    size: tuple[int, int],
+) -> None:
+    app = SkailApp(projection=TuiProjection())
+    async with app.run_test(size=size) as pilot:
+        overlay = ModelPickerOverlay([f"model-{i}" for i in range(100)])
+        app.push_screen(overlay)
+        await pilot.pause()
+        assert getattr(app.focused, "id", None) == "model-search"
+        assert not overlay.query("VerticalScroll")
+        assert not overlay.query("ScrollBar")
 
 
 @pytest.mark.asyncio

@@ -186,7 +186,10 @@ async def test_llmgateway_keeps_missing_stream_cost_unknown() -> None:
         chunks = [chunk async for chunk in model.astream("Count usage")]
 
     usage = adapter.normalize_usage(_combined(chunks))
-    assert usage is None
+    assert usage is not None
+    assert (usage.input_tokens, usage.output_tokens) == (7, 3)
+    assert usage.cost_usd is None
+    assert usage.authority is UsageAuthority.TOKEN_DERIVED_ESTIMATE
 
 
 def test_llmgateway_marks_reported_gateway_cost_as_authoritative() -> None:

@@ -137,7 +137,7 @@ a mount-first 5-step onboarding ladder:
 1. Welcome (Twin sail mark + overview)
 2. Provider (LLM Gateway / OpenAI / Anthropic / Fake)
 3. Trust (trust this exact folder, or restricted mode)
-4. Theme (Dark / Light / System with live preview)
+4. Theme (Dark / Light / System / Pistachio Night / Pistachio Paper / Mint Porcelain with live preview)
 5. Ready (receipt with the exact `skail -r <session-id>` resume command)
 
 ```powershell

@@ -611,6 +611,11 @@ Provider adapters receive resolved credentials out-of-band. Events store provide
 
 - `~/.skail/checkpoints.sqlite`: LangGraph checkpointer state;
 - `~/.skail/skail.sqlite`: Skail-owned session, task, route, usage, approval, and event journal;
+
+The only physical `.skail` directory Skail creates is the user root `~/.skail`. Workspace-scoped
+records use a canonical identity namespace below `~/.skail/workspaces/`; all path resolution is
+validated against that root. Legacy repository-local state is imported without mutation or
+deletion and receives an idempotent migration receipt.
 - `~/.skail/config.toml`: user configuration;
 - `~/.skail/agents/` and `~/.skail/skills/`: user extensions;
 - `~/.skail/catalog/`: validated provider model catalog snapshots and non-authoritative catalog cache;
@@ -716,6 +721,16 @@ class RunController(Protocol):
 Interactive TUI, print mode, and JSONL mode call this interface. There is no hidden HTTP layer in the initial product.
 
 ## 16. Configuration architecture
+
+Runtime configuration is split between device-global non-secret onboarding and trusted
+workspace-scoped configuration in the global namespace. A repository-local `.skail/config.toml`
+is legacy input only and is never created by normal operation. Credentials are resolved out of
+band in the order environment, OS credential store, interactive entry; secure-store failure is
+fail-closed rather than a plaintext fallback.
+
+Root instruction assembly is deterministic: built-in rules, global `~/.skail/AGENTS.md`, then a
+trusted workspace-root `AGENTS.md`. Each active component is bounded, redacted, source-labelled,
+hashed, and pinned in the context packet. Prompt instructions cannot alter runtime safety gates.
 
 Each config value carries `value`, `source`, and redacted provenance so `/config` can explain the effective result. Merge semantics are:
 

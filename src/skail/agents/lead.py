@@ -100,6 +100,8 @@ def build_production_lead(
     extension_tools: Sequence[Any] = (),
     session_id: str = "",
     run_id: str = "",
+    state_dir: Path | None = None,
+    context_prompt: str | None = None,
 ) -> Runnable[object, object]:
     allow_children = controls.delegation in ("auto", "ask")
     registry = _lead_registry(
@@ -129,10 +131,15 @@ def build_production_lead(
             runtime_model_name=runtime_model_name,
             model_response_observer=model_response_observer,
             usage_normalizer=usage_normalizer,
-            system_prompt=TASK_PACKET_GUIDANCE,
+            system_prompt=(
+                TASK_PACKET_GUIDANCE
+                if context_prompt is None
+                else f"{TASK_PACKET_GUIDANCE}\n\n{context_prompt}"
+            ),
             session_id=session_id,
             run_id=run_id,
             graph_id=f"{session_id}:{run_id}:lead",
+            state_dir=state_dir,
         ),
     )
 
