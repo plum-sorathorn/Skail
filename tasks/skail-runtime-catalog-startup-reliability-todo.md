@@ -17,5 +17,5 @@
 - [x] Checkpoint C: Unknown/stale pricing cannot authorize hard-budget work.
 - [x] Task 8: Expose real local catalog/refresh state through CLI and TUI; honor configured
       credential environment names.
-- [ ] Task 9: Run the complete offline startup matrix, visual states, docs, and repository checks.
-- [ ] Checkpoint D: Full verification passes and limitations are documented with evidence.
+- [x] Task 9: Run the complete offline startup matrix, visual states, docs, and repository checks.
+- [x] Checkpoint D: Full verification passes and limitations are documented with evidence.
