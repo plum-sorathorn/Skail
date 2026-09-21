@@ -40,6 +40,8 @@ class LLMGatewayAdapter(OpenAICompatibleAdapter):
         )
         response.raise_for_status()
         raw = response.json()
+        if not isinstance(raw, Mapping) or not isinstance(raw.get("data"), list):
+            raise ValueError("LLM Gateway models response has no data list")
         entries: list[CatalogEntry] = []
         for model in raw.get("data", []):
             if not isinstance(model, Mapping) or not isinstance(model.get("id"), str):
@@ -53,6 +55,13 @@ class LLMGatewayAdapter(OpenAICompatibleAdapter):
                 for value in model.get("supported_parameters", [])
                 if isinstance(value, str)
             }
+            provider_mappings = [
+                mapping
+                for mapping in model.get("providers", [])
+                if isinstance(mapping, Mapping)
+            ]
+            mapping_tools = [mapping.get("tools") for mapping in provider_mappings]
+            mapping_reasoning = [mapping.get("reasoning") for mapping in provider_mappings]
             input_modalities = architecture_map.get("input_modalities")
             output_modalities = architecture_map.get("output_modalities")
             fields = {
@@ -63,16 +72,22 @@ class LLMGatewayAdapter(OpenAICompatibleAdapter):
                 ),
                 "context_tokens": _positive_int(model.get("context_length")),
                 "max_output_tokens": _positive_int(model.get("max_output")),
-                "supports_tools": True if "tools" in parameters else None,
+                "supports_tools": _capability_flag(
+                    model.get("tools"),
+                    mapping_tools,
+                    true_when="tools" in parameters,
+                ),
                 "supports_structured_output": (
                     bool(model["structured_outputs"])
                     if "structured_outputs" in model
-                    else None
+                    else bool(model["json_output"]) if "json_output" in model else None
                 ),
-                "supports_reasoning": (
-                    True
-                    if "reasoning_effort" in parameters or "reasoning" in parameters
-                    else None
+                "supports_reasoning": _capability_flag(
+                    model.get("reasoning"),
+                    mapping_reasoning,
+                    true_when=(
+                        "reasoning_effort" in parameters or "reasoning" in parameters
+                    ),
                 ),
                 "input_modalities": (
                     list(input_modalities)
@@ -86,7 +101,7 @@ class LLMGatewayAdapter(OpenAICompatibleAdapter):
                 ),
                 "created": model.get("created"),
                 "stability": model.get("stability"),
-                "provider_mappings": model.get("providers"),
+                "provider_mappings": provider_mappings,
             }
             entries.append(
                 CatalogEntry(
@@ -94,12 +109,27 @@ class LLMGatewayAdapter(OpenAICompatibleAdapter):
                     model=model["id"],
                     source=CatalogSource.DISCOVERED,
                     as_of=datetime.now(UTC),
-                    trusted=False,
+                    trusted=True,
                     provenance="llmgateway:/v1/models?exclude_deprecated=true",
                     fields=fields,
                 )
             )
         return tuple(entries)
+
+
+def _capability_flag(
+    top_level: Any,
+    mappings: list[Any],
+    *,
+    true_when: bool,
+) -> bool | None:
+    if isinstance(top_level, bool):
+        return top_level
+    if any(value is True for value in mappings):
+        return True
+    if mappings and all(value is False for value in mappings):
+        return False
+    return True if true_when else None
 
 
 def _price_per_million(pricing: Mapping[str, Any], field: str) -> Decimal | None:

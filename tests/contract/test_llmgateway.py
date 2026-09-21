@@ -234,7 +234,7 @@ async def test_llmgateway_runs_a_complete_loop_with_a_real_langchain_tool() -> N
 
 
 @pytest.mark.asyncio
-async def test_llmgateway_discovers_models_with_untrusted_provider_provenance() -> None:
+async def test_llmgateway_discovers_models_with_authenticated_provider_provenance() -> None:
     transport = ProviderHTTPFixtureTransport()
     async with httpx.AsyncClient(transport=transport) as client:
         adapter = LLMGatewayAdapter(
@@ -250,7 +250,7 @@ async def test_llmgateway_discovers_models_with_untrusted_provider_provenance() 
     assert entry.provider == "llmgateway"
     assert entry.model == "openai/test-model"
     assert entry.source.value == "discovered"
-    assert entry.trusted is False
+    assert entry.trusted is True
     assert entry.as_of.tzinfo is not None
     assert entry.as_of <= datetime.now(tz=entry.as_of.tzinfo)
     assert entry.fields["input_usd_per_million"] == Decimal("1.25")
@@ -294,6 +294,58 @@ async def test_llmgateway_keeps_malformed_prices_unavailable() -> None:
 
     assert entry.fields["input_usd_per_million"] is None
     assert entry.fields["output_usd_per_million"] is None
+
+
+@pytest.mark.asyncio
+async def test_llmgateway_trusts_authenticated_facts_and_provider_mapping_capabilities() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "data": [
+                    {
+                        "id": "mapped-model",
+                        "pricing": {
+                            "prompt": "0.000001",
+                            "completion": "0.000002",
+                            "input_cache_read": "0.0000005",
+                        },
+                        "architecture": {
+                            "input_modalities": ["text"],
+                            "output_modalities": ["text"],
+                        },
+                        "context_length": 32768,
+                        "supported_parameters": [],
+                        "json_output": True,
+                        "providers": [
+                            {
+                                "providerId": "provider-a",
+                                "tools": True,
+                                "reasoning": True,
+                                "parallelToolCalls": True,
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        adapter = LLMGatewayAdapter(
+            _config().model_copy(update={"models": ("mapped-model",)}),
+            api_key="fixture-credential",
+            http_async_client=client,
+        )
+        entry = (await adapter.discover_models())[0]
+
+    assert entry.trusted is True
+    assert entry.fields["input_usd_per_million"] == Decimal("1")
+    assert entry.fields["output_usd_per_million"] == Decimal("2")
+    assert entry.fields["cached_input_usd_per_million"] == Decimal("0.5")
+    assert entry.fields["supports_tools"] is True
+    assert entry.fields["supports_reasoning"] is True
+    assert entry.fields["supports_structured_output"] is True
 
 
 @pytest.mark.parametrize(
