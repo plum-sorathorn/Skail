@@ -79,6 +79,14 @@ class StaleRoutingSnapshot(RuntimeError):
     pass
 
 
+def _allows_unpriced_manual(request: AssignmentRequest, budget: Any) -> bool:
+    return (
+        request.requirements.mode.value == "manual"
+        and request.task_limit_usd is None
+        and budget.hard_limit_usd is None
+    )
+
+
 class AssignmentService:
     def __init__(
         self,
@@ -159,7 +167,9 @@ class AssignmentService:
             )
             if isinstance(selection, RouteFailure):
                 return selection
-            if selection.candidate.estimated_cost_usd is None:
+            if selection.candidate.estimated_cost_usd is None and not _allows_unpriced_manual(
+                request, budget
+            ):
                 return RouteFailure(
                     excluded_counts={"price_unavailable_for_reservation": 1},
                     binding_constraint="price_unavailable_for_reservation",
@@ -263,7 +273,9 @@ class AssignmentService:
                         )
                     )
                     continue
-                if selection.candidate.estimated_cost_usd is None:
+                if selection.candidate.estimated_cost_usd is None and not _allows_unpriced_manual(
+                    request, budget
+                ):
                     deferred.append(request.task_id)
                     deferred_failures.append(
                         DeferredAssignment(
@@ -332,7 +344,8 @@ class AssignmentService:
         health_revision: str,
     ) -> TaskAssignment:
         candidate = selection.candidate
-        assert candidate.estimated_cost_usd is not None
+        unpriced_manual = candidate.estimated_cost_usd is None
+        reservation_amount = candidate.estimated_cost_usd or Decimal("0")
         assignment_id = new_assignment_id()
         reservation_id = new_reservation_id()
         reservation = self.ledger.reserve_in_transaction(
@@ -341,12 +354,17 @@ class AssignmentService:
                 reservation_id=str(reservation_id),
                 run_id=str(request.run_id),
                 task_id=str(request.task_id),
-                amount_usd=candidate.estimated_cost_usd,
+                amount_usd=reservation_amount,
                 idempotency_key=f"assignment-reservation:{assignment_id}",
+                purpose="unpriced_manual" if unpriced_manual else "task_attempt",
             ),
             task_limit_usd=request.task_limit_usd,
         )
         explanation = (
+            ("estimated cost unavailable; no hard-budget reservation",)
+            if unpriced_manual
+            else ()
+        ) + (
             *selection.ranking_reasons,
             f"binding_constraint={selection.binding_constraint or 'none'}",
             f"included={selection.included_count}",
@@ -360,7 +378,7 @@ class AssignmentService:
             model=candidate.profile.model,
             routing_mode=request.requirements.mode,
             capability_floor=request.requirements.capability_floor,
-            estimated_attempt_cost_usd=candidate.estimated_cost_usd,
+            estimated_attempt_cost_usd=reservation_amount,
             reservation_id=reservation_id,
             explanation=explanation,
             catalog_revision=request.catalog_revision,

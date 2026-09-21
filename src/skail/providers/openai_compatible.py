@@ -266,21 +266,25 @@ class OpenAICompatibleAdapter:
         if response.usage_metadata is None:
             return None
         raw_cost = response.response_metadata.get("skail_cost_usd")
+        if raw_cost is None:
+            return None
+        try:
+            cost_usd = Decimal(str(raw_cost))
+        except (ArithmeticError, TypeError, ValueError):
+            return None
+        if not cost_usd.is_finite() or cost_usd < 0:
+            return None
         return NormalizedUsage(
             input_tokens=response.usage_metadata["input_tokens"],
             output_tokens=response.usage_metadata["output_tokens"],
-            cost_usd=Decimal(str(raw_cost or "0")),
-            authority=(
-                UsageAuthority.AUTHORITATIVE_ACTUAL
-                if raw_cost is not None
-                else UsageAuthority.ESTIMATED_ACTUAL
-            ),
+            cost_usd=cost_usd,
+            authority=UsageAuthority.AUTHORITATIVE_ACTUAL,
         )
 
     def classify_error(self, error: Exception) -> ProviderError:
         kind = ProviderErrorKind.PROTOCOL
         code = None
-        if isinstance(error, (httpx.TimeoutException, httpx.ConnectError)):
+        if isinstance(error, (httpx.TimeoutException, httpx.ConnectError, TimeoutError)):
             kind = ProviderErrorKind.TRANSIENT
         elif isinstance(error, httpx.HTTPStatusError):
             status = error.response.status_code

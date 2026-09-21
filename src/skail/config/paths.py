@@ -27,6 +27,10 @@ def sessions_dir() -> Path:
     return user_data_dir() / "sessions"
 
 
+def catalog_cache_path(provider: str = "llmgateway") -> Path:
+    return user_data_dir() / "catalog" / f"{provider}.json"
+
+
 def session_lock_path(session_id: str, base_dir: Path | None = None) -> Path:
     return (base_dir or sessions_dir()) / f"{session_id}.lock"
 

@@ -174,7 +174,7 @@ async def test_llmgateway_supports_declared_structured_output() -> None:
 
 
 @pytest.mark.asyncio
-async def test_llmgateway_marks_missing_stream_cost_as_estimated() -> None:
+async def test_llmgateway_keeps_missing_stream_cost_unknown() -> None:
     transport = ProviderHTTPFixtureTransport()
     async with httpx.AsyncClient(transport=transport) as client:
         adapter = LLMGatewayAdapter(
@@ -186,11 +186,7 @@ async def test_llmgateway_marks_missing_stream_cost_as_estimated() -> None:
         chunks = [chunk async for chunk in model.astream("Count usage")]
 
     usage = adapter.normalize_usage(_combined(chunks))
-    assert usage is not None
-    assert usage.input_tokens == 7
-    assert usage.output_tokens == 3
-    assert usage.cost_usd == Decimal("0")
-    assert usage.authority is UsageAuthority.ESTIMATED_ACTUAL
+    assert usage is None
 
 
 def test_llmgateway_marks_reported_gateway_cost_as_authoritative() -> None:

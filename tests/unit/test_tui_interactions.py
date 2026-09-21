@@ -221,6 +221,35 @@ async def test_composer_submission_during_initialization_is_replayed(tmp_path: A
 
 
 @pytest.mark.asyncio
+async def test_discovered_catalog_without_auto_candidate_opens_model_picker(
+    tmp_path: Any,
+) -> None:
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="booted")
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+    runtime = _runtime_set(model)
+    object.__setattr__(runtime, "selection_required", True)
+
+    app = SkailApp(
+        runtime_factory=lambda: runtime,
+        bootstrap={
+            "fake_provider": True,
+            "workspace": str(tmp_path),
+            "session_id": session_id,
+        },
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert app.app_state == "selection_required"
+        assert isinstance(app.screen_stack[-1], ModelPickerOverlay)
+        assert "lead-model" in app.screen_stack[-1].models
+
+
+@pytest.mark.asyncio
 async def test_composer_enter_and_send_button_drive_real_controller(tmp_path: Any) -> None:
     from skail.domain.ids import SessionId
     from skail.providers.fake import DeterministicFakeChatModel
@@ -429,6 +458,29 @@ def test_llmgateway_model_persistence_keeps_canonical_base_url(tmp_path) -> None
         data = tomllib.load(handle)
 
     assert data["providers"]["llmgateway"]["base_url"] == "https://api.llmgateway.io/v1"
+
+
+def test_routing_model_persistence_keeps_other_user_config(tmp_path) -> None:
+    import tomllib
+
+    from skail.config.persistence import save_user_routing_model
+
+    target_cfg = tmp_path / "config.toml"
+    target_cfg.write_text(
+        "[providers.llmgateway]\n"
+        'type = "openai-compatible"\n'
+        'models = ["old-model"]\n'
+        "\n[routing]\n"
+        'mode = "auto"\n',
+        encoding="utf-8",
+    )
+
+    save_user_routing_model("llmgateway:new-model", config_path=target_cfg)
+
+    with target_cfg.open("rb") as handle:
+        data = tomllib.load(handle)
+    assert data["routing"]["lead_model"] == "llmgateway:new-model"
+    assert data["providers"]["llmgateway"]["models"] == ["old-model"]
 
 
 

@@ -207,12 +207,17 @@ def validation_success(provider: str) -> str:
     return VALIDATION_SUCCESS_COPY.format(provider=provider_display_name(provider))
 
 
-def has_env_credentials(env: dict[str, str] | None = None) -> bool:
+def has_env_credentials(
+    env: dict[str, str] | None = None,
+    *,
+    env_vars: tuple[str, ...] | None = None,
+) -> bool:
     """Whether any supported provider key is present in the environment."""
     import os
 
     source = env if env is not None else os.environ
+    names = env_vars or ("LLMGATEWAY_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY")
     return any(
         source.get(var)
-        for var in ("LLMGATEWAY_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY")
+        for var in names
     )

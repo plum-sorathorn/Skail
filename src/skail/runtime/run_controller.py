@@ -1059,6 +1059,8 @@ class RunController:
             configured_model = self.fixed_profile_models.get(
                 profile.name, self.profile_models.get(profile.name)
             )
+            if configured_model is None and controls.model:
+                configured_model = controls.model
             policy = spec.request.model_policy
             if policy is not None and policy.model is not None:
                 configured_model = (
@@ -1783,6 +1785,8 @@ class RunController:
             configured_model = self.fixed_profile_models.get(
                 profile.name, self.profile_models.get(profile.name)
             )
+            if configured_model is None and controls.model:
+                configured_model = controls.model
             if model_policy is not None and model_policy.model is not None:
                 configured_model = (
                     f"{model_policy.provider}:{model_policy.model}"
@@ -3110,6 +3114,8 @@ class RunController:
                     )
                 elif profile.name in self.profile_models:
                     configured_model = self.profile_models[profile.name]
+                elif controls.model:
+                    configured_model = controls.model
                 elif self.candidates_fn is None:
                     configured_model = self.default_child_model
 

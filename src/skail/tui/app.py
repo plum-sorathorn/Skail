@@ -64,7 +64,14 @@ from skail.tui.widgets.onboarding import OnboardingPanel
 from skail.tui.widgets.plan import PlanView
 from skail.tui.widgets.route import RouteView
 
-AppState = Literal["onboarding", "initializing", "ready", "error", "quitting"]
+AppState = Literal[
+    "onboarding",
+    "initializing",
+    "selection_required",
+    "ready",
+    "error",
+    "quitting",
+]
 
 ACTION_REGISTRY: dict[str, dict[str, str]] = {
     "quit": {"binding": "ctrl+c", "description": "Quit", "group": "Session"},
@@ -431,7 +438,9 @@ class SkailApp(App[int]):
         elif self.runtime_factory is not None:
             if bool(self.bootstrap.get("fake_provider", False)):
                 self.app_state = "initializing"
-            elif has_env_credentials():
+            elif has_env_credentials(
+                env_vars=tuple(self.bootstrap.get("credential_envs", ())) or None
+            ):
                 self.app_state = "initializing"
             else:
                 self.app_state = "onboarding"
@@ -716,10 +725,24 @@ class SkailApp(App[int]):
         if resume_target is not None:
             controller.restore_interrupted()
         self.onboarding_credentials.clear()
-        self.app_state = "ready"
+        selection_required = bool(getattr(runtime_models, "selection_required", False))
+        self.app_state = "selection_required" if selection_required else "ready"
         self.startup_error = None
         self._remove_onboarding_panel()
-        self._append_system_message("Ready", _READY_COPY)
+        self._append_system_message(
+            "Choose a model" if selection_required else "Ready",
+            (
+                "The discovered catalog has no evaluated automatic-routing candidate. "
+                "Choose a model for manual routing."
+                if selection_required
+                else _READY_COPY
+            ),
+        )
+        if bool(getattr(runtime_models, "catalog_degraded", False)):
+            self._append_system_message(
+                "Catalog fallback",
+                "Using the last valid local catalog; refresh will retry on the next startup.",
+            )
         if self.onboarding_state.provider:
             receipt = ready_receipt(
                 provider=self.onboarding_state.provider,
@@ -730,6 +753,12 @@ class SkailApp(App[int]):
             )
             self._append_system_message("Receipt", receipt)
         self.update_views()
+        if selection_required:
+            if self.initial_prompt:
+                self._pending_prompts.append(self.initial_prompt)
+                self._restore_composer_draft(self.initial_prompt)
+            self.action_model_picker()
+            return
         if self.initial_prompt:
             self._start_prompt(self.initial_prompt)
         while self._pending_prompts:
@@ -794,6 +823,16 @@ class SkailApp(App[int]):
 
     def _start_prompt(self, text: str, *, record: bool = True) -> None:
         """Start a prompt on the attached controller, preserving FIFO follow-ups."""
+        if self.app_state == "selection_required":
+            self._record_user_prompt(text)
+            self._pending_prompts.append(text)
+            self._restore_composer_draft(text)
+            self._append_system_message(
+                "Choose a model",
+                "Select an accessible model before running this prompt.",
+            )
+            self.update_views()
+            return
         if self.controller is None:
             if self.runtime_factory is not None or self.app_state in {"initializing", "error"}:
                 self._queue_initializing_prompt(text)
@@ -985,6 +1024,8 @@ class SkailApp(App[int]):
             badge, badge_token = "PROVIDER not configured", "approval"
         elif self.app_state == "initializing":
             badge, badge_token = "STARTING", "textMuted"
+        elif self.app_state == "selection_required":
+            badge, badge_token = "CHOOSE MODEL", "approval"
         elif self.app_state == "error":
             badge, badge_token = "SETUP FAILED", "error"
         try:
@@ -1584,6 +1625,23 @@ class SkailApp(App[int]):
     def set_future_model(self, name: str) -> None:
         """Select model for FUTURE attempts only; active attempt untouched."""
         self.projection.set_future_model(name)
+        if name != "auto" and ":" in name and not name.startswith("fake:"):
+            try:
+                from skail.config.persistence import save_user_routing_model
+
+                save_user_routing_model(name)
+            except Exception:
+                self._append_system_message(
+                    "Config warning",
+                    "Model selected for this session but could not be persisted.",
+                )
+        if self.app_state == "selection_required" and name != "auto":
+            self.app_state = "ready"
+            self._append_system_message("Ready", _READY_COPY)
+            pending = list(self._pending_prompts)
+            self._pending_prompts.clear()
+            for prompt in pending:
+                self._start_prompt(prompt, record=False)
         self.update_views()
 
     def set_enabled_models(self, enabled_models: list[str]) -> None:
@@ -1623,7 +1681,7 @@ class SkailApp(App[int]):
         if count > 4:
             summary += f" +{count - 4} more"
         self._append_system_message(
-            "Routing", f"Updated eligible models ({count} ticked): {summary}"
+            "Routing", f"Updated enabled models ({count} ticked): {summary}"
         )
         self.update_views()
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -55,8 +57,8 @@ def save_user_provider_models(
 
             with target_path.open("rb") as handle:
                 data = tomllib.load(handle)
-        except Exception:
-            data = {}
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"cannot read user config {target_path}") from exc
 
     providers = data.setdefault("providers", {})
     if not isinstance(providers, dict):
@@ -89,8 +91,60 @@ def save_user_provider_models(
     except Exception:
         raw_toml = _format_basic_toml(data)
 
-    target_path.write_text(raw_toml, encoding="utf-8")
+    _atomic_write_text(target_path, raw_toml)
     return target_path
 
 
-__all__ = ["save_user_provider_models"]
+def save_user_routing_model(model: str, config_path: Path | None = None) -> Path:
+    """Persist the explicit future lead model without replacing other config."""
+    target_path = config_path or user_config_path()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    data: dict[str, Any] = {}
+    if target_path.exists():
+        try:
+            import tomllib
+
+            with target_path.open("rb") as handle:
+                data = tomllib.load(handle)
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"cannot read user config {target_path}") from exc
+    routing = data.setdefault("routing", {})
+    if not isinstance(routing, dict):
+        raise ValueError("user config routing section must be a table")
+    routing["lead_model"] = model
+    try:
+        import tomli_w
+
+        raw_toml = tomli_w.dumps(data)
+    except Exception:
+        raw_toml = _format_basic_toml(data)
+    _atomic_write_text(target_path, raw_toml)
+    return target_path
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    temporary_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f"{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = handle.name
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            try:
+                Path(temporary_path).unlink()
+            except OSError:
+                pass
+
+
+__all__ = ["save_user_provider_models", "save_user_routing_model"]

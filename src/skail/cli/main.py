@@ -70,6 +70,8 @@ class RuntimeModelSet:
     config: SkailConfig | None = None
     redaction: RedactionRegistry | None = None
     candidates: tuple[RouteCandidate, ...] = ()
+    selection_required: bool = False
+    catalog_degraded: bool = False
 
     def __iter__(self) -> Iterator[Any]:
         yield self.models
@@ -120,14 +122,23 @@ def _route_candidate(
     )
 
 
-def _run_discovery(adapter: ProviderAdapter) -> tuple[CatalogEntry, ...]:
+def _run_discovery(
+    adapter: ProviderAdapter,
+    *,
+    timeout_seconds: float = 15.0,
+) -> tuple[CatalogEntry, ...]:
     """Run an async provider discovery call from both sync and async bootstrap paths."""
+    async def discover() -> tuple[CatalogEntry, ...]:
+        return await asyncio.wait_for(
+            adapter.discover_models(), timeout=timeout_seconds
+        )
+
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(adapter.discover_models())
+        return asyncio.run(discover())
     with ThreadPoolExecutor(max_workers=1) as executor:
-        return executor.submit(lambda: asyncio.run(adapter.discover_models())).result()
+        return executor.submit(lambda: asyncio.run(discover())).result()
 
 
 KNOWN_SUBCOMMANDS = frozenset({"auth", "models", "sessions", "config", "smoke"})
@@ -499,9 +510,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             resolved_config=resolved_config,
         )
     if args.subcommand == "auth":
-        return handle_auth(args)
+        return handle_auth(args, resolved_config=resolved_config)
     if args.subcommand == "models":
-        return handle_models(args)
+        return handle_models(args, resolved_config=resolved_config)
 
     # 5. Storage and session initialization
     redaction = RedactionRegistry()
@@ -587,6 +598,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             "workspace_mode": args.workspace_mode,
             "project_trusted": trusted,
             "resume_session": args.resume_session,
+            "credential_envs": tuple(
+                provider.api_key_env
+                for provider in resolved_config.config.providers.values()
+                if provider.api_key_env
+            ),
         }
         app = SkailApp(
             session_service=session_service,
@@ -629,7 +645,10 @@ def _build_runtime_models(
 ) -> RuntimeModelSet:
     from skail.config.models import SkailConfig
     from skail.providers.catalog import ModelCatalog
-    from skail.providers.catalog_sources import load_catalog_cache, save_catalog_cache
+    from skail.providers.catalog_sources import (
+        load_catalog_snapshot,
+        save_catalog_cache,
+    )
     from skail.providers.credentials import EnvironmentCredentialResolver
     from skail.providers.errors import ProviderConfigurationError
     from skail.providers.fake import DeterministicFakeChatModel
@@ -780,17 +799,45 @@ def _build_runtime_models(
             if configured_cache_path is not None
             else user_data_dir() / "catalog" / "llmgateway.json"
         )
+        catalog_endpoint = f"{LLMGATEWAY_BASE_URL}/models"
+        catalog_query = {"exclude_deprecated": True}
+        degraded_catalog = False
         try:
             discovered_entries = _run_discovery(discovery_adapter)
         except Exception as exc:
-            discovered_entries = load_catalog_cache(cache_path)
-            if not discovered_entries:
+            classified = discovery_adapter.classify_error(exc)
+            from skail.providers.errors import ProviderErrorKind
+
+            if classified.kind not in {ProviderErrorKind.TRANSIENT, ProviderErrorKind.RATE_LIMIT}:
                 raise ProviderConfigurationError(
                     "llmgateway",
-                    "model discovery failed and no catalog cache is available",
+                    classified.summary,
                 ) from exc
+            cached_snapshot = load_catalog_snapshot(
+                cache_path,
+                provider="llmgateway",
+                endpoint=catalog_endpoint,
+            )
+            if cached_snapshot is None:
+                raise ProviderConfigurationError(
+                    "llmgateway",
+                    "model discovery failed and no valid catalog cache is available",
+                ) from exc
+            discovered_entries = cached_snapshot.entries
+            degraded_catalog = True
         else:
-            save_catalog_cache(cache_path, discovered_entries)
+            if not discovered_entries and not config.catalog.entries:
+                raise ProviderConfigurationError(
+                    "llmgateway",
+                    "the authenticated catalog contains no accessible models",
+                )
+            save_catalog_cache(
+                cache_path,
+                discovered_entries,
+                provider="llmgateway",
+                endpoint=catalog_endpoint,
+                query=catalog_query,
+            )
         catalog = ModelCatalog.from_entries(
             (*config.catalog.entries, *discovered_entries),
             now=datetime.now(UTC),
@@ -798,23 +845,32 @@ def _build_runtime_models(
         )
 
     if ":" not in lead_model_name:
+        configured_models = set(
+            provider_configs[selected_provider].models
+            if selected_provider in provider_configs
+            else ()
+        )
+        has_configured_overlap = any(
+            profile.model in configured_models
+            for (provider, _), profile in catalog.profiles.items()
+            if provider == selected_provider
+        )
         eligible = [
             profile
             for (provider, _), profile in catalog.profiles.items()
             if provider == selected_provider
             and (
-                selected_provider not in provider_configs
-                or profile.model in provider_configs[selected_provider].models
+                not has_configured_overlap or profile.model in configured_models
             )
             and catalog.is_auto_eligible(profile, hard_budget=args.budget is not None)
         ]
-        if not eligible:
+        if not eligible and lead_model_name != "auto":
             raise ProviderConfigurationError(
                 selected_provider,
                 "no discovered model has trusted capability and pricing evidence "
                 "for automatic routing",
             )
-        else:
+        elif eligible:
             lead_model_name = f"{selected_provider}:{eligible[0].model}"
     child_model_name = lead_model_name
 
@@ -825,7 +881,6 @@ def _build_runtime_models(
         from skail.providers.base import ModelOptions
         from skail.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
 
-        actual_model = lead_model_name.split(":", 1)[-1]
         catalog_profiles = tuple(
             profile
             for (provider, _), profile in catalog.profiles.items()
@@ -837,6 +892,11 @@ def _build_runtime_models(
                 selected_provider,
                 "no accessible models are present in the provider catalog",
             )
+        actual_model = (
+            lead_model_name.split(":", 1)[-1]
+            if lead_model_name != "auto"
+            else catalog_profiles[0].model
+        )
         cfg = selected_config or ProviderConfig(
             type="openai-compatible",
             base_url=LLMGATEWAY_BASE_URL,
@@ -913,9 +973,13 @@ def _build_runtime_models(
             ) from exc
         models_dict[f"{selected_provider}:{actual_model}"] = chat_model
 
-    if args.default_model is None:
+    if args.default_model is None and lead_model_name != "auto":
         child_model_name = f"{selected_provider}:{actual_model}"
         lead_model_name = f"{selected_provider}:{actual_model}"
+
+    selection_required = lead_model_name == "auto" and not any(
+        candidate.profile.auto_eligible for candidate in candidates
+    )
 
     return RuntimeModelSet(
         models_dict,
@@ -940,6 +1004,8 @@ def _build_runtime_models(
                 ),
             )
         ),
+        selection_required=selection_required,
+        catalog_degraded=degraded_catalog,
     )
 
 
@@ -964,6 +1030,12 @@ async def _execute_instruction(
         runtime_models = _build_runtime_models(
             args, redaction, prompt
         )
+        if runtime_models.selection_required:
+            render_print_stderr(
+                "Model selection required: pass --model PROVIDER:MODEL "
+                "or run interactive skail and choose a discovered model."
+            )
+            return EXIT_FAILURE
         assert runtime_models.catalog is not None
         assert runtime_models.config is not None
         has_bootstrap_candidates = bool(runtime_models.candidates)

@@ -113,6 +113,26 @@ def test_missing_price_is_never_automatically_routable() -> None:
     assert profile.manual_selectable is True
 
 
+def test_malformed_price_remains_unavailable_instead_of_raising() -> None:
+    entry = CatalogEntry(
+        provider="fixture",
+        model="malformed-price",
+        source=CatalogSource.DISCOVERED,
+        as_of=NOW,
+        trusted=True,
+        fields={
+            "input_usd_per_million": "not-a-price",
+            "output_usd_per_million": "1.00",
+        },
+    )
+
+    profile = _catalog((entry,)).profile("fixture", "malformed-price")
+
+    assert profile.input_usd_per_million is None
+    assert profile.output_usd_per_million == Decimal("1.00")
+    assert profile.auto_eligible is False
+
+
 def test_fresh_measured_model_is_eligible_for_hard_budget_auto_route() -> None:
     catalog = _catalog(_entries("eligibility.json"))
     profile = catalog.profile("fixture", "fresh-measured")

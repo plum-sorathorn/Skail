@@ -198,4 +198,10 @@ def _merge_profile(key: tuple[str, str], entries: list[CatalogEntry]) -> ModelPr
 
 
 def _decimal(value: Any) -> Decimal | None:
-    return None if value is None else Decimal(str(value))
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        decimal = Decimal(str(value))
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+    return decimal if decimal.is_finite() and decimal >= 0 else None

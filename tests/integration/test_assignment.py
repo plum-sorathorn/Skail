@@ -203,7 +203,7 @@ def test_task_budget_block_is_a_structured_route_failure(tmp_path: Path) -> None
     assert journal.get_session_snapshot(str(SESSION_ID)).assignments == ()
 
 
-def test_manual_unknown_price_is_never_reserved_as_zero(tmp_path: Path) -> None:
+def test_manual_unknown_price_is_blocked_by_a_hard_budget(tmp_path: Path) -> None:
     service, journal = _service(tmp_path)
     request = _request().model_copy(
         update={
@@ -220,6 +220,30 @@ def test_manual_unknown_price_is_never_reserved_as_zero(tmp_path: Path) -> None:
     assert isinstance(result, RouteFailure)
     assert result.binding_constraint == "price_unavailable"
     assert journal.get_session_snapshot(str(SESSION_ID)).assignments == ()
+
+
+def test_manual_unknown_price_runs_without_a_hard_budget(tmp_path: Path) -> None:
+    service, journal = _service(tmp_path, limit=None)
+    request = _request().model_copy(
+        update={
+            "manual_model": ("fake", "manual"),
+            "requirements": RequirementBuilder().build(
+                role="implementer", risk=TaskRisk.ROUTINE, mode=RoutingMode.MANUAL
+            ),
+        }
+    )
+    unknown_price = _candidate("manual").model_copy(update={"estimated_cost_usd": None})
+
+    result = service.assign(request, lambda: _snapshot(unknown_price))
+
+    assert not isinstance(result, RouteFailure)
+    assert result.estimated_attempt_cost_usd == Decimal("0")
+    assert any("estimated cost unavailable" in item for item in result.explanation)
+    with journal._connect() as connection:
+        reservation = connection.execute(
+            "SELECT amount_usd,purpose FROM budget_reservations"
+        ).fetchone()
+    assert tuple(reservation) == ("0", "unpriced_manual")
 
 
 def test_batch_funds_ordered_affordable_subset_and_one_lead_allowance(tmp_path: Path) -> None:
@@ -384,12 +408,9 @@ def test_assign_batch_reports_price_unavailable_for_reservation(tmp_path: Path) 
     result = service.assign_batch(
         (_request(), manual_request), prices, lead_allowance_usd=Decimal("0.25")
     )
-    assert [assignment.task_id for assignment in result.assignments] == [TASK_ID]
-    assert result.deferred_task_ids == (second_task,)
-    assert [failure.binding_constraint for failure in result.failures] == [
-        "price_unavailable_for_reservation"
-    ]
-    assert result.failures[0].excluded_counts == {"price_unavailable_for_reservation": 1}
+    assert [assignment.task_id for assignment in result.assignments] == [TASK_ID, second_task]
+    assert result.deferred_task_ids == ()
+    assert result.failures == ()
 
 
 def test_batch_assignment_result_roundtrips_and_defaults_failures() -> None:

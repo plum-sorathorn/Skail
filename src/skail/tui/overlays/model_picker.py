@@ -14,7 +14,8 @@ except Exception:  # pragma: no cover
 from skail.tui.overlays.shell import OVERLAY_CSS, ovl_foot, ovl_head, ovl_rule_strong
 
 MODEL_FOOT = (
-    "Ticked models [x] are eligible for automatic routing. "
+    "Ticked models [x] are enabled for future routing. "
+    "Automatic routing still requires trusted capability evidence. "
     "Future attempts only; the active attempt keeps its assigned model."
 )
 MAX_RENDERED_ROWS = 40

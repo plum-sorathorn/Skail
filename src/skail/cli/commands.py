@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from argparse import Namespace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from skail.agents.profiles import builtin_profiles
@@ -10,6 +11,7 @@ from skail.cli.exit_codes import EXIT_FAILURE, EXIT_OK, EXIT_USAGE
 from skail.cli.render import render_print_stderr, render_print_stdout
 from skail.config.loader import ResolvedConfig, load_config
 from skail.config.paths import (
+    catalog_cache_path,
     default_checkpoints_path,
     default_journal_path,
     project_config_path,
@@ -132,7 +134,11 @@ def handle_sessions(
     return EXIT_USAGE
 
 
-def handle_auth(args: Namespace) -> int:
+def handle_auth(
+    args: Namespace,
+    *,
+    resolved_config: ResolvedConfig | None = None,
+) -> int:
     subaction = getattr(args, "auth_action", "status") or "status"
     keys = {
         "LLMGATEWAY_API_KEY": os.environ.get("LLMGATEWAY_API_KEY"),
@@ -140,6 +146,10 @@ def handle_auth(args: Namespace) -> int:
         "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY"),
         "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY"),
     }
+    if resolved_config is not None:
+        for provider in resolved_config.config.providers.values():
+            if provider.api_key_env:
+                keys.setdefault(provider.api_key_env, os.environ.get(provider.api_key_env))
     if subaction == "check":
         configured = [k for k, v in keys.items() if v]
         if not configured:
@@ -155,7 +165,11 @@ def handle_auth(args: Namespace) -> int:
     return EXIT_OK
 
 
-def handle_models(args: Namespace) -> int:
+def handle_models(
+    args: Namespace,
+    *,
+    resolved_config: ResolvedConfig | None = None,
+) -> int:
     subaction = getattr(args, "models_action", "list") or "list"
     if subaction == "list":
         profiles = builtin_profiles()
@@ -169,6 +183,38 @@ def handle_models(args: Namespace) -> int:
         render_print_stdout("  fake:smart-model (Deterministic Offline Fake)")
         render_print_stdout("  fake:lead-model (Deterministic Offline Fake)")
         render_print_stdout("  fake:implementer-model (Deterministic Offline Fake)")
+        from skail.providers.catalog_sources import load_catalog_snapshot
+
+        snapshot = load_catalog_snapshot(
+            catalog_cache_path(),
+            provider="llmgateway",
+            endpoint="https://api.llmgateway.io/v1/models",
+        )
+        if snapshot is None:
+            render_print_stdout("\nLLMGateway catalog: unavailable")
+        else:
+            priced = sum(
+                entry.fields.get("input_usd_per_million") is not None
+                and entry.fields.get("output_usd_per_million") is not None
+                for entry in snapshot.entries
+            )
+            age = datetime.now(UTC) - snapshot.retrieved_at
+            selected = (
+                resolved_config.config.routing.lead_model
+                if resolved_config is not None
+                else "auto"
+            )
+            render_print_stdout(
+                f"\nLLMGateway catalog: {len(snapshot.entries)} models; "
+                f"{priced} with prompt/completion pricing; age {age}; "
+                f"selected {selected}"
+            )
+            for entry in snapshot.entries:
+                input_price = entry.fields.get("input_usd_per_million", "unavailable")
+                output_price = entry.fields.get("output_usd_per_million", "unavailable")
+                render_print_stdout(
+                    f"  llmgateway:{entry.model}  in ${input_price}/M  out ${output_price}/M"
+                )
         return EXIT_OK
 
     name = getattr(args, "model_name", None)
@@ -181,6 +227,29 @@ def handle_models(args: Namespace) -> int:
             render_print_stdout(f"Capability floor: {p.role_floor}")
             render_print_stdout(f"Allowed tools: {', '.join(p.tools)}")
             return EXIT_OK
+        from skail.providers.catalog_sources import load_catalog_snapshot
+
+        provider, separator, model = name.partition(":")
+        if separator:
+            snapshot = load_catalog_snapshot(
+                catalog_cache_path(provider),
+                provider=provider,
+                endpoint=(
+                    "https://api.llmgateway.io/v1/models"
+                    if provider == "llmgateway"
+                    else None
+                ),
+            )
+            if snapshot is not None:
+                for entry in snapshot.entries:
+                    if entry.model == model:
+                        render_print_stdout(f"Model: {name}")
+                        render_print_stdout(f"Source: {entry.source.value}")
+                        render_print_stdout(f"Trusted facts: {entry.trusted}")
+                        render_print_stdout(f"As of: {entry.as_of.isoformat()}")
+                        render_print_stdout(f"Provenance: {entry.provenance}")
+                        render_print_stdout(json.dumps(entry.fields, default=str, sort_keys=True))
+                        return EXIT_OK
         render_print_stdout(f"Model/Profile: {name}")
         return EXIT_OK
 
