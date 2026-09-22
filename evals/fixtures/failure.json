@@ -1,0 +1,546 @@
+[
+  {
+    "id": "fail-01",
+    "title": "Fix broken syntax in module",
+    "category": "failure",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Fix the syntax error in broken.py by closing the unclosed parenthesis",
+    "initial_files": {
+      "broken.py": "def test_func(\n    print('broken')\n"
+    },
+    "allowed_tools": [
+      "edit_file",
+      "write_file",
+      "read_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Reading broken.py to diagnose syntax error.",
+          "tool_calls": [
+            {
+              "name": "read_file",
+              "args": {
+                "file_path": "broken.py"
+              },
+              "id": "call-read"
+            }
+          ],
+          "usage": {
+            "input_tokens": 16,
+            "output_tokens": 6,
+            "cost_usd": "0.0018"
+          }
+        },
+        {
+          "content": "Editing broken.py to close parenthesis.",
+          "tool_calls": [
+            {
+              "name": "edit_file",
+              "args": {
+                "file_path": "broken.py",
+                "old_string": "def test_func(\n    print('broken')",
+                "new_string": "def test_func():\n    print('broken')"
+              },
+              "id": "call-edit"
+            }
+          ],
+          "usage": {
+            "input_tokens": 22,
+            "output_tokens": 12,
+            "cost_usd": "0.003"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "Syntax error in broken.py resolved.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "broken.py",
+      "expected": "def test_func():"
+    },
+    "route_invariants": {
+      "min_floor": 0.35
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Inspect syntax error and repair corrupted function signature",
+      "scoring_meaning": "Verify valid function signature in broken.py",
+      "workload_type": "recovery",
+      "failure_mode": "syntax_error_recovery",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "fail-02",
+    "title": "Handle missing dictionary key gracefully",
+    "category": "failure",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Fix KeyError in fetcher.py by using dict.get('key', default)",
+    "initial_files": {
+      "fetcher.py": "def fetch_val(d):\n    return d['missing']\n"
+    },
+    "allowed_tools": [
+      "edit_file",
+      "write_file",
+      "read_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Reading fetcher.py to locate fragile key lookup.",
+          "tool_calls": [
+            {
+              "name": "read_file",
+              "args": {
+                "file_path": "fetcher.py"
+              },
+              "id": "call-read"
+            }
+          ],
+          "usage": {
+            "input_tokens": 16,
+            "output_tokens": 6,
+            "cost_usd": "0.0018"
+          }
+        },
+        {
+          "content": "Updating fetcher.py to use dict.get safely.",
+          "tool_calls": [
+            {
+              "name": "edit_file",
+              "args": {
+                "file_path": "fetcher.py",
+                "old_string": "return d['missing']",
+                "new_string": "return d.get('missing', None)"
+              },
+              "id": "call-edit"
+            }
+          ],
+          "usage": {
+            "input_tokens": 22,
+            "output_tokens": 12,
+            "cost_usd": "0.003"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "KeyError handling implemented using d.get().",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "fetcher.py",
+      "expected": "d.get("
+    },
+    "route_invariants": {
+      "min_floor": 0.35
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Refactor raw subscript to safe get method",
+      "scoring_meaning": "Verify d.get is present in fetcher.py",
+      "workload_type": "recovery",
+      "failure_mode": "keyerror_handling",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "fail-03",
+    "title": "Escalate on difficult refactor failure",
+    "category": "failure",
+    "role": "implementer",
+    "risk": "complex",
+    "prompt": "Refactor legacy spaghetti algorithm into clean functional pipeline",
+    "initial_files": {
+      "spaghetti.py": "# complex spaghetti code\ndef run(): pass\n"
+    },
+    "allowed_tools": [
+      "write_file",
+      "read_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Inspecting legacy spaghetti.py code.",
+          "tool_calls": [
+            {
+              "name": "read_file",
+              "args": {
+                "file_path": "spaghetti.py"
+              },
+              "id": "call-read"
+            }
+          ],
+          "usage": {
+            "input_tokens": 18,
+            "output_tokens": 8,
+            "cost_usd": "0.0022"
+          }
+        },
+        {
+          "content": "Writing refactored pipeline.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "spaghetti.py",
+                "content": "# refactored clean functional pipeline\ndef run():\n    return 'clean'\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 26,
+            "output_tokens": 16,
+            "cost_usd": "0.0038"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "Refactored pipeline in spaghetti.py.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "spaghetti.py",
+      "expected": "def run():"
+    },
+    "route_invariants": {
+      "min_floor": 0.6
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Inspect legacy code and replace with clean pipeline",
+      "scoring_meaning": "Verify run function signature in spaghetti.py",
+      "workload_type": "recovery",
+      "failure_mode": "escalation_on_complex",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "fail-04",
+    "title": "Handle network timeout with retry limit",
+    "category": "failure",
+    "role": "implementer",
+    "risk": "bounded",
+    "prompt": "Implement resilient_fetch in client.py catching httpx.TimeoutException and raising ServiceUnavailable",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing resilient_fetch in client.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "client.py",
+                "content": "import time\n\nclass ServiceUnavailable(Exception): pass\n\ndef resilient_fetch(url: str, retries: int = 3):\n    for i in range(retries):\n        try: return 'data'\n        except Exception: time.sleep(0.05)\n    raise ServiceUnavailable('Network timeout')\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 26,
+            "output_tokens": 20,
+            "cost_usd": "0.0042"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "resilient_fetch implemented handling timeouts.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "client.py",
+      "expected": "def resilient_fetch"
+    },
+    "route_invariants": {
+      "min_floor": 0.45
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Handle transient timeout errors with bounded retry count",
+      "scoring_meaning": "Verify resilient_fetch function exists in client.py",
+      "workload_type": "recovery",
+      "failure_mode": "network_timeout",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "fail-05",
+    "title": "Permission error handling when writing read-only directory",
+    "category": "failure",
+    "role": "implementer",
+    "risk": "bounded",
+    "prompt": "Implement safe_dir_create in io_tool.py catching PermissionError and returning False",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing safe_dir_create in io_tool.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "io_tool.py",
+                "content": "import os\n\ndef safe_dir_create(path: str) -> bool:\n    try:\n        os.makedirs(path, exist_ok=True)\n        return True\n    except PermissionError:\n        return False\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 24,
+            "output_tokens": 18,
+            "cost_usd": "0.0038"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "safe_dir_create implemented with permission error recovery.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "io_tool.py",
+      "expected": "def safe_dir_create"
+    },
+    "route_invariants": {
+      "min_floor": 0.45
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Catch OS permission errors during directory creation",
+      "scoring_meaning": "Verify safe_dir_create function exists",
+      "workload_type": "recovery",
+      "failure_mode": "permission_denied",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "fail-06",
+    "title": "Malformed response JSON recovery",
+    "category": "failure",
+    "role": "implementer",
+    "risk": "bounded",
+    "prompt": "Implement safe_json_parse in parser.py returning fallback object on json.JSONDecodeError",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing safe_json_parse in parser.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "parser.py",
+                "content": "import json\n\ndef safe_json_parse(raw: str, fallback=None):\n    try: return json.loads(raw)\n    except json.JSONDecodeError: return fallback or {}\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 24,
+            "output_tokens": 18,
+            "cost_usd": "0.0038"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "safe_json_parse implemented.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "parser.py",
+      "expected": "def safe_json_parse"
+    },
+    "route_invariants": {
+      "min_floor": 0.45
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Recover gracefully from corrupt/malformed JSON strings",
+      "scoring_meaning": "Verify safe_json_parse function is present",
+      "workload_type": "recovery",
+      "failure_mode": "malformed_json",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "fail-07",
+    "title": "Budget limit block on expensive request",
+    "category": "failure",
+    "role": "implementer",
+    "risk": "high-risk",
+    "prompt": "Handle budget-blocked operation by recording budget ceiling notice in sweep.log",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Writing budget ceiling notice to sweep.log.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "sweep.log",
+                "content": "Operation halted: cost exceeds configured budget ceiling.\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 20,
+            "output_tokens": 14,
+            "cost_usd": "0.003"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "Budget constraint recorded in sweep.log.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "sweep.log",
+      "expected": "budget ceiling"
+    },
+    "route_invariants": {
+      "min_floor": 0.7
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Record budget ceiling block diagnostic",
+      "scoring_meaning": "Verify budget ceiling diagnostic logged",
+      "workload_type": "non_code_answer",
+      "failure_mode": "budget_block",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "fail-08",
+    "title": "Reject path traversal request outside workspace",
+    "category": "failure",
+    "role": "implementer",
+    "risk": "high-risk",
+    "prompt": "Validate containment and log boundary policy enforcement to audit.log",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Logging boundary policy enforcement to audit.log.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "audit.log",
+                "content": "Path boundary policy enforced: traversal rejected.\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 20,
+            "output_tokens": 14,
+            "cost_usd": "0.003"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "Boundary policy rejection recorded in audit.log.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 14,
+          "output_tokens": 6,
+          "cost_usd": "0.0015"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "audit.log",
+      "expected": "boundary policy"
+    },
+    "route_invariants": {
+      "min_floor": 0.7
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Enforce boundary containment and log policy rejection",
+      "scoring_meaning": "Verify boundary policy message is present in audit.log",
+      "workload_type": "non_code_answer",
+      "failure_mode": "invalid_request_path_boundary",
+      "platform": "any"
+    }
+  }
+]

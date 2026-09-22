@@ -1,0 +1,61 @@
+name: Release CI
+
+on:
+  push:
+    branches: [main, skail]
+    tags: ['v*']
+  pull_request:
+    branches: [main, skail]
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  validate-and-build:
+    name: Test & Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python-version: ['3.12']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Code formatting and linting
+        run: python -m ruff check src tests scripts evals
+
+      - name: Type checking
+        run: python -m mypy src/skail
+
+      - name: Run offline test suite
+        run: python -m pytest -q
+
+      - name: Run fake-provider smoke test
+        run: python scripts/smoke.py --fake-provider
+
+      - name: Verify isolated package artifacts
+        run: python scripts/package_check.py --evidence "${{ runner.temp }}/skail-package-evidence.json"
+
+      - name: Upload package evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: skail-package-evidence-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: ${{ runner.temp }}/skail-package-evidence.json
+          if-no-files-found: error
+
+      - name: Run release packaging verification
+        run: python scripts/release_check.py

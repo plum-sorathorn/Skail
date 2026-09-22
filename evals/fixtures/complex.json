@@ -1,0 +1,495 @@
+[
+  {
+    "id": "comp-01",
+    "title": "Dependency graph topological sort with cycle detection",
+    "category": "complex",
+    "role": "implementer",
+    "risk": "complex",
+    "prompt": "Implement topological_sort(graph) in toposort.py detecting cycles and raising CycleError",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing topological_sort in toposort.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "toposort.py",
+                "content": "class CycleError(Exception): pass\n\ndef topological_sort(graph: dict[str, list[str]]) -> list[str]:\n    visited, visiting, result = set(), set(), []\n    def dfs(node):\n        if node in visiting: raise CycleError('Cycle detected')\n        if node in visited: return\n        visiting.add(node)\n        for dep in graph.get(node, []):\n            dfs(dep)\n        visiting.remove(node)\n        visited.add(node)\n        result.append(node)\n    for n in graph: dfs(n)\n    return result\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 24,
+            "cost_usd": "0.005"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "topological_sort implemented with cycle detection.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "toposort.py",
+      "expected": "def topological_sort"
+    },
+    "route_invariants": {
+      "min_floor": 0.6
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement DFS cycle-detecting topological sort",
+      "scoring_meaning": "Verify topological_sort function definition",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "comp-02",
+    "title": "Token bucket rate limiter with burst capability",
+    "category": "complex",
+    "role": "implementer",
+    "risk": "complex",
+    "prompt": "Implement TokenBucket in ratelimit.py with capacity, refill_rate, and acquire(tokens) method",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing TokenBucket in ratelimit.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "ratelimit.py",
+                "content": "import time\n\nclass TokenBucket:\n    def __init__(self, capacity: int, refill_rate: float):\n        self.capacity = capacity\n        self.refill_rate = refill_rate\n        self.tokens = capacity\n        self.last_refill = time.monotonic()\n    def acquire(self, tokens: int = 1) -> bool:\n        now = time.monotonic()\n        self.tokens = min(self.capacity, self.tokens + (now - self.last_refill) * self.refill_rate)\n        self.last_refill = now\n        if self.tokens >= tokens:\n            self.tokens -= tokens\n            return True\n        return False\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 24,
+            "cost_usd": "0.005"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "TokenBucket rate limiter implemented.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "ratelimit.py",
+      "expected": "class TokenBucket"
+    },
+    "route_invariants": {
+      "min_floor": 0.6
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement token bucket rate limiter with monotonic timer",
+      "scoring_meaning": "Verify TokenBucket class declaration",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "comp-03",
+    "title": "Event emitter with wildcard and once listeners",
+    "category": "complex",
+    "role": "implementer",
+    "risk": "complex",
+    "prompt": "Implement EventEmitter in emitter.py supporting on(pattern), once(pattern), emit(event, *args)",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing EventEmitter in emitter.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "emitter.py",
+                "content": "from collections import defaultdict\n\nclass EventEmitter:\n    def __init__(self):\n        self.listeners = defaultdict(list)\n    def on(self, event: str, fn):\n        self.listeners[event].append((fn, False))\n    def once(self, event: str, fn):\n        self.listeners[event].append((fn, True))\n    def emit(self, event: str, *args):\n        remaining = []\n        for fn, once in self.listeners[event]:\n            fn(*args)\n            if not once: remaining.append((fn, False))\n        self.listeners[event] = remaining\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 32,
+            "output_tokens": 26,
+            "cost_usd": "0.0055"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "EventEmitter implemented with wildcard/once support.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "emitter.py",
+      "expected": "class EventEmitter"
+    },
+    "route_invariants": {
+      "min_floor": 0.6
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement event emitter supporting once and handlers",
+      "scoring_meaning": "Verify EventEmitter class exists",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "comp-04",
+    "title": "Unified diff parser into structured patch objects",
+    "category": "complex",
+    "role": "implementer",
+    "risk": "complex",
+    "prompt": "Implement parse_diff in patch_parser.py parsing hunks, line numbers, and file headers",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing parse_diff in patch_parser.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "patch_parser.py",
+                "content": "def parse_diff(patch_str: str) -> list[dict]:\n    hunks = []\n    for line in patch_str.splitlines():\n        if line.startswith('@@'): hunks.append({'header': line})\n    return hunks\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 22,
+            "cost_usd": "0.005"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "Unified diff parser implemented.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "patch_parser.py",
+      "expected": "def parse_diff"
+    },
+    "route_invariants": {
+      "min_floor": 0.6
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement diff parser extracting hunks",
+      "scoring_meaning": "Verify parse_diff function exists",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "comp-05",
+    "title": "Multipart stream chunker and boundary assembler",
+    "category": "complex",
+    "role": "implementer",
+    "risk": "complex",
+    "prompt": "Implement MultipartStream in multipart.py chunking data into boundary-delimited payloads",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing MultipartStream in multipart.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "multipart.py",
+                "content": "class MultipartStream:\n    def __init__(self, boundary: str = 'boundary123'):\n        self.boundary = boundary\n    def format_chunk(self, data: str) -> bytes:\n        return f'--{self.boundary}\\r\\nContent-Length: {len(data)}\\r\\n\\r\\n{data}\\r\\n'.encode()\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 22,
+            "cost_usd": "0.005"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "MultipartStream implemented.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "multipart.py",
+      "expected": "class MultipartStream"
+    },
+    "route_invariants": {
+      "min_floor": 0.6
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement multipart boundary formatting stream",
+      "scoring_meaning": "Verify MultipartStream class exists",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "comp-06",
+    "title": "State machine transition engine with guards",
+    "category": "complex",
+    "role": "implementer",
+    "risk": "complex",
+    "prompt": "Implement StateMachine in fsm.py with states, transitions, guard conditions, and event dispatch",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing StateMachine in fsm.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "fsm.py",
+                "content": "class StateMachine:\n    def __init__(self, initial_state: str):\n        self.current_state = initial_state\n        self.transitions = {}\n    def add_transition(self, source, event, target, guard=None):\n        self.transitions[(source, event)] = (target, guard)\n    def dispatch(self, event):\n        if (self.current_state, event) in self.transitions:\n            target, guard = self.transitions[(self.current_state, event)]\n            if guard is None or guard():\n                self.current_state = target\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 32,
+            "output_tokens": 24,
+            "cost_usd": "0.0055"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "StateMachine transition engine implemented.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "fsm.py",
+      "expected": "class StateMachine"
+    },
+    "route_invariants": {
+      "min_floor": 0.6
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement finite state machine engine with guards",
+      "scoring_meaning": "Verify StateMachine class declaration",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "comp-07",
+    "title": "Markdown parser with AST token emission",
+    "category": "complex",
+    "role": "researcher",
+    "risk": "complex",
+    "prompt": "Implement tokenize_markdown in md_ast.py returning tokens for headers, links, code blocks",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing tokenize_markdown in md_ast.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "md_ast.py",
+                "content": "def tokenize_markdown(md_text: str) -> list[dict]:\n    tokens = []\n    for line in md_text.splitlines():\n        if line.startswith('#'): tokens.append({'type': 'header', 'text': line.lstrip('#').strip()})\n        elif line.startswith('```'): tokens.append({'type': 'code_block'})\n    return tokens\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 24,
+            "cost_usd": "0.005"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "tokenize_markdown implemented.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "md_ast.py",
+      "expected": "def tokenize_markdown"
+    },
+    "route_invariants": {
+      "min_floor": 0.6
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement AST tokenizer for Markdown blocks",
+      "scoring_meaning": "Verify tokenize_markdown function definition",
+      "workload_type": "read_only_analysis",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "comp-08",
+    "title": "Recursive directory scanner with symlink and loop detection",
+    "category": "complex",
+    "role": "explorer",
+    "risk": "complex",
+    "prompt": "Implement safe_walk in tree.py tracking visited real paths to prevent symlink loops",
+    "initial_files": {
+      "src/main.py": "print('hello')\n"
+    },
+    "allowed_tools": [
+      "write_file",
+      "ls",
+      "read_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Surveying workspace structure before tree scanner creation.",
+          "tool_calls": [
+            {
+              "name": "ls",
+              "args": {
+                "path": "."
+              },
+              "id": "call-ls"
+            }
+          ],
+          "usage": {
+            "input_tokens": 18,
+            "output_tokens": 8,
+            "cost_usd": "0.002"
+          }
+        },
+        {
+          "content": "Implementing safe_walk in tree.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "tree.py",
+                "content": "from pathlib import Path\n\ndef safe_walk(start_dir: str):\n    visited = set()\n    root = Path(start_dir)\n    for path in root.rglob('*'):\n        resolved = path.resolve()\n        if resolved not in visited:\n            visited.add(resolved)\n            yield str(path.relative_to(root))\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 22,
+            "cost_usd": "0.005"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "safe_walk scanner implemented.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "tree.py",
+      "expected": "def safe_walk"
+    },
+    "route_invariants": {
+      "min_floor": 0.6
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Survey directory structure and implement symlink-safe traversal",
+      "scoring_meaning": "Verify safe_walk definition exists",
+      "workload_type": "dependent_discovery",
+      "platform": "any"
+    }
+  }
+]

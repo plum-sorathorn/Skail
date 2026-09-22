@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Skail TUI Redesign 1 — ATELIER (editorial terminal)</title>
+<style>
+/* ─────────────────────────────────────────────────────────────
+   ATELIER — refined editorial-terminal
+   Hierarchy from rhythm, rules and indentation. Almost no boxes.
+   Tokens below mirror src/skail/tui/theme.py REQUIRED_TOKENS.
+   ───────────────────────────────────────────────────────────── */
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:#0A0908;color:#C9BFB1;padding:34px 30px 70px;
+  font:14px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+input[name=m],input[name=t]{position:absolute;opacity:0;pointer-events:none}
+.doc{max-width:1180px;margin:0 auto}
+h1{font:600 30px/1.1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.16em;margin:0;color:#EDE4D6}
+h1 em{font-style:normal;color:#D98E4A}
+.sub{margin:6px 0 0;color:#8C8071;max-width:74ch}
+.sub b{color:#C9BFB1;font-weight:600}
+h2{font:600 12px/1 ui-sans-serif,sans-serif;letter-spacing:.2em;text-transform:uppercase;
+   color:#8C8071;margin:44px 0 14px;padding-bottom:8px;border-bottom:1px solid #221D18}
+.ctl{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:22px 0 26px}
+.ctl span{font:11px/1 ui-sans-serif,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#6E6154;margin-right:2px}
+.ctl label{cursor:pointer;font:12px/1 ui-sans-serif,sans-serif;letter-spacing:.06em;color:#9A8C7B;
+  border:1px solid #2A241E;border-radius:999px;padding:7px 14px;background:#14110E;transition:.15s}
+.ctl label:hover{color:#EDE4D6;border-color:#4A3E35}
+#m-both:checked~.doc label[for=m-both],#m-wide:checked~.doc label[for=m-wide],
+#m-narrow:checked~.doc label[for=m-narrow],#t-dark:checked~.doc label[for=t-dark],
+#t-light:checked~.doc label[for=t-light]{color:#14110E;background:#D98E4A;border-color:#D98E4A;font-weight:600}
+#m-wide:checked~.doc .f-narrow,#m-wide:checked~.doc .f-overlay{display:none}
+#m-narrow:checked~.doc .f-wide,#m-narrow:checked~.doc .f-overlay{display:none}
+.frames{display:flex;flex-direction:column;gap:34px;align-items:flex-start}
+.cap{font:11px/1 ui-sans-serif,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:#6E6154;margin:0 0 12px 2px}
+.cap b{color:#9A8C7B;font-weight:600}
+
+/* ── swatches ── */
+.sw{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.sw i{display:block;width:26px;height:26px;border-radius:5px;border:1px solid rgba(255,255,255,.09)}
+.sw div{font:10px/1.35 ui-monospace,monospace;color:#6E6154;width:74px}
+
+/* ── terminal bezel ── */
+.bezel{width:max-content;background:#0B0A09;border:1px solid #26221D;border-radius:11px;
+  padding:9px 9px 12px;box-shadow:0 22px 48px rgba(0,0,0,.5)}
+.bezel .bar{display:flex;align-items:center;gap:9px;padding:2px 5px 10px;
+  font:10.5px/1 ui-sans-serif,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#5C5347}
+.bezel .bar u{text-decoration:none;width:7px;height:7px;border-radius:2px;background:#332B24;display:block}
+
+/* ── THE TERMINAL ── */
+.term{
+  /* semantic tokens — ATELIER dark ("Ink & Bone") */
+  --background:#14110E; --surface:#1B1714; --surfaceRaised:#221D19; --surfaceInset:#100D0A;
+  --border:#322A24; --borderStrong:#4F4238;
+  --text:#EDE4D6; --textMuted:#9A8C7B; --textFaint:#6E6154;
+  --accent:#D98E4A; --accentSoft:#2E2318; --focusRing:#E8B978;
+  --modeQuality:#B39DDB; --modeEconomy:#82C9A5; --modeManual:#D9A441; --delegation:#B39DDB;
+  --budgetFill:#C9A227; --budgetWarning:#D98E4A; --budgetCritical:#E0645A; --budgetEmpty:#2C2620;
+  --diffAdded:#8FBF7A; --diffAddedSurface:#18211400; --diffRemoved:#E0645A; --diffRemovedSurface:#2A1614;
+  --dimmed:#6E6154; --error:#E0645A; --errorSurface:#2A1614;
+  --approval:#D9A441; --approvalSurface:#241E14;
+  --agentOne:#7FB3D5; --agentTwo:#B39DDB; --agentThree:#82C9A5;
+  --shimmerBase:#6E6154; --shimmerPeak:#F6E7D0; --selection:#3A2F22; --link:#8FC7E8;
+
+  background:var(--background);color:var(--text);
+  font-family:"Cascadia Mono","JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12.6px;line-height:1.52;
+  width:calc((var(--cols) + 2) * 1ch);padding:2px 1ch 4px;
+  --cols:120;
+}
+/* ATELIER light ("Newsprint") — proves the light token set */
+body:has(#t-light:checked) .term{
+  --background:#F4F0E7;--surface:#FBF8F1;--surfaceRaised:#EDE7DA;--surfaceInset:#E7E0D2;
+  --border:#D6CCBB;--borderStrong:#A99C87;
+  --text:#241E17;--textMuted:#6E6154;--textFaint:#948878;
+  --accent:#9E5518;--accentSoft:#F0E0CB;--focusRing:#7A3F0E;
+  --budgetFill:#8A6A0C;--budgetWarning:#9E5518;--budgetCritical:#AE3227;--budgetEmpty:#DCD4C5;
+  --error:#AE3227;--errorSurface:#F6E2DE;--approval:#8A6200;--approvalSurface:#FAEEC9;
+  --agentOne:#2F6E92;--agentTwo:#5E46A0;--agentThree:#2C7355;
+  --shimmerBase:#A99C87;--shimmerPeak:#241E17;--selection:#E3D3BC;--dimmed:#948878;--link:#2F6E92;
+}
+.bezel:has(~*),.term b{font-weight:600}
+.ln{white-space:pre}
+.row{display:flex;align-items:baseline;white-space:pre}
+.sp{flex:1 1 auto}
+.rule{border-top:1px solid var(--border);height:0;margin:1px 0}
+.rule.strong{border-top-color:var(--borderStrong)}
+.rule.thin{border-top-color:color-mix(in srgb,var(--border) 55%,transparent)}
+.sc{letter-spacing:.13em;color:var(--textMuted)}
+.m{color:var(--textMuted)} .f2{color:var(--textFaint)} .a{color:var(--accent)}
+.dim{color:var(--dimmed)} .lk{color:var(--link)}
+.ag1{color:var(--agentOne)} .ag2{color:var(--agentTwo)} .ag3{color:var(--agentThree)}
+.ok{color:var(--diffAdded)} .wn{color:var(--approval)} .er{color:var(--error)}
+.sel{background:var(--selection)}
+.shim{background:linear-gradient(90deg,var(--shimmerBase),var(--shimmerPeak),var(--shimmerBase));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.kbd{color:var(--text);background:var(--surfaceRaised);border:1px solid var(--border);
+  border-radius:3px;padding:0 .4ch}
+.act{color:var(--accent);border-bottom:1px solid var(--accent);padding-bottom:1px}
+
+/* transcript entry grid: time │ fold │ role │ measure */
+.e{display:flex;align-items:baseline}
+.e .g{flex:0 0 9ch;color:var(--textFaint)}
+.e .f{flex:0 0 2ch;text-align:center;color:var(--borderStrong)}
+.e .r{flex:0 0 10ch;letter-spacing:.05em;color:var(--textMuted)}
+.e .c{flex:1 1 auto;white-space:pre-wrap;color:var(--text)}
+.e.sub .f{color:var(--border)}
+.e.sub .c{color:var(--textMuted)}
+.e.sub2 .g{flex-basis:9ch}
+.e.sub2 .c{color:var(--textFaint);padding-left:3ch}
+.e.you .r{color:var(--accent)} .e.you .c{color:var(--text)}
+.e.lead .r{color:var(--text)} .e.lead .r::after{content:""}
+.e.err{background:var(--errorSurface)} .e.err .r{color:var(--error)} .e.err .c{color:var(--error)}
+.e.apr{background:var(--approvalSurface)} .e.apr .r{color:var(--approval)} .e.apr .c{color:var(--approval)}
+.e.rcp .r{color:var(--diffAdded)} .e.rcp .c{color:var(--textMuted)}
+.e.tool .r{color:var(--agentOne)} .e.tool .c{color:var(--textMuted)}
+.e:focus-within,.e.cur{box-shadow:inset 2px 0 0 var(--focusRing)}
+.dock{display:flex;align-items:center;gap:1ch;color:var(--textFaint);margin:1px 0}
+.dock i{flex:1;height:1px;background:var(--border);display:block}
+
+/* main split */
+.main{display:grid;grid-template-columns:80ch 1ch 39ch}
+.vr{background:linear-gradient(var(--border),var(--border)) 50% 0/1px 100% no-repeat}
+.left{padding-right:2ch;min-width:0}
+.right{padding-left:2ch;min-width:0}
+.narrow .main{grid-template-columns:1fr}
+.narrow .vr,.narrow .right{display:none}
+.narrow .left{padding-right:0}
+.narrow .e .g{display:none}
+.narrow .e .r{flex-basis:11ch}
+
+/* tabs */
+.tabs{display:flex;gap:2.4ch;align-items:baseline;margin-bottom:3px}
+.tabs span{color:var(--textFaint);letter-spacing:.12em;cursor:default}
+.tabs span.on{color:var(--text);border-bottom:2px solid var(--accent);padding-bottom:1px}
+.led{margin:2px 0}
+.led .hd{display:flex;align-items:baseline;gap:1ch;color:var(--textFaint);letter-spacing:.12em;margin-top:8px}
+.led .hd i{flex:1;height:1px;background:var(--border);display:block}
+.ledrow{display:flex;gap:1ch;align-items:baseline}
+.ledrow .st{flex:0 0 2ch;text-align:center}
+.ledrow .nm{flex:0 0 9ch}
+.ledrow .co{flex:1 1 auto;text-align:right;color:var(--textMuted);font-variant-numeric:tabular-nums}
+.ledrow .tk{color:var(--textMuted);white-space:pre-wrap;padding-left:3ch}
+.meter{letter-spacing:.06em}
+
+/* approval band: rubricated left margin, no box */
+.appr{display:grid;grid-template-columns:1ch 1fr;background:var(--approvalSurface);margin:3px 0}
+.appr .bar{background:linear-gradient(var(--approval),var(--approval)) 0 0/2px 100% no-repeat}
+.appr .bd{padding:2px 2ch 4px 1.5ch}
+.ainput{border-bottom:1px dashed var(--borderStrong);color:var(--textFaint);padding:1px 0;margin:3px 0 5px}
+.acts{display:flex;gap:3ch;align-items:baseline;flex-wrap:wrap}
+
+/* composer band */
+.comp{background:var(--surface);border-top:1px solid var(--borderStrong);
+  border-bottom:1px solid var(--borderStrong);padding:2px 0 3px;margin:2px 0}
+.comp .q{display:flex;gap:1ch;align-items:baseline;color:var(--approval);padding:0 0 2px}
+.comp .in{display:flex;gap:1.5ch;align-items:baseline}
+.comp .prompt{color:var(--accent);flex:0 0 2ch}
+.comp .txt{flex:1 1 auto;white-space:pre-wrap;min-height:calc(3 * 1.52em)}
+.comp .meta{display:flex;gap:2ch;align-items:baseline;color:var(--textFaint);padding-top:2px}
+.chip{border:1px solid var(--borderStrong);border-radius:3px;padding:0 .7ch;color:var(--text);
+  background:var(--surfaceRaised);letter-spacing:.1em}
+.chip.mode{border-color:var(--modeQuality);color:var(--modeQuality)}
+.chip.send{border-color:var(--accent);color:var(--accent);background:var(--accentSoft)}
+.focus{box-shadow:0 0 0 1px var(--focusRing)}
+.caret{background:var(--accent);color:var(--background)}
+
+/* footer */
+.foot{display:flex;gap:1.6ch;align-items:baseline;color:var(--textFaint);flex-wrap:wrap;padding-top:2px}
+
+/* doc-side mini panels (tab states) */
+.minis{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.mini{width:max-content}
+.notes{max-width:96ch;color:#9A8C7B}
+.notes li{margin:5px 0}
+.notes code{font:12px/1.4 ui-monospace,monospace;color:#D98E4A;background:#171310;
+  border:1px solid #2A241E;border-radius:4px;padding:1px 5px}
+table{border-collapse:collapse;font:12.5px/1.5 ui-sans-serif,sans-serif;max-width:100%}
+th,td{text-align:left;padding:6px 12px 6px 0;border-bottom:1px solid #221D18;vertical-align:top}
+th{font:600 10.5px/1 ui-sans-serif,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#6E6154}
+td.k{color:#C9BFB1;white-space:nowrap;font-family:ui-monospace,monospace;font-size:12px}
+</style>
+</head>
+<body>
+<input type="radio" name="m" id="m-both" checked><input type="radio" name="m" id="m-wide"><input type="radio" name="m" id="m-narrow">
+<input type="radio" name="t" id="t-dark" checked><input type="radio" name="t" id="t-light">
+
+<div class="doc">
+  <h1>ATELIER <em>·</em> REDESIGN 1</h1>
+  <p class="sub"><b>Refined editorial-terminal.</b> A printed page, not a dashboard. Hierarchy comes from
+  rhythm, hairline rules, a timestamp gutter and indentation — almost nothing is boxed. One restrained
+  accent (ochre) marks <i>you</i> and the only actionable things on screen. Tabular numerals right-align in
+  the margin ledger. Ships dark (“Ink &amp; Bone”) and light (“Newsprint”) from the same token set.</p>
+
+  <div class="ctl">
+    <span>viewport</span>
+    <label for="m-both">Both</label><label for="m-wide">Wide 120×40</label><label for="m-narrow">Narrow 88×30</label>
+    <span style="margin-left:14px">theme</span>
+    <label for="t-dark">Ink &amp; Bone</label><label for="t-light">Newsprint</label>
+  </div>
+
+  <div class="sw">
+    <div><i style="background:#14110E"></i>background</div><div><i style="background:#1B1714"></i>surface</div>
+    <div><i style="background:#221D19"></i>surfRaised</div><div><i style="background:#322A24"></i>border</div>
+    <div><i style="background:#EDE4D6"></i>text</div><div><i style="background:#9A8C7B"></i>textMuted</div>
+    <div><i style="background:#D98E4A"></i>accent</div><div><i style="background:#D9A441"></i>approval</div>
+    <div><i style="background:#E0645A"></i>error</div><div><i style="background:#7FB3D5"></i>agentOne</div>
+    <div><i style="background:#B39DDB"></i>agentTwo</div><div><i style="background:#82C9A5"></i>agentThree</div>
+    <div><i style="background:#C9A227"></i>budgetFill</div><div><i style="background:#E8B978"></i>focusRing</div>
+  </div>
+
+  <h2>Wide — 120 × 40</h2>
+  <div class="frames">
+  <div class="f-wide">
+  <p class="cap">main chat page <b>·</b> 120 columns <b>·</b> sidebar visible (width ≥ 100)</p>
+  <div class="bezel"><div class="bar"><u></u><u></u><u></u> skail 0.1.0 — zsh — 120×40</div>
+  <div class="term" style="--cols:120">
+
+    <!-- ── masthead ─────────────────────────────────────────── -->
+    <div class="row"><span class="sc" style="color:var(--text);letter-spacing:.34em">SKAIL</span><span class="f2"> 0.1.0</span><span class="sp"></span><span class="chip sc">ANTHROPIC</span><span class="m">  FRI 18 SEP · 14:32:07</span></div>
+    <div class="rule strong"></div>
+    <!-- ── status strip (single dateline, replaces the box strip) ── -->
+    <div class="row"><span class="sc f2">MODEL</span><span> auto</span><span class="f2">   ·   </span><span class="sc f2">MODE</span><span style="color:var(--modeQuality)"> quality</span><span class="f2">   ·   </span><span class="sc f2">SPEND</span><span> $0.0142 / $5.00</span><span class="f2"> </span><span class="meter budgetFill"><span style="color:var(--budgetFill)">▓▓</span><span style="color:var(--budgetEmpty)">░░░░░░░░</span></span><span class="f2"> 0.3%</span><span class="sp"></span><span class="sc f2">AGENTS</span><span class="ag1"> ●1</span><span class="f2"> running</span><span class="m"> · 2 queued</span></div>
+    <div class="rule"></div>
+
+    <!-- ── main split: transcript 80 / margin 39 ─────────────── -->
+    <div class="main">
+      <div class="left">
+        <div class="row" style="padding:2px 0 3px"><span class="sc" style="letter-spacing:.24em">TRANSCRIPT</span><span class="sp"></span><span class="f2">run-1 · 41 events · pinned</span></div>
+        <div class="rule thin"></div>
+
+        <div class="e"><span class="g">14:32:01</span><span class="f">+</span><span class="r">TASK</span><span class="c">✻ Starting Skail runtime…</span></div>
+        <div class="e"><span class="g">14:32:02</span><span class="f">+</span><span class="r">TASK</span><span class="c">Ready. Describe the outcome you want and Skail will plan it, delegate it, and account for every token.</span></div>
+        <div class="e you cur"><span class="g">14:32:04</span><span class="f">−</span><span class="r">YOU</span><span class="c">Fix the failing budget tests, then summarize.</span></div>
+        <div class="e lead"><span class="g">14:32:05</span><span class="f">−</span><span class="r">LEAD</span><span class="c">Reproducing first, then patching the two assertions in test_budget.py.</span></div>
+        <div class="e sub"><span class="g"></span><span class="f">└</span><span class="r"></span><span class="c">plan r3 accepted · 3 items · revision 2 of 3 · integration pytest</span></div>
+        <div class="e"><span class="g">14:32:06</span><span class="f">−</span><span class="r ag1">AGENT 1 ●</span><span class="c">Reading the failing assertions before I touch them.</span></div>
+        <div class="e tool sub"><span class="g"></span><span class="f">└</span><span class="r ag1">TOOL ▸</span><span class="c">read_file  tests/unit/test_budget.py</span></div>
+        <div class="e sub2"><span class="g"></span><span class="f"></span><span class="r"></span><span class="c">214 lines · 12 ms · sha 4f2a91c</span></div>
+        <div class="e tool sub"><span class="g"></span><span class="f">└</span><span class="r ag1">TOOL ▸</span><span class="c">run  python -m pytest tests/unit -q</span></div>
+        <div class="e sub2"><span class="g"></span><span class="f"></span><span class="r"></span><span class="c">exit 0 · 41 passed · 0 failed · 3.2 s</span></div>
+        <div class="e rcp"><span class="g">14:32:11</span><span class="f">+</span><span class="r">RECEIPT</span><span class="c">✓ plan@r3 · 2 changesets · $0.0041</span></div>
+        <div class="e lead"><span class="g">14:32:12</span><span class="f">−</span><span class="r">LEAD</span><span class="c">Fixed 2 assertions; 41 passed, 0 failed.</span></div>
+        <div class="e err"><span class="g">14:32:14</span><span class="f">+</span><span class="r">ERROR</span><span class="c">budget reservation expired for AGENT 2 — retried once</span></div>
+        <div class="e apr"><span class="g">14:32:15</span><span class="f">+</span><span class="r">APPROVAL</span><span class="c">command:run-1 awaiting a decision ↓</span></div>
+        <div class="e lead"><span class="g">14:32:16</span><span class="f">+</span><span class="r">LEAD</span><span class="c shim">Summarizing the diff and the receipts</span><span class="c caret">▌</span></div>
+
+        <div class="dock"><i></i><span>↓ 4 new events · End to re-pin</span><i></i></div>
+      </div>
+
+      <div class="vr"></div>
+
+      <!-- ── marginalia: tabs + agent ledger + always-on budget ── -->
+      <div class="right">
+        <div class="tabs"><span class="on">AGENTS</span><span>PLAN</span><span>ROUTE</span><span>BUDGET</span></div>
+        <div class="rule thin"></div>
+        <div class="led">
+          <div class="ledrow" style="margin-top:4px"><span class="st ag1">●</span><span class="nm">AGENT 1</span><span class="sc f2" style="letter-spacing:.08em">RUNNING</span><span class="co">$0.0142</span></div>
+          <div class="tk">survey tui layout + patch budget</div>
+          <div class="tk"><span style="color:var(--agentOne)">▓▓▓▓▓▓▓▓</span><span style="color:var(--budgetEmpty)">░░</span> 8/12 steps · 2 children</div>
+
+          <div class="ledrow" style="margin-top:4px"><span class="st ag2">∙</span><span class="nm">AGENT 2</span><span class="sc f2" style="letter-spacing:.08em">WAITING</span><span class="co">$0.0000</span></div>
+          <div class="tk">write release notes</div>
+
+          <div class="ledrow" style="margin-top:4px"><span class="st ag3">✓</span><span class="nm">AGENT 3</span><span class="sc f2" style="letter-spacing:.08em">COMPLETE</span><span class="co">$0.0091</span></div>
+          <div class="tk">reproduce failure</div>
+
+          <div class="ledrow" style="margin-top:4px"><span class="st er">✕</span><span class="nm">AGENT 4</span><span class="sc f2" style="letter-spacing:.08em">FAILED</span><span class="co">$0.0012</span></div>
+          <div class="tk">flaky network probe · ↻ retryable</div>
+
+          <div class="ledrow" style="margin-top:4px"><span class="st dim">⊘</span><span class="nm">AGENT 5</span><span class="sc f2" style="letter-spacing:.08em">CANCELLED</span><span class="co">$0.0000</span></div>
+
+          <div class="row" style="margin-top:6px"><span class="f2"><span class="kbd">⏎</span> detail · <span class="kbd">M</span> mission control</span></div>
+        </div>
+
+        <div class="led">
+          <div class="hd"><span>LEDGER</span><i></i></div>
+          <div class="row"><span class="m">$0.0142 of $5.00</span><span class="sp"></span><span>0.3%</span></div>
+          <div class="meter"><span style="color:var(--budgetFill)">▓</span><span style="color:var(--budgetEmpty)">░░░░░░░░░░░░░░░░░░░░░░</span></div>
+          <div class="f2">warn ┊ 75%   critical ┊ 90%</div>
+        </div>
+      </div>
+    </div>
+    <div class="rule"></div>
+
+    <!-- ── approval band ─────────────────────────────────────── -->
+    <div class="appr">
+      <div class="bar"></div>
+      <div class="bd">
+        <div class="row"><span class="sc" style="color:var(--approval);letter-spacing:.18em">APPROVAL REQUIRED</span><span class="f2"> [command:run-1]</span><span class="sp"></span><span class="f2">esc keeps pending</span></div>
+        <div style="margin-top:2px">EnsureAllow: python -m pytest tests/unit -q</div>
+        <div class="f2">workspace src/skail · reason: shell command outside the allow-list</div>
+        <div class="ainput">optional answer or comment…</div>
+        <div class="acts"><span><span class="act">Approve</span> <span class="kbd">A</span></span><span><span class="act">Reject</span> <span class="kbd">R</span></span><span><span class="act">Add instruction</span> <span class="kbd">E</span></span></div>
+      </div>
+    </div>
+
+    <!-- ── composer ──────────────────────────────────────────── -->
+    <div class="comp focus">
+      <div class="q"><span class="sc" style="letter-spacing:.14em">QUEUED 2</span><span class="f2"> · <span class="kbd">^</span> take back · newest runs after this one</span></div>
+      <div class="in"><span class="prompt">›</span><span class="txt">Fix the failing budget tests, then summarize.<span class="caret">▌</span></span></div>
+      <div class="meta"><span>44 chars</span><span class="f2">·</span><span class="f2"><span class="kbd">/</span> commands</span><span class="f2"><span class="kbd">?</span> shortcuts</span><span class="sp"></span><span class="chip mode sc">MODE QUALITY</span><span class="chip send sc">SEND ⏎</span></div>
+    </div>
+
+    <!-- ── footer ────────────────────────────────────────────── -->
+    <div class="rule"></div>
+    <div class="foot">
+      <span><span class="kbd">^C</span> quit</span><span><span class="kbd">^B</span> budget</span><span><span class="kbd">^A</span> agents</span><span><span class="kbd">^P</span> plan</span><span><span class="kbd">^R</span> route</span><span><span class="kbd">^T</span> missions</span><span><span class="kbd">^O</span> transcript</span><span><span class="kbd">⌥T</span> theme</span><span class="f2">⋯</span><span class="sp"></span><span><span class="kbd">?</span> all shortcuts</span>
+    </div>
+  </div></div>
+  </div>
+
+  <!-- ── NARROW ─────────────────────────────────────────────── -->
+  <h2>Narrow — 88 × 30 (width &lt; 100 hides the sidebar)</h2>
+  <div class="f-narrow">
+  <p class="cap">margin ledger collapses <b>·</b> tab drawer moves to the dateline <b>·</b> timestamps drop, roles stay</p>
+  <div class="bezel"><div class="bar"><u></u><u></u><u></u> skail 0.1.0 — zsh — 88×30</div>
+  <div class="term narrow" style="--cols:88">
+    <div class="row"><span class="sc" style="color:var(--text);letter-spacing:.34em">SKAIL</span><span class="f2"> 0.1.0</span><span class="sp"></span><span class="chip sc">ANTHROPIC</span><span class="m"> 14:32:07</span></div>
+    <div class="rule strong"></div>
+    <div class="row"><span class="sc f2">MODEL</span><span> auto</span><span class="f2"> · </span><span class="sc f2">MODE</span><span style="color:var(--modeQuality)"> quality</span><span class="sp"></span><span class="ag1">●1</span><span class="f2"> running</span></div>
+    <div class="row"><span class="sc f2">SPEND</span><span> $0.0142 / $5.00 </span><span class="meter"><span style="color:var(--budgetFill)">▓</span><span style="color:var(--budgetEmpty)">░░░░░░░</span></span><span class="f2"> 0.3%</span><span class="sp"></span><span class="f2">2 queued</span></div>
+    <!-- tab drawer: sidebar tabs survive as a one-row strip -->
+    <div class="row" style="padding:2px 0"><span class="tabs" style="margin:0"><span class="on">AGENTS</span><span>PLAN</span><span>ROUTE</span><span>BUDGET</span></span><span class="sp"></span><span class="f2"><span class="kbd">^A</span><span class="kbd">^P</span><span class="kbd">^R</span><span class="kbd">^B</span></span></div>
+    <div class="rule thin"></div>
+    <div class="main">
+      <div class="left">
+        <div class="e"><span class="g">14:32:02</span><span class="f">+</span><span class="r">TASK</span><span class="c">Ready. Describe the outcome you want…</span></div>
+        <div class="e you cur"><span class="g">14:32:04</span><span class="f">−</span><span class="r">YOU</span><span class="c">Fix the failing budget tests, then summarize.</span></div>
+        <div class="e lead"><span class="g">14:32:05</span><span class="f">−</span><span class="r">LEAD</span><span class="c">Reproducing first, then patching the two assertions.</span></div>
+        <div class="e"><span class="g">14:32:06</span><span class="f">−</span><span class="r ag1">AGENT 1 ●</span><span class="c">Reading the failing assertions.</span></div>
+        <div class="e tool sub"><span class="g"></span><span class="f">└</span><span class="r ag1">TOOL ▸</span><span class="c">run  python -m pytest tests/unit -q</span></div>
+        <div class="e sub2"><span class="g"></span><span class="f"></span><span class="r"></span><span class="c">exit 0 · 41 passed · 0 failed · 3.2 s</span></div>
+        <div class="e rcp"><span class="g">14:32:11</span><span class="f">+</span><span class="r">RECEIPT</span><span class="c">✓ plan@r3 · 2 changesets · $0.0041</span></div>
+        <div class="e err"><span class="g">14:32:14</span><span class="f">+</span><span class="r">ERROR</span><span class="c">reservation expired for AGENT 2 — retried</span></div>
+        <div class="e lead"><span class="g">14:32:16</span><span class="f">+</span><span class="r">LEAD</span><span class="c shim">Summarizing the diff and the receipts</span><span class="c caret">▌</span></div>
+        <div class="dock"><i></i><span>↓ 4 new · End</span><i></i></div>
+      </div>
+      <div class="vr"></div><div class="right"></div>
+    </div>
+    <div class="rule"></div>
+    <div class="appr">
+      <div class="bar"></div>
+      <div class="bd">
+        <div class="row"><span class="sc" style="color:var(--approval);letter-spacing:.16em">APPROVAL REQUIRED</span><span class="f2"> [command:run-1]</span></div>
+        <div style="margin-top:2px">EnsureAllow: python -m pytest tests/unit -q</div>
+        <div class="ainput">optional answer or comment…</div>
+        <div class="acts"><span><span class="act">Approve</span> <span class="kbd">A</span></span><span><span class="act">Reject</span> <span class="kbd">R</span></span><span><span class="act">Add instr.</span> <span class="kbd">E</span></span><span class="sp"></span><span class="f2">esc keeps pending</span></div>
+      </div>
+    </div>
+    <div class="comp focus">
+      <div class="q"><span class="sc" style="letter-spacing:.14em">QUEUED 2</span><span class="f2"> · <span class="kbd">^</span> take back</span></div>
+      <div class="in"><span class="prompt">›</span><span class="txt">Fix the failing budget tests, then summarize.<span class="caret">▌</span></span></div>
+      <div class="meta"><span>44 chars</span><span class="f2">· <span class="kbd">/</span> cmds · <span class="kbd">?</span> keys</span><span class="sp"></span><span class="chip mode sc">QUALITY</span><span class="chip send sc">SEND ⏎</span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="foot"><span><span class="kbd">^C</span> quit</span><span><span class="kbd">^T</span> missions</span><span><span class="kbd">^O</span> transcript</span><span><span class="kbd">⌥P</span> model</span><span class="f2">⋯</span><span class="sp"></span><span><span class="kbd">?</span> all</span></div>
+  </div></div>
+  </div>
+
+  <!-- ── OVERLAY ────────────────────────────────────────────── -->
+  <h2>Overlay — <code style="font:inherit;color:#D98E4A">?</code> Shortcuts (ModalScreen, dimmed page behind)</h2>
+  <div class="f-overlay">
+  <p class="cap">all 12 footer bindings live here <b>·</b> same shell as ^O transcript, ⌥T theme, ⌥P model, ^T missions</p>
+  <div class="bezel"><div class="bar"><u></u><u></u><u></u> skail — shortcuts</div>
+  <div class="term" style="--cols:76;background:var(--surfaceInset)">
+    <div class="row" style="padding:1px 0"><span class="sc" style="color:var(--text);letter-spacing:.2em">SHORTCUTS</span><span class="sp"></span><span class="f2">esc closes</span></div>
+    <div class="rule strong"></div>
+    <div class="main" style="grid-template-columns:36ch 1ch 36ch">
+      <div class="left" style="padding-right:2ch">
+        <div class="row"><span class="kbd">^C</span><span class="sp"></span><span class="m">Quit Skail</span></div>
+        <div class="row"><span class="kbd">^B</span><span class="sp"></span><span class="m">Budget tab</span></div>
+        <div class="row"><span class="kbd">^A</span><span class="sp"></span><span class="m">Agents tab</span></div>
+        <div class="row"><span class="kbd">^P</span><span class="sp"></span><span class="m">Plan tab</span></div>
+        <div class="row"><span class="kbd">^R</span><span class="sp"></span><span class="m">Route tab</span></div>
+        <div class="row"><span class="kbd">^T</span><span class="sp"></span><span class="m">Mission Control</span></div>
+        <div class="row"><span class="kbd">⇧^T</span><span class="sp"></span><span class="m">Back to chat</span></div>
+      </div>
+      <div class="vr"></div>
+      <div class="right" style="padding-left:2ch">
+        <div class="row"><span class="kbd">^O</span><span class="sp"></span><span class="m">Transcript pager</span></div>
+        <div class="row"><span class="kbd">?</span><span class="sp"></span><span class="m">This screen</span></div>
+        <div class="row"><span class="kbd">⌥T</span><span class="sp"></span><span class="m">Theme (live preview)</span></div>
+        <div class="row"><span class="kbd">⌥P</span><span class="sp"></span><span class="m">Model picker</span></div>
+        <div class="row"><span class="kbd">F1</span><span class="sp"></span><span class="m">Help</span></div>
+        <div class="rule thin"></div>
+        <div class="row"><span class="kbd">A</span><span class="kbd">R</span><span class="kbd">E</span><span class="sp"></span><span class="m">Approval actions</span></div>
+        <div class="row"><span class="kbd">⏎</span><span class="sp"></span><span class="m">Expand row / agent detail</span></div>
+        <div class="row"><span class="kbd">End</span><span class="sp"></span><span class="m">Re-pin to newest</span></div>
+        <div class="row"><span class="kbd">M</span><span class="sp"></span><span class="m">Mission Control (rail)</span></div>
+        <div class="row"><span class="kbd">Esc</span><span class="sp"></span><span class="m">Keep approval pending</span></div>
+      </div>
+    </div>
+    <div class="rule"></div>
+    <div class="f2" style="padding:1px 0">focus ring = focusRing token · status is never colour-only (glyph + word)</div>
+  </div></div>
+  </div>
+  </div>
+
+  <!-- ── remaining tab states ───────────────────────────────── -->
+  <h2>Margin tabs — PLAN / ROUTE / BUDGET (same 39-column shell)</h2>
+  <div class="minis">
+    <div class="mini"><p class="cap">PLAN tab</p>
+      <div class="bezel"><div class="term" style="--cols:39;padding:6px 1ch 8px">
+        <div class="tabs"><span>AGENTS</span><span class="on">PLAN</span><span>ROUTE</span><span>BUDGET</span></div>
+        <div class="rule thin"></div>
+        <div class="row" style="padding-top:3px"><span class="m">r3 of 4</span><span class="sp"></span><span class="ok">accepted</span></div>
+        <div class="e sub"><span class="g" style="flex-basis:0"></span><span class="f ok">✓</span><span class="r" style="flex-basis:0"></span><span class="c">reproduce failure <span class="f2">A3</span></span></div>
+        <div class="e sub"><span class="g" style="flex-basis:0"></span><span class="f ok">✓</span><span class="r" style="flex-basis:0"></span><span class="c">patch two assertions <span class="f2">A1</span></span></div>
+        <div class="e sub"><span class="g" style="flex-basis:0"></span><span class="f a">▌</span><span class="r" style="flex-basis:0"></span><span class="c">summarize + receipt <span class="f2">A1</span></span></div>
+        <div class="e sub"><span class="g" style="flex-basis:0"></span><span class="f dim">⊘</span><span class="r" style="flex-basis:0"></span><span class="c dim">release notes <span class="f2">deferred</span></span></div>
+        <div class="led"><div class="hd"><span>REVISIONS</span><i></i></div>
+          <div class="f2">r2 → r3 · item 4 deferred</div>
+          <div class="f2">r1 → r2 · item 3 split</div></div>
+        <div class="led"><div class="hd"><span>INTEGRATIONS</span><i></i></div>
+          <div class="f2">pytest · rtk · apply_patch</div></div>
+        <div class="led"><div class="hd"><span>RECEIPTS</span><i></i></div>
+          <div class="f2">✓ plan@r3 · 2 changesets</div>
+          <div class="f2">  $0.0041 · 14:32:11</div></div>
+        <div class="rule"></div>
+        <div class="wn sc" style="letter-spacing:.12em;padding-top:2px">PLAN r4 PROPOSED</div>
+        <div class="f2">add “update release notes”</div>
+        <div class="acts" style="gap:2ch;margin-top:2px"><span class="act">Accept A</span><span class="act">Reject R</span><span class="act">Change C</span></div>
+        <div class="ainput">optional change note…</div>
+      </div></div>
+    </div>
+
+    <div class="mini"><p class="cap">ROUTE tab</p>
+      <div class="bezel"><div class="term" style="--cols:39;padding:6px 1ch 8px">
+        <div class="tabs"><span>AGENTS</span><span>PLAN</span><span class="on">ROUTE</span><span>BUDGET</span></div>
+        <div class="rule thin"></div>
+        <div class="row" style="padding-top:3px"><span class="m">policy</span><span class="sp"></span><span>auto → lead</span></div>
+        <div class="led"><div class="hd"><span>ELIGIBLE</span><i></i></div>
+          <div class="f2">claude-sonnet-4.5 <span class="m">lead</span></div>
+          <div class="f2">claude-haiku-4 <span class="m">children</span></div></div>
+        <div class="led"><div class="hd"><span>EXCLUDED</span><i></i></div>
+          <div class="er">gpt-4o-mini · below floor</div>
+          <div class="er">local/qwen · no tools</div></div>
+        <div class="led"><div class="hd"><span>ROLE FLOORS</span><i></i></div>
+          <div class="f2">lead ≥ sonnet · child ≥ haiku</div></div>
+        <div class="led"><div class="hd"><span>ASSIGNMENT</span><i></i></div>
+          <div class="f2">immutable per attempt</div>
+          <div class="f2">≤ 2 child attempts</div>
+          <div class="f2">≤ 3 concurrent children</div>
+          <div class="f2">fallback: retry once →</div>
+          <div class="f2">escalate to lead</div></div>
+        <div class="rule"></div>
+        <div class="f2"><span class="kbd">^R</span> re-route · 14:31:58</div>
+      </div></div>
+    </div>
+
+    <div class="mini"><p class="cap">BUDGET tab</p>
+      <div class="bezel"><div class="term" style="--cols:39;padding:6px 1ch 8px">
+        <div class="tabs"><span>AGENTS</span><span>PLAN</span><span>ROUTE</span><span class="on">BUDGET</span></div>
+        <div class="rule thin"></div>
+        <div class="row" style="padding-top:3px"><span>$0.0142 / $5.00</span><span class="sp"></span><span>0.3%</span></div>
+        <div class="meter"><span style="color:var(--budgetFill)">▓</span><span style="color:var(--budgetEmpty)">░░░░░░░░░░░░░░░░░░░░░</span></div>
+        <div class="f2">warn ┊ 75%   critical ┊ 90%</div>
+        <div class="led"><div class="hd"><span>BREAKDOWN</span><i></i></div>
+          <div class="row"><span class="m">reserved</span><span class="sp"></span><span>$0.0060</span></div>
+          <div class="row"><span class="m">committed</span><span class="sp"></span><span>$0.0082</span></div>
+          <div class="row"><span class="m">A1 / A3</span><span class="sp"></span><span>0.0142 / 0.0091</span></div>
+          <div class="row"><span class="m">llm / tool</span><span class="sp"></span><span>0.0142 / 0.0000</span></div>
+          <div class="row"><span class="m">burn</span><span class="sp"></span><span>0.0021 / min</span></div>
+          <div class="row"><span class="m">headroom</span><span class="sp"></span><span>39 h</span></div></div>
+        <div class="rule"></div>
+        <div class="f2"><span class="kbd">^B</span> details · thresholds 0.75 / 0.90</div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- ── token states ───────────────────────────────────────── -->
+  <h2>Token states — budget thresholds, streaming, focus, error, approval</h2>
+  <div class="bezel"><div class="term" style="--cols:112;padding:8px 1ch 10px">
+    <div class="row"><span class="sc f2" style="flex:0 0 22ch">FILL 0.3%</span><span class="meter"><span style="color:var(--budgetFill)">▓</span><span style="color:var(--budgetEmpty)">░░░░░░░░░░░░░░░░░░░</span></span><span class="f2">  budgetFill</span></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 22ch">WARNING 78%</span><span class="meter"><span style="color:var(--budgetWarning)">▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓</span><span style="color:var(--budgetEmpty)">░░░░</span></span><span class="f2">  ≥ 0.75 budgetWarning</span></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 22ch">CRITICAL 94%</span><span class="meter"><span style="color:var(--budgetCritical)">▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓</span><span style="color:var(--budgetEmpty)">░</span></span><span class="wn">  ▲ ≥ 0.90 budgetCritical</span></div>
+    <div class="rule"></div>
+    <div class="e lead"><span class="g">14:32:16</span><span class="f">+</span><span class="r">LEAD</span><span class="c shim">Summarizing the diff and the rece</span><span class="c caret">▌</span><span class="c f2">  streaming: shimmerBase → shimmerPeak, in-place append</span></div>
+    <div class="e err"><span class="g">14:32:14</span><span class="f">+</span><span class="r">ERROR</span><span class="c">reservation expired — retried once</span><span class="c f2">  error + errorSurface + ✕ glyph</span></div>
+    <div class="row" style="background:var(--approvalSurface)"><span style="flex:0 0 2ch;color:var(--approval)">┃</span><span class="wn">APPROVAL REQUIRED</span><span class="f2"> [command:run-1]</span><span class="sp"></span><span class="f2">approval + approvalSurface</span></div>
+    <div class="rule"></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 22ch">FOCUS RING</span><span class="chip focus sc">SEND ⏎</span><span class="f2">  1px focusRing + bold; never colour-only</span></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 22ch">SELECTION</span><span class="sel"> AGENT 3 · complete </span><span class="f2">  selection token on the focused rail row</span></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 22ch">DIFF</span><span style="color:var(--diffAdded)">+ 2 added</span><span class="f2"> / </span><span style="color:var(--diffRemoved)">− 2 removed</span><span class="f2">  diffAdded / diffRemoved (+surface)</span></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 22ch">MODES</span><span style="color:var(--modeQuality)">quality</span><span class="f2"> · </span><span style="color:var(--modeEconomy)">economy</span><span class="f2"> · </span><span style="color:var(--modeManual)">manual</span><span class="f2"> · </span><span style="color:var(--delegation)">delegation</span></div>
+    <div class="row"><span class="sc f2" style="flex:0 0 22ch">REDUCED MOTION</span><span class="f2">shimmer → static textFaint caret (SKAIL_REDUCED_MOTION)</span></div>
+  </div></div>
+
+  <!-- ── implementation notes ───────────────────────────────── -->
+  <h2>Implementation notes (Textual / TCSS)</h2>
+  <ul class="notes">
+    <li><b>Nothing is boxed except the composer band.</b> Panels are separated by <code>border-top: solid $border</code>
+      and a single vertical <code>border-left</code> on the sidebar — so ATELIER is mostly <i>padding + rules</i>, which
+      is cheap in TCSS and reads as print.</li>
+    <li><b>The transcript is a data grid, not cards.</b> Each row is one <code>Static</code>/<code>ListItem</code> with four
+      fixed-width children: <code>width: 9</code> (clock), <code>width: 2</code> (fold), <code>width: 10</code> (role),
+      then a flexible measure. Continuation lines inherit the measure offset for free.</li>
+    <li><b>Editorial signature</b> = letterspaced small caps (<code>text-style: bold</code> + spaced content strings, since
+      TCSS has no <code>letter-spacing</code>), tabular right-aligned costs (<code>text-align: right</code> in a fixed-width cell),
+      and hairline rules.</li>
+    <li><b>Accent discipline:</b> ochre <code>$accent</code> appears on exactly three things — the <code>YOU</code> role tag,
+      the composer prompt/SEND, and the active tab underline. Everything else is bone/muted.</li>
+    <li><b>Budget is promoted</b> out of its tab into the dateline (meter + %) and a permanent <code>LEDGER</code> block at the
+      foot of the margin, so the 0.75/0.90 thresholds are visible without leaving the chat. The BUDGET tab keeps the full breakdown.</li>
+    <li><b>Approval</b> becomes a full-bleed band with a 1-cell rubricated left margin (2px of <code>$approval</code>) instead of a
+      round box; it is the only element with a tinted background, so it wins the attention race without shouting.</li>
+    <li><b>Narrow mode</b> (<code>width &lt; 100</code>): <code>.right { display: none }</code>, tabs collapse into a one-row drawer strip,
+      the clock gutter hides (roles remain, so status is never colour-only), and the dateline wraps to two rows.</li>
+  </ul>
+</div>
+</body>
+</html>

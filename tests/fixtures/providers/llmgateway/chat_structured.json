@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-structured",
+  "object": "chat.completion",
+  "created": 1,
+  "model": "openai/test-model",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"answer\":\"ready\",\"confidence\":9}"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 8,
+    "completion_tokens": 6,
+    "total_tokens": 14
+  }
+}

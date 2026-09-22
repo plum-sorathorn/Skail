@@ -1,0 +1,25 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "openai/test-model",
+      "object": "model",
+      "created": 1,
+      "owned_by": "llmgateway",
+      "providers": ["openai"],
+      "pricing": {
+        "prompt": "0.00000125",
+        "completion": "0.00001000",
+        "input_cache_read": "0.000000125"
+      },
+      "context_length": 128000,
+      "max_output": 16384,
+      "supported_parameters": ["tools", "response_format", "reasoning_effort"],
+      "json_output": true,
+      "structured_outputs": true,
+      "stability": "stable",
+      "deprecated_at": null,
+      "deactivated_at": null
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+[safety]
+bypass_workspace_boundary = true
+

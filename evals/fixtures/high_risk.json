@@ -1,0 +1,356 @@
+[
+  {
+    "id": "risk-01",
+    "title": "SQL query parameterizer preventing injection",
+    "category": "high_risk",
+    "role": "implementer",
+    "risk": "high-risk",
+    "prompt": "Implement safe_query in db.py using parameterized statements only, never string formatting",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing safe_query with SQL parameterization.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "db.py",
+                "content": "import sqlite3\n\ndef safe_query(cursor: sqlite3.Cursor, query: str, params: tuple) -> list:\n    if '%' in query or 'format' in query: raise ValueError('Parameterized query required')\n    cursor.execute(query, params)\n    return cursor.fetchall()\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 22,
+            "cost_usd": "0.005"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "safe_query implemented preventing SQL injection.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "db.py",
+      "expected": "def safe_query"
+    },
+    "route_invariants": {
+      "min_floor": 0.7
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement injection-safe SQL execution helper",
+      "scoring_meaning": "Verify safe_query function definition",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "risk-02",
+    "title": "Path traversal sanitizer for user input",
+    "category": "high_risk",
+    "role": "reviewer",
+    "risk": "high-risk",
+    "prompt": "Implement sanitize_path in security.py ensuring path resolves strictly inside base_dir",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing sanitize_path in security.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "security.py",
+                "content": "from pathlib import Path\n\ndef sanitize_path(base_dir: str, target: str) -> Path:\n    base = Path(base_dir).resolve()\n    resolved = (base / target).resolve()\n    if not resolved.is_relative_to(base):\n        raise PermissionError('Path traversal detected')\n    return resolved\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 22,
+            "cost_usd": "0.005"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "sanitize_path created ensuring containment.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "security.py",
+      "expected": "def sanitize_path"
+    },
+    "route_invariants": {
+      "min_floor": 0.7
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement path traversal sanitizer",
+      "scoring_meaning": "Verify sanitize_path function exists",
+      "workload_type": "read_only_analysis",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "risk-03",
+    "title": "Secret redaction filter for logs and transcripts",
+    "category": "high_risk",
+    "role": "implementer",
+    "risk": "high-risk",
+    "prompt": "Implement Redactor in scrubber.py replacing API keys, tokens, and bearer auth headers with [REDACTED]",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing Redactor in scrubber.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "scrubber.py",
+                "content": "import re\n\nclass Redactor:\n    PATTERNS = [r'Bearer\\s+[A-Za-z0-9_\\-\\.]+', r'api[_-]?key[:=]\\s*[A-Za-z0-9]+']\n    def scrub(self, text: str) -> str:\n        for p in self.PATTERNS:\n            text = re.sub(p, '[REDACTED]', text, flags=re.IGNORECASE)\n        return text\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 32,
+            "output_tokens": 24,
+            "cost_usd": "0.0055"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "Redactor filter implemented.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "scrubber.py",
+      "expected": "class Redactor"
+    },
+    "route_invariants": {
+      "min_floor": 0.7
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement regex redactor for sensitive credentials",
+      "scoring_meaning": "Verify Redactor class exists in scrubber.py",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "risk-04",
+    "title": "Atomic file writer with temp file and atomic rename",
+    "category": "high_risk",
+    "role": "implementer",
+    "risk": "high-risk",
+    "prompt": "Implement atomic_write in atomic_io.py writing to temp file and renaming to avoid partial writes",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing atomic_write in atomic_io.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "atomic_io.py",
+                "content": "import os, tempfile\nfrom pathlib import Path\n\ndef atomic_write(target_path: str, content: str):\n    p = Path(target_path)\n    p.parent.mkdir(parents=True, exist_ok=True)\n    with tempfile.NamedTemporaryFile('w', dir=p.parent, delete=False, encoding='utf-8') as tmp:\n        tmp.write(content)\n        tmp.flush()\n        os.fsync(tmp.fileno())\n        tmp_name = tmp.name\n    os.replace(tmp_name, p)\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 32,
+            "output_tokens": 24,
+            "cost_usd": "0.0055"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "atomic_write utility created.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "atomic_io.py",
+      "expected": "def atomic_write"
+    },
+    "route_invariants": {
+      "min_floor": 0.7
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement atomic fsync and replace write utility",
+      "scoring_meaning": "Verify atomic_write function is present",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "risk-05",
+    "title": "Exclusive process lock using portalocker",
+    "category": "high_risk",
+    "role": "implementer",
+    "risk": "high-risk",
+    "prompt": "Implement ProcessLock in lock.py acquiring non-blocking OS file lock with timeout and unlock context manager",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing ProcessLock in lock.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "lock.py",
+                "content": "import contextlib\n\nclass ProcessLock:\n    def __init__(self, lock_file: str):\n        self.lock_file = lock_file\n    @contextlib.contextmanager\n    def acquire(self):\n        yield\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 28,
+            "output_tokens": 18,
+            "cost_usd": "0.0045"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "ProcessLock class created.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "lock.py",
+      "expected": "class ProcessLock"
+    },
+    "route_invariants": {
+      "min_floor": 0.7
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement cross-platform process file lock abstraction",
+      "scoring_meaning": "Verify ProcessLock class exists",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "risk-06",
+    "title": "Environment variable credential resolver with validation",
+    "category": "high_risk",
+    "role": "implementer",
+    "risk": "high-risk",
+    "prompt": "Implement resolve_env_credential in creds.py fetching env var reference and rejecting raw secrets",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing resolve_env_credential in creds.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "creds.py",
+                "content": "import os\n\ndef resolve_env_credential(var_name: str) -> str:\n    if not var_name.isidentifier(): raise ValueError('Invalid env var name')\n    val = os.environ.get(var_name)\n    if not val: raise KeyError(f'{var_name} not set')\n    return val\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 22,
+            "cost_usd": "0.005"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "resolve_env_credential implemented with secret validation.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "creds.py",
+      "expected": "def resolve_env_credential"
+    },
+    "route_invariants": {
+      "min_floor": 0.7
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement environment credential lookup refusing literals",
+      "scoring_meaning": "Verify resolve_env_credential function is present",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  }
+]

@@ -1,0 +1,204 @@
+"""Session bias store — in-memory floor bump with TTL (turn-based expiry)."""
+
+from __future__ import annotations
+
+import logging
+import threading
+import time
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# Global cap for bias-adjusted floor (above confidence_floor_max)
+BIAS_HARD_CAP = 0.75
+
+
+class SessionBiasStore:
+    """Thread-safe in-memory store: session_id -> {floor_bump, expires_at_turn, ts}.
+
+    Hot-path safe: dict lookup only, bounded by threading.Lock, no awaits inside lock.
+    Fail-soft: any error -> bump 0.0.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        # session_id -> {"bump": float, "expires_at": int, "ts": float}
+        self._store: dict[str, dict[str, Any]] = {}
+        # session_id -> current turn counter (int)
+        self._turns: dict[str, int] = {}
+        # child session_id -> parent session_id
+        self._children: dict[str, str] = {}
+        # session_id -> float (active capability floor)
+        self._session_floors: dict[str, float] = {}
+        # session_id -> str (active task type)
+        self._session_task_types: dict[str, str] = {}
+
+    def register_child_session(self, child_id: str, parent_id: str) -> None:
+        """Register child_id as a child of parent_id. O(1) write, thread-safe."""
+        try:
+            if not child_id or not parent_id:
+                return
+            with self._lock:
+                self._children[str(child_id)] = str(parent_id)
+        except Exception as exc:
+            logger.warning("bias register_child_session failed: %s", exc)
+
+    def is_child_session(self, session_id: str | None) -> bool:
+        """Return True if session_id is a known child session. O(1), non-blocking."""
+        if not session_id:
+            return False
+        try:
+            with self._lock:
+                return str(session_id) in self._children
+        except Exception:
+            return False
+
+    def apply_escalation(self, session_id: str, bump: float, ttl_turns: int) -> float:
+        try:
+            sid = str(session_id) if session_id else ""
+            if not sid:
+                return 0.0
+            bump_f = float(bump)
+            ttl = int(ttl_turns)
+            if ttl <= 0:
+                ttl = 1
+            # clamp bump to [0, 1]
+            if bump_f < 0:
+                bump_f = 0.0
+            if bump_f > 1.0:
+                bump_f = 1.0
+            with self._lock:
+                cur = int(self._turns.get(sid, 0))
+                expires_at = cur + ttl
+                self._store[sid] = {"bump": bump_f, "expires_at": expires_at, "ts": time.time()}
+                return bump_f
+        except Exception as exc:
+            logger.warning("bias apply_escalation failed: %s", exc)
+            return 0.0
+
+    def get_bump(self, session_id: str | None) -> float:
+        try:
+            if not session_id:
+                return 0.0
+            sid = str(session_id)
+            with self._lock:
+                entry = self._store.get(sid)
+                if not entry:
+                    return 0.0
+                expires_at = int(entry.get("expires_at", 0))
+                cur = int(self._turns.get(sid, 0))
+                if cur >= expires_at:
+                    # expired — evict
+                    try:
+                        del self._store[sid]
+                    except Exception:
+                        pass
+                    return 0.0
+                return float(entry.get("bump", 0.0))
+        except Exception as exc:
+            logger.warning("bias get_bump failed: %s", exc)
+            return 0.0
+
+    def increment_turn(self, session_id: str | None) -> int:
+        """Advance turn counter for a session. Returns new turn value."""
+        try:
+            if not session_id:
+                return 0
+            sid = str(session_id)
+            with self._lock:
+                cur = int(self._turns.get(sid, 0)) + 1
+                self._turns[sid] = cur
+                # opportunistic expiry cleanup
+                entry = self._store.get(sid)
+                if entry is not None and cur >= int(entry.get("expires_at", 0)):
+                    try:
+                        del self._store[sid]
+                    except Exception:
+                        pass
+                return cur
+        except Exception as exc:
+            logger.warning("bias increment_turn failed: %s", exc)
+            return 0
+
+    def set_session_floor(self, session_id: str | None, floor: float, task_type: str | None = None) -> None:
+        """Cache the latest planned capability floor and task_type for tool-loop inheritance. O(1), thread-safe."""
+        if not session_id:
+            return
+        try:
+            sid = str(session_id)
+            with self._lock:
+                self._session_floors[sid] = float(floor)
+                if task_type:
+                    self._session_task_types[sid] = str(task_type)
+        except Exception as exc:
+            logger.warning("bias set_session_floor failed: %s", exc)
+
+    def get_session_floor(self, session_id: str | None) -> tuple[float, str | None]:
+        """Return (active_floor, task_type) for session_id. O(1), thread-safe."""
+        if not session_id:
+            return 0.0, None
+        try:
+            sid = str(session_id)
+            with self._lock:
+                return float(self._session_floors.get(sid, 0.0)), self._session_task_types.get(sid)
+        except Exception:
+            return 0.0, None
+
+    def reset_session(self, session_id: str | None) -> None:
+        try:
+            if not session_id:
+                return
+            sid = str(session_id)
+            with self._lock:
+                self._store.pop(sid, None)
+                self._turns.pop(sid, None)
+                self._children.pop(sid, None)
+                self._session_floors.pop(sid, None)
+                self._session_task_types.pop(sid, None)
+        except Exception as exc:
+            logger.warning("bias reset_session failed: %s", exc)
+
+    def clear_all(self) -> None:
+        try:
+            with self._lock:
+                self._store.clear()
+                self._turns.clear()
+                self._children.clear()
+                self._session_floors.clear()
+                self._session_task_types.clear()
+        except Exception:
+            pass
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "store": {k: dict(v) for k, v in self._store.items()},
+                "turns": dict(self._turns),
+                "children": dict(self._children),
+                "floors": dict(self._session_floors),
+                "task_types": dict(self._session_task_types),
+            }
+
+
+# Singleton
+_bias_store: SessionBiasStore | None = None
+_bias_lock = threading.Lock()
+
+
+def get_bias_store() -> SessionBiasStore:
+    global _bias_store
+    with _bias_lock:
+        if _bias_store is None:
+            _bias_store = SessionBiasStore()
+        return _bias_store
+
+
+def reset_bias_singleton() -> None:
+    global _bias_store
+    with _bias_lock:
+        if _bias_store is not None:
+            try:
+                _bias_store.clear_all()
+            except Exception:
+                pass
+        _bias_store = None

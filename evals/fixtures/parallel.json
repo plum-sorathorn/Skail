@@ -1,0 +1,732 @@
+[
+  {
+    "id": "par-01",
+    "title": "Parallel math operations implementation",
+    "category": "parallel",
+    "role": "lead",
+    "risk": "routine",
+    "prompt": "Implement vector_math.py, matrix_math.py, and tensor_math.py in parallel",
+    "initial_files": {
+      "task_context.md": "Parallel fixture requirements.\n"
+    },
+    "allowed_tools": [
+      "task",
+      "write_file"
+    ],
+    "parallel_eligible": true,
+    "execution": {
+      "responses": [
+        {
+          "content": "Delegating math module exploration to parallel subagents.",
+          "tool_calls": [
+            {
+              "name": "task",
+              "args": {
+                "description": "Explore vector math architecture",
+                "subagent_type": "explorer"
+              },
+              "id": "task-1"
+            },
+            {
+              "name": "task",
+              "args": {
+                "description": "Explore matrix math architecture",
+                "subagent_type": "explorer"
+              },
+              "id": "task-2"
+            },
+            {
+              "name": "task",
+              "args": {
+                "description": "Explore tensor math architecture",
+                "subagent_type": "explorer"
+              },
+              "id": "task-3"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 20,
+            "cost_usd": "0.004"
+          }
+        },
+        {
+          "content": "Writing math modules following exploration findings.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "vector_math.py",
+                "content": "def dot(a, b): return sum(x*y for x, y in zip(a, b))\n"
+              },
+              "id": "call-w1"
+            },
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "matrix_math.py",
+                "content": "def transpose(m): return list(zip(*m))\n"
+              },
+              "id": "call-w2"
+            },
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "tensor_math.py",
+                "content": "def rank(t): return len(t)\n"
+              },
+              "id": "call-w3"
+            }
+          ],
+          "usage": {
+            "input_tokens": 35,
+            "output_tokens": 25,
+            "cost_usd": "0.005"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "Implemented vector_math.py, matrix_math.py, and tensor_math.py.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      },
+      "child_response": {
+        "content": "{\"status\":\"succeeded\",\"summary\":\"Architecture exploration complete for math operations.\",\"verification\":[{\"criterion\":\"Provide evidence for the completed task\",\"passed\":true,\"evidence\":\"task_context.md:1\"}]}",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 10,
+          "output_tokens": 5,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "multi_assert",
+      "assertions": [
+        {
+          "type": "file_exists",
+          "target": "vector_math.py"
+        },
+        {
+          "type": "file_exists",
+          "target": "matrix_math.py"
+        },
+        {
+          "type": "file_exists",
+          "target": "tensor_math.py"
+        }
+      ]
+    },
+    "route_invariants": {
+      "parallel_eligible": true
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Parallel exploration with explorer agents and serialized writes",
+      "scoring_meaning": "Verify all three generated math files exist",
+      "workload_type": "parallel_exploration",
+      "concurrency": 3,
+      "platform": "any"
+    }
+  },
+  {
+    "id": "par-02",
+    "title": "Parallel multi-format serializer",
+    "category": "parallel",
+    "role": "lead",
+    "risk": "bounded",
+    "prompt": "Implement json_export.py and csv_export.py concurrently for data models",
+    "initial_files": {
+      "task_context.md": "Parallel fixture requirements.\n"
+    },
+    "allowed_tools": [
+      "task",
+      "write_file"
+    ],
+    "parallel_eligible": true,
+    "execution": {
+      "responses": [
+        {
+          "content": "Delegating serialization format research to concurrent subagents.",
+          "tool_calls": [
+            {
+              "name": "task",
+              "args": {
+                "description": "Explore JSON serialization structure",
+                "subagent_type": "explorer"
+              },
+              "id": "task-1"
+            },
+            {
+              "name": "task",
+              "args": {
+                "description": "Explore CSV serialization structure",
+                "subagent_type": "explorer"
+              },
+              "id": "task-2"
+            }
+          ],
+          "usage": {
+            "input_tokens": 26,
+            "output_tokens": 16,
+            "cost_usd": "0.0035"
+          }
+        },
+        {
+          "content": "Writing serializer modules.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "json_export.py",
+                "content": "import json\ndef to_json(data): return json.dumps(data)\n"
+              },
+              "id": "call-w1"
+            },
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "csv_export.py",
+                "content": "import csv\ndef to_csv(data): return ','.join(str(x) for x in data)\n"
+              },
+              "id": "call-w2"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 20,
+            "cost_usd": "0.0045"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "Implemented json_export.py and csv_export.py.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      },
+      "child_response": {
+        "content": "{\"status\":\"succeeded\",\"summary\":\"Serialization format exploration complete.\",\"verification\":[{\"criterion\":\"Provide evidence for the completed task\",\"passed\":true,\"evidence\":\"task_context.md:1\"}]}",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 10,
+          "output_tokens": 5,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "multi_assert",
+      "assertions": [
+        {
+          "type": "file_exists",
+          "target": "json_export.py"
+        },
+        {
+          "type": "file_exists",
+          "target": "csv_export.py"
+        }
+      ]
+    },
+    "route_invariants": {
+      "parallel_eligible": true
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Concurrent exploration and serialized export creation",
+      "scoring_meaning": "Verify JSON and CSV export modules exist",
+      "workload_type": "parallel_exploration",
+      "concurrency": 2,
+      "platform": "any"
+    }
+  },
+  {
+    "id": "par-03",
+    "title": "Independent API endpoint modules",
+    "category": "parallel",
+    "role": "lead",
+    "risk": "bounded",
+    "prompt": "Build users_api.py and orders_api.py as independent service routers",
+    "initial_files": {
+      "task_context.md": "Parallel fixture requirements.\n"
+    },
+    "allowed_tools": [
+      "task",
+      "write_file"
+    ],
+    "parallel_eligible": true,
+    "execution": {
+      "responses": [
+        {
+          "content": "Delegating endpoint design to explorer subagents in parallel.",
+          "tool_calls": [
+            {
+              "name": "task",
+              "args": {
+                "description": "Explore users endpoint router",
+                "subagent_type": "explorer"
+              },
+              "id": "task-1"
+            },
+            {
+              "name": "task",
+              "args": {
+                "description": "Explore orders endpoint router",
+                "subagent_type": "explorer"
+              },
+              "id": "task-2"
+            }
+          ],
+          "usage": {
+            "input_tokens": 26,
+            "output_tokens": 16,
+            "cost_usd": "0.0035"
+          }
+        },
+        {
+          "content": "Writing endpoint router modules.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "users_api.py",
+                "content": "def get_users(): return []\n"
+              },
+              "id": "call-w1"
+            },
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "orders_api.py",
+                "content": "def get_orders(): return []\n"
+              },
+              "id": "call-w2"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 20,
+            "cost_usd": "0.0045"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "Built users_api.py and orders_api.py routers.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      },
+      "child_response": {
+        "content": "{\"status\":\"succeeded\",\"summary\":\"API endpoint research complete.\",\"verification\":[{\"criterion\":\"Provide evidence for the completed task\",\"passed\":true,\"evidence\":\"task_context.md:1\"}]}",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 10,
+          "output_tokens": 5,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "multi_assert",
+      "assertions": [
+        {
+          "type": "file_exists",
+          "target": "users_api.py"
+        },
+        {
+          "type": "file_exists",
+          "target": "orders_api.py"
+        }
+      ]
+    },
+    "route_invariants": {
+      "parallel_eligible": true
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Parallel endpoint architecture research and creation",
+      "scoring_meaning": "Verify users and orders endpoint files exist",
+      "workload_type": "parallel_exploration",
+      "concurrency": 2,
+      "platform": "any"
+    }
+  },
+  {
+    "id": "par-04",
+    "title": "Parallel unit and integration test writers",
+    "category": "parallel",
+    "role": "lead",
+    "risk": "routine",
+    "prompt": "Create test_unit.py and test_integration.py concurrently",
+    "initial_files": {
+      "task_context.md": "Parallel fixture requirements.\n"
+    },
+    "allowed_tools": [
+      "task",
+      "write_file"
+    ],
+    "parallel_eligible": true,
+    "execution": {
+      "responses": [
+        {
+          "content": "Delegating unit and integration test scope analysis.",
+          "tool_calls": [
+            {
+              "name": "task",
+              "args": {
+                "description": "Explore unit test assertions",
+                "subagent_type": "explorer"
+              },
+              "id": "task-1"
+            },
+            {
+              "name": "task",
+              "args": {
+                "description": "Explore integration test workflows",
+                "subagent_type": "explorer"
+              },
+              "id": "task-2"
+            }
+          ],
+          "usage": {
+            "input_tokens": 26,
+            "output_tokens": 16,
+            "cost_usd": "0.0035"
+          }
+        },
+        {
+          "content": "Writing unit and integration test files.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "test_unit.py",
+                "content": "def test_unit(): assert True\n"
+              },
+              "id": "call-w1"
+            },
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "test_integration.py",
+                "content": "def test_integration(): assert True\n"
+              },
+              "id": "call-w2"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 20,
+            "cost_usd": "0.0045"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "test_unit.py and test_integration.py created.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      },
+      "child_response": {
+        "content": "{\"status\":\"succeeded\",\"summary\":\"Test workflow analysis complete.\",\"verification\":[{\"criterion\":\"Provide evidence for the completed task\",\"passed\":true,\"evidence\":\"task_context.md:1\"}]}",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 10,
+          "output_tokens": 5,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "multi_assert",
+      "assertions": [
+        {
+          "type": "file_exists",
+          "target": "test_unit.py"
+        },
+        {
+          "type": "file_exists",
+          "target": "test_integration.py"
+        }
+      ]
+    },
+    "route_invariants": {
+      "parallel_eligible": true
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Concurrently explore test fixtures and write suites",
+      "scoring_meaning": "Verify both test suites exist in workspace",
+      "workload_type": "parallel_exploration",
+      "concurrency": 2,
+      "platform": "any"
+    }
+  },
+  {
+    "id": "par-05",
+    "title": "Dual platform adapter implementation",
+    "category": "parallel",
+    "role": "lead",
+    "risk": "bounded",
+    "prompt": "Implement posix_shell.py and windows_shell.py concurrently",
+    "initial_files": {
+      "task_context.md": "Parallel fixture requirements.\n"
+    },
+    "allowed_tools": [
+      "task",
+      "write_file"
+    ],
+    "parallel_eligible": true,
+    "execution": {
+      "responses": [
+        {
+          "content": "Delegating POSIX and Windows shell exploration concurrently.",
+          "tool_calls": [
+            {
+              "name": "task",
+              "args": {
+                "description": "Explore POSIX shell primitives",
+                "subagent_type": "explorer"
+              },
+              "id": "task-1"
+            },
+            {
+              "name": "task",
+              "args": {
+                "description": "Explore Windows shell primitives",
+                "subagent_type": "explorer"
+              },
+              "id": "task-2"
+            }
+          ],
+          "usage": {
+            "input_tokens": 26,
+            "output_tokens": 16,
+            "cost_usd": "0.0035"
+          }
+        },
+        {
+          "content": "Writing shell adapters.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "posix_shell.py",
+                "content": "class PosixShell: pass\n"
+              },
+              "id": "call-w1"
+            },
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "windows_shell.py",
+                "content": "class WindowsShell: pass\n"
+              },
+              "id": "call-w2"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 20,
+            "cost_usd": "0.0045"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "posix_shell.py and windows_shell.py implemented.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      },
+      "child_response": {
+        "content": "{\"status\":\"succeeded\",\"summary\":\"Shell primitives exploration complete.\",\"verification\":[{\"criterion\":\"Provide evidence for the completed task\",\"passed\":true,\"evidence\":\"task_context.md:1\"}]}",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 10,
+          "output_tokens": 5,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "multi_assert",
+      "assertions": [
+        {
+          "type": "file_exists",
+          "target": "posix_shell.py"
+        },
+        {
+          "type": "file_exists",
+          "target": "windows_shell.py"
+        }
+      ]
+    },
+    "route_invariants": {
+      "parallel_eligible": true
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Parallel platform research and serialized adapter writes",
+      "scoring_meaning": "Verify POSIX and Windows shell modules exist",
+      "workload_type": "parallel_exploration",
+      "concurrency": 2,
+      "platform": "windows"
+    }
+  },
+  {
+    "id": "par-06",
+    "title": "Three-way document converter",
+    "category": "parallel",
+    "role": "lead",
+    "risk": "complex",
+    "prompt": "Implement html_conv.py, md_conv.py, and rst_conv.py concurrently",
+    "initial_files": {
+      "task_context.md": "Parallel fixture requirements.\n"
+    },
+    "allowed_tools": [
+      "task",
+      "write_file"
+    ],
+    "parallel_eligible": true,
+    "execution": {
+      "responses": [
+        {
+          "content": "Delegating document converter research to 3 subagents.",
+          "tool_calls": [
+            {
+              "name": "task",
+              "args": {
+                "description": "Explore HTML converter specs",
+                "subagent_type": "explorer"
+              },
+              "id": "task-1"
+            },
+            {
+              "name": "task",
+              "args": {
+                "description": "Explore Markdown converter specs",
+                "subagent_type": "explorer"
+              },
+              "id": "task-2"
+            },
+            {
+              "name": "task",
+              "args": {
+                "description": "Explore RST converter specs",
+                "subagent_type": "explorer"
+              },
+              "id": "task-3"
+            }
+          ],
+          "usage": {
+            "input_tokens": 30,
+            "output_tokens": 20,
+            "cost_usd": "0.004"
+          }
+        },
+        {
+          "content": "Writing document converters.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "html_conv.py",
+                "content": "class HtmlConverter: pass\n"
+              },
+              "id": "call-w1"
+            },
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "md_conv.py",
+                "content": "class MdConverter: pass\n"
+              },
+              "id": "call-w2"
+            },
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "rst_conv.py",
+                "content": "class RstConverter: pass\n"
+              },
+              "id": "call-w3"
+            }
+          ],
+          "usage": {
+            "input_tokens": 35,
+            "output_tokens": 25,
+            "cost_usd": "0.005"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "Document converters implemented.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 16,
+          "output_tokens": 8,
+          "cost_usd": "0.002"
+        }
+      },
+      "child_response": {
+        "content": "{\"status\":\"succeeded\",\"summary\":\"Document converter exploration complete.\",\"verification\":[{\"criterion\":\"Provide evidence for the completed task\",\"passed\":true,\"evidence\":\"task_context.md:1\"}]}",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 10,
+          "output_tokens": 5,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "multi_assert",
+      "assertions": [
+        {
+          "type": "file_exists",
+          "target": "html_conv.py"
+        },
+        {
+          "type": "file_exists",
+          "target": "md_conv.py"
+        },
+        {
+          "type": "file_exists",
+          "target": "rst_conv.py"
+        }
+      ]
+    },
+    "route_invariants": {
+      "parallel_eligible": true
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Explore format requirements concurrently across 3 workers",
+      "scoring_meaning": "Verify all 3 document converter modules exist",
+      "workload_type": "parallel_exploration",
+      "concurrency": 3,
+      "platform": "any"
+    }
+  }
+]

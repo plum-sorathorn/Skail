@@ -1,0 +1,8 @@
+data: {"id":"chatcmpl-tool","object":"chat.completion.chunk","created":1,"model":"openai/test-model","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_read","type":"function","function":{"name":"read_file","arguments":"{\"pa"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-tool","object":"chat.completion.chunk","created":1,"model":"openai/test-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"th\":\"README.md\"}"}}]},"finish_reason":"tool_calls"}]}
+
+data: {"id":"chatcmpl-tool","object":"chat.completion.chunk","created":1,"model":"openai/test-model","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":5,"total_tokens":16}}
+
+data: [DONE]
+

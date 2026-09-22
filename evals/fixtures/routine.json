@@ -1,0 +1,618 @@
+[
+  {
+    "id": "rout-01",
+    "title": "Implement addition helper",
+    "category": "routine",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Implement add(a, b) in math_lib.py returning a + b",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing math_lib.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "math_lib.py",
+                "content": "def add(a, b):\n    return a + b\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 15,
+            "output_tokens": 10,
+            "cost_usd": "0.002"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "Implemented add(a, b) in math_lib.py.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 6,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "math_lib.py",
+      "expected": "def add(a, b):"
+    },
+    "route_invariants": {
+      "min_floor": 0.35
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Define add helper function",
+      "scoring_meaning": "Verify add function signature exists",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "rout-02",
+    "title": "Add test case for addition",
+    "category": "routine",
+    "role": "tester",
+    "risk": "routine",
+    "prompt": "Write test_add() in test_math.py checking add(2, 3) == 5",
+    "initial_files": {
+      "math_lib.py": "def add(a, b):\n    return a + b\n"
+    },
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Writing test_math.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "test_math.py",
+                "content": "from math_lib import add\n\ndef test_add():\n    assert add(2, 3) == 5\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 18,
+            "output_tokens": 12,
+            "cost_usd": "0.0025"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "Test case written for addition helper.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 6,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "test_math.py",
+      "expected": "test_add"
+    },
+    "route_invariants": {
+      "min_floor": 0.35
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Create test case for add function",
+      "scoring_meaning": "Verify test_add is present in test_math.py",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "rout-03",
+    "title": "Windows path joiner helper",
+    "category": "routine",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Implement win_join in paths.py using os.path.join with backslashes",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing Windows path joiner.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "paths.py",
+                "content": "import os\n\ndef win_join(*parts):\n    return os.path.join(*parts).replace('/', '\\\\')\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 16,
+            "output_tokens": 12,
+            "cost_usd": "0.002"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "win_join helper implemented in paths.py.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 6,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "paths.py",
+      "expected": "def win_join"
+    },
+    "route_invariants": {
+      "min_floor": 0.35
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement Windows path join utility",
+      "scoring_meaning": "Verify win_join function is implemented",
+      "workload_type": "windows_path",
+      "platform": "windows"
+    }
+  },
+  {
+    "id": "rout-04",
+    "title": "POSIX path normalizer helper",
+    "category": "routine",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Implement posix_norm in paths.py converting backslashes to forward slashes",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing POSIX normalizer.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "paths.py",
+                "content": "def posix_norm(path: str) -> str:\n    return path.replace('\\\\', '/')\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 16,
+            "output_tokens": 10,
+            "cost_usd": "0.002"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "posix_norm implemented in paths.py.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 6,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "paths.py",
+      "expected": "def posix_norm"
+    },
+    "route_invariants": {
+      "min_floor": 0.35
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement POSIX path normalizer",
+      "scoring_meaning": "Verify posix_norm function exists in paths.py",
+      "workload_type": "direct_write",
+      "platform": "posix"
+    }
+  },
+  {
+    "id": "rout-05",
+    "title": "String slugifier function",
+    "category": "routine",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Implement slugify(text) in text_utils.py lowercasing and replacing spaces with dashes",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing slugify.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "text_utils.py",
+                "content": "def slugify(text: str) -> str:\n    return text.lower().replace(' ', '-')\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 16,
+            "output_tokens": 10,
+            "cost_usd": "0.002"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "slugify function created.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 6,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "text_utils.py",
+      "expected": "def slugify(text: str) -> str:"
+    },
+    "route_invariants": {
+      "min_floor": 0.35
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement slugify text helper",
+      "scoring_meaning": "Verify slugify function exists in text_utils.py",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "rout-06",
+    "title": "Fix off-by-one error in range loop",
+    "category": "routine",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Fix loop in paginate.py to include the end page range(start, end + 1)",
+    "initial_files": {
+      "paginate.py": "def pages(start, end):\n    return list(range(start, end))\n"
+    },
+    "allowed_tools": [
+      "edit_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Fixing off-by-one in paginate.py.",
+          "tool_calls": [
+            {
+              "name": "edit_file",
+              "args": {
+                "file_path": "paginate.py",
+                "old_string": "range(start, end)",
+                "new_string": "range(start, end + 1)"
+              },
+              "id": "call-edit"
+            }
+          ],
+          "usage": {
+            "input_tokens": 18,
+            "output_tokens": 10,
+            "cost_usd": "0.002"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "paginate.py updated to include end page.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 6,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "paginate.py",
+      "expected": "end + 1"
+    },
+    "route_invariants": {
+      "min_floor": 0.35
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Fix off-by-one loop boundary in paginate.py",
+      "scoring_meaning": "Verify end + 1 is present in paginate.py",
+      "workload_type": "direct_edit",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "rout-07",
+    "title": "JSON config reader with fallback",
+    "category": "routine",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Implement load_config(path) in cfg.py returning empty dict if file not found",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing load_config in cfg.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "cfg.py",
+                "content": "import json\nfrom pathlib import Path\n\ndef load_config(path: str) -> dict:\n    p = Path(path)\n    if not p.exists():\n        return {}\n    return json.loads(p.read_text(encoding='utf-8'))\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 20,
+            "output_tokens": 15,
+            "cost_usd": "0.003"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "load_config implemented with fallback.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 6,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "cfg.py",
+      "expected": "def load_config(path: str) -> dict:"
+    },
+    "route_invariants": {
+      "min_floor": 0.35
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Create JSON config reader with non-existent fallback",
+      "scoring_meaning": "Verify load_config signature exists",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "rout-08",
+    "title": "Validate email regex helper",
+    "category": "routine",
+    "role": "tester",
+    "risk": "routine",
+    "prompt": "Implement is_valid_email in validator.py using standard email regex",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing is_valid_email in validator.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "validator.py",
+                "content": "import re\n\ndef is_valid_email(email: str) -> bool:\n    return bool(re.match(r'^[\\w\\.-]+@[\\w\\.-]+\\.\\w+$', email))\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 18,
+            "output_tokens": 12,
+            "cost_usd": "0.0025"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "is_valid_email regex helper implemented.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 6,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "validator.py",
+      "expected": "def is_valid_email"
+    },
+    "route_invariants": {
+      "min_floor": 0.35
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement regex email validator",
+      "scoring_meaning": "Verify is_valid_email is present",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "rout-09",
+    "title": "CSV header extractor",
+    "category": "routine",
+    "role": "explorer",
+    "risk": "routine",
+    "prompt": "Write read_headers(filepath) in csv_tool.py reading first row with csv.reader",
+    "initial_files": {
+      "data.csv": "col1,col2,col3\n1,2,3\n"
+    },
+    "allowed_tools": [
+      "write_file",
+      "read_file",
+      "ls"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Inspecting workspace for CSV files.",
+          "tool_calls": [
+            {
+              "name": "ls",
+              "args": {
+                "path": "."
+              },
+              "id": "call-ls"
+            }
+          ],
+          "usage": {
+            "input_tokens": 14,
+            "output_tokens": 6,
+            "cost_usd": "0.0015"
+          }
+        },
+        {
+          "content": "Implementing csv_tool.py after discovering data.csv.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "csv_tool.py",
+                "content": "import csv\n\ndef read_headers(filepath: str) -> list[str]:\n    with open(filepath, 'r', encoding='utf-8') as f:\n        return next(csv.reader(f), [])\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 20,
+            "output_tokens": 14,
+            "cost_usd": "0.003"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "read_headers created in csv_tool.py.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 6,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "csv_tool.py",
+      "expected": "def read_headers"
+    },
+    "route_invariants": {
+      "min_floor": 0.35
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Inspect workspace and implement CSV header reader",
+      "scoring_meaning": "Verify read_headers function is present",
+      "workload_type": "dependent_discovery",
+      "platform": "any"
+    }
+  },
+  {
+    "id": "rout-10",
+    "title": "Timestamp parser helper",
+    "category": "routine",
+    "role": "implementer",
+    "risk": "routine",
+    "prompt": "Implement parse_iso8601 in dates.py using datetime.fromisoformat",
+    "initial_files": {},
+    "allowed_tools": [
+      "write_file"
+    ],
+    "execution": {
+      "responses": [
+        {
+          "content": "Implementing timestamp parser in dates.py.",
+          "tool_calls": [
+            {
+              "name": "write_file",
+              "args": {
+                "file_path": "dates.py",
+                "content": "from datetime import datetime\n\ndef parse_iso8601(timestamp_str: str) -> datetime:\n    return datetime.fromisoformat(timestamp_str)\n"
+              },
+              "id": "call-write"
+            }
+          ],
+          "usage": {
+            "input_tokens": 16,
+            "output_tokens": 10,
+            "cost_usd": "0.002"
+          }
+        }
+      ],
+      "final_response": {
+        "content": "parse_iso8601 helper created.",
+        "tool_calls": [],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 6,
+          "cost_usd": "0.001"
+        }
+      }
+    },
+    "oracle": {
+      "type": "file_contains",
+      "target": "dates.py",
+      "expected": "fromisoformat"
+    },
+    "route_invariants": {
+      "min_floor": 0.35
+    },
+    "metadata": {
+      "approved": true,
+      "evidence_class": "synthetic_offline",
+      "intended_work": "Implement ISO-8601 parser with datetime.fromisoformat",
+      "scoring_meaning": "Verify fromisoformat is used in dates.py",
+      "workload_type": "direct_write",
+      "platform": "any"
+    }
+  }
+]

@@ -1,0 +1,9 @@
+[routing]
+lead_model = "project/lead"
+
+[orchestration]
+max_agents = 1
+
+[budget]
+warning_percent = 70
+

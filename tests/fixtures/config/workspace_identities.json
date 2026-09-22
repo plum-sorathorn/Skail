@@ -1,0 +1,12 @@
+{
+  "linux": {
+    "canonical_path": "/work/skail",
+    "device": 2049,
+    "inode": 42
+  },
+  "windows": {
+    "canonical_path": "C:\\work\\skail",
+    "device": 305419896,
+    "inode": 42
+  }
+}
