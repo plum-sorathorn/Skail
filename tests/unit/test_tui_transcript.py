@@ -6,8 +6,10 @@ TDD RED first: these target pure helpers + widget state machine in
 
 from __future__ import annotations
 
+from decimal import Decimal
 from types import SimpleNamespace
 
+from skail.sessions.journal import RunSnapshot, SessionSnapshot, UsageSnapshot
 from skail.tui.app import SkailApp, clean_lead_output
 from skail.tui.projection import TranscriptItem
 from skail.tui.widgets.chat import (
@@ -50,6 +52,48 @@ def test_apply_run_result_renders_clean_lead_message() -> None:
     )
 
     assert app.projection.transcript_items[-1].content == "The change is complete."
+
+
+def test_apply_run_result_refreshes_settled_budget_from_journal() -> None:
+    snapshot = SessionSnapshot(
+        session_id="session-budget-refresh",
+        status="idle",
+        runs=(
+            RunSnapshot(
+                run_id="run-budget-refresh",
+                status="completed",
+                budget_limit_usd=Decimal("1.00"),
+            ),
+        ),
+        tasks=(),
+        attempts=(),
+        assignments=(),
+        budget_reservations=(),
+        usage_records=(
+            UsageSnapshot(
+                usage_id="usage-budget-refresh",
+                task_id=None,
+                amount_usd=Decimal("0.04"),
+                authoritative=True,
+                idempotency_key="usage-budget-refresh",
+                run_id="run-budget-refresh",
+            ),
+        ),
+        approvals=(),
+        events=(),
+    )
+    app = SkailApp()
+    app.controller = SimpleNamespace(
+        journal=SimpleNamespace(get_session_snapshot=lambda _session_id: snapshot),
+        session_id="session-budget-refresh",
+    )
+    app.projection.budget_item.reserved_usd = Decimal("0.50")
+
+    app._apply_run_result(SimpleNamespace(pending_interrupt=None, output="Done."))
+
+    assert app.projection.budget_item.authoritative_actual_usd == Decimal("0.04")
+    assert app.projection.budget_item.reserved_usd == Decimal("0.00")
+    assert app.projection.budget_item.available_usd == Decimal("0.96")
 
 
 def test_diff_no_remount_on_stream_update() -> None:

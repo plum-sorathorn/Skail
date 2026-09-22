@@ -171,6 +171,7 @@ class ReservationSnapshot:
     amount_usd: Decimal
     status: str
     idempotency_key: str
+    run_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -181,6 +182,7 @@ class UsageSnapshot:
     authoritative: bool
     idempotency_key: str
     authority: str = "estimated_actual"
+    run_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -2005,12 +2007,13 @@ class Journal:
                 attempt_ids,
             ).fetchall()
             reservations = connection.execute(
-                f"SELECT reservation_id,task_id,amount_usd,status,idempotency_key "
+                f"SELECT reservation_id,task_id,amount_usd,status,idempotency_key,run_id "
                 f"FROM budget_reservations WHERE run_id IN ({placeholders}) ORDER BY rowid",
                 run_ids,
             ).fetchall()
             usage = connection.execute(
-                f"SELECT usage_id,task_id,amount_usd,authoritative,idempotency_key,authority "
+                f"SELECT usage_id,task_id,amount_usd,authoritative,idempotency_key,authority,"
+                f"run_id "
                 f"FROM usage_records WHERE run_id IN ({placeholders}) ORDER BY rowid",
                 run_ids,
             ).fetchall()
@@ -2091,6 +2094,7 @@ class Journal:
                     Decimal(row["amount_usd"]),
                     row["status"],
                     row["idempotency_key"],
+                    row["run_id"],
                 )
                 for row in reservations
             ),
@@ -2102,6 +2106,7 @@ class Journal:
                     bool(row["authoritative"]),
                     row["idempotency_key"],
                     row["authority"],
+                    row["run_id"],
                 )
                 for row in usage
             ),

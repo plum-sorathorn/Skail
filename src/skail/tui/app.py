@@ -1461,11 +1461,24 @@ class SkailApp(App[int]):
                 self._start_next_queued_prompt()
             self.update_views()
 
+    def _refresh_budget_from_journal(self) -> None:
+        controller = self.controller
+        journal = self.journal or getattr(controller, "journal", None)
+        session_id = self.session_id or getattr(controller, "session_id", None)
+        if journal is None or session_id is None:
+            return
+        try:
+            snapshot = journal.get_session_snapshot(str(session_id))
+        except Exception:
+            return
+        self.projection.apply_budget_snapshot(snapshot)
+
     def _apply_run_result(self, result: Any) -> None:
         if result.pending_interrupt:
             self._set_interrupt(result.pending_interrupt, run_id=str(result.run_id))
         else:
             self.projection.pending_interrupt = None
+        self._refresh_budget_from_journal()
         if result.output:
             self.projection.transcript_items.append(
                 TranscriptItem(

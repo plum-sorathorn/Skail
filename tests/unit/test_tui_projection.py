@@ -146,9 +146,11 @@ def test_projection_apply_snapshot() -> None:
     assert proj.session_title == 'Test Build Session'
     assert proj.budget_item.hard_limit_usd == Decimal('10.00')
     assert proj.budget_item.authoritative_actual_usd == Decimal('0.03')
+    assert proj.budget_item.estimated_actual_usd == Decimal('0.00')
     assert proj.budget_item.reserved_usd == Decimal('0.05')
     assert proj.budget_item.available_usd == Decimal('9.92')
     assert proj.budget_item.per_agent_costs[task_id] == Decimal('0.03')
+    assert proj.footer_data.session_cost_usd == Decimal('0.03')
 
     # Rail verification
     assert len(proj.agent_rail_items) == 1
@@ -590,6 +592,122 @@ def test_projection_actual_estimated_reserved_unknown_cost() -> None:
     assert proj.budget_item.reserved_usd == Decimal("2.00")
     assert proj.budget_item.unknown_cost_usd == Decimal("0.00")
     assert proj.budget_item.available_usd == Decimal("6.00")
+    assert proj.footer_data.session_cost_usd == Decimal("2.00")
+
+
+def test_projection_budget_uses_latest_run_only() -> None:
+    proj = TuiProjection()
+    snapshot = SessionSnapshot(
+        session_id="session-multi-run",
+        status="active",
+        runs=(
+            RunSnapshot(
+                run_id="run-old",
+                status="completed",
+                budget_limit_usd=Decimal("1.00"),
+            ),
+            RunSnapshot(
+                run_id="run-current",
+                status="running",
+                budget_limit_usd=Decimal("10.00"),
+            ),
+        ),
+        tasks=(),
+        attempts=(),
+        assignments=(),
+        budget_reservations=(
+            ReservationSnapshot(
+                reservation_id="res-old",
+                task_id=None,
+                amount_usd=Decimal("0.60"),
+                status="reserved",
+                idempotency_key="res-old",
+                run_id="run-old",
+            ),
+            ReservationSnapshot(
+                reservation_id="res-current",
+                task_id=None,
+                amount_usd=Decimal("0.50"),
+                status="reserved",
+                idempotency_key="res-current",
+                run_id="run-current",
+            ),
+        ),
+        usage_records=(
+            UsageSnapshot(
+                usage_id="usage-old",
+                task_id=None,
+                amount_usd=Decimal("0.30"),
+                authoritative=True,
+                idempotency_key="usage-old",
+                run_id="run-old",
+            ),
+            UsageSnapshot(
+                usage_id="usage-current",
+                task_id=None,
+                amount_usd=Decimal("0.25"),
+                authoritative=True,
+                idempotency_key="usage-current",
+                run_id="run-current",
+            ),
+        ),
+        approvals=(),
+        events=(),
+    )
+
+    proj.apply_snapshot(snapshot)
+
+    assert proj.budget_item.hard_limit_usd == Decimal("10.00")
+    assert proj.budget_item.authoritative_actual_usd == Decimal("0.25")
+    assert proj.budget_item.reserved_usd == Decimal("0.50")
+    assert proj.budget_item.available_usd == Decimal("9.25")
+
+
+def test_snapshot_budget_events_do_not_double_persisted_ledger_rows() -> None:
+    session_id = new_session_id()
+    run_id = new_run_id()
+    snapshot = SessionSnapshot(
+        session_id=str(session_id),
+        status="active",
+        runs=(
+            RunSnapshot(
+                run_id=str(run_id),
+                status="running",
+                budget_limit_usd=Decimal("1.00"),
+            ),
+        ),
+        tasks=(),
+        attempts=(),
+        assignments=(),
+        budget_reservations=(
+            ReservationSnapshot(
+                reservation_id="res-persisted",
+                task_id=None,
+                amount_usd=Decimal("0.40"),
+                status="reserved",
+                idempotency_key="res-persisted",
+                run_id=str(run_id),
+            ),
+        ),
+        usage_records=(),
+        approvals=(),
+        events=(
+            EventEnvelope(
+                event_id=new_event_id(),
+                session_id=session_id,
+                run_id=run_id,
+                sequence=1,
+                type="budget.reserved",
+                payload=BudgetPayload(action="reserved", amount_usd=Decimal("0.40")),
+            ),
+        ),
+    )
+
+    projection = TuiProjection()
+    projection.apply_snapshot(snapshot)
+
+    assert projection.budget_item.reserved_usd == Decimal("0.40")
+    assert projection.budget_item.available_usd == Decimal("0.60")
 
 
 def test_live_and_resumed_projections_agree() -> None:

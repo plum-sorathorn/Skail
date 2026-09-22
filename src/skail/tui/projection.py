@@ -513,6 +513,68 @@ class TuiProjection:
         self.unread += 1
         return True
 
+    def apply_budget_snapshot(self, snapshot: SessionSnapshot) -> None:
+        """Refresh current-run budget state without rebuilding the transcript."""
+        current_run = snapshot.runs[-1] if snapshot.runs else None
+        current_run_id = current_run.run_id if current_run is not None else ""
+
+        def belongs_to_current_run(item: object) -> bool:
+            item_run_id = str(getattr(item, "run_id", ""))
+            return not current_run_id or not item_run_id or item_run_id == current_run_id
+
+        budget = BudgetViewItem(
+            hard_limit_usd=(
+                current_run.budget_limit_usd if current_run is not None else None
+            )
+        )
+        for usage in snapshot.usage_records:
+            if not belongs_to_current_run(usage):
+                continue
+            authority = usage.authority
+            if usage.authoritative or authority == "authoritative_actual":
+                budget.authoritative_actual_usd += usage.amount_usd
+            elif authority == "token_derived_estimate":
+                budget.token_derived_actual_usd += usage.amount_usd
+                budget.estimated_actual_usd += usage.amount_usd
+            elif authority == "conservative_estimate":
+                budget.conservative_estimate_usd += usage.amount_usd
+                budget.estimated_actual_usd += usage.amount_usd
+            elif authority == "unknown":
+                budget.unknown_cost_usd += usage.amount_usd
+            else:
+                budget.estimated_actual_usd += usage.amount_usd
+            if usage.task_id:
+                budget.per_agent_costs[usage.task_id] = (
+                    budget.per_agent_costs.get(usage.task_id, Decimal("0.00"))
+                    + usage.amount_usd
+                )
+
+        for reservation in snapshot.budget_reservations:
+            if belongs_to_current_run(reservation) and reservation.status in (
+                "active",
+                "reserved",
+            ):
+                budget.reserved_usd += reservation.amount_usd
+
+        incurred = (
+            budget.authoritative_actual_usd
+            + budget.estimated_actual_usd
+            + budget.unknown_cost_usd
+        )
+        committed = incurred + budget.reserved_usd
+        if budget.hard_limit_usd is not None:
+            budget.available_usd = max(
+                Decimal("0.00"), budget.hard_limit_usd - committed
+            )
+            budget.warning_state = bool(
+                budget.hard_limit_usd > 0
+                and committed / budget.hard_limit_usd >= Decimal("0.80")
+            )
+
+        self.budget_item = budget
+        self.footer_data.session_cost_usd = incurred
+        self.footer_data.budget_limit_usd = budget.hard_limit_usd
+
     def apply_snapshot(self, snapshot: SessionSnapshot) -> None:
         self.transcript_items = []
         self.agent_rail_items = []
@@ -531,54 +593,8 @@ class TuiProjection:
         self.session_status = snapshot.status
 
         # 1. Budget and usage
-        limit = None
-        for run in snapshot.runs:
-            if run.budget_limit_usd is not None:
-                limit = run.budget_limit_usd
-                break
-        self.budget_item.hard_limit_usd = limit
-
-        total_authoritative = Decimal("0.00")
-        total_estimated = Decimal("0.00")
-        total_token_derived = Decimal("0.00")
-        total_conservative = Decimal("0.00")
-        total_unknown = Decimal("0.00")
-        agent_costs: dict[str, Decimal] = {}
-
-        for u in snapshot.usage_records:
-            if u.authoritative or u.authority == "authoritative_actual":
-                total_authoritative += u.amount_usd
-            elif u.authority == "token_derived_estimate":
-                total_token_derived += u.amount_usd
-                total_estimated += u.amount_usd
-            elif u.authority == "conservative_estimate":
-                total_conservative += u.amount_usd
-                total_estimated += u.amount_usd
-            else:
-                total_estimated += u.amount_usd
-            if getattr(u, "unknown", False):
-                total_unknown += u.amount_usd
-            if u.task_id:
-                agent_costs[u.task_id] = agent_costs.get(u.task_id, Decimal("0.00")) + u.amount_usd
-
-        active_reservations = Decimal("0.00")
-        for r in snapshot.budget_reservations:
-            if r.status in ("active", "reserved"):
-                active_reservations += r.amount_usd
-
-        self.budget_item.authoritative_actual_usd = total_authoritative
-        self.budget_item.estimated_actual_usd = total_estimated
-        self.budget_item.token_derived_actual_usd = total_token_derived
-        self.budget_item.conservative_estimate_usd = total_conservative
-        self.budget_item.reserved_usd = active_reservations
-        self.budget_item.unknown_cost_usd = total_unknown
-        self.budget_item.per_agent_costs = agent_costs
-        if limit is not None:
-            committed = total_authoritative + total_estimated + active_reservations + total_unknown
-            remaining = limit - committed
-            self.budget_item.available_usd = max(Decimal("0.00"), remaining)
-            if limit > 0 and (total_authoritative / limit) >= Decimal("0.80"):
-                self.budget_item.warning_state = True
+        self.apply_budget_snapshot(snapshot)
+        agent_costs = self.budget_item.per_agent_costs
 
         # 2. Routes from assignments
         attempts_by_task: dict[str, list[Any]] = {}
@@ -626,11 +642,6 @@ class TuiProjection:
                 shadow_reasons=shadow_reasons,
             )
             self.route_items[task_id] = route_item
-            if asg.estimated_cost_usd > Decimal("0.00") and total_estimated == Decimal("0.00"):
-                total_estimated += asg.estimated_cost_usd
-
-        if total_estimated > self.budget_item.estimated_actual_usd:
-            self.budget_item.estimated_actual_usd = total_estimated
 
         # 3. Agent rail items from tasks
         rail_items: list[AgentRailItem] = []
@@ -749,6 +760,10 @@ class TuiProjection:
         for ev in snapshot.events:
             self.apply_event(ev)
 
+        # Persisted ledger rows are authoritative; replayed budget events must
+        # not apply the same reservation or charge a second time.
+        self.apply_budget_snapshot(snapshot)
+
         # 9. Footer
         context_tokens = 0
         if snapshot.context_packets:
@@ -764,8 +779,12 @@ class TuiProjection:
             else lead_model_name,
             active_mode=self.footer_data.active_mode,
             routing_mode="auto",
-            session_cost_usd=total_authoritative,
-            budget_limit_usd=limit,
+            session_cost_usd=(
+                self.budget_item.authoritative_actual_usd
+                + self.budget_item.estimated_actual_usd
+                + self.budget_item.unknown_cost_usd
+            ),
+            budget_limit_usd=self.budget_item.hard_limit_usd,
             context_tokens_estimated=context_tokens,
             active_agents_count=active_count,
         )
