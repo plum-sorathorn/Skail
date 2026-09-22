@@ -25,7 +25,7 @@ from langchain_core.runnables import RunnableConfig
 
 from skail.agents.context import ContextAssembler, ContextComponent, ContextPacket
 from skail.agents.instructions import load_root_instructions
-from skail.agents.lead import LeadControls, build_production_lead
+from skail.agents.lead import LeadControls, build_production_lead, resolve_lead_controls
 from skail.agents.profile_loader import AgentProfile
 from skail.agents.profiles import builtin_profiles
 from skail.agents.result_evaluator import parse_child_result
@@ -723,6 +723,7 @@ class RunController:
         workspace_revision: str = "git:head",
         delegation_approved: bool = False,
     ) -> RunResult:
+        active_controls = resolve_lead_controls(instruction, controls)
         if self.checkpoints is not None:
             self.checkpoints.initialize()
             async with self.checkpoints.saver(str(self.session_id)) as saver:
@@ -730,7 +731,7 @@ class RunController:
                 return await self._run_instruction_impl(
                     instruction,
                     run_id=run_id,
-                    controls=controls,
+                      controls=active_controls,
                     workspace_revision=workspace_revision,
                     delegation_approved=delegation_approved,
                     saver=saver,
@@ -738,7 +739,7 @@ class RunController:
         return await self._run_instruction_impl(
             instruction,
             run_id=run_id,
-            controls=controls,
+              controls=active_controls,
             workspace_revision=workspace_revision,
             delegation_approved=delegation_approved,
             saver=None,
@@ -913,6 +914,8 @@ class RunController:
                 run_id=str(run_id), decision=decision
             ),
             restored_decision=restored_decision,
+            required_mode=(ExecutionMode.DIRECT if controls.direct_only else None),
+            required_agent_count=controls.required_agent_count,
         )
 
         def observe_response(response: ModelResponse[Any]) -> None:

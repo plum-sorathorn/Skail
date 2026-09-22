@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Awaitable, Callable
+from pathlib import PurePosixPath
 from typing import Any
 
 from langchain.agents.middleware import (
@@ -33,13 +34,19 @@ class ExecutionDecisionGate:
         revise_plan: Callable[[PlanRevision, ExecutionPlan], Any] | None = None,
         persist_decision: Callable[[ExecutionDecision], Any] | None = None,
         restored_decision: ExecutionDecision | None = None,
+        required_mode: ExecutionMode | None = None,
+        required_agent_count: int | None = None,
     ) -> None:
         self._admit_plan = admit_plan
         self._revise_plan = revise_plan
         self._persist_decision = persist_decision
+        self._required_mode = required_mode
+        self._required_agent_count = required_agent_count
         self.decision: ExecutionDecision | None = None
         if restored_decision is not None:
-            self.decision = restored_decision
+            parsed = ExecutionDecision.model_validate(restored_decision.model_dump(mode="json"))
+            self._validate_constraints(parsed)
+            self.decision = parsed
         self._repairs_remaining = 2
         self._prepared_decision_ids: set[str] = set()
         self._rejected_tool_codes: dict[str, str] = {}
@@ -113,6 +120,7 @@ class ExecutionDecisionGate:
 
     def _admit_transition(self, value: dict[str, Any]) -> ExecutionDecision:
         candidate = self._parse(value)
+        self._validate_constraints(candidate)
         if candidate.mode is ExecutionMode.DIRECT:
             raise DecisionAdmissionError("decision.already_recorded")
         if self.decision is not None and self.decision.plan is not None:
@@ -135,8 +143,53 @@ class ExecutionDecisionGate:
 
     def _validate_and_record(self, value: dict[str, Any]) -> ExecutionDecision:
         candidate = self._parse(value)
+        self._validate_constraints(candidate)
         self._record(candidate)
         return candidate
+
+    def _validate_constraints(self, candidate: ExecutionDecision) -> None:
+        if self._required_mode is not None and candidate.mode is not self._required_mode:
+            raise DecisionAdmissionError(
+                "execution.intent_conflict: explicit user intent requires "
+                f"mode={self._required_mode.value}"
+            )
+        if self._required_agent_count is None:
+            return
+        plan = candidate.plan
+        agents = [] if plan is None else [
+            node for node in plan.nodes if node.kind.value == "agent"
+        ]
+        if len(agents) != self._required_agent_count:
+            raise DecisionAdmissionError(
+                "execution.agent_count_conflict: explicit user intent requires "
+                f"exactly {self._required_agent_count} agent plan nodes"
+            )
+        owned_scopes: list[str] = []
+        for node in agents:
+            scopes = tuple(
+                scope.strip().replace("\\", "/").strip("/")
+                for scope in node.resource_scopes
+                if scope.strip().strip("/")
+            )
+            if not scopes:
+                raise DecisionAdmissionError(
+                    "execution.agent_scope_conflict: every requested agent needs "
+                    "a non-overlapping resource scope"
+                )
+            for scope in scopes:
+                parts = PurePosixPath(scope).parts
+                if not parts or any(
+                    parts[: len(existing_parts)] == existing_parts
+                    or existing_parts[: len(parts)] == parts
+                    for existing_parts in (
+                        PurePosixPath(existing).parts for existing in owned_scopes
+                    )
+                ):
+                    raise DecisionAdmissionError(
+                        "execution.agent_scope_conflict: requested agent resource "
+                        "scopes must be disjoint"
+                    )
+                owned_scopes.append(scope)
 
     def _parse(self, value: dict[str, Any]) -> ExecutionDecision:
         normalized = _normalize_decision_args(dict(value))
@@ -316,7 +369,13 @@ def _normalize_decision_args(value: dict[str, Any]) -> dict[str, Any]:
         # inside the plan argument. Preserve the explicit top-level values and
         # validate the actual nested ExecutionPlan object.
         for name in ("mode", "objective", "reason", "constraints", "revision"):
-            if name in plan and name not in normalized:
+            if name not in plan:
+                continue
+            if name in normalized and _comparable_decision_field(
+                name, normalized[name]
+            ) != _comparable_decision_field(name, plan[name]):
+                raise DecisionAdmissionError("decision.payload_conflict")
+            if name not in normalized:
                 normalized[name] = plan[name]
         normalized["plan"] = plan["plan"]
     revision = normalized.get("revision")
@@ -330,6 +389,24 @@ def _normalize_decision_args(value: dict[str, Any]) -> dict[str, Any]:
         else:
             normalized.pop("revision", None)
     return normalized
+
+
+def _comparable_decision_field(name: str, value: Any) -> Any:
+    if name == "constraints":
+        if isinstance(value, str):
+            return tuple(part.strip() for part in re.split(r"[;\n]+", value) if part.strip())
+        if isinstance(value, list):
+            return tuple(str(item).strip() for item in value if str(item).strip())
+    if name == "revision" and isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value.strip()
+    if isinstance(value, str):
+        value = value.strip()
+        if name == "mode":
+            return value.casefold()
+    return value
 
 
 def _actionable_plan_invalid(exc: ValidationError) -> str:

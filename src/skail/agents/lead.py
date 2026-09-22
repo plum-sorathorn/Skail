@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -53,8 +54,83 @@ class LeadControls:
     profile: str | None = None
     write_allowed: bool | None = None
     max_children: int = 3
+    direct_only: bool = False
+    required_agent_count: int | None = None
     routing_mode: RoutingMode = RoutingMode.AUTO
     risk: TaskRisk = TaskRisk.ROUTINE
+
+
+class LeadIntentError(ValueError):
+    """An explicit user instruction conflicts with the available run policy."""
+
+
+def resolve_lead_controls(
+    instruction: str, controls: LeadControls | None = None
+) -> LeadControls:
+    """Translate clear user directives into constraints for this run only."""
+
+    resolved = controls or LeadControls()
+    normalized = instruction.casefold()
+    direct_only = any(
+        re.search(pattern, normalized)
+        for pattern in (
+            r"\bdo (?:this|it|the work) yourself\b",
+            r"\bhandle (?:this|it|the work) yourself\b",
+            r"\bwithout delegating\b",
+            r"\bdo not delegate\b",
+            r"\bdon't delegate\b",
+            r"\bno delegation\b",
+            r"\bno subagents?\b",
+        )
+    )
+    no_write = any(
+        re.search(pattern, normalized)
+        for pattern in (
+            r"\bdo not edit(?: any| the)? (?:files?|workspace|code)?\b",
+            r"\bdon't edit(?: any| the)? (?:files?|workspace|code)?\b",
+            r"\bdo not modify(?: any| the)? (?:files?|workspace|code)?\b",
+            r"\bdon't modify(?: any| the)? (?:files?|workspace|code)?\b",
+            r"\bdo not change (?:any |the )?(?:files?|workspace|code)\b",
+            r"\bread[- ]only\b",
+            r"\bno file (?:edits?|writes?|modifications?)\b",
+        )
+    )
+    count_match = re.search(
+        r"\bexactly\s+(\d+|one|two|three|four|five)\s+"
+        r"(?:agents?|subagents?|children)\b",
+        normalized,
+    )
+    required_agent_count: int | None = None
+    if count_match is not None:
+        count = count_match.group(1)
+        required_agent_count = (
+            int(count)
+            if count.isdigit()
+            else {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}[count]
+        )
+        if (
+            required_agent_count < 1
+            or required_agent_count > 3
+            or resolved.delegation == "off"
+            or required_agent_count > resolved.max_children
+            or direct_only
+        ):
+            raise LeadIntentError(
+                "execution.intent_conflict: the requested agent count conflicts "
+                "with the current delegation policy or three-child limit"
+            )
+
+    updates: dict[str, object] = {}
+    if direct_only:
+        updates.update(delegation="off", direct_only=True)
+    if no_write:
+        updates["write_allowed"] = False
+    if required_agent_count is not None:
+        updates.update(
+            required_agent_count=required_agent_count,
+            max_children=required_agent_count,
+        )
+    return replace(resolved, **updates)
 
 
 #: Operational tools the lead must not call directly in worktree mode. The

@@ -61,8 +61,11 @@ Its prompt defines delegation heuristics, but the runtime enforces user directiv
 - `delegation=off`: the `task` tool is hidden or rejects calls before scheduling;
 - `delegation=ask`: proposed tasks require user confirmation before launch;
 - `delegation=auto`: valid tasks launch within concurrency, safety, and budget gates;
-- explicit “do this yourself” applies to that instruction even when the configured default is `auto`;
-- explicit “use N agents” is honored up to configured and hard limits, or Skail explains the conflict.
+- explicit “do this yourself” and “do not delegate” apply to that instruction even when the configured default is `auto`; a conflicting execution decision is rejected before its plan is admitted;
+- explicit “do not edit” removes write-capable lead tools and rejects write-capable plan nodes for that run;
+- explicit “use N agents” requires exactly N agent nodes with pairwise-disjoint resource scopes, within the configured and hard three-child limits; a count or scope conflict is reported before plan admission.
+
+These constraints belong to one run and do not carry into the next prompt. Stable rejection codes are `execution.intent_conflict`, `execution.agent_count_conflict`, and `execution.agent_scope_conflict`.
 
 ### Direct-versus-delegate heuristic
 

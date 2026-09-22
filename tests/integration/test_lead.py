@@ -629,3 +629,114 @@ async def test_explicit_instruction_constraints_apply_only_to_current_run(tmp_pa
     # Instruction 2: default controls - must not retain custom-lead
     res2 = await controller.run_instruction("Run 2")
     assert res2.lead_assignment.model == "lead-model"
+
+
+@pytest.mark.asyncio
+async def test_direct_user_instruction_rejects_plan_and_task_admission(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Direct intent", created_at=datetime.now(UTC)
+    )
+    planned = {
+        "mode": "planned",
+        "objective": "Inspect the requested files",
+        "constraints": [],
+        "reason": "The model incorrectly chose a plan.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "review",
+                    "kind": "checkpoint",
+                    "objective": "Review the evidence",
+                }
+            ],
+        },
+    }
+    direct = {
+        "mode": "direct",
+        "objective": "Inspect the requested files",
+        "constraints": [],
+        "reason": "The instruction requires direct execution.",
+    }
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    ("execution_decision", planned, "planned-first"),
+                    (
+                        "task",
+                        {"description": "Inspect the requested files", "subagent_type": "explorer"},
+                        "task-first",
+                    ),
+                ]
+            ),
+            parallel_tool_call_message([("execution_decision", direct, "direct-repair")]),
+            AIMessage(content="I inspected the files directly."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead},
+    )
+
+    result = await controller.run_instruction(
+        "Inspect the requested files and do this yourself without delegating."
+    )
+
+    assert result.status == "completed"
+    assert result.child_count == 0
+    assert journal.plans_for_run(str(result.run_id)) == ()
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert len([task for task in snapshot.tasks if task.run_id == str(result.run_id)]) == 1
+
+
+@pytest.mark.asyncio
+async def test_no_edit_user_instruction_blocks_write_tool(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Read only intent", created_at=datetime.now(UTC)
+    )
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "direct",
+                            "objective": "Review the workspace",
+                            "constraints": [],
+                            "reason": "The user requested inspection only.",
+                        },
+                        "decision-read-only",
+                    ),
+                    (
+                        "write_file",
+                        {"file_path": "should-not-exist.txt", "content": "blocked\n"},
+                        "write-read-only",
+                    ),
+                ]
+            ),
+            AIMessage(content="I left the workspace unchanged."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead},
+    )
+
+    result = await controller.run_instruction("Review the workspace. Do not edit files.")
+
+    assert result.status == "completed"
+    assert not (tmp_path / "should-not-exist.txt").exists()

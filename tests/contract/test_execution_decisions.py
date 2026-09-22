@@ -6,6 +6,7 @@ import pytest
 from fakes.models import ScriptedChatModel, parallel_tool_call_message
 from langchain_core.messages import AIMessage, ToolMessage
 
+from skail.domain.decisions import ExecutionMode
 from skail.domain.plans import ExecutionPlan
 from skail.runtime.decisions import (
     DecisionAdmissionError,
@@ -96,6 +97,169 @@ def test_nested_full_decision_plan_shape_is_normalized_before_validation() -> No
     assert decision.plan is not None
     assert decision.plan.revision == 1
     assert len(admitted) == 1
+
+
+@pytest.mark.parametrize(
+    "field, inner_value",
+    [("mode", "direct"), ("objective", "A conflicting objective")],
+)
+def test_nested_decision_metadata_conflicts_are_rejected(field: str, inner_value: str) -> None:
+    admitted: list[ExecutionPlan] = []
+    gate = ExecutionDecisionGate(admit_plan=admitted.append)
+    nested_plan: dict[str, Any] = {
+        "mode": "planned",
+        "objective": "Inspect before implementation",
+        "reason": "The work needs a gated discovery pass.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "checkpoint",
+                    "kind": "checkpoint",
+                    "objective": "Review discovery evidence",
+                    "effect_scope": "read",
+                }
+            ],
+        },
+    }
+    nested_plan[field] = inner_value
+
+    with pytest.raises(DecisionAdmissionError, match="decision.payload_conflict"):
+        gate.admit(
+            {
+                "mode": "planned",
+                "objective": "Inspect before implementation",
+                "reason": "The work needs a gated discovery pass.",
+                "plan": nested_plan,
+            }
+        )
+
+    assert admitted == []
+
+
+def test_explicit_direct_intent_rejects_plans_before_admission() -> None:
+    admitted: list[ExecutionPlan] = []
+    gate = ExecutionDecisionGate(
+        admit_plan=admitted.append,
+        required_mode=ExecutionMode.DIRECT,
+    )
+    planned = {
+        "mode": "planned",
+        "objective": "Inspect before implementation",
+        "reason": "The work needs a plan.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "checkpoint",
+                    "kind": "checkpoint",
+                    "objective": "Review evidence",
+                }
+            ],
+        },
+    }
+
+    with pytest.raises(DecisionAdmissionError, match="execution.intent_conflict"):
+        gate.admit(planned)
+
+    assert admitted == []
+
+
+def test_exact_agent_count_requires_disjoint_scopes() -> None:
+    admitted: list[ExecutionPlan] = []
+    gate = ExecutionDecisionGate(admit_plan=admitted.append, required_agent_count=2)
+    plan = {
+        "schema_version": 1,
+        "policy_version": "adaptive-v1",
+        "revision": 1,
+        "nodes": [
+            {
+                "local_id": "source",
+                "kind": "agent",
+                "objective": "Inspect source",
+                "resource_scopes": ["src/a.py"],
+            },
+            {
+                "local_id": "tests",
+                "kind": "agent",
+                "objective": "Inspect tests",
+                "resource_scopes": ["tests/a.py"],
+            },
+        ],
+    }
+
+    decision = gate.admit(
+        {
+            "mode": "planned",
+            "objective": "Inspect source and tests",
+            "reason": "The two independent reviews are explicitly requested.",
+            "plan": plan,
+        }
+    )
+
+    assert decision.mode is ExecutionMode.PLANNED
+    assert len(admitted) == 1
+
+
+@pytest.mark.parametrize(
+    "nodes, error_code",
+    [
+        (
+            [
+                {
+                    "local_id": "source",
+                    "kind": "agent",
+                    "objective": "Inspect source",
+                    "resource_scopes": ["src/a.py"],
+                }
+            ],
+            "execution.agent_count_conflict",
+        ),
+        (
+            [
+                {
+                    "local_id": "source",
+                    "kind": "agent",
+                    "objective": "Inspect source",
+                    "resource_scopes": ["src"],
+                },
+                {
+                    "local_id": "nested",
+                    "kind": "agent",
+                    "objective": "Inspect a nested source path",
+                    "resource_scopes": ["src/a.py"],
+                },
+            ],
+            "execution.agent_scope_conflict",
+        ),
+    ],
+)
+def test_exact_agent_constraint_rejects_count_or_scope_conflicts(
+    nodes: list[dict[str, Any]], error_code: str
+) -> None:
+    admitted: list[ExecutionPlan] = []
+    gate = ExecutionDecisionGate(admit_plan=admitted.append, required_agent_count=2)
+
+    with pytest.raises(DecisionAdmissionError, match=error_code):
+        gate.admit(
+            {
+                "mode": "planned",
+                "objective": "Inspect source and tests",
+                "reason": "The two independent reviews are explicitly requested.",
+                "plan": {
+                    "schema_version": 1,
+                    "policy_version": "adaptive-v1",
+                    "revision": 1,
+                    "nodes": nodes,
+                },
+            }
+        )
+
+    assert admitted == []
 
 
 def test_operation_before_decision_is_rejected_without_a_side_effect(tmp_path) -> None:
