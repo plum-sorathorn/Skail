@@ -310,6 +310,15 @@ def _normalize_decision_args(value: dict[str, Any]) -> dict[str, Any]:
                 pass
         else:
             normalized.pop("plan", None)
+    plan = normalized.get("plan")
+    if isinstance(plan, dict) and isinstance(plan.get("plan"), dict):
+        # Some tool-capable models wrap the complete execution-decision object
+        # inside the plan argument. Preserve the explicit top-level values and
+        # validate the actual nested ExecutionPlan object.
+        for name in ("mode", "objective", "reason", "constraints", "revision"):
+            if name in plan and name not in normalized:
+                normalized[name] = plan[name]
+        normalized["plan"] = plan["plan"]
     revision = normalized.get("revision")
     if isinstance(revision, str):
         stripped = revision.strip()

@@ -6,6 +6,7 @@ import pytest
 from fakes.models import ScriptedChatModel, parallel_tool_call_message
 from langchain_core.messages import AIMessage, ToolMessage
 
+from skail.domain.plans import ExecutionPlan
 from skail.runtime.decisions import (
     DecisionAdmissionError,
     ExecutionDecisionGate,
@@ -58,6 +59,43 @@ def test_decision_and_following_operation_share_the_initial_model_response(tmp_p
     assert gate.decision is not None
     assert gate.decision.mode == "direct"
     assert result["messages"][-1].content == "Done."
+
+
+def test_nested_full_decision_plan_shape_is_normalized_before_validation() -> None:
+    admitted: list[ExecutionPlan] = []
+    gate = ExecutionDecisionGate(admit_plan=admitted.append)
+    nested_plan = {
+        "mode": "planned",
+        "objective": "Inspect before implementation",
+        "reason": "The work needs a gated discovery pass.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "checkpoint",
+                    "kind": "checkpoint",
+                    "objective": "Review discovery evidence",
+                    "effect_scope": "read",
+                }
+            ],
+        },
+    }
+
+    decision = gate.admit(
+        {
+            "mode": "planned",
+            "objective": "Inspect before implementation",
+            "reason": "The work needs a gated discovery pass.",
+            "plan": nested_plan,
+        }
+    )
+
+    assert decision.mode.value == "planned"
+    assert decision.plan is not None
+    assert decision.plan.revision == 1
+    assert len(admitted) == 1
 
 
 def test_operation_before_decision_is_rejected_without_a_side_effect(tmp_path) -> None:
