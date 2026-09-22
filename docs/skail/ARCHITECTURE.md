@@ -81,7 +81,7 @@ Skail owns these semantics and may not delegate them to prompts:
 - cost estimation, reservation, and hard budget launch gates;
 - concurrency, dependencies, delegation depth, and write leases;
 - project trust, command policy, and permissions not covered by built-in tools;
-- deterministic failure signals and the one-escalation policy;
+- run-wide model-call budgets, deterministic failure signals, and the one-escalation policy;
 - provider health, fallback recording, and usage normalization;
 - stable user-facing events, errors, CLI behavior, and persistence;
 - compatibility adapters around DeepAgents preview or changing APIs.

@@ -449,9 +449,15 @@ Initial triggers:
 - three identical consecutive tool calls;
 - two consecutive tool errors;
 - same normalized error twice;
-- exhausted configured model-call/time/budget boundary.
+- exhausted configured model-call/time/budget boundary;
+- a hard run limit of 32 model calls shared across the lead and every child.
 
 Tool arguments are normalized without secrets. Semantically different searches or a corrected retry do not count as identical.
+
+Rejected execution decisions count as errors, so repeated conflicts stop the run instead of continuing the
+model/tool loop. The 32-call run limit is checked before the next provider request and ends the run with
+`run.model_call_limit_exhausted`; it does not change the two-attempt child limit. Calls already in flight are finalized
+from known usage, while ambiguous provider outcomes remain unresolved for reconciliation.
 
 ### Provider failures
 

@@ -173,6 +173,7 @@ def build_production_lead(
     runtime_model_name: str | None = None,
     model_response_observer: Callable[[Any], None] | None = None,
     usage_normalizer: Callable[[Any], NormalizedUsage | None] | None = None,
+    model_call_guard: Callable[[], None] | None = None,
     extension_tools: Sequence[Any] = (),
     session_id: str = "",
     run_id: str = "",
@@ -205,8 +206,9 @@ def build_production_lead(
             question_store=question_store,
             runtime_event=runtime_event,
             runtime_model_name=runtime_model_name,
-            model_response_observer=model_response_observer,
-            usage_normalizer=usage_normalizer,
+              model_response_observer=model_response_observer,
+              usage_normalizer=usage_normalizer,
+              model_call_guard=model_call_guard,
             system_prompt=(
                 TASK_PACKET_GUIDANCE
                 if context_prompt is None

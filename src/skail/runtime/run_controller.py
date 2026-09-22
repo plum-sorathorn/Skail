@@ -105,6 +105,7 @@ from skail.runtime.decisions import (
 )
 from skail.runtime.deepagents_adapter import ChildRunGate, resume_agent
 from skail.runtime.event_bus import EventBus
+from skail.runtime.failure_monitor import RunModelCallBudget
 from skail.runtime.interrupts import QuestionStore
 from skail.runtime.leases import WorkspaceLeaseManager
 from skail.runtime.model_middleware import TaskBoundModelMiddleware
@@ -133,6 +134,7 @@ from skail.tools.execution import CommandRequest, ExecutionPolicy, ExecutionSecu
 DEFAULT_CONFIG_SNAPSHOT: dict[str, Any] = {"routing": {"mode": "auto"}}
 _TOOL_RESULT_ALLOWANCE_TOKENS = 1_024
 _DEFAULT_OUTPUT_ALLOWANCE_TOKENS = 2_048
+MAX_MODEL_CALLS_PER_RUN = 32
 
 
 @dataclass(frozen=True)
@@ -359,6 +361,7 @@ class RunController:
         self._plan_revision_checkpoints: dict[str, str] = {}
         self._restored_decision: Any | None = None
         self._resume_lead_on_recovery = True
+        self._run_model_call_budgets: dict[str, RunModelCallBudget] = {}
 
     @property
     def pending_interrupt(self) -> dict[str, Any] | None:
@@ -370,6 +373,22 @@ class RunController:
 
     def _record_model_usage(self, assignment_id: str, response: object, call_id: str = "") -> None:
         self.usage_settler.record_call(assignment_id, response, call_id=call_id)
+
+    def _model_call_budget_for_run(self, run_id: RunId) -> RunModelCallBudget:
+        key = str(run_id)
+        budget = self._run_model_call_budgets.get(key)
+        if budget is None:
+            snapshot = self.journal.get_session_snapshot(str(self.session_id))
+            calls_started = sum(
+                event.run_id == key and event.type == "model.started"
+                for event in snapshot.events
+            )
+            budget = RunModelCallBudget(
+                max_calls=MAX_MODEL_CALLS_PER_RUN,
+                calls_started=calls_started,
+            )
+            self._run_model_call_budgets[key] = budget
+        return budget
 
     def _finalize_child_budgets(self, run_id: RunId, lead_task_id: TaskId) -> None:
         """Release settled/unstarted child funds while retaining ambiguous calls."""
@@ -816,6 +835,7 @@ class RunController:
     ) -> Any:
         delegation_approved = delegation_approved or controls.delegation == "auto"
         allow_delegation = controls.delegation in ("auto", "ask")
+        model_call_budget = self._model_call_budget_for_run(run_id)
         subagents: list[CompiledSubAgent] = []
         if allow_delegation:
             for profile in builtin_profiles().values():
@@ -829,10 +849,11 @@ class RunController:
                         leases=leases,
                         gate=gate,
                         scheduler=scheduler,
-                        controls=controls,
-                        delegation_approved=delegation_approved,
-                        recorded_child_results=recorded_child_results,
-                    )
+                          controls=controls,
+                          delegation_approved=delegation_approved,
+                          recorded_child_results=recorded_child_results,
+                          model_call_budget=model_call_budget,
+                      )
                 )
         lead_model_key = f"{lead_assignment.provider}:{lead_assignment.model}"
         lead_chat_model = self._all_models.get(lead_model_key)
@@ -960,8 +981,9 @@ class RunController:
                 attempt_id=lead_attempt_id,
             ),
             runtime_model_name=lead_assignment.model,
-            model_response_observer=observe_response,
-            usage_normalizer=usage_normalizer,
+              model_response_observer=observe_response,
+              usage_normalizer=usage_normalizer,
+              model_call_guard=model_call_budget.begin_call,
             session_id=str(self.session_id),
             run_id=str(run_id),
             state_dir=self.state_dir,
@@ -3100,6 +3122,7 @@ class RunController:
         controls: LeadControls,
         delegation_approved: bool,
         recorded_child_results: list[TaskResult],
+        model_call_budget: RunModelCallBudget,
     ) -> CompiledSubAgent:
         attempt_ids: dict[str, str] = {}
 
@@ -3331,6 +3354,7 @@ class RunController:
                 if curr_attempt_id
                 else None,
                 runtime_model_name=assignment.model,
+                model_call_guard=model_call_budget.begin_call,
                 session_id=str(self.session_id),
                 run_id=str(run_id),
                 graph_id=f"{self.session_id}:{run_id}:{spec.task_id}",

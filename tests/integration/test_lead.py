@@ -20,6 +20,8 @@ from skail.routing.assignment import (
     config_revision,
 )
 from skail.routing.selector import RouteCandidate
+from skail.runtime import run_controller as run_controller_module
+from skail.runtime.failure_monitor import RunModelCallLimitExceeded
 from skail.runtime.run_controller import RunController
 from skail.sessions.journal import Journal
 
@@ -740,3 +742,120 @@ async def test_no_edit_user_instruction_blocks_write_tool(tmp_path: Path) -> Non
 
     assert result.status == "completed"
     assert not (tmp_path / "should-not-exist.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_run_model_call_limit_stops_a_read_only_tool_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(run_controller_module, "MAX_MODEL_CALLS_PER_RUN", 2)
+    (tmp_path / "one.txt").write_text("one", encoding="utf-8")
+    (tmp_path / "two.txt").write_text("two", encoding="utf-8")
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Bounded tool loop", created_at=datetime.now(UTC)
+    )
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "direct",
+                            "objective": "Read the fixture files",
+                            "constraints": [],
+                            "reason": "This is a bounded read-only loop.",
+                        },
+                        "loop-decision",
+                    ),
+                    ("read_file", {"file_path": "one.txt"}, "loop-read-1"),
+                ]
+            ),
+            tool_call_message("read_file", {"file_path": "two.txt"}, call_id="loop-read-2"),
+            AIMessage(content="This response must never be requested."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead},
+    )
+
+    with pytest.raises(RunModelCallLimitExceeded, match="run.model_call_limit_exhausted"):
+        await controller.run_instruction("Read the fixture files.")
+
+    snapshot = journal.get_session_snapshot(str(session_id))
+    run = snapshot.runs[-1]
+    run_events = [event for event in snapshot.events if event.run_id == run.run_id]
+    assert run.status == "failed"
+    assert len(lead.calls) == 2
+    assert sum(event.type == "model.started" for event in run_events) == 2
+    assert sum(event.type == "run.failed" for event in run_events) == 1
+    assert not any(event.type == "run.completed" for event in run_events)
+
+
+@pytest.mark.asyncio
+async def test_run_model_call_limit_is_shared_with_child_agents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(run_controller_module, "MAX_MODEL_CALLS_PER_RUN", 2)
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Shared model call limit", created_at=datetime.now(UTC)
+    )
+    child = ScriptedChatModel(
+        model_name="explorer-model",
+        responses=[AIMessage(content='{"status":"failed","summary":"Stopped for test."}')],
+    )
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "direct",
+                            "objective": "Delegate a bounded inspection",
+                            "constraints": [],
+                            "reason": "The user requested one read-only child.",
+                        },
+                        "shared-limit-decision",
+                    ),
+                    (
+                        "task",
+                        {
+                            "description": "Inspect the current workspace",
+                            "subagent_type": "explorer",
+                        },
+                        "shared-limit-task",
+                    ),
+                ]
+            ),
+            AIMessage(content="This synthesis response must never be requested."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead, "explorer-model": child},
+        default_child_model="explorer-model",
+        profile_models={"explorer": "explorer-model"},
+    )
+
+    with pytest.raises(RunModelCallLimitExceeded, match="run.model_call_limit_exhausted"):
+        await controller.run_instruction("Delegate one read-only inspection.")
+
+    snapshot = journal.get_session_snapshot(str(session_id))
+    run = snapshot.runs[-1]
+    run_events = [event for event in snapshot.events if event.run_id == run.run_id]
+    assert len(lead.calls) == 1
+    assert len(child.calls) == 1
+    assert sum(event.type == "model.started" for event in run_events) == 2
+    assert sum(event.type == "run.failed" for event in run_events) == 1

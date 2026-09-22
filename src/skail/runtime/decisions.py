@@ -42,12 +42,12 @@ class ExecutionDecisionGate:
         self._persist_decision = persist_decision
         self._required_mode = required_mode
         self._required_agent_count = required_agent_count
+        self._repairs_remaining = 2
         self.decision: ExecutionDecision | None = None
         if restored_decision is not None:
             parsed = ExecutionDecision.model_validate(restored_decision.model_dump(mode="json"))
-            self._validate_constraints(parsed)
+            self._validate_constraints(parsed, consume_repair=False)
             self.decision = parsed
-        self._repairs_remaining = 2
         self._prepared_decision_ids: set[str] = set()
         self._rejected_tool_codes: dict[str, str] = {}
 
@@ -147,11 +147,14 @@ class ExecutionDecisionGate:
         self._record(candidate)
         return candidate
 
-    def _validate_constraints(self, candidate: ExecutionDecision) -> None:
+    def _validate_constraints(
+        self, candidate: ExecutionDecision, *, consume_repair: bool = True
+    ) -> None:
         if self._required_mode is not None and candidate.mode is not self._required_mode:
-            raise DecisionAdmissionError(
+            self._reject_constraint(
                 "execution.intent_conflict: explicit user intent requires "
-                f"mode={self._required_mode.value}"
+                f"mode={self._required_mode.value}",
+                consume_repair=consume_repair,
             )
         if self._required_agent_count is None:
             return
@@ -160,9 +163,10 @@ class ExecutionDecisionGate:
             node for node in plan.nodes if node.kind.value == "agent"
         ]
         if len(agents) != self._required_agent_count:
-            raise DecisionAdmissionError(
+            self._reject_constraint(
                 "execution.agent_count_conflict: explicit user intent requires "
-                f"exactly {self._required_agent_count} agent plan nodes"
+                f"exactly {self._required_agent_count} agent plan nodes",
+                consume_repair=consume_repair,
             )
         owned_scopes: list[str] = []
         for node in agents:
@@ -172,9 +176,10 @@ class ExecutionDecisionGate:
                 if scope.strip().strip("/")
             )
             if not scopes:
-                raise DecisionAdmissionError(
+                self._reject_constraint(
                     "execution.agent_scope_conflict: every requested agent needs "
-                    "a non-overlapping resource scope"
+                    "a non-overlapping resource scope",
+                    consume_repair=consume_repair,
                 )
             for scope in scopes:
                 parts = PurePosixPath(scope).parts
@@ -185,14 +190,24 @@ class ExecutionDecisionGate:
                         PurePosixPath(existing).parts for existing in owned_scopes
                     )
                 ):
-                    raise DecisionAdmissionError(
+                    self._reject_constraint(
                         "execution.agent_scope_conflict: requested agent resource "
-                        "scopes must be disjoint"
+                        "scopes must be disjoint",
+                        consume_repair=consume_repair,
                     )
                 owned_scopes.append(scope)
 
+    def _reject_constraint(self, code: str, *, consume_repair: bool) -> None:
+        if consume_repair:
+            self._consume_repair()
+        raise DecisionAdmissionError(code)
+
     def _parse(self, value: dict[str, Any]) -> ExecutionDecision:
-        normalized = _normalize_decision_args(dict(value))
+        try:
+            normalized = _normalize_decision_args(dict(value))
+        except DecisionAdmissionError:
+            self._consume_repair()
+            raise
         try:
             return ExecutionDecision.model_validate(normalized)
         except ValidationError as exc:

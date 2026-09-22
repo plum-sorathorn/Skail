@@ -262,6 +262,92 @@ def test_exact_agent_constraint_rejects_count_or_scope_conflicts(
     assert admitted == []
 
 
+def test_repeated_intent_conflicts_exhaust_decision_repairs() -> None:
+    gate = ExecutionDecisionGate(
+        admit_plan=lambda _: None,
+        required_mode=ExecutionMode.DIRECT,
+    )
+    planned = {
+        "mode": "planned",
+        "objective": "Inspect before implementation",
+        "reason": "The model selected a conflicting mode.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "checkpoint",
+                    "kind": "checkpoint",
+                    "objective": "Review evidence",
+                }
+            ],
+        },
+    }
+
+    for _ in range(2):
+        with pytest.raises(DecisionAdmissionError, match="execution.intent_conflict"):
+            gate.admit(planned)
+
+    assert gate.is_exhausted
+    with pytest.raises(DecisionAdmissionError, match="decision.repair_exhausted"):
+        gate.admit(planned)
+
+
+def test_repeated_decision_conflicts_stop_without_an_extra_model_call(tmp_path) -> None:
+    gate = ExecutionDecisionGate(
+        admit_plan=lambda _: None,
+        required_mode=ExecutionMode.DIRECT,
+    )
+    planned = {
+        "mode": "planned",
+        "objective": "Inspect before implementation",
+        "reason": "The model selected a conflicting mode.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "checkpoint",
+                    "kind": "checkpoint",
+                    "objective": "Review evidence",
+                }
+            ],
+        },
+    }
+    model = ScriptedChatModel(
+        responses=[
+            parallel_tool_call_message(
+                [("execution_decision", planned, "conflict-1")]
+            ),
+            parallel_tool_call_message(
+                [("execution_decision", planned, "conflict-2")]
+            ),
+            AIMessage(content="This response must never be requested."),
+        ]
+    )
+    events: list[str] = []
+
+    def emit(event_type: str, *_: object) -> None:
+        events.append(event_type)
+
+    agent = build_default_agent(
+        model,
+        workspace=tmp_path,
+        profile="lead",
+        extension_tools=[execution_decision_tool(gate)],
+        extra_middleware=[ExecutionDecisionMiddleware(gate)],
+        runtime_event=emit,
+    )
+
+    with pytest.raises(RuntimeError, match="failure.repeated_error"):
+        agent.invoke({"messages": [{"role": "user", "content": "Do it directly."}]})
+
+    assert len(model.calls) == 2
+    assert events.count("model.started") == 2
+
+
 def test_operation_before_decision_is_rejected_without_a_side_effect(tmp_path) -> None:
     gate = ExecutionDecisionGate(admit_plan=lambda _: None)
     model = ScriptedChatModel(

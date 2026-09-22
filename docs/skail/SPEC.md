@@ -158,7 +158,12 @@ The lead should delegate when at least one of these is true:
 
 The lead should normally work directly when the request is a question, a localized edit, a short serial operation, or delegation overhead would be comparable to the work.
 
-These are prompt-level behavioral rules, not hard routing gates. Explicit user instructions take precedence.
+  These are prompt-level behavioral rules, not hard routing gates. Explicit user instructions take precedence.
+
+  Each run permits at most 32 model calls shared across its lead and child agents. Skail checks this
+  boundary before each provider request; exhaustion ends the run with `run.model_call_limit_exhausted`
+  and starts no additional call. Repeated identical tool errors and invalid execution decisions are
+  bounded by runtime failure monitoring.
 
 ### 5.2 Subagent behavior
 
