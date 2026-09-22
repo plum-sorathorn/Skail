@@ -6,9 +6,18 @@ from pathlib import Path
 from scripts.live_check import (
     ALLOWED_CREDENTIALS,
     isolated_environment,
+    parse_model_selection,
     read_allowlisted_env,
     redact,
 )
+
+
+def test_live_model_selection_is_unique_and_secret_independent() -> None:
+    assert parse_model_selection(" gpt-4o-mini, gpt-4o-mini, gpt-4o ") == (
+        "gpt-4o-mini",
+        "gpt-4o",
+    )
+    assert parse_model_selection(None) == ()
 
 
 def test_live_env_loader_only_returns_allowlisted_values_without_expansion(tmp_path: Path) -> None:

@@ -18,6 +18,13 @@ ALLOWED_CREDENTIALS = frozenset(
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def parse_model_selection(value: str | None) -> tuple[str, ...]:
+    """Return unique, non-empty model IDs from the explicit live-run selection."""
+    if not value:
+        return ()
+    return tuple(dict.fromkeys(item.strip() for item in value.split(",") if item.strip()))
+
+
 def read_allowlisted_env(
     path: Path, allowed: frozenset[str] = ALLOWED_CREDENTIALS
 ) -> dict[str, str]:
@@ -73,6 +80,11 @@ def isolated_environment(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--max-cost-usd", default="1.00")
+    parser.add_argument(
+        "--models",
+        default="",
+        help="comma-separated provider model IDs to exercise instead of the first priced model",
+    )
     args = parser.parse_args()
     try:
         cap = Decimal(str(args.max_cost_usd))
@@ -88,8 +100,11 @@ def main() -> int:
 
     evidence = ROOT / "out" / "live-validation"
     evidence.mkdir(parents=True, exist_ok=True)
+    selected_models = parse_model_selection(args.models)
     with tempfile.TemporaryDirectory(prefix="skail-live-home-") as isolated:
         child_env = isolated_environment(credentials, Path(isolated), evidence, cap)
+        if selected_models:
+            child_env["SKAIL_LIVE_MODELS"] = ",".join(selected_models)
         command = [
             sys.executable,
             "-m",
