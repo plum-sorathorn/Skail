@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -41,6 +43,24 @@ class _MemoryCredentialStore:
         self.values.pop((provider, reference), None)
 
 
+class _BlockingController:
+    def __init__(self) -> None:
+        self.pending_interrupt = None
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.calls: list[str] = []
+
+    def subscribe_events(self, callback: Any) -> None:
+        _ = callback
+
+    async def run_instruction(self, text: str, **kwargs: Any) -> Any:
+        _ = kwargs
+        self.calls.append(text)
+        self.started.set()
+        await self.release.wait()
+        return SimpleNamespace(pending_interrupt=None, output=f"done: {text}")
+
+
 def test_command_requires_args_helper() -> None:
     assert command_requires_args("agent") is True
     assert command_requires_args("mode") is True
@@ -62,6 +82,59 @@ async def test_composer_enter_submits_regular_prompt() -> None:
         assert area.text == ""
         assert len(app.projection.transcript_items) >= 1
         assert app.projection.transcript_items[-1].content == "hello"
+
+
+@pytest.mark.asyncio
+async def test_active_run_shows_running_indicator_until_response_arrives() -> None:
+    controller = _BlockingController()
+    app = SkailApp(controller=controller)
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        area = app.query_one("#composer-input", ComposerTextArea)
+        area.text = "long request"
+        await pilot.press("enter")
+        await asyncio.wait_for(controller.started.wait(), timeout=1)
+        await pilot.pause()
+
+        indicator = app.query_one("#activity-spinner", Static)
+        assert indicator.display is True
+        assert "RUNNING" in str(indicator.render())
+
+        controller.release.set()
+        assert app._active_worker is not None
+        await app._active_worker.wait()
+        await pilot.pause()
+        assert indicator.display is False
+
+
+@pytest.mark.asyncio
+async def test_followups_are_visible_and_run_fifo_from_projection_queue() -> None:
+    controller = _BlockingController()
+    app = SkailApp(controller=controller)
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        area = app.query_one("#composer-input", ComposerTextArea)
+        area.text = "first"
+        await pilot.press("enter")
+        await asyncio.wait_for(controller.started.wait(), timeout=1)
+
+        area.text = "second"
+        await pilot.press("ctrl+enter")
+        await pilot.pause()
+        assert app.projection.queue == ["second"]
+
+        area.text = "third"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.projection.queue == ["second", "third"]
+
+        controller.release.set()
+        for _ in range(20):
+            await pilot.pause()
+            if controller.calls == ["first", "second", "third"]:
+                break
+        assert controller.calls == ["first", "second", "third"]
+        assert app.projection.queue == []
 
 
 @pytest.mark.asyncio

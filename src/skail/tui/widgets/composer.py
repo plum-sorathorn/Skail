@@ -383,6 +383,7 @@ class PromptComposer(Widget):
         super().__init__(**kwargs)  # type: ignore[arg-type]
         self.composer_mode = mode
         self.queue_items: list[str] = list(queue or [])
+        self.run_active = False
         self.history = ComposerHistory()
         self.registry = list(registry or ["help", "agents", "plan", "route"])
         self.descriptions: dict[str, str] = dict(descriptions or {})
@@ -439,6 +440,10 @@ class PromptComposer(Widget):
         """Replace the projection-derived FIFO queue view."""
         self.queue_items = list(queue)
         self._refresh_queue()
+
+    def set_run_active(self, active: bool) -> None:
+        """Keep queue-key behavior aligned with the active foreground run."""
+        self.run_active = active
 
     def _refresh_queue(self) -> None:
         try:
@@ -558,7 +563,7 @@ class PromptComposer(Widget):
             return True
         if event.key == "ctrl+enter":
             if draft.strip():
-                if self.queue_items:
+                if self.run_active or self.queue_items:
                     self._queue_text(draft)
                 else:
                     self._submit_text(draft)

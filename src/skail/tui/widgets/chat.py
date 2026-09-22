@@ -39,6 +39,10 @@ SPINNER_LABELS: tuple[str, ...] = (
     "THINKING",
     "DELEGATING",
     "COMPACTING",
+    "RUNNING",
+    "WAITING",
+    "STARTING",
+    "QUEUED",
 )
 
 # Roles whose expanded rows render as continuation sub-rows (fold glyph `└`).

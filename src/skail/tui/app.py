@@ -64,7 +64,7 @@ from skail.tui.theme import (
 )
 from skail.tui.widgets.agents import AgentRail
 from skail.tui.widgets.budget import BudgetLedger, BudgetView
-from skail.tui.widgets.chat import ChatTranscript
+from skail.tui.widgets.chat import ActivitySpinner, ChatTranscript
 from skail.tui.widgets.composer import PromptComposer
 from skail.tui.widgets.footer import AtelierFooter
 from skail.tui.widgets.interrupts import InterruptWidget
@@ -130,6 +130,76 @@ _RUNTIME_ERROR_COPY = (
     "RUNTIME COULD NOT START\n\nYour session is safe. No agent run was started.\n"
     "Review provider settings or retry initialization.\n\n[R] Retry   [S] Setup   [Q] Quit"
 )
+
+_LEAD_TEXT_FIELDS = (
+    "answer",
+    "final_answer",
+    "message",
+    "response",
+    "reply",
+    "content",
+    "text",
+    "output",
+    "result",
+    "final",
+)
+
+
+def _format_structured_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        return ", ".join(
+            rendered for item in value if (rendered := _format_structured_value(item))
+        )
+    if isinstance(value, dict):
+        return "; ".join(
+            f"{key.replace('_', ' ').capitalize()}: {rendered}"
+            for key, item in value.items()
+            if (rendered := _format_structured_value(item))
+        )
+    if value is None:
+        return ""
+    return str(value)
+
+
+def clean_lead_output(output: str) -> str:
+    """Render structured lead output as a readable TUI message."""
+    text = output.strip()
+    if not text:
+        return ""
+    if text.startswith("```") and text.endswith("```"):
+        lines = text.splitlines()
+        text = "\n".join(lines[1:-1]).strip()
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return text
+    if isinstance(payload, str):
+        return payload.strip()
+    if not isinstance(payload, dict):
+        return _format_structured_value(payload)
+
+    for field in _LEAD_TEXT_FIELDS:
+        value = payload.get(field)
+        rendered = _format_structured_value(value)
+        if rendered:
+            return rendered
+
+    summary = _format_structured_value(payload.get("summary"))
+    if summary:
+        details = [
+            f"{field.replace('_', ' ').capitalize()}: {rendered}"
+            for field in ("changed_paths", "verification", "follow_up")
+            if (rendered := _format_structured_value(payload.get(field)))
+        ]
+        return "\n\n".join((summary, *details))
+
+    return "\n".join(
+        f"{key.replace('_', ' ').capitalize()}: {rendered}"
+        for key, value in payload.items()
+        if (rendered := _format_structured_value(value))
+    )
 
 
 def format_masthead(version: str, provider_label: str | None, clock: str) -> str:
@@ -253,6 +323,13 @@ class SkailApp(App[int]):
         padding: 0 1;
         border-bottom: solid $border;
         color: $textMuted;
+    }
+    #activity-spinner {
+        display: none;
+        width: 100%;
+        height: 1;
+        padding: 0 1;
+        color: $accent;
     }
     #sidebar-container {
         width: 39;
@@ -436,6 +513,7 @@ class SkailApp(App[int]):
         self.profile_models = profile_models or {}
         self.simulated: bool = False
         self._active_worker: Any = None
+        self._run_active = False
         self._pending_prompts: deque[str] = deque()
         self._mounted: bool = False
         self.app_state: AppState = "ready"
@@ -494,6 +572,7 @@ class SkailApp(App[int]):
         with Horizontal(id="main-container"):
             with Vertical(id="chat-container"):
                 yield Static(id="transcript-header")
+                yield ActivitySpinner("RUNNING", id="activity-spinner")
                 yield ChatTranscript(id="chat-transcript")
             yield Static(id="hairline", classes="hairline")
             with Vertical(id="sidebar-container"):
@@ -883,6 +962,8 @@ class SkailApp(App[int]):
             self.update_views()
         previous = self._active_worker
         if previous is not None and not previous.is_finished:
+            self._run_active = True
+            self.projection.queue_followup(text)
             self.projection.transcript_items.append(
                 TranscriptItem(
                     id=f"queue-{len(self.projection.transcript_items)}",
@@ -891,6 +972,23 @@ class SkailApp(App[int]):
                     content="This prompt will run after the active foreground request.",
                 )
             )
+            self.update_views()
+        else:
+            self._run_active = True
+            self._active_worker = self.run_worker(
+                self._execute_prompt(text), exclusive=False
+            )
+            self.update_views()
+
+    def _start_next_queued_prompt(self) -> None:
+        if self.projection.pending_interrupt is not None or not self._run_active:
+            return
+        if not self.projection.queue:
+            self._run_active = False
+            return
+        text = self.projection.queue.pop(0)
+        previous = self._active_worker
+        if previous is not None and not previous.is_finished:
             self._active_worker = self.run_worker(
                 self._execute_follow_up(previous, text), exclusive=False
             )
@@ -1144,6 +1242,26 @@ class SkailApp(App[int]):
         except NoMatches:
             pass
 
+    def _refresh_activity_indicator(self) -> None:
+        try:
+            indicator = self.query_one("#activity-spinner", ActivitySpinner)
+        except NoMatches:
+            return
+        if self.app_state == "initializing":
+            label = "STARTING"
+        elif self.projection.pending_interrupt is not None:
+            label = "WAITING"
+        elif self._run_active:
+            label = "RUNNING"
+        elif self.projection.queue:
+            label = "QUEUED"
+        else:
+            indicator.display = False
+            return
+        indicator.spinner_label = label
+        indicator.display = True
+        indicator.update(f"{label} …")
+
     def _append_system_message(self, title: str, content: str) -> None:
         self.projection.transcript_items.append(
             TranscriptItem(
@@ -1157,6 +1275,8 @@ class SkailApp(App[int]):
     def update_views(self) -> None:
         if not self._mounted:
             return
+
+        self._refresh_activity_indicator()
 
         try:
             chat = self.query_one("#chat-transcript", ChatTranscript)
@@ -1221,6 +1341,7 @@ class SkailApp(App[int]):
             from skail.tui.widgets.composer import PromptComposer as _Composer
 
             composer = self.query_one("#prompt-composer", _Composer)
+            composer.set_run_active(self._run_active)
             composer.set_queue(self.projection.queue)
             # Feed slash palette from the command registry (names +
             # descriptions/keywords) so ghost completion stays in sync.
@@ -1309,6 +1430,8 @@ class SkailApp(App[int]):
                 )
             )
         finally:
+            if self.projection.pending_interrupt is None:
+                self._start_next_queued_prompt()
             self.update_views()
 
     async def _execute_follow_up(self, previous: Any, text: str) -> None:
@@ -1334,6 +1457,8 @@ class SkailApp(App[int]):
                 )
             )
         finally:
+            if self.projection.pending_interrupt is None:
+                self._start_next_queued_prompt()
             self.update_views()
 
     def _apply_run_result(self, result: Any) -> None:
@@ -1347,7 +1472,7 @@ class SkailApp(App[int]):
                     id=f"lead-{len(self.projection.transcript_items)}",
                     role="lead",
                     title="Skail Response",
-                    content=result.output,
+                    content=clean_lead_output(result.output),
                 )
             )
 
@@ -1425,6 +1550,7 @@ class SkailApp(App[int]):
                 elif self._active_worker is not None:
                     self._active_worker.cancel()
                     self._active_worker = None
+                    self._run_active = False
             elif result.action == "steer":
                 controller = self.controller
                 request_steer = getattr(controller, "request_steer", None)
@@ -1504,6 +1630,16 @@ class SkailApp(App[int]):
 
         self._start_prompt(text)
 
+    def on_prompt_composer_prompt_queued(self, event: PromptComposer.PromptQueued) -> None:
+        """Persist the composer queue so refreshes and FIFO execution stay in sync."""
+        self._record_user_prompt(event.text)
+        self.projection.queue_followup(event.text)
+        self._append_system_message(
+            "Follow-up queued",
+            "This prompt will run after the active foreground request.",
+        )
+        self.update_views()
+
     def _background_commands_supported(self) -> bool:
         controller = self.controller
         return bool(
@@ -1568,6 +1704,7 @@ class SkailApp(App[int]):
             self.approval_store.decide(request, ApprovalChoice.ALLOW_ONCE)
         if self.controller is not None:
             self.projection.pending_interrupt = None
+            self._run_active = True
             self._active_worker = self.run_worker(
                 self._resume_prompt(event.response), exclusive=True
             )

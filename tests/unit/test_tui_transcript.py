@@ -6,6 +6,9 @@ TDD RED first: these target pure helpers + widget state machine in
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+from skail.tui.app import SkailApp, clean_lead_output
 from skail.tui.projection import TranscriptItem
 from skail.tui.widgets.chat import (
     ChatTranscript,
@@ -24,6 +27,29 @@ def _item(item_id: str, content: str = "hello") -> TranscriptItem:
     return TranscriptItem(
         id=item_id, role="lead", title="Lead", content=content
     )
+
+
+def test_clean_lead_output_extracts_human_message_from_json() -> None:
+    assert clean_lead_output('{"answer":"The change is complete.","status":"done"}') == (
+        "The change is complete."
+    )
+
+
+def test_clean_lead_output_keeps_plain_text_unchanged() -> None:
+    assert clean_lead_output("The change is complete.") == "The change is complete."
+
+
+def test_apply_run_result_renders_clean_lead_message() -> None:
+    app = SkailApp()
+
+    app._apply_run_result(
+        SimpleNamespace(
+            pending_interrupt=None,
+            output='{"answer":"The change is complete.","status":"done"}',
+        )
+    )
+
+    assert app.projection.transcript_items[-1].content == "The change is complete."
 
 
 def test_diff_no_remount_on_stream_update() -> None:
