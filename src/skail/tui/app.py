@@ -983,6 +983,10 @@ class SkailApp(App[int]):
             self.update_views()
 
     def _start_next_queued_prompt(self) -> None:
+        if self.app_state == "quitting":
+            self.projection.queue.clear()
+            self._run_active = False
+            return
         if self.projection.pending_interrupt is not None or not self._run_active:
             return
         if not self.projection.queue:
@@ -2205,6 +2209,9 @@ class SkailApp(App[int]):
             self.update_views()
 
     async def action_quit(self) -> None:
+        self.app_state = "quitting"
+        self._run_active = False
+        self.projection.queue.clear()
         if self._active_worker is not None:
             try:
                 self._active_worker.cancel()
@@ -2217,7 +2224,6 @@ class SkailApp(App[int]):
                 )
             except Exception:
                 pass
-        self.app_state = "quitting"
         self.exit(0)
 
 

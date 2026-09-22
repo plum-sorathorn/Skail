@@ -138,6 +138,30 @@ async def test_followups_are_visible_and_run_fifo_from_projection_queue() -> Non
 
 
 @pytest.mark.asyncio
+async def test_quitting_drops_queued_followups_without_starting_a_coroutine() -> None:
+    controller = _BlockingController()
+    app = SkailApp(controller=controller)
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        area = app.query_one("#composer-input", ComposerTextArea)
+        area.text = "first"
+        await pilot.press("enter")
+        await asyncio.wait_for(controller.started.wait(), timeout=1)
+
+        app.projection.queue_followup("second")
+        app._run_active = True
+        app.app_state = "quitting"
+        app._start_next_queued_prompt()
+
+        assert app.projection.queue == []
+        assert app._run_active is False
+
+        controller.release.set()
+        if app._active_worker is not None:
+            await app._active_worker.wait()
+
+
+@pytest.mark.asyncio
 async def test_composer_enter_dispatches_model_slash_command() -> None:
     app = SkailApp()
     async with app.run_test() as pilot:
