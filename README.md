@@ -16,15 +16,15 @@ Twin sail mark (v0.1.0, monochrome, never animated):
 </p>
 
 <p align="center">
-  [![CI](https://github.com/plum-sorathorn/Skail/actions/workflows/ci.yml/badge.svg?branch=skail)](https://github.com/plum-sorathorn/Skail/actions/workflows/ci.yml)
-  [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg?style=flat-square)](https://www.python.org/downloads/)
-  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-  [![DeepAgents](https://img.shields.io/badge/DeepAgents-multi--agent-blue.svg?style=flat-square)](https://github.com/langchain-ai/deepagents)
-  [![LangGraph](https://img.shields.io/badge/LangGraph-orchestration-blue.svg?style=flat-square)](https://github.com/langchain-ai/langgraph)
-  [![LangChain](https://img.shields.io/badge/LangChain-framework-blue.svg?style=flat-square)](https://github.com/langchain-ai/langchain)
-  [![Textual](https://img.shields.io/badge/Textual-TUI-blue.svg?style=flat-square)](https://github.com/Textualize/textual)
-  [![Pydantic](https://img.shields.io/badge/Pydantic-validation-blue.svg?style=flat-square)](https://github.com/pydantic/pydantic)
-  [![SQLite](https://img.shields.io/badge/SQLite-storage-blue.svg?style=flat-square)](https://www.sqlite.org/)
+  <a href="https://github.com/plum-sorathorn/Skail/actions/workflows/ci.yml"><img src="https://github.com/plum-sorathorn/Skail/actions/workflows/ci.yml/badge.svg?branch=skail" alt="CI"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.12%2B-blue.svg?style=flat-square" alt="Python 3.12+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
+  <a href="https://github.com/langchain-ai/deepagents"><img src="https://img.shields.io/badge/DeepAgents-multi--agent-blue.svg?style=flat-square" alt="DeepAgents"></a>
+  <a href="https://github.com/langchain-ai/langgraph"><img src="https://img.shields.io/badge/LangGraph-orchestration-blue.svg?style=flat-square" alt="LangGraph"></a>
+  <a href="https://github.com/langchain-ai/langchain"><img src="https://img.shields.io/badge/LangChain-framework-blue.svg?style=flat-square" alt="LangChain"></a>
+  <a href="https://github.com/Textualize/textual"><img src="https://img.shields.io/badge/Textual-TUI-blue.svg?style=flat-square" alt="Textual"></a>
+  <a href="https://github.com/pydantic/pydantic"><img src="https://img.shields.io/badge/Pydantic-validation-blue.svg?style=flat-square" alt="Pydantic"></a>
+  <a href="https://www.sqlite.org/"><img src="https://img.shields.io/badge/SQLite-storage-blue.svg?style=flat-square" alt="SQLite"></a>
 </p>
 
 # Skail
@@ -41,8 +41,9 @@ Its systems stack combines **[Pydantic](https://github.com/pydantic/pydantic)** 
 **[SQLite](https://www.sqlite.org/)** persistence, asynchronous Python
 concurrency, Git worktree isolation, budget-aware model routing, provider usage accounting,
 context engineering, and a **[Textual](https://github.com/Textualize/textual)** terminal UI. Skail coordinates specialized subagents while
-enforcing task dependencies, bounded retries, verification evidence, permissions, and hard cost
-limits in deterministic runtime code.
+enforcing task dependencies, bounded retries, verification evidence, permissions, and Skail-owned
+budget gates in deterministic runtime code. Skail's budget is an application-level control;
+provider-side usage and account controls determine billed spend.
 
 Skail runs locally without a proxy server or daemon and exposes an interactive TUI, a conventional
 CLI, and versioned JSONL event streaming for automation. The Python distribution is
@@ -58,8 +59,8 @@ guarantees out of the box:
   or a typed, dependency-aware plan.
 - **Task-bound model routing** — each lead run and child attempt receives a durable provider/model
   assignment based on capability, role, evidence, health, and budget.
-- **Hard budget control** — reservations happen before provider calls, usage is settled once, and
-  uncertain accounting blocks unsafe replay.
+- **Budget control** — reservations gate work against Skail's estimates, usage is tracked once, and
+  uncertain accounting blocks unsafe replay. Provider-side usage remains the billing authority.
 - **Safe parallel work** — up to three children can run concurrently; writers use reproducible Git
   worktrees when available and serialized integration when changes return.
 - **Human checkpoints** — project trust, tool approvals, questions, steering, and cancellation are
@@ -76,15 +77,10 @@ infrastructure is required.
 
 ## Release status
 
-The v0.1.0 source candidate has passed candidate-bound Windows verification through Phase 22,
-including the offline, packaging, smoke, benchmark, and paired-evaluation checks, plus Windows
-verification of the journal connection-pool fix (`6809874`) and the eval-journal-close fix
-(`421e8e4`): 1377.8 appends/sec on `421e8e4` (Windows, Python 3.14.6) against the unchanged 100
-appends/sec gate, with synchronous=FULL and per-op commit/rollback preserved. Exact-final-
-commit Windows/Linux verification remains pending; the Phase 22 evidence cannot certify this
-documentation commit. Windows is green on `421e8e4`; Linux CI raw evidence is still required
-and Linux green is not claimed. Live-provider quality and economic qualification remain a
-separate Q1 track.
+Skail is version 0.1.0 and is classified as Alpha. Release evidence is tracked in the
+[evaluation](docs/skail/EVALUATION.md) and [performance](docs/skail/PERFORMANCE.md) documents.
+Exact-final-commit Windows/Linux verification is pending. Offline tests do not establish live-provider
+quality or savings, and provider-side usage is required to establish billed spend.
 
 ## Getting started
 
@@ -99,8 +95,9 @@ python -m pip install -e ".[dev]"
 python scripts\smoke.py
 ```
 
-For normal interactive use, configure a supported provider, verify it without making a network
-request, then launch Skail:
+`skail auth check` checks credential availability without contacting a provider. `skail models list`
+shows configured models and the last validated local catalog snapshot. Launching `skail` performs
+startup setup and opens the TUI:
 
 ```powershell
 skail auth check
@@ -127,8 +124,8 @@ See the [CLI contract](docs/skail/CLI.md) for every flag, subcommand, output mod
 
 ### Clean uninstall
 
-The uninstall script removes credentials registered by Skail, the complete `~/.skail` state root,
-and the installed `skail-harness` package. Pass explicit old workspace roots only when you also
+The uninstall script removes Skail's OS-keyring credential entries, the complete `~/.skail` state
+root, and the installed `skail-harness` package. Pass explicit old workspace roots only when you also
 want their legacy local `.skail` directories removed:
 
 ```powershell

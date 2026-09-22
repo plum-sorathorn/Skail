@@ -199,8 +199,8 @@ def test_twin_sail_logo_placed_onboarding_help_readme() -> None:
     from skail.tui.logo import COMPACT_MARK, TWIN_SAIL_LOGO, render_logo_text
 
     assert TWIN_SAIL_LOGO == [
-        "     /\\|\\",
-        "    /  | \\",
+        "      /\\|\\",
+        "     /  | \\",
         "    /___|__\\",
         "   /____|___\\",
         "   \\________/",
