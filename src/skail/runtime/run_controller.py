@@ -2224,24 +2224,27 @@ class RunController:
         except BaseException as exc:
             error_type: str | None = None
             error_message: str | None = None
+            is_cancelled = isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError))
             try:
                 error_type = f"{type(exc).__module__}.{type(exc).__name__}"
                 error_message = str(self.redactor.scrub(str(exc)))
-                failure_traceback = self.redactor.scrub(traceback.format_exc())
-                _LOGGER.error(
-                    "run failed: %s: %s\n%s",
-                    error_type,
-                    error_message,
-                    failure_traceback,
-                )
-                if _is_message_sequence_error(exc):
-                    shapes = await _collect_message_sequence_diagnostics(
-                        lead_agent, invoke_config
+                if is_cancelled:
+                    _LOGGER.info("run cancelled: %s", run_id)
+                else:
+                    failure_traceback = self.redactor.scrub(traceback.format_exc())
+                    _LOGGER.error(
+                        "run failed: %s: %s\n%s",
+                        error_type,
+                        error_message,
+                        failure_traceback,
                     )
-                    _LOGGER.error("run failed diagnostics: %s", shapes)
+                    if _is_message_sequence_error(exc):
+                        shapes = await _collect_message_sequence_diagnostics(
+                            lead_agent, invoke_config
+                        )
+                        _LOGGER.error("run failed diagnostics: %s", shapes)
             except Exception:
                 pass  # diagnostics must never mask or replace the original failure
-            is_cancelled = isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError))
             run_status = "cancelled" if is_cancelled else "failed"
             attempt_status = AttemptStatus.INTERRUPTED if is_cancelled else AttemptStatus.FAILED
             task_status = TaskStatus.RETURNED_TO_LEAD if is_cancelled else TaskStatus.FAILED

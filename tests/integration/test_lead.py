@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import os
@@ -262,6 +263,48 @@ async def test_run_failed_event_and_log_carry_error_diagnostics(
     assert payload.error_message in caplog.text
     assert "AccountingReconciliationRequired" in caplog.text
     assert "Traceback (most recent call last)" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_cancelled_lead_does_not_log_framework_traceback(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Cancelled lead", created_at=datetime.now(UTC)
+    )
+
+    started = asyncio.Event()
+    blocked = asyncio.Event()
+
+    async def block(_: ScriptedChatModel, __) -> None:
+        started.set()
+        await blocked.wait()
+
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={
+            "lead-model": ScriptedChatModel(
+                responses=[AIMessage(content="unused")],
+                async_call_hook=block,
+            )
+        },
+        default_lead_model="lead-model",
+    )
+
+    with caplog.at_level(logging.ERROR, logger="skail.runtime.run_controller"):
+        run = asyncio.create_task(controller.run_instruction("cancel me"))
+        await started.wait()
+        run.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await run
+
+    assert "Traceback (most recent call last)" not in caplog.text
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert snapshot.runs[0].status == "cancelled"
 
 
 @pytest.mark.asyncio
