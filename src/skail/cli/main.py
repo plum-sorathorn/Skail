@@ -308,6 +308,7 @@ def build_parser() -> argparse.ArgumentParser:
     models_parser = subparsers.add_parser("models", help="inspect models and profiles")
     models_sub = models_parser.add_subparsers(dest="models_action")
     models_sub.add_parser("list", help="list models and profiles")
+    models_sub.add_parser("refresh", help="refresh the provider model catalog")
     models_show = models_sub.add_parser("show", help="show model or profile details")
     models_show.add_argument("model_name", nargs="?", default=None)
 

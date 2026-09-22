@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from argparse import Namespace
@@ -22,8 +23,11 @@ from skail.domain.sessions import SessionStatus
 from skail.providers.credentials import (
     CredentialStore,
     CredentialStoreUnavailable,
+    EnvironmentCredentialResolver,
     KeyringCredentialStore,
 )
+from skail.providers.errors import ProviderConfigurationError
+from skail.runtime.redaction import RedactionRegistry
 from skail.sessions.export import SessionExporter
 from skail.sessions.journal import Journal
 from skail.sessions.service import SessionService
@@ -184,6 +188,8 @@ def handle_models(
     resolved_config: ResolvedConfig | None = None,
 ) -> int:
     subaction = getattr(args, "models_action", "list") or "list"
+    if subaction == "refresh":
+        return _refresh_llmgateway_catalog(resolved_config)
     if subaction == "list":
         profiles = builtin_profiles()
         render_print_stdout("Built-in Agent Profiles:")
@@ -275,3 +281,72 @@ def handle_models(
         return EXIT_OK
 
     return EXIT_USAGE
+
+
+def _refresh_llmgateway_catalog(resolved_config: ResolvedConfig | None) -> int:
+    if resolved_config is None:
+        render_print_stderr("Model catalog refresh requires resolved configuration.")
+        return EXIT_FAILURE
+
+    provider_config = resolved_config.config.providers.get("llmgateway")
+    if provider_config is None:
+        render_print_stderr("Model catalog refresh requires an llmgateway provider.")
+        return EXIT_FAILURE
+
+    from skail.config.models import ProviderConfig
+    from skail.providers.catalog_sources import save_catalog_cache
+    from skail.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
+
+    reference = provider_config.api_key_env or "LLMGATEWAY_API_KEY"
+    try:
+        credential = EnvironmentCredentialResolver(RedactionRegistry()).resolve(
+            "llmgateway", reference
+        )
+    except ProviderConfigurationError as exc:
+        render_print_stderr(f"Model catalog refresh failed: {exc}")
+        return EXIT_FAILURE
+
+    discovery_config = provider_config
+    if discovery_config.base_url is None:
+        discovery_config = discovery_config.model_copy(
+            update={"base_url": LLMGATEWAY_BASE_URL}
+        )
+    if not discovery_config.models:
+        discovery_config = discovery_config.model_copy(
+            update={"models": ("__catalog_discovery__",)}
+        )
+    if not isinstance(discovery_config, ProviderConfig):
+        raise TypeError("invalid llmgateway provider configuration")
+
+    adapter = LLMGatewayAdapter(discovery_config, api_key=credential.reveal())
+    try:
+        entries = asyncio.run(adapter.discover_models())
+    except Exception as exc:
+        classified = adapter.classify_error(exc)
+        render_print_stderr(f"Model catalog refresh failed: {classified.summary}.")
+        return EXIT_FAILURE
+
+    if not entries:
+        render_print_stderr(
+            "Model catalog refresh failed: provider returned no accessible models."
+        )
+        return EXIT_FAILURE
+
+    cache_path = catalog_cache_path("llmgateway")
+    save_catalog_cache(
+        cache_path,
+        entries,
+        provider="llmgateway",
+        endpoint=f"{LLMGATEWAY_BASE_URL}/models",
+        query={"exclude_deprecated": True},
+    )
+    priced = sum(
+        entry.fields.get("input_usd_per_million") is not None
+        and entry.fields.get("output_usd_per_million") is not None
+        for entry in entries
+    )
+    render_print_stdout(
+        f"Refreshed LLM Gateway catalog: {len(entries)} models; "
+        f"{priced} with prompt/completion pricing."
+    )
+    return EXIT_OK
