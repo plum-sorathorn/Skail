@@ -2,8 +2,8 @@
 
 ```text
 Twin sail mark (v0.1.0, monochrome, never animated):
-     /\|\
-    /  | \
+      /\|\
+     /  | \
     /___|__\
    /____|___\
    \________/

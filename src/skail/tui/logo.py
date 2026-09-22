@@ -7,8 +7,8 @@ The main masthead uses the compact fallback-safe text mark.
 from __future__ import annotations
 
 TWIN_SAIL_LOGO: list[str] = [
-    "     /\\|\\",
-    "    /  | \\",
+    "      /\\|\\",
+    "     /  | \\",
     "    /___|__\\",
     "   /____|___\\",
     "   \\________/",
