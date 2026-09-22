@@ -1,7 +1,5 @@
 """Five-step onboarding ladder for first-run interactive sessions.
 
-Draft source: docs/skail/TUI_REVAMP_DRAFT.md section 8.3.
-
 Steps: welcome -> provider -> trust -> theme -> ready. Key material lives
 only in :class:`BootstrapCredentials` (in-memory, redacted repr) and is
 never placed in reactive state, snapshots, events, transcripts, or logs.
@@ -26,10 +24,7 @@ STEP_ORDER: tuple[OnboardingStep, ...] = (
 WELCOME_COPY = (
     "Welcome to Skail.\n"
     "\n"
-    "Skail coordinates a lead agent and up to three concurrent child agents while\n"
-    "keeping model assignments, workspace writes, approvals, and budget visible.\n"
-    "\n"
-    "No provider key was found in the environment."
+    "Connect a provider, choose your models, and confirm workspace access."
 )
 
 PROVIDER_CHOOSER_COPY = (
@@ -38,14 +33,11 @@ PROVIDER_CHOOSER_COPY = (
     "● LLM Gateway\n"
     "  OpenAI\n"
     "  Anthropic\n"
-    "  Fake provider\n"
     "\n"
-    "Use ↑/↓ to choose, then Enter.\n"
-    "For local evaluation without credentials, choose Fake provider\n"
-    "or restart with: skail --fake-provider"
+    "Use ↑/↓ to choose, then enter a key and validate it."
 )
 
-PROVIDER_OPTIONS: tuple[str, ...] = ("llmgateway", "openai", "anthropic", "fake")
+PROVIDER_OPTIONS: tuple[str, ...] = ("llmgateway", "openai", "anthropic")
 
 KEY_ENTRY_COPY = (
     "The key is held in memory for this process and is never written to the\n"
@@ -174,7 +166,6 @@ def provider_display_name(provider: str) -> str:
         "llmgateway": "LLM Gateway",
         "openai": "OpenAI",
         "anthropic": "Anthropic",
-        "fake": "Fake provider",
     }.get(provider, provider)
 
 

@@ -1,6 +1,5 @@
 """Incremental transcript rendering with keyed reconciliation.
 
-Draft source: docs/skail/TUI_REVAMP_DRAFT.md sections 5.2, 6.
 Phase 2: replace full-remount with keyed reconciliation,
 focusable collapsible headers with ATELIER four-column rows
 (clock | fold | role | measure), role edges, scroll pin, streaming

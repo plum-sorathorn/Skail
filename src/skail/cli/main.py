@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
 from collections.abc import Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -286,12 +285,6 @@ def _add_common_options(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="mark current project as denied",
     )
-    parser.add_argument(
-        "--fake-provider",
-        dest="fake_provider",
-        action="store_true",
-        help="use deterministic offline fake provider",
-    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -337,10 +330,6 @@ def build_parser() -> argparse.ArgumentParser:
     config_sub = config_parser.add_subparsers(dest="config_action")
     config_sub.add_parser("show", help="display resolved layered configuration")
     config_sub.add_parser("path", help="display configuration file paths")
-
-    # smoke
-    smoke_parser = subparsers.add_parser("smoke", help="run offline package smoke check")
-    smoke_parser.add_argument("--fake-provider", action="store_true", default=False)
 
     return parser
 
@@ -470,7 +459,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         handle_config,
         handle_models,
         handle_sessions,
-        handle_smoke,
     )
 
     workspace = Path.cwd()
@@ -509,8 +497,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         render_print_stderr(f"Configuration error: {exc}")
         return EXIT_USAGE
     # 4. Handle stateless subcommands before journal/checkpoint storage init
-    if args.subcommand == "smoke":
-        return handle_smoke(args)
     if args.subcommand == "config":
         return handle_config(
             args,
@@ -598,7 +584,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         bootstrap = {
             "workspace": str(workspace),
             "session_id": session_record.session_id,
-            "fake_provider": bool(getattr(args, "fake_provider", False)),
             "initial_prompt": prompt_text or None,
             "max_agents": args.max_agents,
             "delegation": args.delegation,
@@ -661,8 +646,6 @@ def _build_runtime_models(
     )
     from skail.providers.credentials import EnvironmentCredentialResolver
     from skail.providers.errors import ProviderConfigurationError
-    from skail.providers.fake import DeterministicFakeChatModel
-    from skail.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
 
     config = getattr(args, "effective_config", SkailConfig())
     catalog = ModelCatalog.from_entries(
@@ -672,56 +655,6 @@ def _build_runtime_models(
     )
     lead_model_name = args.lead_model or args.default_model or "auto"
     child_model_name = args.default_model or "implementer-model"
-
-    if getattr(args, "fake_provider", False):
-        resp = (
-            f"Skail completed task: {prompt}"
-            if prompt
-            else "Skail completed task."
-        )
-        lead_fake = DeterministicFakeChatModel(
-            model_name=lead_model_name,
-            response_text=resp,
-        )
-        lead_key = lead_model_name if ":" in lead_model_name else f"fake:{lead_model_name}"
-        child_key = child_model_name if ":" in child_model_name else f"fake:{child_model_name}"
-        models = {lead_key: lead_fake, child_key: lead_fake}
-        fake_profiles = tuple(
-            ModelProfile(
-                provider="fake",
-                model=key.split(":", 1)[1],
-                support_level=ProviderSupportLevel.NATIVE,
-                input_usd_per_million=Decimal("1"),
-                output_usd_per_million=Decimal("2"),
-                context_tokens=128_000,
-                max_output_tokens=8_192,
-                supports_tools=True,
-                supports_structured_output=True,
-                capability=CapabilityVector(
-                    coding=0.9,
-                    reasoning=0.9,
-                    tool_reliability=0.9,
-                    latency=0.9,
-                ),
-                auto_eligible=True,
-            )
-            for key in models
-        )
-        from skail.providers.fake import FakeProviderAdapter
-
-        return RuntimeModelSet(
-            models,
-            lead_key,
-            child_key,
-            {"fake": FakeProviderAdapter(lead_fake)},
-            catalog=catalog,
-            config=config,
-            redaction=redaction,
-            candidates=tuple(
-                _route_candidate(profile, hard_budget=args.budget is not None)
-                for profile in fake_profiles
-            ),
-        )
 
     cred_resolver = EnvironmentCredentialResolver(redaction)
     provider_configs = getattr(args, "provider_configs", {})
@@ -748,11 +681,11 @@ def _build_runtime_models(
                 if p_name == "anthropic"
                 else None
             )
-        if env_var and os.environ.get(env_var):
+        if env_var:
             try:
                 resolved_cred = cred_resolver.resolve(p_name, env_var)
                 selected_provider = p_name
-            except Exception:
+            except ProviderConfigurationError:
                 pass
     else:
         for p_name in candidate_providers:
@@ -768,21 +701,20 @@ def _build_runtime_models(
                     if p_name == "anthropic"
                     else None
                 )
-            if env_var and os.environ.get(env_var):
+            if env_var:
                 try:
                     resolved_cred = cred_resolver.resolve(p_name, env_var)
                     selected_provider = p_name
                     selected_config = candidate_config
                     break
-                except Exception:
+                except ProviderConfigurationError:
                     pass
 
     if resolved_cred is None or selected_provider is None:
         raise ProviderConfigurationError(
             "default",
-            "No provider credentials configured in environment. "
-            "Set LLMGATEWAY_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY, "
-            "or pass --fake-provider for deterministic offline execution.",
+            "No provider credential is available. Complete onboarding again, or set "
+            "LLMGATEWAY_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in the environment.",
         )
 
     if selected_provider in {"llmgateway", "devpass"}:

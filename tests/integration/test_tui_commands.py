@@ -2,11 +2,11 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from fakes.provider import FakeProviderChatModel as DeterministicFakeChatModel
 from langchain_core.messages import AIMessage
 
 from skail.domain.ids import SessionId, new_session_id
 from skail.domain.routing import RoutingMode
-from skail.providers.fake import DeterministicFakeChatModel
 from skail.runtime.interrupts import QuestionStore
 from skail.runtime.run_controller import RunController
 from skail.sessions.checkpoints import CheckpointStore

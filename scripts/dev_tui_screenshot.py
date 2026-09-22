@@ -2,17 +2,10 @@
 
 Boots SkailApp headless via Textual's ``run_test`` (same pattern as
 ``tests/integration/test_tui_shell.py``), injects representative traffic
-through the seams the integration tests already use -- public projection
-dataclasses (``tests/integration/test_tui_panels.py``) plus
-``SkailApp.apply_event`` envelopes applied before mount
-(``test_tui_shell_early_events_before_mount``) -- then exports:
+through the seams the integration tests already use, then exports matching
+120x40 PNG and SVG files for each maintained theme.
 
-- design/tui-redesigns/current/current-main.svg          (120x40, wide)
-- design/tui-redesigns/current/current-main-narrow.svg   (80x40, sidebar hidden)
-- design/tui-redesigns/current/current-main.txt          (plain-text 120x40 frame)
-- design/tui-redesigns/current/current-main*.png         (only if a converter is importable)
-
-Usage: python scripts/dev_tui_screenshot.py
+Usage: python scripts/dev_tui_screenshot.py --themes pistachio-night
 """
 
 from __future__ import annotations
@@ -271,11 +264,10 @@ async def main() -> None:
         svg, frame, narrow = await capture(theme, *WIDE_SIZE)
         assert not narrow, f"{theme} 120x40 must not carry the .narrow class"
         assert "<svg" in svg[:200], f"{theme} capture is not an SVG"
+        svg = "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
         svg_path = OUT_DIR / f"{theme}.svg"
         png_path = OUT_DIR / f"{theme}.png"
-        txt_path = OUT_DIR / f"{theme}.txt"
         svg_path.write_text(svg, encoding="utf-8")
-        txt_path.write_text(frame, encoding="utf-8")
         missing = [
             needle for needle in ("YOU", "LEAD", "AGENT", "read_file") if needle not in frame
         ]

@@ -219,9 +219,8 @@ def _registry_help_text() -> str:
             "",
             "Queue: Ctrl+Enter queues while a run is active; "
             "take back the newest queued prompt from the queue view.",
-            "Onboarding: 5 steps (Welcome > Provider > Trust > Theme > Ready); "
-            "choose Fake provider or restart with skail --fake-provider.",
-            "Receipts include the exact resume command: skail -r <session-id>.",
+            "Onboarding: connect a provider, select models, confirm workspace trust, "
+            "and choose a theme.",
         ]
     )
     return "\n".join(lines) + "\n"

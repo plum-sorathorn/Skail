@@ -352,12 +352,12 @@ def test_task_eval_result_child_metric_defaults() -> None:
 def test_default_candidates_include_manual_child_pin() -> None:
     candidates = default_eval_candidates()
     pins = {(c.profile.provider, c.profile.model) for c in candidates}
-    assert ("fake", "explorer") in pins
+    assert ("eval-provider", "explorer") in pins
 
     reqs = RequirementBuilder().build(
         role="explorer", risk=TaskRisk.ROUTINE, mode=RoutingMode.MANUAL
     )
-    selection = select_model(candidates, reqs, manual_model=("fake", "explorer"))
+    selection = select_model(candidates, reqs, manual_model=("eval-provider", "explorer"))
     assert not isinstance(selection, RouteFailure)
     assert selection.candidate.profile.model == "explorer"
     assert not selection.candidate.profile.auto_eligible

@@ -25,7 +25,6 @@ from skail.tui.onboarding import (
     OnboardingState,
     has_env_credentials,
     mask_key,
-    provider_display_name,
     provider_key_prompt,
     ready_receipt,
     trust_copy,
@@ -39,14 +38,15 @@ def test_step_order_is_five_step_ladder() -> None:
 
 def test_welcome_copy_is_exact() -> None:
     assert "Welcome to Skail." in WELCOME_COPY
-    assert "up to three concurrent child agents" in WELCOME_COPY
-    assert "No provider key was found in the environment." in WELCOME_COPY
+    assert "Connect a provider" in WELCOME_COPY
 
 
-def test_provider_chooser_copy_advertises_fake_hint() -> None:
+def test_provider_chooser_copy_lists_only_live_providers() -> None:
     assert "CHOOSE A PROVIDER" in PROVIDER_CHOOSER_COPY
-    assert "Fake provider" in PROVIDER_CHOOSER_COPY
-    assert "skail --fake-provider" in PROVIDER_CHOOSER_COPY
+    assert "LLM Gateway" in PROVIDER_CHOOSER_COPY
+    assert "OpenAI" in PROVIDER_CHOOSER_COPY
+    assert "Anthropic" in PROVIDER_CHOOSER_COPY
+    assert "Fake provider" not in PROVIDER_CHOOSER_COPY
 
 
 def test_key_entry_copy_never_written() -> None:
@@ -96,18 +96,6 @@ def test_ready_receipt_contains_resume_command() -> None:
     assert "[Enter] Open cockpit" in receipt
 
 
-def test_ready_receipt_fake_provider_has_no_key() -> None:
-    receipt = ready_receipt(
-        provider="fake",
-        trusted=False,
-        theme="system",
-        mode="manual",
-        session_id="01JDEF",
-    )
-    assert "Provider     Fake provider" in receipt
-    assert "skail -r 01JDEF" in receipt
-
-
 def test_mask_key_is_fixed_length() -> None:
     assert mask_key("") == ""
     assert mask_key("short") == "•" * 42
@@ -118,7 +106,6 @@ def test_provider_key_prompt_labels() -> None:
     assert provider_key_prompt("llmgateway") == "LLM Gateway API key"
     assert provider_key_prompt("openai") == "OpenAI API key"
     assert provider_key_prompt("anthropic") == "Anthropic API key"
-    assert provider_display_name("fake") == "Fake provider"
 
 
 def test_bootstrap_credentials_in_memory_only() -> None:

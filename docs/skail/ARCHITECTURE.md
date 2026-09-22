@@ -2,7 +2,6 @@
 
 > Status note: this is the normative architecture contract. It does not replace implementation
 > tests, raw evidence, or exact-candidate release verification. See
-> [the feature matrix](FEATURE_PARITY_ROADMAP.md) for verified scope and gaps.
 
 Status: Approved
 Date: 2026-09-02

@@ -123,6 +123,68 @@ def test_runtime_model_construction_uses_configured_provider_and_credential_refe
     assert runtime_models.providers["llmgateway"].name == "llmgateway"
 
 
+def test_runtime_model_construction_uses_onboarding_keyring_credential(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from skail.providers.credentials import KeyringCredentialStore
+    from skail.providers.llmgateway import LLMGatewayAdapter
+
+    async def no_discovered_models(_: LLMGatewayAdapter) -> tuple[CatalogEntry, ...]:
+        return ()
+
+    monkeypatch.setattr(LLMGatewayAdapter, "discover_models", no_discovered_models)
+    monkeypatch.setattr(
+        KeyringCredentialStore,
+        "get",
+        lambda self, provider, reference: "onboarding-keyring-token",
+    )
+    monkeypatch.delenv("CUSTOM_GATEWAY_TOKEN", raising=False)
+    args = _args(lead_model="llmgateway:test/model")
+    args.fake_provider = False
+    args.catalog_cache_path = tmp_path / "catalog.json"
+    config = SkailConfig(
+        providers={
+            "llmgateway": ProviderConfig(
+                type="openai-compatible",
+                base_url="https://api.llmgateway.io/v1",
+                api_key_env="CUSTOM_GATEWAY_TOKEN",
+                models=("test/model",),
+            )
+        },
+        catalog={
+            "entries": [
+                {
+                    "provider": "llmgateway",
+                    "model": "test/model",
+                    "source": "user",
+                    "trusted": True,
+                    "as_of": "2026-09-21T00:00:00Z",
+                    "fields": {
+                        "input_usd_per_million": "1.25",
+                        "output_usd_per_million": "2.50",
+                        "context_tokens": 32768,
+                        "max_output_tokens": 4096,
+                        "supports_tools": True,
+                        "supports_structured_output": True,
+                        "capability": {
+                            "coding": 0.8,
+                            "reasoning": 0.8,
+                            "tool_reliability": 0.8,
+                            "latency": 0.8,
+                        },
+                    },
+                }
+            ]
+        },
+    )
+    _apply_run_config(args, config)
+
+    runtime_models = _build_runtime_models(args, RedactionRegistry())
+
+    assert "llmgateway:test/model" in runtime_models.models
+    assert runtime_models.providers["llmgateway"].name == "llmgateway"
+
+
 def test_runtime_bootstrap_uses_configured_catalog_without_production_defaults(
     monkeypatch,
 ) -> None:

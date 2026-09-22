@@ -66,9 +66,10 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
         super().__init__(**kwargs)
         self.models: list[str] = list(models or [])
         self.current = current
-        self.enabled: set[str] = set(self.models) if enabled is None else set(enabled)
+        self.enabled: set[str] = set(enabled or ())
         self.details = dict(details or {})
         self.filter_text = ""
+        self.selection_error: str | None = None
         self._rendered_models: list[str] = []
         self.window_start = 0
         self.index = 0
@@ -133,6 +134,7 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
                 self.enabled.remove(target)
             else:
                 self.enabled.add(target)
+            self.selection_error = None
 
     def toggle_all(self) -> None:
         visible = self.visible_models()
@@ -167,6 +169,10 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
         if not visible:
             return None
         name = visible[self.index % len(visible)]
+        if name not in self.enabled:
+            self.selection_error = "Tick at least the highlighted model before selecting it."
+            self._refresh_rows(force=True)
+            return None
         try:
             app = _app_for(self)
             if app is not None:
@@ -210,6 +216,8 @@ class ModelPickerOverlay(Screen):  # type: ignore[type-arg]
                 hidden_count = max(0, len(visible) - self.window_start - len(rows))
                 hidden_below = f"↓ {hidden_count} more" if hidden_count else ""
                 lines = [line for line in (hidden_above, *rows, hidden_below) if line]
+            if self.selection_error:
+                lines.insert(0, f"[bold red]{self.selection_error}[/bold red]")
             self.query_one("#model-list", Static).update(Text("\n".join(lines)))
             self._rendered_models = visible
         except Exception:

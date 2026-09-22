@@ -81,3 +81,27 @@ def test_auth_check_reports_configured_custom_environment_name(
         Namespace(auth_action="check"), resolved_config=resolved
     ) == 0
     assert "CUSTOM_GATEWAY_TOKEN" in rendered[0]
+
+
+def test_auth_status_reports_onboarding_keyring_credential(monkeypatch) -> None:
+    class StoredCredential:
+        def get(self, provider: str, reference: str) -> str | None:
+            if (provider, reference) == ("llmgateway", "LLMGATEWAY_API_KEY"):
+                return "stored-secret"
+            return None
+
+        def set(self, provider: str, reference: str, value: str) -> None:
+            raise AssertionError("status must not write credentials")
+
+        def delete(self, provider: str, reference: str) -> None:
+            raise AssertionError("status must not delete credentials")
+
+    rendered: list[str] = []
+    monkeypatch.delenv("LLMGATEWAY_API_KEY", raising=False)
+    monkeypatch.setattr(commands, "render_print_stdout", rendered.append)
+
+    assert commands.handle_auth(
+        Namespace(auth_action="status"), credential_store=StoredCredential()
+    ) == 0
+    assert any("LLMGATEWAY_API_KEY" in line and "CONFIGURED" in line for line in rendered)
+    assert all("stored-secret" not in line for line in rendered)

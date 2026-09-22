@@ -109,7 +109,7 @@ def test_runtime_benchmarks_measure_cli_scheduler_and_workspace() -> None:
     workspace = benchmark_workspace_setup()
 
     assert cli["help_seconds"] >= 0
-    assert cli["first_fake_response_seconds"] >= 0
+    assert cli["version_seconds"] >= 0
     assert scheduler["task_count"] == 4.0
     assert scheduler["completed_tasks"] == 4.0
     assert workspace["snapshot_files"] >= 1

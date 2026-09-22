@@ -17,10 +17,10 @@ Python >= 3.12; CI covers 3.12-3.14. Extras: `dev`, `openai-compatible`/`openai`
 CI runs these in order - match the order locally:
 
 ```powershell
-python -m ruff check src tests scripts evals   # 100-char lines, rules E,F,I,UP; legacy/ excluded
+python -m ruff check src tests scripts evals   # 100-char lines, rules E,F,I,UP
 python -m mypy src/skail                       # strict
 python -m pytest tests/unit tests/contract -m "not provider_live" -q
-python scripts/smoke.py --fake-provider        # --fake-provider is required, not a default
+python scripts/smoke.py                        # offline package/CLI smoke check
 python -m pytest -q                            # full offline suite
 python -m pytest tests\unit\test_x.py::test_y -q   # single test
 ```
@@ -60,9 +60,6 @@ python scripts/eval_routing.py --fixtures evals/fixtures --policies all --seed 4
   `fixtures/`. `scripts/`: smoke, eval, and release checks.
 - `docs/skail/`: specification, architecture, feature contracts, CLI. Decisions live in
   `docs/decisions/` (ADRs 0001-0006).
-- `tasks/plan.md` is historical; the active plan is
-  `tasks/skail-adaptive-orchestration-and-release-plan.md`.
-- Do not edit or import `legacy/skail/` - inert and excluded from ruff, mypy, and pytest.
 - Generated or non-source, do not hand-edit or commit: `.skail/`, `out/`, `evals/results/`,
   `graphify-out/`, `build/`, `run_logs/`. `design/` is reference assets.
 

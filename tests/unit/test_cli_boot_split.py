@@ -138,7 +138,6 @@ def test_tty_no_args_no_keys_mounts_onboarding(
     assert code == EXIT_OK
     assert captured.app_kwargs is not None
     assert captured.app_kwargs["runtime_factory"] is not None
-    assert captured.app_kwargs["bootstrap"]["fake_provider"] is False
     assert captured.app_kwargs["controller"] if False else True
 
     app = SkailApp(
@@ -165,28 +164,6 @@ def test_tty_valid_key_starts_async_initialization(
     app = SkailApp(
         runtime_factory=lambda: None,
         bootstrap={"workspace": ".", "session_id": "x"},
-    )
-    assert app.app_state == "initializing"
-
-
-def test_tty_fake_provider_mounts_visible_path_without_key(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    for var in ("LLMGATEWAY_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
-        monkeypatch.delenv(var, raising=False)
-    captured = _CapturedLaunch()
-    _install_cli_fakes(monkeypatch, captured)
-    _set_tty(monkeypatch, tty=True)
-
-    code = main(["--fake-provider"])
-
-    assert code == EXIT_OK
-    assert captured.app_kwargs is not None
-    assert captured.app_kwargs["bootstrap"]["fake_provider"] is True
-
-    app = SkailApp(
-        runtime_factory=lambda: None,
-        bootstrap={"workspace": ".", "session_id": "x", "fake_provider": True},
     )
     assert app.app_state == "initializing"
 
@@ -227,7 +204,7 @@ def test_headless_print_delegates_without_mounting_tui(
     monkeypatch.setattr(cli_main, "_execute_instruction", _fake_execute)
     monkeypatch.setattr(cli_main, "_build_runtime_models", lambda *a, **k: None)
 
-    code = main(["-p", "hello", "--fake-provider"])
+    code = main(["-p", "hello"])
 
     assert code == EXIT_OK
     assert captured.app_kwargs is None

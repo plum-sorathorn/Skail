@@ -1,6 +1,5 @@
 """Onboarding cockpit widgets for first-run interactive sessions.
 
-Draft source: docs/skail/TUI_REVAMP_DRAFT.md sections 8.2-8.3.
 Pure copy/state lives in :mod:`skail.tui.onboarding`; this module only
 renders it. Key material is never rendered, logged, or stored here beyond
 a fixed-length mask.
@@ -29,8 +28,6 @@ from skail.tui.onboarding import (
     trust_copy,
 )
 
-_FAKE_HINT = "For local evaluation without credentials, choose Fake provider"
-
 
 class OnboardingPanel(Static):
     """Setup-cockpit panel rendering the current onboarding step."""
@@ -57,7 +54,6 @@ class OnboardingPanel(Static):
     BINDINGS = [
         Binding("enter", "onboarding_confirm", "Continue"),
         Binding("escape", "onboarding_back", "Back"),
-        Binding("f", "onboarding_fake", "Fake provider"),
         Binding("t", "onboarding_trust", "Trust folder"),
         Binding("r", "onboarding_restricted", "Restricted mode"),
         Binding("b", "onboarding_back", "Back"),
@@ -94,7 +90,7 @@ class OnboardingPanel(Static):
         if step == "welcome":
             text.append(render_logo_text() + "\n\n")
             text.append(WELCOME_COPY + "\n")
-            text.append("\n[Enter] Continue   [F] Fake provider   [Ctrl+C] Quit")
+            text.append("\n[Enter] Continue   [Ctrl+C] Quit")
         elif step == "provider":
             text.append(self._provider_copy() + "\n")
         elif step == "trust":
@@ -121,12 +117,6 @@ class OnboardingPanel(Static):
             marker = "●" if option == self.onboarding.provider else " "
             lines.append(f"{marker} {provider_display_name(option)}")
         lines.append("")
-        if self.onboarding.provider == "fake":
-            lines.append(_FAKE_HINT)
-            lines.append("or restart with: skail --fake-provider")
-            lines.append("")
-            lines.append("[Enter] Continue   [B] Back")
-            return "\n".join(lines)
         lines.append("")
         lines.append(provider_key_prompt(self.onboarding.provider))
         lines.append("")
@@ -177,7 +167,7 @@ class OnboardingPanel(Static):
 
     def _sync_key_input(self) -> None:
         has_input = self._key_input() is not None
-        if self.onboarding.step == "provider" and self.onboarding.provider != "fake":
+        if self.onboarding.step == "provider":
             if not has_input:
                 inp = Input(
                     password=True,
@@ -219,9 +209,6 @@ class OnboardingPanel(Static):
 
     def action_onboarding_back(self) -> None:
         self._app_action("onboarding_back")
-
-    def action_onboarding_fake(self) -> None:
-        self._app_action("onboarding_choose_fake")
 
     def action_onboarding_trust(self) -> None:
         self._app_action("onboarding_trust_folder")

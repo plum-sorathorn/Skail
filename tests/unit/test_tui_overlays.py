@@ -563,7 +563,7 @@ def test_theme_picker_commits_new_theme_separately_from_preview() -> None:
 
 
 def test_model_picker_lists_configured_and_future_only() -> None:
-    overlay = ModelPickerOverlay(["m-a", "m-b"], "m-a")
+    overlay = ModelPickerOverlay(["m-a", "m-b"], "m-a", enabled={"m-b"})
     rows = overlay.rows()
     assert any("m-a" in r and "\u25cf" in r for r in rows)
 

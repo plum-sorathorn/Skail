@@ -1,6 +1,5 @@
 """Multiline composer with queue, history, stash, and ghost slash palette.
 
-Draft source: docs/skail/TUI_REVAMP_DRAFT.md section 5.3.
 Phase 2: multiline 3-8 rows, exact placeholder/validating copy, char count,
 mode corner, Enter/Shift+Enter/Ctrl+Enter/Tab/Esc, FIFO queue-above view,
 history with edit-recall, Ctrl+S stash receipt, deterministic fuzzy palette.

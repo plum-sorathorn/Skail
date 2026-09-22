@@ -81,7 +81,6 @@ from skail.domain.tasks import (
 )
 from skail.domain.usage import NormalizedUsage
 from skail.providers.base import ProviderAdapter
-from skail.providers.fake import FakeProviderAdapter
 from skail.providers.fallback import FallbackBinding
 from skail.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
 from skail.routing.assignment import (
@@ -329,11 +328,9 @@ class RunController:
         for key, chat_model in self.models.items():
             self._all_models[key] = chat_model
             if ":" not in key:
-                self._all_models[f"fake:{key}"] = chat_model
+                self._all_models[f"injected:{key}"] = chat_model
 
-        self.providers: dict[str, ProviderAdapter] = {"fake": FakeProviderAdapter()}
-        if providers:
-            self.providers.update(providers)
+        self.providers: dict[str, ProviderAdapter] = dict(providers or {})
 
         self.ledger = ledger or BudgetLedger(
             self.journal,
@@ -604,7 +601,7 @@ class RunController:
                 provider, model = (
                     target_lead_model.split(":", 1)
                     if ":" in target_lead_model
-                    else ("fake", target_lead_model)
+                    else ("injected", target_lead_model)
                 )
                 matching = tuple(
                     candidate
@@ -628,7 +625,7 @@ class RunController:
         )
         candidates: list[RouteCandidate] = []
         for key in self.models:
-            provider = "fake"
+            provider = "injected"
             model_name = key
             if ":" in key:
                 provider, model_name = key.split(":", 1)
@@ -674,9 +671,9 @@ class RunController:
         if not for_lead:
             if (
                 self.default_child_model not in self.models
-                and f"fake:{self.default_child_model}" not in self.models
+                and f"injected:{self.default_child_model}" not in self.models
             ):
-                provider = "fake"
+                provider = "injected"
                 model_name = self.default_child_model
                 if ":" in self.default_child_model:
                     provider, model_name = self.default_child_model.split(":", 1)
@@ -1099,7 +1096,7 @@ class RunController:
             mode = RoutingMode.MANUAL if configured_model else controls.routing_mode
             manual_model: tuple[str, str] | None = None
             if configured_model:
-                provider, model = "fake", configured_model
+                provider, model = "injected", configured_model
                 if ":" in configured_model:
                     provider, model = configured_model.split(":", 1)
                 manual_model = (provider, model)
@@ -1826,7 +1823,7 @@ class RunController:
             mode = RoutingMode.MANUAL if configured_model else controls.routing_mode
             manual_model: tuple[str, str] | None = None
             if configured_model:
-                provider, model = "fake", configured_model
+                provider, model = "injected", configured_model
                 if ":" in configured_model:
                     provider, model = configured_model.split(":", 1)
                 manual_model = (provider, model)
@@ -2091,7 +2088,7 @@ class RunController:
         )
 
         # 3. Route lead model through AssignmentService and BudgetLedger
-        lead_provider = "fake"
+        lead_provider = "injected"
         lead_model = lead_model_name
         if ":" in lead_model_name:
             lead_provider, lead_model = lead_model_name.split(":", 1)
@@ -3156,7 +3153,7 @@ class RunController:
                     configured_model = self.default_child_model
 
             if configured_model and any(
-                (p == "fake" or p == configured_model.split(":")[0])
+                (p == "injected" or p == configured_model.split(":")[0])
                 and (m == configured_model or m == configured_model.split(":")[-1])
                 for p, m in excluded
             ):
@@ -3183,7 +3180,7 @@ class RunController:
 
             manual_pin = None
             if req_mode is RoutingMode.MANUAL and configured_model:
-                prov = "fake"
+                prov = "injected"
                 m_name = configured_model
                 if ":" in configured_model:
                     prov, m_name = configured_model.split(":", 1)

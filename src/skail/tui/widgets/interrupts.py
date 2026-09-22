@@ -1,6 +1,5 @@
 """Keyboard-accessible interrupt and approval cards.
 
-Draft source: docs/skail/TUI_REVAMP_DRAFT.md section 5.4.
 Phase 2: token styling, focusable A/R/E keyboard with typing guard,
 Tab/Shift+Tab focus movement, Enter activates, Esc leaves pending,
 disable-after-submit, APPROVED/REJECTED terminal states, optional

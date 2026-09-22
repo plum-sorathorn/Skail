@@ -96,10 +96,7 @@ cd Skail
 python -m pip install -e ".[dev]"
 
 # Verify the installation without credentials
-skail smoke --fake-provider
-
-# Run a deterministic local request
-skail --print --fake-provider --model fake:fast-model "Summarize this workspace"
+python scripts\smoke.py
 ```
 
 For normal interactive use, configure a supported provider, verify it without making a network
@@ -128,6 +125,19 @@ skail --resume <session-id>
 
 See the [CLI contract](docs/skail/CLI.md) for every flag, subcommand, output mode, and exit code.
 
+### Clean uninstall
+
+The uninstall script removes credentials registered by Skail, the complete `~/.skail` state root,
+and the installed `skail-harness` package. Pass explicit old workspace roots only when you also
+want their legacy local `.skail` directories removed:
+
+```powershell
+.\scripts\uninstall_skail.ps1 -Yes
+.\scripts\uninstall_skail.ps1 -Yes -LegacyWorkspaceRoots C:\path\to\old-workspace
+```
+
+The operation is destructive. It does not scan arbitrary drives for unknown historical folders.
+
 ### Interactive TUI
 
 Launch `skail` in a TTY to mount the cockpit immediately; provider and model
@@ -135,15 +145,12 @@ setup runs in a background worker after the shell is visible. First run walks
 a mount-first 5-step onboarding ladder:
 
 1. Welcome (Twin sail mark + overview)
-2. Provider (LLM Gateway / OpenAI / Anthropic / Fake)
+2. Provider (LLM Gateway / OpenAI / Anthropic)
 3. Trust (trust this exact folder, or restricted mode)
 4. Theme (Dark / Light / System / Pistachio Night / Pistachio Paper / Mint Porcelain with live preview)
 5. Ready (receipt with the exact `skail -r <session-id>` resume command)
 
 ```powershell
-# No credentials needed for local evaluation
-skail --fake-provider
-
 # Normal interactive start after provider setup
 skail auth check
 skail models list
@@ -205,8 +212,6 @@ flowchart LR
 | [Threat model](docs/skail/THREAT_MODEL.md) | Trust boundaries, mitigations, and residual host-level risks |
 | [Evaluation](docs/skail/EVALUATION.md) | Independent fixtures, raw evidence, routing gates, and qualification rules |
 | [Performance](docs/skail/PERFORMANCE.md) | Reproducible runtime, rendering, persistence, and context measurements |
-| [Feature roadmap](docs/skail/FEATURE_PARITY_ROADMAP.md) | Core acceptance matrix and separately scoped follow-on integrations |
-| [Final integrated review](docs/skail/PHASE_21_REVIEW.md) | Cross-phase findings, representative traces, and release evidence boundaries |
 | [Changelog](CHANGELOG.md) | Notable v0.1.0 fixes, performance evidence, and release status |
 | [Dependencies](docs/skail/DEPENDENCIES.md) | Pinned runtime dependencies, provider extras, and transitive tooling |
 
@@ -222,7 +227,7 @@ python scripts\release_check.py
 ```
 
 The suite measures orchestration, persistence, context, rendering, workspace, and paired execution
-behavior from raw records. Deterministic fake-provider evidence verifies the engineering contract;
+behavior from raw records. Deterministic scripted evidence verifies the engineering contract;
 it is not a live-provider quality or savings claim.
 
 ## Contributing
@@ -235,7 +240,7 @@ default, and backed by the appropriate tests.
 rtk pytest -q
 python -m ruff check src tests scripts evals benchmarks
 python -m mypy src\skail
-python scripts\smoke.py --fake-provider
+python scripts\smoke.py
 python scripts\package_check.py
 ```
 
@@ -247,7 +252,6 @@ For the project's security boundaries, start with the [threat model](docs/skail/
 - [GitHub repository](https://github.com/plum-sorathorn/Skail)
 - [Issue tracker](https://github.com/plum-sorathorn/Skail/issues)
 - [Documentation index](docs/skail/README.md)
-- [Implementation and release guide](tasks/skail-adaptive-orchestration-and-release-plan.md)
 
 ## License
 

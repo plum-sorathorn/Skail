@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_call_message
+from fakes.provider import FakeProviderAdapter
 from langchain_core.messages import AIMessage
 
 from skail.agents.lead import LeadControls
@@ -381,7 +382,7 @@ async def test_controller_rejects_child_candidate_that_lacks_profile_tool_requir
     def candidate(model: str, *, tools: bool, auto_eligible: bool, cost: str) -> RouteCandidate:
         return RouteCandidate(
             profile=ModelProfile(
-                provider="fake",
+                provider="injected",
                 model=model,
                 support_level=ProviderSupportLevel.NATIVE,
                 input_usd_per_million=Decimal("1"),
@@ -415,6 +416,7 @@ async def test_controller_rejects_child_candidate_that_lacks_profile_tool_requir
         models={"lead-model": lead_model, "implementer-model": child_model},
         default_lead_model="lead-model",
         default_child_model="implementer-model",
+        providers={"injected": FakeProviderAdapter()},
         candidates_fn=lambda: routing_snapshot,
     )
 

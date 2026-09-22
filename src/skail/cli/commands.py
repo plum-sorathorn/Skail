@@ -19,18 +19,14 @@ from skail.config.paths import (
     user_config_path,
 )
 from skail.domain.sessions import SessionStatus
+from skail.providers.credentials import (
+    CredentialStore,
+    CredentialStoreUnavailable,
+    KeyringCredentialStore,
+)
 from skail.sessions.export import SessionExporter
 from skail.sessions.journal import Journal
 from skail.sessions.service import SessionService
-from skail.smoke import run_fake_provider_smoke
-
-
-def handle_smoke(args: Namespace) -> int:
-    if getattr(args, "fake_provider", False):
-        render_print_stdout(run_fake_provider_smoke())
-        return EXIT_OK
-    render_print_stderr("smoke requires --fake-provider")
-    return EXIT_USAGE
 
 
 def handle_config(
@@ -138,29 +134,46 @@ def handle_auth(
     args: Namespace,
     *,
     resolved_config: ResolvedConfig | None = None,
+    credential_store: CredentialStore | None = None,
 ) -> int:
     subaction = getattr(args, "auth_action", "status") or "status"
-    keys = {
-        "LLMGATEWAY_API_KEY": os.environ.get("LLMGATEWAY_API_KEY"),
-        "DEVPASS_TOKEN": os.environ.get("DEVPASS_TOKEN"),
-        "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY"),
-        "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY"),
+    references = {
+        "llmgateway": "LLMGATEWAY_API_KEY",
+        "devpass": "DEVPASS_TOKEN",
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
     }
     if resolved_config is not None:
-        for provider in resolved_config.config.providers.values():
-            if provider.api_key_env:
-                keys.setdefault(provider.api_key_env, os.environ.get(provider.api_key_env))
+        for name, provider_config in resolved_config.config.providers.items():
+            if provider_config.api_key_env:
+                references[name] = provider_config.api_key_env
+    store = credential_store or KeyringCredentialStore()
+    keys: dict[str, bool] = {}
+    for provider_name, reference in references.items():
+        available = bool(os.environ.get(reference))
+        if not available:
+            try:
+                available = bool(store.get(provider_name, reference))
+            except CredentialStoreUnavailable:
+                available = False
+        keys[reference] = keys.get(reference, False) or available
     if subaction == "check":
-        configured = [k for k, v in keys.items() if v]
-        if not configured:
-            render_print_stdout("No provider credentials configured in environment.")
+        configured_references = [
+            reference for reference, available in keys.items() if available
+        ]
+        if not configured_references:
+            render_print_stdout(
+                "No provider credential found in the environment or OS credential store."
+            )
         else:
-            render_print_stdout(f"Credentials detected for: {', '.join(configured)}")
+            render_print_stdout(
+                f"Credentials detected for: {', '.join(configured_references)}"
+            )
         return EXIT_OK
 
     render_print_stdout("Skail Provider Credentials Status:")
-    for name, val in keys.items():
-        status = "CONFIGURED" if val else "NOT CONFIGURED"
+    for name, configured in keys.items():
+        status = "CONFIGURED" if configured else "NOT CONFIGURED"
         render_print_stdout(f"  {name:<22}: {status}")
     return EXIT_OK
 
@@ -179,10 +192,18 @@ def handle_models(
                 f"  {p.name:<18} [floor: {p.role_floor:.2f}] {p.description}"
             )
         render_print_stdout("\nConfigured Providers and Models:")
-        render_print_stdout("  fake:fast-model (Deterministic Offline Fake)")
-        render_print_stdout("  fake:smart-model (Deterministic Offline Fake)")
-        render_print_stdout("  fake:lead-model (Deterministic Offline Fake)")
-        render_print_stdout("  fake:implementer-model (Deterministic Offline Fake)")
+        configured_models = [
+            f"{provider}:{model}"
+            for provider, provider_config in (
+                resolved_config.config.providers.items() if resolved_config else ()
+            )
+            for model in provider_config.models
+        ]
+        if configured_models:
+            for model in configured_models:
+                render_print_stdout(f"  {model}")
+        else:
+            render_print_stdout("  No models selected. Open the model picker to choose models.")
         from skail.providers.catalog_sources import load_catalog_snapshot
 
         snapshot = load_catalog_snapshot(

@@ -2,7 +2,6 @@
 
 Status: Active engineering evidence; not live economic qualification
 Date: 2026-09-13
-Tracker: [adaptive orchestration and release guide](../../tasks/skail-adaptive-orchestration-and-release-plan.md)
 
 The previous report is invalid for release sign-off. Its scripted execution was coupled to
 oracle expectations, its timing fixtures did not demonstrate equivalent useful parallel work, and
@@ -10,7 +9,7 @@ the reported speedup is not supported by the preserved diagnostics. It must not 
 provider-quality result, provider-cost saving, safety guarantee, or release verification.
 
 Skail retains offline fixtures for contract testing. They exercise the runtime under deterministic
-fake responses; they do not establish real-provider quality or savings. Live-provider validation
+scripted responses; they do not establish real-provider quality or savings. Live-provider validation
 is opt-in and has not been performed for v0.1.0.
 
 ## Independent execution foundation
@@ -50,7 +49,7 @@ historical reports remain historical rather than being relabelled as current rel
 - Phase 16 corrected the synthetic cost gate to use total spend per independently successful task,
   including failed work; median per-run cost is diagnostic only. Offline reports now encode
   `production_qualified = false`, and manifest 1.1.2 states explicitly that the visible curated
-  synthetic corpus is not held out. See the [Phase 16 review](PHASE_16_REVIEW.md).
+  synthetic corpus is not held out.
 - Phase 17 release validation does not trust serialized summaries or gate flags. It requires the
   canonical fixture/policy/seed/repetition matrix in raw and scored records, replays file oracles
   from captured workspace observations, binds timing, usage, assignments, provenance, Python, and

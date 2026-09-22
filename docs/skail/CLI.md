@@ -24,7 +24,6 @@ skail auth ...
 skail models ...
 skail sessions ...
 skail config ...
-skail smoke --fake-provider
 ```
 
 ## 2. Exit Codes
@@ -71,10 +70,11 @@ Machine-readable event streaming mode:
 
 ### `skail auth`
 - `skail auth status`: Report configuration state for known provider credentials without exposing secrets.
-- `skail auth check`: Report whether configured provider credential environment variables are present; it does not contact a provider.
+- `skail auth check`: Report whether credentials are available from the environment or OS
+  credential store; it does not contact a provider or reveal key material.
 
 ### `skail models`
-- `skail models list`: List built-in profiles, deterministic fake models, and the last validated local LLMGateway catalog snapshot, including refresh age and price coverage.
+- `skail models list`: List built-in profiles, selected provider models, and the last validated local LLMGateway catalog snapshot, including refresh age and price coverage.
 - `skail models show <name>`: Display built-in profile details or local catalog fields, pricing, timestamps, and provenance for `PROVIDER:MODEL`.
 
 The authenticated LLMGateway catalog is refreshed when `skail` starts and stored at
@@ -86,9 +86,6 @@ If no model has trusted capability evidence for automatic routing, interactive s
 model-selection state and opens the picker. Select a discovered model or use `--model
 llmgateway:MODEL`; the explicit selection is persisted for future launches. Headless mode exits
 promptly with a model-selection diagnostic instead of waiting indefinitely.
-
-### `skail smoke`
-- `skail smoke --fake-provider`: Offline deterministic package smoke verification.
 
 ## 5. Global State, Themes, and Live Validation
 

@@ -1,6 +1,5 @@
 """Phase 1 semantic shell and boot separation for SkailApp.
 
-Draft source: docs/skail/TUI_REVAMP_DRAFT.md sections 8.1-8.4, 11 (Phase 1).
 Interactive sessions mount the shell immediately; provider/model
 construction happens in a Textual worker after the shell is visible.
 Headless paths never touch this module.
@@ -50,7 +49,6 @@ from skail.tui.onboarding import (
     BootstrapCredentials,
     OnboardingState,
     has_env_credentials,
-    ready_receipt,
 )
 from skail.tui.projection import InterruptItem, TranscriptItem, TuiProjection
 from skail.tui.theme import (
@@ -127,11 +125,7 @@ _PROVIDER_ENV_VARS = {
     "anthropic": "ANTHROPIC_API_KEY",
 }
 
-_READY_COPY = (
-    "Ready.\n\nDescribe the outcome you want, paste an error, or type /help.\n"
-    "Shift+Tab changes mode. ? shows shortcuts."
-)
-_STARTING_COPY = "✻ Starting Skail runtime…\nLoading configured providers and session state."
+_READY_COPY = "Describe the outcome you want, paste an error, or type /help."
 _RUNTIME_ERROR_COPY = (
     "RUNTIME COULD NOT START\n\nYour session is safe. No agent run was started.\n"
     "Review provider settings or retry initialization.\n\n[R] Retry   [S] Setup   [Q] Quit"
@@ -486,8 +480,6 @@ class SkailApp(App[int]):
                 self.bootstrap.get("project_trusted", False)
             ) and self._provider_credential_available():
                 self.app_state = "initializing"
-            elif bool(self.bootstrap.get("fake_provider", False)):
-                self.app_state = "initializing"
             elif has_env_credentials(
                 env_vars=tuple(self.bootstrap.get("credential_envs", ())) or None
             ):
@@ -546,7 +538,6 @@ class SkailApp(App[int]):
         if self.app_state == "onboarding":
             self._mount_onboarding()
         elif self.app_state == "initializing":
-            self._append_system_message("Starting", _STARTING_COPY)
             self.update_views()
             self._start_runtime_worker()
         else:
@@ -770,7 +761,10 @@ class SkailApp(App[int]):
         if resume_target is not None:
             controller.restore_interrupted()
         self.onboarding_credentials.clear()
-        selection_required = bool(getattr(runtime_models, "selection_required", False))
+        selection_required = bool(
+            getattr(runtime_models, "selection_required", False)
+            or not self._enabled_models
+        )
         self.app_state = "selection_required" if selection_required else "ready"
         self.startup_error = None
         self._remove_onboarding_panel()
@@ -787,15 +781,6 @@ class SkailApp(App[int]):
                 "Catalog fallback",
                 "Using the last valid local catalog; refresh will retry on the next startup.",
             )
-        if self.onboarding_state.provider:
-            receipt = ready_receipt(
-                provider=self.onboarding_state.provider,
-                trusted=self.onboarding_state.trusted,
-                theme=self.onboarding_state.theme,
-                mode=self.onboarding_state.mode,
-                session_id=str(self.session_id or self.bootstrap.get("session_id", "new")),
-            )
-            self._append_system_message("Receipt", receipt)
         self.update_views()
         if selection_required:
             if self.initial_prompt:
@@ -916,11 +901,6 @@ class SkailApp(App[int]):
 
     # -- onboarding -------------------------------------------------------
     def _mount_onboarding(self) -> None:
-        from skail.tui.logo import render_logo_text
-
-        self._append_system_message(
-            "Welcome", render_logo_text() + "\nWelcome to Skail."
-        )
         self.update_views()
         try:
             self.query_one("#prompt-composer").visible = False
@@ -968,21 +948,16 @@ class SkailApp(App[int]):
             self.onboarding_state.advance()
             self._refresh_onboarding_panel()
         elif step == "provider":
-            if self.onboarding_state.provider == "fake":
-                self.bootstrap["fake_provider"] = True
-                self.onboarding_state.advance()
-                self._refresh_onboarding_panel()
+            key = self.onboarding_credentials.reveal()
+            if len(key.strip()) >= 8:
+                self.validate_onboarding_key()
             else:
-                key = self.onboarding_credentials.reveal()
-                if len(key.strip()) >= 8:
+                try:
+                    for panel in self.query("OnboardingPanel"):
+                        key_input = panel.query_one("#onboarding-key", Input)
+                        key_input.focus()
+                except Exception:
                     self.validate_onboarding_key()
-                else:
-                    try:
-                        for panel in self.query("OnboardingPanel"):
-                            key_input = panel.query_one("#onboarding-key", Input)
-                            key_input.focus()
-                    except Exception:
-                        self.validate_onboarding_key()
         elif step == "trust":
             if self.onboarding_state.trusted is None:
                 self.onboarding_state.trusted = False
@@ -1002,14 +977,6 @@ class SkailApp(App[int]):
         if self.onboarding_state.step == "theme":
             self.restore_theme()
         self.onboarding_state.go_back()
-        self._refresh_onboarding_panel()
-
-    def onboarding_choose_fake(self) -> None:
-        """F key: select the fake provider path without inventing a key."""
-        self.onboarding_state.provider = "fake"
-        self.bootstrap["fake_provider"] = True
-        if self.onboarding_state.step == "welcome":
-            self.onboarding_state.advance()
         self._refresh_onboarding_panel()
 
     def onboarding_trust_folder(self) -> None:
@@ -1056,7 +1023,7 @@ class SkailApp(App[int]):
         provider = self.onboarding_state.provider
         env_var = _PROVIDER_ENV_VARS.get(provider)
         if not env_var:
-            return provider == "fake"
+            return False
         if os.environ.get(env_var):
             return True
         try:
@@ -1421,9 +1388,7 @@ class SkailApp(App[int]):
                     {
                         "app_state": self.app_state,
                         "workspace": self.bootstrap.get("workspace"),
-                        "provider": self.onboarding_state.provider or (
-                            "fake" if self.bootstrap.get("fake_provider") else None
-                        ),
+                        "provider": self.onboarding_state.provider or None,
                         "routing_mode": self.projection.footer_data.routing_mode,
                         "source": "bootstrap",
                     },
@@ -1737,7 +1702,7 @@ class SkailApp(App[int]):
             self.controller.default_lead_model = name
         if name != "auto" and getattr(self, "runtime_models", None) is not None:
             object.__setattr__(self.runtime_models, "lead_model", name)
-        if name != "auto" and ":" in name and not name.startswith("fake:"):
+        if name != "auto" and ":" in name:
             try:
                 from skail.config.persistence import save_user_routing_model
 
@@ -1776,12 +1741,10 @@ class SkailApp(App[int]):
 
         # Persist to user config so the user doesn't have to edit config.toml
         provider = self.onboarding_state.provider
-        if not provider and self.bootstrap.get("fake_provider"):
-            provider = "fake"
-        elif not provider and hasattr(self, "runtime_models") and self.runtime_models:
+        if not provider and hasattr(self, "runtime_models") and self.runtime_models:
             if hasattr(self.runtime_models, "providers") and self.runtime_models.providers:
                 provider = next(iter(self.runtime_models.providers.keys()), "default")
-        if provider and provider != "fake":
+        if provider:
             try:
                 from skail.config.persistence import save_user_provider_models
 
@@ -1982,22 +1945,12 @@ class SkailApp(App[int]):
             # Provider-specific standard model sets
             active_p: str | None = self.onboarding_state.provider or None
             if not active_p:
-                if self.bootstrap.get("fake_provider"):
-                    active_p = "fake"
-                elif self.controller and getattr(self.controller, "providers", None):
+                if self.controller and getattr(self.controller, "providers", None):
                     p_keys = list(self.controller.providers.keys())
                     if p_keys:
                         active_p = str(p_keys[0])
 
-            if active_p == "fake" or self.bootstrap.get("fake_provider"):
-                model_set.update({
-                    "fake:auto",
-                    "fake:fast-model",
-                    "fake:smart-model",
-                    "fake:lead-model",
-                    "fake:implementer-model",
-                })
-            elif active_p == "openai":
+            if active_p == "openai":
                 model_set.update({
                     "openai:gpt-4o",
                     "openai:gpt-4o-mini",
@@ -2023,22 +1976,8 @@ class SkailApp(App[int]):
                 model_set.add("auto")
             models = sorted(model_set)
 
-            # Determine initially ticked models
-            enabled_set: set[str] = set()
-            if hasattr(self, "_enabled_models") and self._enabled_models:
-                enabled_set = set(self._enabled_models)
-            elif hasattr(self, "runtime_models") and self.runtime_models is not None:
-                rm = self.runtime_models
-                if hasattr(rm, "candidates") and rm.candidates:
-                    for cand in rm.candidates:
-                        if getattr(cand, "enabled", True):
-                            if hasattr(cand, "profile"):
-                                enabled_set.add(f"{cand.profile.provider}:{cand.profile.model}")
-                                enabled_set.add(cand.profile.model)
-                            elif hasattr(cand, "model"):
-                                enabled_set.add(cand.model)
-            if not enabled_set:
-                enabled_set = set(models)
+            # An empty saved selection is intentional: fresh catalogs start unticked.
+            enabled_set = set(self._enabled_models)
 
             self.push_screen(
                 ModelPickerOverlay(

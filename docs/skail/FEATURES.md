@@ -2,7 +2,6 @@
 
 > Status note: these are normative behavior contracts. A section is not an assertion that every
 > integration has production parity; tested scope and demonstrated gaps are recorded in the
-> [feature matrix](FEATURE_PARITY_ROADMAP.md).
 
 Status: Approved
 Date: 2026-09-02
@@ -727,7 +726,7 @@ Demonstrate that “budget-aware orchestration” improves completed-work econom
 
 ### Fixture shape
 
-Each fixture defines repository snapshot, user prompt, allowed tools, success oracle, risk/profile hints unavailable to the model only where needed for scoring, deterministic fake-provider behavior or approved live-provider matrix, and expected route invariants.
+Each fixture defines repository snapshot, user prompt, allowed tools, success oracle, risk/profile hints unavailable to the model only where needed for scoring, deterministic scripted behavior or an approved live-provider matrix, and expected route invariants.
 
 ### Suites
 

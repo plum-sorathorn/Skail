@@ -1,8 +1,8 @@
 # Specification: Skail
 
 > Status note: this is a normative product contract. Its requirements are implemented and verified
-> only where the active tracker, tests, or named evidence say so; it is not a blanket capability or
-> release-qualification claim. See [the feature matrix](FEATURE_PARITY_ROADMAP.md).
+> only where tests or named evidence say so; it is not a blanket capability or
+> release-qualification claim.
 
 Status: Approved
 Date: 2026-09-02
@@ -519,7 +519,7 @@ python -m pip install -e ".[dev]"
 python -m pytest
 python -m pytest tests\unit -q
 python -m pytest tests\contract tests\integration -q
-python scripts\smoke.py --fake-provider
+python scripts\smoke.py
 python scripts\eval_routing.py --fixture evals\fixtures
 graphify update .
 ```
@@ -548,8 +548,6 @@ tests/
 evals/                      replayable quality/cost/orchestration fixtures
 docs/skail/                product and technical source of truth
 docs/decisions/             accepted and superseded ADRs
-legacy/skail/         inert reference snapshot, excluded from Skail package
-tasks/                      active implementation plan and checklist
 ```
 
 ## 18. Code style
@@ -616,7 +614,7 @@ class RoutingPolicy(Protocol):
 ### Never
 
 - Reintroduce proxy or plugin-plane architecture.
-- Import from `legacy/skail` at runtime.
+- Reintroduce archived predecessor code into the runtime package.
 - Treat an LLM or SLM classification as safety authority.
 - Allow prompts alone to enforce filesystem or command security.
 - Switch models invisibly within a healthy task attempt.

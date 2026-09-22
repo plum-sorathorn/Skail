@@ -32,6 +32,8 @@ class CredentialStore(Protocol):
 
     def set(self, provider: str, reference: str, value: str) -> None: ...
 
+    def delete(self, provider: str, reference: str) -> None: ...
+
 
 class KeyringCredentialStore:
     """OS credential-store adapter; absence of keyring support is fail-closed."""
@@ -55,6 +57,19 @@ class KeyringCredentialStore:
             raise CredentialStoreUnavailable("OS credential storage is unavailable") from error
         try:
             keyring.set_password(self.service_name, f"{provider}:{reference}", value)
+        except Exception as error:
+            raise CredentialStoreUnavailable("OS credential storage is unavailable") from error
+
+    def delete(self, provider: str, reference: str) -> None:
+        try:
+            import keyring
+            from keyring.errors import PasswordDeleteError
+        except ImportError as error:
+            raise CredentialStoreUnavailable("OS credential storage is unavailable") from error
+        try:
+            keyring.delete_password(self.service_name, f"{provider}:{reference}")
+        except PasswordDeleteError:
+            return
         except Exception as error:
             raise CredentialStoreUnavailable("OS credential storage is unavailable") from error
 

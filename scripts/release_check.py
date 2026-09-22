@@ -63,8 +63,8 @@ def validate_eval_report(
         raise AssertionError("evaluation report timestamp cannot be in the future")
     if current - parsed.timestamp > max_age:
         raise AssertionError("evaluation report must be fresh and timezone-aware")
-    if parsed.provider_mode != "fake":
-        raise AssertionError("offline release evaluation must use fake provider mode")
+    if parsed.provider_mode != "deterministic":
+        raise AssertionError("offline release evaluation must use deterministic mode")
     provenance = parsed.provenance
     if provenance is None:
         raise AssertionError("evaluation provenance is missing")
@@ -322,7 +322,7 @@ def check_wheel_contents() -> None:
 
 
 def check_smoke() -> None:
-    print("[7/8] Running fake-provider smoke and benchmark verification...")
+    print("[7/8] Running offline smoke and benchmark verification...")
     with tempfile.TemporaryDirectory(prefix="skail-release-smoke-") as directory:
         workspace = Path(directory)
         environment = os.environ.copy()
@@ -335,7 +335,7 @@ def check_smoke() -> None:
             }
         )
         proc = subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "smoke.py"), "--fake-provider"],
+            [sys.executable, str(ROOT / "scripts" / "smoke.py")],
             cwd=str(workspace),
             env=environment,
             capture_output=True,
@@ -343,7 +343,7 @@ def check_smoke() -> None:
         )
     if proc.returncode != 0:
         raise RuntimeError(f"Smoke test failed:\n{proc.stderr}")
-    print("  -> Fake-provider smoke: OK.")
+    print("  -> Offline smoke: OK.")
     _run_checked(
         "  -> Running benchmark thresholds...",
         [

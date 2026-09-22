@@ -1,6 +1,5 @@
 """Semantic theme tokens for the Skail TUI (single source of truth).
 
-Draft source: docs/skail/TUI_REVAMP_DRAFT.md sections 3.1-3.2.
 Every widget must consume these tokens; no raw hex value may appear in
 widget CSS, Rich markup, or rendering logic outside this module.
 """

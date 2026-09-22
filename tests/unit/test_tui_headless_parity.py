@@ -122,11 +122,11 @@ def test_non_tty_no_arg_exact_usage_error(
 @pytest.mark.parametrize(
     "argv",
     [
-        ["-p", "hello", "--fake-provider"],
-        ["--jsonl", "hello", "--fake-provider"],
-        ["-c", "hello", "--fake-provider"],
-        ["-r", "01JPARITY", "hello", "--fake-provider"],
-        ["--no-session", "-p", "hello", "--fake-provider"],
+        ["-p", "hello"],
+        ["--jsonl", "hello"],
+        ["-c", "hello"],
+        ["-r", "01JPARITY", "hello"],
+        ["--no-session", "-p", "hello"],
     ],
 )
 def test_headless_flags_delegate_without_mounting_tui(

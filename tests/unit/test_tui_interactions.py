@@ -6,10 +6,15 @@ import threading
 from typing import Any
 
 import pytest
+from fakes.provider import (
+    FakeProviderAdapter,
+)
+from fakes.provider import (
+    FakeProviderChatModel as DeterministicFakeChatModel,
+)
 from textual.widgets import Button, Static, TabbedContent
 
 from skail.cli.main import RuntimeModelSet
-from skail.providers.fake import DeterministicFakeChatModel, FakeProviderAdapter
 from skail.runtime.redaction import RedactionRegistry
 from skail.sessions.checkpoints import CheckpointStore
 from skail.sessions.journal import Journal
@@ -20,6 +25,20 @@ from skail.tui.overlays.model_picker import ModelPickerOverlay
 from skail.tui.overlays.theme_picker import ThemePickerOverlay
 from skail.tui.projection import TuiProjection
 from skail.tui.widgets.composer import ComposerTextArea
+
+
+class _MemoryCredentialStore:
+    def __init__(self) -> None:
+        self.values: dict[tuple[str, str], str] = {}
+
+    def get(self, provider: str, reference: str) -> str | None:
+        return self.values.get((provider, reference))
+
+    def set(self, provider: str, reference: str, value: str) -> None:
+        self.values[(provider, reference)] = value
+
+    def delete(self, provider: str, reference: str) -> None:
+        self.values.pop((provider, reference), None)
 
 
 def test_command_requires_args_helper() -> None:
@@ -34,7 +53,7 @@ def test_command_requires_args_helper() -> None:
 
 @pytest.mark.asyncio
 async def test_composer_enter_submits_regular_prompt() -> None:
-    app = SkailApp(bootstrap={"fake_provider": True})
+    app = SkailApp()
     async with app.run_test() as pilot:
         await pilot.click("#composer-input")
         await pilot.press("h", "e", "l", "l", "o")
@@ -47,7 +66,7 @@ async def test_composer_enter_submits_regular_prompt() -> None:
 
 @pytest.mark.asyncio
 async def test_composer_enter_dispatches_model_slash_command() -> None:
-    app = SkailApp(bootstrap={"fake_provider": True})
+    app = SkailApp()
     async with app.run_test() as pilot:
         await pilot.click("#composer-input")
         for ch in "/model":
@@ -61,7 +80,7 @@ async def test_composer_enter_dispatches_model_slash_command() -> None:
 
 @pytest.mark.asyncio
 async def test_model_slash_command_rejects_unknown_discovered_model() -> None:
-    app = SkailApp(bootstrap={"fake_provider": True})
+    app = SkailApp()
     app.runtime_models = type("RuntimeModels", (), {"models": {"fake:known": object()}})()
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.click("#composer-input")
@@ -78,7 +97,7 @@ async def test_model_slash_command_rejects_unknown_discovered_model() -> None:
 
 @pytest.mark.asyncio
 async def test_composer_enter_dispatches_theme_slash_command() -> None:
-    app = SkailApp(bootstrap={"fake_provider": True})
+    app = SkailApp()
     async with app.run_test() as pilot:
         await pilot.click("#composer-input")
         for ch in "/theme":
@@ -91,7 +110,7 @@ async def test_composer_enter_dispatches_theme_slash_command() -> None:
 
 @pytest.mark.asyncio
 async def test_model_command_with_argument_sets_future_model() -> None:
-    app = SkailApp(bootstrap={"fake_provider": True})
+    app = SkailApp()
     async with app.run_test() as pilot:
         await pilot.click("#composer-input")
         for ch in "/model custom-gpt":
@@ -102,7 +121,7 @@ async def test_model_command_with_argument_sets_future_model() -> None:
 
 @pytest.mark.asyncio
 async def test_view_slash_commands_switch_tabs() -> None:
-    app = SkailApp(bootstrap={"fake_provider": True})
+    app = SkailApp()
     async with app.run_test() as pilot:
         tabs = app.query_one("#tabs", TabbedContent)
 
@@ -127,7 +146,7 @@ async def test_view_slash_commands_switch_tabs() -> None:
 
 @pytest.mark.asyncio
 async def test_shift_tab_keybinding_cycles_panels() -> None:
-    app = SkailApp(bootstrap={"fake_provider": True})
+    app = SkailApp()
     async with app.run_test(size=(120, 40)) as pilot:
         tabs = app.query_one("#tabs", TabbedContent)
         composer = app.query_one("#composer-input", ComposerTextArea)
@@ -142,7 +161,7 @@ async def test_shift_tab_keybinding_cycles_panels() -> None:
 
 @pytest.mark.asyncio
 async def test_send_button_submits_draft() -> None:
-    app = SkailApp(bootstrap={"fake_provider": True})
+    app = SkailApp()
     async with app.run_test(size=(120, 40)) as pilot:
         area = app.query_one("#composer-input", ComposerTextArea)
         area.text = "test from button"
@@ -159,7 +178,7 @@ def _runtime_set(model: DeterministicFakeChatModel) -> RuntimeModelSet:
         models={"lead-model": model},
         lead_model="lead-model",
         child_model="lead-model",
-        providers={"fake": FakeProviderAdapter(model)},
+        providers={"injected": FakeProviderAdapter(model)},
     )
 
 
@@ -192,7 +211,6 @@ async def test_composer_submission_during_initialization_is_replayed(tmp_path: A
     app = SkailApp(
         runtime_factory=factory,
         bootstrap={
-            "fake_provider": True,
             "workspace": str(tmp_path),
             "session_id": session_id,
         },
@@ -202,6 +220,8 @@ async def test_composer_submission_during_initialization_is_replayed(tmp_path: A
         checkpoints=checkpoints,
         redaction=RedactionRegistry(),
     )
+    app._enabled_models = {"lead-model"}
+    app.app_state = "initializing"
     async with app.run_test(size=(120, 40)) as pilot:
         assert started.wait(1)
         await pilot.click("#composer-input")
@@ -218,6 +238,9 @@ async def test_composer_submission_during_initialization_is_replayed(tmp_path: A
         if app._active_worker is not None:
             await app._active_worker.wait()
         assert any(item.content == "booted" for item in app.projection.transcript_items)
+        titles = {item.title for item in app.projection.transcript_items}
+        assert "Starting" not in titles
+        assert "Receipt" not in titles
 
 
 @pytest.mark.asyncio
@@ -232,7 +255,6 @@ async def test_discovered_catalog_without_auto_candidate_opens_model_picker(
     app = SkailApp(
         runtime_factory=lambda: runtime,
         bootstrap={
-            "fake_provider": True,
             "workspace": str(tmp_path),
             "session_id": session_id,
         },
@@ -242,6 +264,7 @@ async def test_discovered_catalog_without_auto_candidate_opens_model_picker(
         checkpoints=checkpoints,
         redaction=RedactionRegistry(),
     )
+    app.app_state = "initializing"
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         assert app.app_state == "selection_required"
@@ -250,9 +273,35 @@ async def test_discovered_catalog_without_auto_candidate_opens_model_picker(
 
 
 @pytest.mark.asyncio
+async def test_first_runtime_catalog_opens_unticked_model_picker(tmp_path: Any) -> None:
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="booted")
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+    runtime = _runtime_set(model)
+
+    app = SkailApp(
+        runtime_factory=lambda: runtime,
+        bootstrap={
+            "workspace": str(tmp_path),
+            "session_id": session_id,
+        },
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    app.app_state = "initializing"
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert app.app_state == "selection_required"
+        picker = app.screen_stack[-1]
+        assert isinstance(picker, ModelPickerOverlay)
+        assert picker.enabled == set()
+
+
+@pytest.mark.asyncio
 async def test_composer_enter_and_send_button_drive_real_controller(tmp_path: Any) -> None:
     from skail.domain.ids import SessionId
-    from skail.providers.fake import DeterministicFakeChatModel
     from skail.runtime.run_controller import RunController
 
     journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
@@ -309,7 +358,9 @@ async def test_composer_enter_and_send_button_drive_real_controller(tmp_path: An
 async def test_model_picker_checked_marker_is_visible_after_render() -> None:
     app = SkailApp(projection=TuiProjection())
     async with app.run_test(size=(100, 30)) as pilot:
-        overlay = ModelPickerOverlay(["model-a"], current="model-a")
+        overlay = ModelPickerOverlay(
+            ["model-a"], current="model-a", enabled={"model-a"}
+        )
         app.push_screen(overlay)
         await pilot.pause()
         rendered = app.query_one("#model-list", Static).render()
@@ -371,12 +422,12 @@ async def test_model_picker_chords_navigate_toggle_and_select_without_scrollbars
 
         await overlay.on_key(Key("ctrl+space", None))
         await pilot.pause()
-        assert "model-2" not in overlay.enabled
+        assert overlay.enabled == {"model-2"}
         await overlay.on_key(Key("ctrl+space", None))
-        assert len(overlay.enabled) == 20
+        assert overlay.enabled == set()
         await overlay.on_key(Key("ctrl+shift+a", None))
         await pilot.pause()
-        assert len(overlay.enabled) == 0
+        assert len(overlay.enabled) == 20
         assert not overlay.query("VerticalScroll")
         assert not overlay.query("ScrollBar")
         await overlay.on_key(Key("escape", None))
@@ -442,7 +493,12 @@ async def test_model_picker_up_down_arrow_navigation() -> None:
 
 def test_model_picker_tick_space_and_toggle_all() -> None:
     overlay = ModelPickerOverlay(["model-a", "model-b", "model-c"], current="model-a")
-    assert overlay.enabled == {"model-a", "model-b", "model-c"}
+    assert overlay.enabled == set()
+    assert "[ ] model-a" in overlay.rows()[0]
+
+    # Space ticks highlighted model-a
+    overlay.toggle_tick()
+    assert "model-a" in overlay.enabled
     assert "[x] model-a" in overlay.rows()[0]
 
     # Space unticks highlighted model-a
@@ -450,20 +506,25 @@ def test_model_picker_tick_space_and_toggle_all() -> None:
     assert "model-a" not in overlay.enabled
     assert "[ ] model-a" in overlay.rows()[0]
 
-    # Space re-ticks highlighted model-a
-    overlay.toggle_tick()
-    assert "model-a" in overlay.enabled
-    assert "[x] model-a" in overlay.rows()[0]
-
-    # 'a' toggles all off
-    overlay.toggle_all()
-    assert len(overlay.enabled) == 0
-    assert "[ ] model-a" in overlay.rows()[0]
-
-    # 'a' toggles all back on
+    # Toggle-all selects the full filtered set.
     overlay.toggle_all()
     assert overlay.enabled == {"model-a", "model-b", "model-c"}
     assert "[x] model-a" in overlay.rows()[0]
+
+    # A second toggle clears it.
+    overlay.toggle_all()
+    assert overlay.enabled == set()
+    assert "[ ] model-a" in overlay.rows()[0]
+
+
+def test_model_picker_requires_the_selected_lead_to_be_enabled() -> None:
+    overlay = ModelPickerOverlay(["model-a", "model-b"], current="model-a")
+
+    assert overlay.commit() is None
+    assert overlay.selection_error == "Tick at least the highlighted model before selecting it."
+
+    overlay.toggle_tick()
+    assert overlay.commit() == "model-a"
 
 
 def test_model_picker_commit_with_enabled_models(tmp_path) -> None:
@@ -492,13 +553,16 @@ def test_model_picker_commit_with_enabled_models(tmp_path) -> None:
         def close_overlay(self, name: str) -> None:
             calls["closed"] = name
 
-    overlay = ModelPickerOverlay(["m1", "m2", "m3"], current="m1")
+    overlay = ModelPickerOverlay(
+        ["m1", "m2", "m3"], current="m1", enabled={"m1", "m2", "m3"}
+    )
     overlay._test_app = _MockApp()
     overlay.index = 1
     overlay.toggle_tick()  # untick m2
+    overlay.index = 2
     committed = overlay.commit()
-    assert committed == "m2"
-    assert calls["future"] == "m2"
+    assert committed == "m3"
+    assert calls["future"] == "m3"
     assert calls["enabled"] == {"m1", "m3"}
     assert calls["closed"] == "model_picker"
 
@@ -545,10 +609,14 @@ def test_routing_model_persistence_keeps_other_user_config(tmp_path) -> None:
 async def test_onboarding_interactive_flow(monkeypatch: pytest.MonkeyPatch) -> None:
     for k in ("LLMGATEWAY_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
         monkeypatch.delenv(k, raising=False)
-    app = SkailApp(runtime_factory=lambda: None, bootstrap={})
+    app = SkailApp(
+        runtime_factory=lambda: None,
+        bootstrap={"credential_store": _MemoryCredentialStore()},
+    )
     async with app.run_test(size=(120, 40)) as pilot:
         assert app.onboarding_state.step == "welcome"
         assert not app.query_one("#prompt-composer").visible
+        assert app.projection.transcript_items == []
 
         # Advance to provider
         await pilot.press("enter")
@@ -560,10 +628,11 @@ async def test_onboarding_interactive_flow(monkeypatch: pytest.MonkeyPatch) -> N
         await pilot.press("down")
         assert app.onboarding_state.provider == "anthropic"
         await pilot.press("down")
-        assert app.onboarding_state.provider == "fake"
+        assert app.onboarding_state.provider == "llmgateway"
 
-        # Enter on fake provider advances to trust
-        await pilot.press("enter")
+        app.onboarding_credentials.set_key("long-enough-test-key")
+        app.validate_onboarding_key()
+        await pilot.pause()
         assert app.onboarding_state.step == "trust"
 
         # T advances to theme

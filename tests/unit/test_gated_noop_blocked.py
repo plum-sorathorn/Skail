@@ -4,7 +4,7 @@ Live defect (2026-09-18, HEAD 0e8859e): a run in which EVERY operational
 tool call was rejected with ``execution.decision_required`` — no decision
 ever admitted, zero tools completed, zero children — still terminated as
 ``run.completed`` with exit code 0. That false success is forbidden by
-``evals/live-test-plan.md:240``; the exit-code contract (:231-232)
+the gated-noop contract; blocked work must return the blocked exit code
 requires BLOCKED (3) for this case.
 """
 

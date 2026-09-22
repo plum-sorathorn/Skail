@@ -30,7 +30,7 @@ class OracleSpec(BaseModel):
 
 
 class ScriptedUsage(BaseModel):
-    """Usage reported by one deterministic fake-provider response."""
+    """Usage reported by one deterministic evaluation response."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -220,7 +220,7 @@ class TaskEvalResult(BaseModel):
     context_metrics: ContextEvalMetrics = Field(default_factory=ContextEvalMetrics)
     error: str | None = None
     catalog_revision: str = "default"
-    provider_mode: str = "fake"
+    provider_mode: str = "deterministic"
     child_wall_seconds: float = Field(default=0.0, ge=0)
     child_peak_active: int = Field(default=0, ge=0)
     child_count: int = Field(default=0, ge=0)

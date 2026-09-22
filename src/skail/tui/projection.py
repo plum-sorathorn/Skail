@@ -755,7 +755,7 @@ class TuiProjection:
             context_tokens = snapshot.context_packets[-1].payload.get("estimated_tokens", 0)
 
         default_route = RouteViewItem(
-            "lead", 1, "auto", "fake", "auto", 0.7, Decimal("0"), ()
+            "lead", 1, "auto", "unassigned", "auto", 0.7, Decimal("0"), ()
         )
         lead_model_name = self.route_items.get("lead", default_route).model
         self.footer_data = FooterData(
