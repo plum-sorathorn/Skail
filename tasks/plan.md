@@ -8,8 +8,8 @@ parallel subagents, adaptive graph execution, human interrupts, queued follow-up
 workspace isolation, routing evidence, and user-facing output quality while keeping total external
 provider spend below USD 10.00.
 
-This document is a plan only. Do not make provider calls until the operator approves the exact
-models and starts the live session.
+The original plan was executed on 2026-09-22 after catalog refresh and model qualification. The
+execution evidence is under `out/live-agentic/`; future reruns should preserve the same gates.
 
 ## Non-negotiable constraints
 
@@ -436,3 +436,21 @@ Before live execution, the operator must approve:
 - Planned maximum of USD 9.50 and normal stop at USD 8.50.
 - Whether optional S8 is allowed after reviewing spend through S7.
 
+## Execution addendum — 2026-09-22
+
+- Tested Skail commits through `b06a8e2` (decision payload normalization); later queue/cancellation
+  fixes are `370475e` and `a4f8af3`.
+- Catalog was refreshed with `skail models refresh`; 135 priced models were discovered.
+- Selected models and displayed prices:
+  - `llmgateway:qwen3.8-max`: $2.00/M input, $6.00/M output; tools and structured output true.
+  - `llmgateway:glm-5.3-flash`: $0.07/M input, $0.19/M output; tools and structured output true.
+  - `llmgateway:gpt-4.1-nano`: $0.10/M input, $0.40/M output; tools and structured output true.
+- Durable session: `a946e3d4-0e4f-46f4-b683-00aca18b5bfc`.
+- Results: S1 passed; S2 cancelled after repeated decision/loop behavior; S3 model switch passed
+  but review was stopped for a long read-only loop; S4 blocked before child completion; S5 persisted
+  a plan/checkpoint and reached an approval conflict. S6-S8 were not run.
+- Conservative recorded total: USD 0.437681, including USD 0.349224 in interrupted-call
+  estimates; authoritative provider-reported actuals were lower. See `COSTS.csv`.
+- No workspace files were changed by the live agents; baseline fixture remained recoverable.
+- Open live defects are recorded in `BUGS.md`; presentation defects are in
+  `OUTPUT_MISFORMATS.md`.

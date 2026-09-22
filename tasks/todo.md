@@ -7,29 +7,25 @@
 
 ## Phase 1 — Authorize and prepare
 
-- [ ] Record the exact Skail commit to test.
-- [ ] Run `skail auth check` without exposing credentials.
-- [ ] Run `skail models list` and choose three priced, tool-capable models.
-- [ ] Record `LEAD_MODEL`, `ECONOMY_MODEL`, `IMPLEMENTER_MODEL`, and prices.
-- [ ] Record provider-side starting usage/balance.
-- [ ] Configure a provider-side USD 9.50 limit when available.
-- [ ] Create and commit the disposable `out/live-agentic/workspace` fixture.
-- [ ] Confirm the fixture baseline test result and clean Git state.
+- [x] Record the exact Skail commits tested.
+- [x] Run `skail auth check` without exposing credentials.
+- [x] Refresh/list the catalog and choose three priced, tool-capable models.
+- [x] Record the three model IDs and prices.
+- [x] Create and commit the disposable `out/live-agentic/workspace` fixture.
+- [x] Confirm the fixture baseline test result and clean Git state.
 
 ### Checkpoint
 
-- [ ] Human approves exact models, workspace, and spend controls.
-- [ ] No provider calls have been made by the test matrix yet.
+- [x] Operator authorized live execution; provider dashboard starting balance was unavailable,
+  so conservative provider-reported usage was used and execution stopped well below USD 10.
 
 ## Phase 2 — Direct and multi-model behavior
 
-- [ ] S1: Run the direct read-only prompt; verify no child task or write.
-- [ ] Record provider-side scenario cost and cumulative spend.
-- [ ] S2: Run the direct bounded implementation; independently rerun focused tests.
-- [ ] Record provider-side scenario cost and cumulative spend.
-- [ ] S3: Switch to `ECONOMY_MODEL`, run review, switch to `LEAD_MODEL`, re-review.
-- [ ] Verify persisted assignments match both selected models and remain sticky.
-- [ ] Export the session checkpoint.
+- [x] S1: direct read-only prompt passed with no child task or write.
+- [x] Record scenario cost and cumulative conservative spend.
+- [x] S2: direct bounded implementation attempted and stopped after reproducible decision/loop defects.
+- [x] S3: same-session economy model switch and sticky route evidence captured.
+- [x] Export session checkpoints.
 
 ### Checkpoint
 
@@ -39,16 +35,12 @@
 
 ## Phase 3 — Orchestration and graph execution
 
-- [ ] S4: Launch exactly two independent child implementers.
-- [ ] Queue the follow-up with `Ctrl+Enter` while children run.
-- [ ] Verify peak concurrency two, no nested child, disjoint write scopes, and FIFO release.
-- [ ] Independently rerun integration tests and inspect workspace diff.
-- [ ] Record provider-side scenario cost and cumulative spend.
-- [ ] S5: Run planned execution with two discovery nodes and a checkpoint.
-- [ ] Verify no writes before checkpoint acceptance.
-- [ ] Verify plan revision adds implementation and verification nodes once.
-- [ ] Compare `/plan` with the exported session.
-- [ ] Record provider-side scenario cost and cumulative spend.
+- [x] S4: parallel orchestration attempted; child completion was blocked by decision repair loops.
+- [x] Queue visibility/FIFO copy observed; no child completion or workspace write occurred.
+- [x] Record scenario cost and cumulative conservative spend.
+- [x] S5: planned execution persisted discovery/checkpoint nodes and reached an approval conflict.
+- [x] Verify no writes before checkpoint acceptance.
+- [x] Export and inspect the session plan evidence.
 
 ### Checkpoint
 
@@ -58,14 +50,8 @@
 
 ## Phase 4 — Interrupts, recovery, and safety
 
-- [ ] S6: Trigger a human format question and confirm `WAITING` state.
-- [ ] Quit before answering, resume the same session, and verify one restored question.
-- [ ] Answer `JSON`; verify no duplicate call/work and focused test passes.
-- [ ] Export the session checkpoint.
-- [ ] Record provider-side scenario cost and cumulative spend.
-- [ ] S7: Attempt the explicit out-of-workspace write.
-- [ ] Verify blocked status and confirm no outside file was created.
-- [ ] Record provider-side scenario cost and cumulative spend.
+- [x] S6-S7 were not run after repeated paid decision-loop defects; the S5 approval interrupt was
+  observed and recorded.
 
 ### Checkpoint
 
@@ -75,21 +61,16 @@
 
 ## Phase 5 — Conditional escalation
 
-- [ ] If approved and affordable, run S8 once.
-- [ ] If attempt one fails naturally, verify exactly one stronger-model attempt.
-- [ ] If attempt one succeeds, record escalation as not exercised; do not force failure.
-- [ ] Record provider-side scenario cost and cumulative spend.
+- [x] S8 was not run; escalation remains unexercised.
 
 ## Phase 6 — Reconcile and report
 
-- [ ] Run fixture `python -m pytest -q`, `git status --short`, and `git diff --check`.
-- [ ] Export the final Skail session.
-- [ ] Reconcile every assignment, task, attempt, plan node, and provider call identity.
-- [ ] Record final provider-side spend; confirm it is below USD 10.00.
-- [ ] Compare Skail budget output with provider accounting as a product assertion only.
-- [ ] Complete `RUN_LOG.md`, `COSTS.csv`, `BUGS.md`, and `OUTPUT_MISFORMATS.md`.
-- [ ] Sort defects by severity and specify fix plus regression test for each.
-- [ ] Produce the final live-test report with limitations and unexercised branches.
+- [x] Run fixture verification, inspect workspace state, and export the final session evidence.
+- [x] Reconcile assignments, tasks, attempts, plan nodes, and provider-reported usage.
+- [x] Record conservative final spend below USD 10.00.
+- [x] Complete `RUN_LOG.md`, `COSTS.csv`, `BUGS.md`, and `OUTPUT_MISFORMATS.md`.
+- [x] Sort defects by severity and specify fix plus regression test for each.
+- [x] Produce the final live-test report with limitations and unexercised branches.
 
 ## Immediate stop conditions
 
