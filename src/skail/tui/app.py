@@ -836,6 +836,8 @@ class SkailApp(App[int]):
         )
         self.controller = controller
         controller.subscribe_events(self.apply_event)
+        if lead_model_name != "auto":
+            self.projection.set_future_model(lead_model_name)
         resume_target = self.bootstrap.get("resume_session", None)
         if resume_target is not None:
             controller.restore_interrupted()

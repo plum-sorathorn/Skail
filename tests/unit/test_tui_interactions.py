@@ -269,6 +269,26 @@ def _session_dependencies(tmp_path: Any) -> tuple[Journal, CheckpointStore, Sess
     return journal, checkpoints, service, session.session_id
 
 
+def test_runtime_attach_preserves_explicit_lead_model_for_prompt_controls(tmp_path: Any) -> None:
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="booted")
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+    app = SkailApp(
+        runtime_factory=None,
+        bootstrap={"workspace": str(tmp_path), "session_id": session_id},
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    app._enabled_models = {"lead-model"}
+
+    app._attach_runtime_models(_runtime_set(model))
+
+    assert app.projection.model_for_future() == "lead-model"
+    assert app.projection.footer_data.lead_model == "lead-model"
+
+
 @pytest.mark.asyncio
 async def test_composer_submission_during_initialization_is_replayed(tmp_path: Any) -> None:
     started = threading.Event()
