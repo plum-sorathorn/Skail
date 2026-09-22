@@ -201,13 +201,22 @@ def test_lead_selection_reports_floor_and_remediation_without_weakening_it() -> 
     assert "will not silently weaken" in describe_route_failure(result)
 
 
-def test_explicit_underqualified_lead_pin_is_rejected_before_provider_use() -> None:
+def test_explicit_lead_pin_does_not_require_unknown_soft_capability() -> None:
     requirements = RequirementBuilder().build(role="lead", risk=TaskRisk.HIGH)
+    base = _candidate("p", "pinned")
+    candidate = base.model_copy(
+        update={
+            "profile": base.profile.model_copy(
+                update={"capability": None, "auto_eligible": False}
+            )
+        }
+    )
     result = select_lead_model(
-        (_candidate("p", "pinned", coding=0.6, reasoning=0.6),),
+        (candidate,),
         requirements,
         manual_model=("p", "pinned"),
     )
 
-    assert isinstance(result, RouteFailure)
-    assert result.binding_constraint == "capability_floor"
+    assert isinstance(result, RouteSelection)
+    assert result.candidate.profile.model == "pinned"
+    assert result.capability_fit is None

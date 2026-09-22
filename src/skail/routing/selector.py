@@ -211,7 +211,9 @@ def select_lead_model(
     """Select the strongest hard-qualified lead candidate with stable ties."""
     effective = requirements
     if manual_model is not None:
-        effective = requirements.model_copy(update={"mode": RoutingMode.MANUAL})
+        effective = requirements.model_copy(
+            update={"mode": RoutingMode.MANUAL, "capability_floor": None}
+        )
     included: list[RouteCandidate] = []
     excluded: Counter[str] = Counter()
     for candidate in sorted(
@@ -243,7 +245,7 @@ def select_lead_model(
                 if excluded
                 else None
             ),
-            required_capability_floor=requirements.capability_floor,
+            required_capability_floor=effective.capability_floor,
             best_candidates=tuple(
                 f"{item.profile.provider}:{item.profile.model}" for item in available[:3]
             ),
@@ -251,6 +253,8 @@ def select_lead_model(
 
     def rank(candidate: RouteCandidate) -> tuple[object, ...]:
         profile = candidate.profile
+        if effective.mode is RoutingMode.MANUAL:
+            return (profile.provider, profile.model)
         capability = profile.capability
         fit = _capability_fit(profile)
         assert capability is not None and fit is not None
