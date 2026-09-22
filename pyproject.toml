@@ -40,7 +40,7 @@ dev = [
 ]
 openai-compatible = ["langchain-openai==1.6.0"]
 openai = ["langchain-openai==1.6.0"]
-anthropic = ["langchain-anthropic==1.7.0"]
+anthropic = ["langchain-anthropic==1.7.2"]
 
 [project.scripts]
 skail = "skail.cli.main:main"
