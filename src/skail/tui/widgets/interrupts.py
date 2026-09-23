@@ -130,6 +130,8 @@ class InterruptWidget(Widget):
     .interrupt-question {
         margin: 1 0;
         color: $text;
+        max-height: 5;
+        overflow-y: auto;
     }
     .interrupt-owner {
         color: $textMuted;

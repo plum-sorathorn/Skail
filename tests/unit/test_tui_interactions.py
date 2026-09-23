@@ -218,6 +218,26 @@ async def test_question_cancel_pilot_shows_run_cancellation_copy() -> None:
         assert app.projection.transcript_items[-1].content == "The waiting run was cancelled."
 
 
+async def test_long_question_keeps_answer_controls_in_small_terminal() -> None:
+    app = SkailApp()
+    app._set_interrupt(
+        {
+            "kind": "question",
+            "question_id": "long-question",
+            "prompt": "Please review the following details before answering.\n" * 14,
+            "options": ["Proceed", "Stop"],
+        },
+        run_id="long-run",
+    )
+
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        card = app.query_one(InterruptWidget)
+        answer = card.query_one("#btn-answer", Button)
+        assert answer.region.y < app.screen.size.height
+        assert answer.region.height > 0
+
+
 @pytest.mark.asyncio
 async def test_permission_interrupt_pilot_keeps_approve_reject_actions() -> None:
     app = SkailApp()

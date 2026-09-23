@@ -616,6 +616,7 @@ class TuiProjection:
             payload = asg.payload or {}
             raw_expl = payload.get("explanation", ())
             expl = tuple(raw_expl) if isinstance(raw_expl, list) else (str(raw_expl),)
+            capability_floor = payload.get("capability_floor")
             raw_lineage = payload.get("lineage")
             lineage = tuple(raw_lineage) if isinstance(raw_lineage, list) else ()
             evidence_status = payload.get("evidence_status")
@@ -634,7 +635,9 @@ class TuiProjection:
                 model=asg.model,
                 provider=asg.provider,
                 routing_mode=payload.get("routing_mode", "auto"),
-                capability_floor=float(payload.get("capability_floor", 0.50)),
+                capability_floor=(
+                    0.50 if capability_floor is None else float(capability_floor)
+                ),
                 estimated_cost_usd=asg.estimated_cost_usd,
                 explanation=expl,
                 lineage=lineage,

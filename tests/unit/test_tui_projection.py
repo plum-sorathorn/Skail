@@ -183,6 +183,34 @@ def test_projection_apply_snapshot() -> None:
     assert proj.pending_interrupt is not None
 
 
+def test_resume_accepts_nullable_assignment_capability_floor() -> None:
+    snapshot = SessionSnapshot(
+        session_id="nullable-floor-session",
+        status="active",
+        runs=(RunSnapshot(run_id="nullable-floor-run", status="blocked", budget_limit_usd=None),),
+        tasks=(),
+        attempts=(),
+        assignments=(
+            AssignmentSnapshot(
+                assignment_id="nullable-floor-assignment",
+                attempt_id="nullable-floor-attempt",
+                provider="llmgateway",
+                model="qwen3.8-max",
+                estimated_cost_usd=Decimal("0.01"),
+                payload={"capability_floor": None},
+            ),
+        ),
+        budget_reservations=(),
+        usage_records=(),
+        approvals=(),
+        events=(),
+    )
+
+    projection = TuiProjection()
+    projection.apply_snapshot(snapshot)
+    assert projection.route_items["nullable-floor-attempt"].capability_floor == 0.50
+
+
 def test_collapsible_and_uncollapsible_invariants() -> None:
     proj = TuiProjection()
     sid = new_session_id()
