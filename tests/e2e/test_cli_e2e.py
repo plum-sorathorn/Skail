@@ -147,6 +147,7 @@ def test_cli_normal_mode_fails_when_no_credentials() -> None:
         "USERPROFILE": os.environ.get("USERPROFILE", ""),
         "APPDATA": os.environ.get("APPDATA", ""),
         "LOCALAPPDATA": os.environ.get("LOCALAPPDATA", ""),
+        "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring",
     }
     result = run_cli(
         "-p", "say hello without credentials",

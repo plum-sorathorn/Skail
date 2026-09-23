@@ -430,6 +430,52 @@ def test_authentication_discovery_failure_does_not_use_cache(
         _build_runtime_models(args, RedactionRegistry())
 
 
+async def test_missing_provider_credentials_report_setup_action_not_route_failure(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from skail.cli.exit_codes import EXIT_FAILURE
+    from skail.providers.credentials import EnvironmentCredentialResolver
+    from skail.providers.errors import ProviderConfigurationError
+    from skail.runtime.interrupts import QuestionStore
+    from skail.tools.approvals import ApprovalStore
+
+    def missing_credential(
+        _resolver: EnvironmentCredentialResolver, provider: str, reference: str
+    ) -> None:
+        raise ProviderConfigurationError(
+            provider, f"credential environment variable {reference} is not set"
+        )
+
+    monkeypatch.setattr(EnvironmentCredentialResolver, "resolve", missing_credential)
+    rendered: list[str] = []
+    monkeypatch.setattr(cli_main, "render_print_stderr", rendered.append)
+    args = _args(
+        effective_config=SkailConfig(),
+        provider_configs={},
+        fake_provider=False,
+        print_mode=True,
+        json_mode=False,
+    )
+
+    result = await cli_main._execute_instruction(
+        prompt="Answer directly",
+        session=object(),
+        journal=object(),
+        checkpoints=object(),
+        redaction=RedactionRegistry(),
+        approvals=ApprovalStore(),
+        question_store=QuestionStore(tmp_path / "questions.sqlite"),
+        workspace=tmp_path,
+        args=args,
+    )
+
+    assert result == EXIT_FAILURE
+    assert rendered
+    assert "No provider credential is available" in rendered[-1]
+    assert "LLMGATEWAY_API_KEY" in rendered[-1]
+    assert "capable lead model" not in rendered[-1]
+
+
 def test_config_inspection_uses_the_already_resolved_effective_config(monkeypatch) -> None:
     resolved = ResolvedConfig(config=SkailConfig(), provenance={}, warnings=())
     rendered: list[str] = []

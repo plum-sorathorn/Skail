@@ -604,7 +604,7 @@ async def test_composer_submission_during_initialization_is_replayed(tmp_path: A
 
     def factory() -> RuntimeModelSet:
         started.set()
-        assert release.wait(3)
+        assert release.wait(10)
         return _runtime_set(model)
 
     app = SkailApp(
@@ -622,7 +622,7 @@ async def test_composer_submission_during_initialization_is_replayed(tmp_path: A
     app._enabled_models = {"lead-model"}
     app.app_state = "initializing"
     async with app.run_test(size=(120, 40)) as pilot:
-        assert started.wait(1)
+        assert await asyncio.wait_for(asyncio.to_thread(started.wait, 5), timeout=6)
         await pilot.click("#composer-input")
         for char in "run after boot":
             await pilot.press(char)
@@ -632,10 +632,13 @@ async def test_composer_submission_during_initialization_is_replayed(tmp_path: A
         assert area.text == "run after boot"
 
         release.set()
-        for _ in range(10):
+        for _ in range(50):
             await pilot.pause()
-        if app._active_worker is not None:
-            await app._active_worker.wait()
+            if app._active_worker is not None:
+                break
+        assert app._active_worker is not None, "initialization did not replay the queued prompt"
+        await asyncio.wait_for(app._active_worker.wait(), timeout=5)
+        await pilot.pause()
         assert any(item.content == "booted" for item in app.projection.transcript_items)
         titles = {item.title for item in app.projection.transcript_items}
         assert "Starting" not in titles

@@ -272,6 +272,12 @@ Acceptance:
 Verification: focused tests for each issue, then the repository's Ruff, mypy, unit/contract,
 smoke, and full offline suite in CI order.
 
+Task 8 is complete offline. The no-credentials E2E subprocess uses the null keyring backend so host
+credentials cannot change its diagnostic. The initialization replay pilot waits asynchronously for
+its worker barrier, and the README masthead assertion matches the current image. Final gates:
+Ruff passed; mypy found no issues in 126 source files; unit/contract passed with 865 passed and 2
+skipped; smoke passed; full offline suite passed with 1136 passed and 5 skipped.
+
 ### 9. Re-run the live matrix with independent billing control
 
 Use a clean disposable fixture commit and one durable session. Complete S2, both S3 reviews, S4

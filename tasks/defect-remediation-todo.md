@@ -18,7 +18,9 @@
   - Offline implementation adds typed question events, keeps expected graph interrupts out of `tool.failed`, separates question answer/cancel from permission Approve/Reject, and shows session/run/plan owner suffixes. Focused offline regressions: 213 passed; the final owner-label/recovery subset: 16 passed. Ruff, mypy, and Graphify update pass. Live S6 confirmation remains pending.
 - [x] 7. Audit earlier fixes with focused CLI and TUI checks.
   - Evidence: five catalog/list/refresh tests and four warning-as-error queue/cancel pilots pass; controller and real TUI cancellation checks show no framework traceback. Live confirmation for LIVE-001/003/004 and OUT-001/003 remains pending.
-- [ ] 8. Clear the three full offline suite failures.
-- [ ] Checkpoint: Ruff, mypy, unit/contract, smoke, and full offline suite pass.
+- [x] 8. Clear the three full offline suite failures.
+  - Evidence: the no-credentials subprocess uses the null keyring backend, the initialization replay pilot waits asynchronously for its worker barrier, and the README assertion matches the current image masthead.
+- [x] Checkpoint: Ruff, mypy, unit/contract, smoke, and full offline suite pass.
+  - Verification: Ruff passed; mypy found no issues in 126 source files; unit/contract passed (865 passed, 2 skipped); smoke passed; full offline suite passed (1136 passed, 5 skipped).
 - [ ] 9. Re-run the remaining live scenarios with provider-side billing deltas under USD 10.
 - [ ] Update `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, and `COSTS.csv` with verified outcomes.
