@@ -336,8 +336,8 @@ work, without repeating completed implementation solely to satisfy a test scenar
 
 1. **Establish cost authority (Task 0).** Refresh the model catalog, record per-model rates and
    revision, and start a fresh in-house campaign ledger. Keep prior interrupted calls labelled
-   unknown; do not fold Skail's prior estimates into verified spend. Confirm the separate spend
-   backstop required by the live plan before any paid call.
+   unknown; do not fold Skail's prior estimates into verified spend. The operator waived the
+   provider-side hard cap for the DevPass-key rerun; follow the live plan's local stop rules.
 2. **Retest the repaired paths (Tasks 3, 5, 6, and 9).** In a disposable repository, run S2 direct
    intent, S3 model switch and bounded review, S4 exactly-two-child orchestration and FIFO queue,
    S5 plan admission/cancel followed by an unrelated run, S6 question/approval/quit/resume, and S7

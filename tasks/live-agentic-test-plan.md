@@ -33,12 +33,14 @@ Complete this gate before any paid model request:
    measured input, output, and cached-input counts with the prices frozen on that assignment.
    Sum all lead and child calls across all runs in the durable session. Keep the historical
    September 22 estimates separate; their actual charges remain unknown.
-3. Keep the previously required provider-side spend cap as a separate safety backstop, configured
-   without the LLM Gateway CLI. The in-house ledger controls scenario decisions; the provider cap
-   does not supply ledger amounts. Stop if the cap cannot be verified. Use USD 8.50 as the normal
-   in-house stop point against the USD 10 campaign ceiling.
-4. Check credentials without printing values. If pricing, token accounting, or the spend backstop
-   is unavailable, stop before paid calls and record the blocker in `RUN_LOG.md`.
+3. For this DevPass-key run, the operator waived a provider-side hard cap. Use USD 8.50 as the
+   normal in-house stop point against the USD 10 campaign ceiling, with scenario allocations
+   and the run-wide model-call boundary. This is a best-effort token-cost ceiling, not a guarantee
+   about provider billing or DevPass allowance consumption.
+4. Check credentials without printing values. Read `GET /v1/key` only to confirm DevPass status
+   and available plan allowance; do not use its usage figure as the ledger. DevPass requests must
+   use canonical model IDs without an upstream provider prefix. If pricing, token accounting,
+   key access, or allowance is unavailable, stop before paid calls and record the blocker.
 
 After **each** scenario, export schema version 2, independently recompute each call from
 `provider_calls` token counts and frozen prices, and compare the sum with `model_usage`, the
@@ -71,7 +73,8 @@ from a clean, committed fixture baseline. The fixture should be a small Python p
 `src/live_fixture/normalize.py`, `parser.py`, `report.py`, tests for each module and their
 integration, and no exporter at baseline. Seed the known failing normalization, parser, report, and
 integration cases so later work has verifiable targets. Record the baseline commit, `git status`,
-and independent `python -m pytest -q` result.
+and independent `python -m pytest -q` result. Approve this disposable project explicitly with
+`skail --approve-project` before testing execute and shell permissions.
 
 Launch one durable TUI session from that fixture. Current CLI syntax is documented in
 `docs/skail/CLI.md`; qualify exact flags with `skail --help` before launch. The intended shape is:
@@ -81,7 +84,7 @@ skail --lead-model <LEAD_MODEL> `
   --agent-model explorer=<ECONOMY_MODEL> `
   --agent-model tester=<ECONOMY_MODEL> `
   --agent-model implementer=<IMPLEMENTER_MODEL> `
-  --mode auto --max-agents 3 --delegation auto --workspace worktree
+  --mode auto --max-agents 3 --delegation auto --workspace shared --budget 2.50
 ```
 
 One run's `--budget` cannot enforce the cumulative ceiling across several runs. Enter scenario
@@ -89,6 +92,9 @@ prompts through the TUI. Keep
 S1-S7 in the same durable session, including the S6 quit/resume. Record the session ID and
 selected model set. The model picker (`Alt+P`) and `/model` affect future assignments; confirm
 the resulting assignment in the export rather than trusting the displayed selection alone.
+Use shared workspace mode for S1-S3 direct lead work. Before S4, quit cleanly and resume the same
+session with `--workspace worktree` and the same explicit model flags to test isolated children.
+If a question is pending, answer or cancel it before submitting the next scenario.
 
 ## Evidence collected for every scenario
 
@@ -245,5 +251,5 @@ At the end, independently run fixture `python -m pytest -q`, inspect its Git sta
 checklist and evidence files. Report each scenario as pass, fail, blocked as expected, skipped, or
 not exercised; exact models and frozen prices; per-model token counts; in-house cost by scenario
 and total; unresolved calls; defects; and limitations. Do not describe this calculation as
-verified provider billing. If the spend backstop remains unavailable, report the live matrix as
-pending without making paid calls.
+verified provider billing. If token accounting or DevPass access becomes uncertain, stop paid
+calls and report the live matrix as pending.
