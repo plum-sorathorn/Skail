@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from langchain_core.messages import ToolMessage
+from langgraph.errors import GraphInterrupt
 
 from skail.tools.assembly import RuntimeActivityMiddleware
 
@@ -63,3 +64,37 @@ def test_tool_failed_validation_carries_hint() -> None:
     args, kwargs = failed[0]
     reason = kwargs.get("reason") if len(args) < 3 else args[2]
     assert reason is not None and str(reason).strip() != ""
+
+
+def test_expected_question_interrupt_is_not_reported_as_tool_failure() -> None:
+    captured: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    middleware = _middleware(captured)
+
+    def ask_question(_request: Any) -> None:
+        raise GraphInterrupt({"kind": "question", "prompt": "Proceed?"})
+
+    try:
+        middleware._run_tool(_request("ask_user", "call-question"), ask_question)
+    except GraphInterrupt:
+        pass
+    else:
+        raise AssertionError("question interrupt must propagate to the graph")
+
+    assert not any(call and call[0] == "tool.failed" for call, _kwargs in captured)
+
+
+def test_actual_ask_user_exception_still_emits_tool_failure() -> None:
+    captured: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    middleware = _middleware(captured)
+
+    def ask_question(_request: Any) -> None:
+        raise ValueError("question store is unavailable")
+
+    try:
+        middleware._run_tool(_request("ask_user", "call-invalid-question"), ask_question)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("tool failure must propagate")
+
+    assert any(call and call[0] == "tool.failed" for call, _kwargs in captured)

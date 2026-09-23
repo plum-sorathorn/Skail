@@ -320,6 +320,11 @@ Git operations initially use `execute`; Skail will not add a redundant Git tool 
 
 Tool visibility is profile-specific. Explorer and reviewer profiles do not receive write tools. Any profile with `execute` is treated as potentially write-capable for scheduling and approval because a shell can modify files even when `write_file` is hidden.
 
+`ask_user` produces a typed `question` wait with an answer field and a separate run-cancel action.
+Permission approvals remain typed `approval` interrupts and use Approve/Reject controls. An expected
+graph interrupt is not a tool failure; only an actual tool or question-store error is reported as
+failed.
+
 ## 9. Agent profiles
 
 | Profile | Purpose | Default tools | Default write posture |

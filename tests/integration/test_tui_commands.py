@@ -4,7 +4,9 @@ from pathlib import Path
 import pytest
 from fakes.provider import FakeProviderChatModel as DeterministicFakeChatModel
 from langchain_core.messages import AIMessage
+from textual.widgets import Input
 
+from skail.domain.events import InterruptKind
 from skail.domain.ids import SessionId, new_session_id
 from skail.domain.routing import RoutingMode
 from skail.runtime.interrupts import QuestionStore
@@ -132,15 +134,36 @@ def test_cancellation_and_steering_background_gating() -> None:
 
 @pytest.mark.asyncio
 async def test_interactive_approval_flow_in_app() -> None:
+    request = CommandRequest(
+        "git",
+        ("push",),
+        Path.cwd(),
+        session_id="session-approval",
+        run_id="run-approval",
+        task_id="task-approval",
+        action_id="action-approval",
+    )
+    approvals = ApprovalStore()
     proj = TuiProjection()
     proj.pending_interrupt = InterruptItem(
         approval_id="app-test-99",
         task_id="task-99",
         question="Execute rm -rf on build directory?",
         status="pending",
+        payload={
+            "kind": "approval",
+            "type": "command_approval",
+            "command": request.executable,
+            "arguments": request.arguments,
+            "cwd": str(request.cwd),
+            "session_id": request.session_id,
+            "run_id": request.run_id,
+            "task_id": request.task_id,
+            "action_id": request.action_id,
+        },
     )
 
-    app = SkailApp(projection=proj)
+    app = SkailApp(projection=proj, approval_store=approvals)
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         # Verify interrupt widget is mounted
@@ -150,12 +173,10 @@ async def test_interactive_approval_flow_in_app() -> None:
         await pilot.click("#btn-approve")
         await pilot.pause()
 
-        # Verify interrupt cleared and user answer added to transcript
+        # The permission is recorded as an approval, not a user answer.
         assert app.projection.pending_interrupt is None
-        assert any(
-            i.role == "user" and "yes" in i.content
-            for i in app.projection.transcript_items
-        )
+        assert approvals.is_allowed(request)
+        assert app.projection.transcript_items[-1].title == "Approval Granted"
 
 
 @pytest.mark.asyncio
@@ -269,6 +290,12 @@ async def test_tui_approval_store_and_question_store_integration(tmp_path: Path)
         task_id=None,
         question="Confirm database migration?",
         status="pending",
+        payload={
+            "kind": "question",
+            "question_id": q.question_id,
+            "graph_id": "lead",
+        },
+        kind=InterruptKind.QUESTION,
     )
 
     app = SkailApp(
@@ -281,8 +308,9 @@ async def test_tui_approval_store_and_question_store_integration(tmp_path: Path)
         await pilot.pause()
         assert app.query_one(InterruptWidget) is not None
 
-        # Click approve
-        await pilot.click("#btn-approve")
+        answer = app.query_one("#interrupt-input", Input)
+        answer.value = "yes"
+        await pilot.click("#btn-answer")
         await pilot.pause()
 
         # Verify question answered in QuestionStore
@@ -341,7 +369,9 @@ async def test_tui_answer_resumes_the_interrupted_controller(tmp_path: Path) -> 
             item.content for item in app.projection.transcript_items
         ]
 
-        await pilot.click("#btn-approve")
+        answer = app.query_one("#interrupt-input", Input)
+        answer.value = "yes"
+        await pilot.click("#btn-answer")
         assert app._active_worker is not None
         await app._active_worker.wait()
         await pilot.pause()
@@ -474,8 +504,20 @@ async def test_tui_rejection_blocks_the_interrupted_run(tmp_path: Path) -> None:
         assert app._active_worker is not None
         await app._active_worker.wait()
         await pilot.pause()
-        await pilot.click("#btn-reject")
+        await pilot.click("#btn-cancel-question")
         await pilot.pause()
 
         assert questions.pending("lead") == ()
-        assert journal.get_session_snapshot(str(sid)).runs[-1].status == "blocked"
+        snapshot = journal.get_session_snapshot(str(sid))
+        assert snapshot.runs[-1].status == "blocked"
+        assert any(
+            item.title == "Question Cancelled" and "waiting run" in item.content
+            for item in app.projection.transcript_items
+        )
+        cancellation = next(
+            event
+            for event in journal.events_after(run_id=str(snapshot.runs[-1].run_id))
+            if event.type == "user.cancellation"
+        )
+        assert cancellation.payload.kind is InterruptKind.QUESTION
+        assert cancellation.payload.interrupt_id is not None

@@ -22,7 +22,7 @@ from langgraph.types import interrupt
 from skail.config.paths import workspace_state_dir
 from skail.domain.security import identify_workspace
 from skail.domain.usage import NormalizedUsage
-from skail.runtime.deepagents_adapter import build_lead_agent
+from skail.runtime.deepagents_adapter import build_lead_agent, is_graph_interrupt
 from skail.runtime.failure_monitor import FailureMonitor
 from skail.runtime.interrupts import QuestionStore
 from skail.runtime.leases import WorkspaceLeaseManager
@@ -603,6 +603,9 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             result = await handler(request)
         except Exception as exc:
             self.monitor.discard_call_window()
+            if is_graph_interrupt(exc):
+                self.monitor.observe_progress()
+                raise
             self._emit_failure(name, exc)
             signal = self.monitor.observe_error(exc, tool=name)
             if signal is not None:
@@ -661,6 +664,9 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             result = handler(request)
         except Exception as exc:
             self.monitor.discard_call_window()
+            if is_graph_interrupt(exc):
+                self.monitor.observe_progress()
+                raise
             self._emit_failure(name, exc)
             signal = self.monitor.observe_error(exc, tool=name)
             if signal is not None:
@@ -754,7 +760,7 @@ def build_default_agent(
     lease_manager: WorkspaceLeaseManager | None = None,
     extra_middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
     blocked_tool_message: Callable[[str], str] | None = None,
-    runtime_event: Callable[[str, str], None] | None = None,
+    runtime_event: Callable[..., None] | None = None,
     runtime_model_name: str | None = None,
       model_response_observer: Callable[[ModelResponse[Any]], None] | None = None,
       usage_normalizer: Callable[[ModelResponse[Any]], NormalizedUsage | None] | None = None,
@@ -808,6 +814,7 @@ def build_default_agent(
         if result.status == "approval_required":
             interrupt(
                 {
+                    "kind": "approval",
                     "type": "command_approval",
                     "command": command,
                     "arguments": arguments,
@@ -860,6 +867,7 @@ def build_default_agent(
         )
         answer = interrupt(
             {
+                "kind": "question",
                 "question_id": question.question_id,
                 "prompt": prompt,
                 "options": options,
@@ -870,9 +878,10 @@ def build_default_agent(
         )
         if not isinstance(answer, str):
             raise ValueError("question answer must be a string")
-        return question_store.answer(
-            question.question_id, answer, graph_id=graph_id
-        ).answer or ""
+        answered = question_store.answer(question.question_id, answer, graph_id=graph_id)
+        if runtime_event is not None:
+            runtime_event("user.answer", question.question_id, answered.answer or "")
+        return answered.answer or ""
 
     custom_tools: list[Any] = list(extension_tools)
     visible_names = frozenset(item.name for item in registry.visible_to(profile))

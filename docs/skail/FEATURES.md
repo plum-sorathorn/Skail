@@ -618,6 +618,17 @@ content in the first stable release.
 
 Any agent may create a structured question interrupt. It includes prompt, optional choices, reason, blocking scope, and task ID. The answer is recorded and delivered only to the waiting graph state.
 
+A question interrupt carries `kind=question` and its stable question ID through the `user.question`
+event and TUI projection. Its card is labeled `QUESTION · Your answer is needed` and offers an
+answer field plus a separate `Cancel run` action. Permission interrupts carry `kind=approval` and
+retain the `Approve`/`Reject` controls. A normal graph interrupt is a wait transition, not a
+`tool.failed` event; an actual question-store or validation error remains a tool failure.
+
+The controller emits `user.answer` only after `QuestionStore` accepts and records the answer. The
+TUI keeps the question pending while the run resumes and clears `WAITING` after the resumed run
+returns with that recorded answer. In the TUI, cancellation records the question cancellation before
+clearing the pending state.
+
 While a question or approval is pending, a new instruction is not sent to the waiting graph as an
 answer. The TUI keeps the interrupt pending and visibly rejects the new prompt; the runtime also
 rejects direct new-run calls with `run.pending_interrupt` until the user resolves the interrupt.
@@ -712,6 +723,9 @@ Displays hard limit, authoritative actual, estimated actual, reserved, available
 ### Event stream
 
 Tool calls and child updates may collapse by default but cannot disappear. Error and approval events remain visible until acknowledged.
+Question cards and permission-approval cards remain distinct in the event projection and TUI. The
+TUI keeps `WAITING` through resume until the accepted answer event arrives. Interrupt cards display
+the owning session and run IDs, plus the plan ID when one exists.
 
 ## 23. Non-interactive output
 

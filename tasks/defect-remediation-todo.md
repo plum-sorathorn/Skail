@@ -8,13 +8,14 @@
   - Evidence: 32-call run limit is shared across lead/child middleware; exhaustion is emitted as `run.failed` with `run.model_call_limit_exhausted` before another provider call. `rtk pytest` focused regression suite: 43 passed; Ruff and Graphify update passed.
 - [x] Checkpoint: invalid decisions and read-only loops terminate with one accurate outcome.
 - [ ] 3. Reproduce and fix cross-run plan/checkpoint/question ownership.
-  - Reproduction proved that the old session thread carried a cancelled run's prompt into the next model request. Run-scoped threads, checkpoint thread metadata, pending-question guards, and TUI run/plan ownership state are implemented; focused recovery/UI tests pass. Visible owner labels are part of Task 6. Live S4 confirmation remains pending. Queue persistence across restart remains unproven.
+  - Reproduction proved that the old session thread carried a cancelled run's prompt into the next model request. Run-scoped threads, checkpoint thread metadata, pending-question guards, and TUI run/plan ownership state are implemented; focused recovery/UI tests pass. Interrupt cards now show owner suffixes. Live S4 confirmation remains pending. Queue persistence across restart remains unproven.
 - [x] 4. Unify queue behavior across cancel, Ctrl+C, slash quit, and resume.
   - Evidence: 51 TUI interaction/command tests pass. Real Textual pilots cover `/cancel`, `/quit`, Ctrl+C, app exit, FIFO after success, and queue non-restoration; a warning-as-error exit subset passes (4 tests). Queue clearing is visible.
 - [x] Checkpoint: pending questions and queued prompts cannot silently cross run boundaries.
 - [ ] 5. Separate clean user answers from structured verification and route evidence.
   - Offline implementation: shared TUI/print presenter, structured JSONL completion output, secret redaction, actionable empty/failed status copy, and a mounted Textual rendering pilot. Focused regression suite passes (110 tests); Ruff, mypy, and Graphify update pass. Keep unchecked pending a matching live S1 observation: the session export and checkpoint contain no final message, so the reported output's origin remains unknown.
 - [ ] 6. Render normal questions as waiting, with question-specific controls and no tool error.
+  - Offline implementation adds typed question events, keeps expected graph interrupts out of `tool.failed`, separates question answer/cancel from permission Approve/Reject, and shows session/run/plan owner suffixes. Focused offline regressions: 213 passed; the final owner-label/recovery subset: 16 passed. Ruff, mypy, and Graphify update pass. Live S6 confirmation remains pending.
 - [ ] 7. Audit earlier fixes with focused CLI and TUI checks.
 - [ ] 8. Clear the three full offline suite failures.
 - [ ] Checkpoint: Ruff, mypy, unit/contract, smoke, and full offline suite pass.

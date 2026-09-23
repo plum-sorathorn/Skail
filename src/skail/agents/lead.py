@@ -176,7 +176,7 @@ def build_production_lead(
     checkpointer: Any = None,
     approvals: Any = None,
     question_store: Any = None,
-    runtime_event: Callable[[str, str], None] | None = None,
+    runtime_event: Callable[..., None] | None = None,
     runtime_model_name: str | None = None,
     model_response_observer: Callable[[Any], None] | None = None,
     usage_normalizer: Callable[[Any], NormalizedUsage | None] | None = None,

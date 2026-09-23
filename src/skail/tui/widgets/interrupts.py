@@ -8,6 +8,7 @@ instruction preserved. Styling uses theme tokens only; no hardcoded hex.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from enum import StrEnum
 
 from textual import events
@@ -17,6 +18,7 @@ from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Button, Input, Static
 
+from skail.domain.events import InterruptKind
 from skail.tui.projection import InterruptItem
 
 
@@ -42,7 +44,7 @@ def is_typing_guard_active(typing: bool) -> bool:
 
 def should_render_buttons(item: InterruptItem) -> bool:
     """Buttons exist only while the interrupt is still pending."""
-    return not is_decision_terminal(item.status)
+    return item.status.strip().lower() == "pending"
 
 
 def dedupe_interrupts(items: list[InterruptItem]) -> list[InterruptItem]:
@@ -68,6 +70,8 @@ def approval_keyboard_action(
     name = key.strip().lower()
     if name == "escape":
         return ApprovalDecision.DISMISSED
+    if item.kind is not InterruptKind.APPROVAL:
+        return None
     if is_decision_terminal(item.status):
         return None
     if name == "enter":
@@ -127,6 +131,11 @@ class InterruptWidget(Widget):
         margin: 1 0;
         color: $text;
     }
+    .interrupt-owner {
+        color: $textMuted;
+        text-style: dim;
+        height: 1;
+    }
     .interrupt-actions {
         width: 100%;
         height: auto;
@@ -181,10 +190,21 @@ class InterruptWidget(Widget):
             super().__init__()
             self.approval_id = approval_id
 
+    class QuestionAnswered(Message):
+        def __init__(self, question_id: str, response: str) -> None:
+            super().__init__()
+            self.question_id = question_id
+            self.response = response
+
+    class QuestionCancelled(Message):
+        def __init__(self, question_id: str) -> None:
+            super().__init__()
+            self.question_id = question_id
+
     def __init__(self, interrupt: InterruptItem) -> None:
         super().__init__()
-        self.interrupt = interrupt
-        self._submitted = is_decision_terminal(interrupt.status)
+        self.interrupt = replace(interrupt)
+        self._submitted = not should_render_buttons(interrupt)
         self._focus_index = 0
         self._update_state_class()
 
@@ -216,8 +236,12 @@ class InterruptWidget(Widget):
 
     def _focusables(self) -> list[Widget]:
         items: list[Widget] = []
-        for selector in ("#btn-approve", "#btn-reject", "#btn-instruct",
-                         "#interrupt-input"):
+        selectors = (
+            ("#interrupt-input", "#btn-answer", "#btn-cancel-question")
+            if self.interrupt.kind is InterruptKind.QUESTION
+            else ("#btn-approve", "#btn-reject", "#btn-instruct", "#interrupt-input")
+        )
+        for selector in selectors:
             try:
                 items.append(self.query_one(selector))
             except Exception:
@@ -225,51 +249,117 @@ class InterruptWidget(Widget):
         return items
 
     def compose(self) -> ComposeResult:
-        title_text = f"APPROVAL REQUIRED [{self.interrupt.approval_id}]"
+        is_question = self.interrupt.kind is InterruptKind.QUESTION
+        title_text = (
+            "QUESTION · Your answer is needed"
+            if is_question
+            else f"APPROVAL REQUIRED [{self.interrupt.approval_id}]"
+        )
         with Vertical():
             with Horizontal(classes="interrupt-title-row"):
                 yield Static(title_text, classes="interrupt-title")
                 yield Static("esc keeps pending", classes="interrupt-esc")
+            owner = self._owner_text()
+            if owner:
+                yield Static(owner, id="interrupt-owner", classes="interrupt-owner")
             yield Static(self.interrupt.question, classes="interrupt-question")
+            options = self.interrupt.payload.get("options", ())
+            if is_question and options:
+                option_text = " · ".join(str(option) for option in options)
+                yield Static(f"Options: {option_text}")
             if should_render_buttons(self.interrupt) and not self._submitted:
+                placeholder = (
+                    "Type your answer..."
+                    if is_question
+                    else "Optional answer or comment..."
+                )
                 yield Input(
-                    placeholder="Optional answer or comment...",
+                    placeholder=placeholder,
                     id="interrupt-input",
                 )
                 with Horizontal(classes="interrupt-actions"):
-                    yield Button("Approve A", id="btn-approve")
-                    yield Button("Reject R", id="btn-reject")
-                    yield Button("Add instruction E", id="btn-instruct")
+                    if is_question:
+                        yield Button("Answer", id="btn-answer")
+                        yield Button("Cancel run", id="btn-cancel-question")
+                    else:
+                        yield Button("Approve A", id="btn-approve")
+                        yield Button("Reject R", id="btn-reject")
+                        yield Button("Add instruction E", id="btn-instruct")
             else:
-                status = self.interrupt.status.strip().upper() or "RESOLVED"
-                yield Static(f"{status} — awaiting confirmation",
-                             classes="interrupt-hint")
+                yield Static(self._status_hint(), classes="interrupt-hint")
+
+    def _owner_text(self) -> str:
+        parts = []
+        for label, key in (("Session", "session_id"), ("Run", "run_id"), ("Plan", "plan_id")):
+            value = self.interrupt.payload.get(key)
+            if isinstance(value, str) and value:
+                parts.append(f"{label} {value[-8:]}")
+        return " · ".join(parts)
+
+    def _status_hint(self) -> str:
+        status = self.interrupt.status.strip().lower()
+        if self.interrupt.kind is InterruptKind.QUESTION:
+            if status == "answering":
+                return "ANSWER SENT · Waiting for the run"
+            if status == "cancelling":
+                return "CANCELLATION REQUESTED · Waiting for confirmation"
+            return f"{status.upper()} · Waiting for confirmation"
+        return f"{status.upper() or 'RESOLVED'} — awaiting confirmation"
 
     def update_interrupt(self, item: InterruptItem) -> None:
         """Refresh from projection; pending stays visible until confirmed."""
         if item.approval_id != self.interrupt.approval_id:
             return
         previous_instruction = self._instruction_text()
-        self.interrupt = item
-        self._submitted = is_decision_terminal(item.status)
+        self.interrupt = replace(item)
+        self._submitted = not should_render_buttons(item)
         self._update_state_class()
         try:
             self.query_one(".interrupt-question", Static).update(item.question)
         except Exception:
             pass
-        if self._submitted and should_render_buttons(item) is False:
-            # Rebuild to terminal state: buttons gone, dimmed when rejected.
+        owner = self._owner_text()
+        try:
+            owner_widget = self.query_one("#interrupt-owner", Static)
+            if owner:
+                owner_widget.update(owner)
+            else:
+                owner_widget.remove()
+        except Exception:
+            if owner:
+                self.mount(Static(owner, id="interrupt-owner", classes="interrupt-owner"))
+        if self._submitted:
+            # Keep the card visible without controls until the owning run acknowledges it.
             try:
                 for child in list(self.query("Button, Input")):
                     child.remove()
             except Exception:
                 pass
+            try:
+                self.query_one(".interrupt-hint", Static).update(self._status_hint())
+            except Exception:
+                self.mount(Static(self._status_hint(), classes="interrupt-hint"))
         elif previous_instruction:
             try:
                 self.query_one("#interrupt-input", Input).value = previous_instruction
             except Exception:
                 pass
         self.refresh(layout=True)
+
+    def _submit_question_answer(self) -> None:
+        if self._submitted or self.interrupt.status != "pending":
+            return
+        response = self._instruction_text()
+        self._submitted = True
+        self.post_message(self.QuestionAnswered(self.interrupt.approval_id, response))
+        self.update_interrupt(replace(self.interrupt, status="answering"))
+
+    def _submit_question_cancel(self) -> None:
+        if self._submitted or self.interrupt.status != "pending":
+            return
+        self._submitted = True
+        self.post_message(self.QuestionCancelled(self.interrupt.approval_id))
+        self.update_interrupt(replace(self.interrupt, status="cancelling"))
 
     def _submit_approve(self) -> None:
         if self._submitted or is_decision_terminal(self.interrupt.status):
@@ -295,6 +385,12 @@ class InterruptWidget(Widget):
             pass
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        if self.interrupt.kind is InterruptKind.QUESTION:
+            if event.button.id == "btn-answer":
+                self._submit_question_answer()
+            elif event.button.id == "btn-cancel-question":
+                self._submit_question_cancel()
+            return
         if event.button.id == "btn-approve":
             self._submit_approve()
         elif event.button.id == "btn-reject":
@@ -337,6 +433,21 @@ class InterruptWidget(Widget):
             event.stop()
             return
         if key == "enter":
+            if self.interrupt.kind is InterruptKind.QUESTION:
+                try:
+                    focused = self.app.focused
+                    answer_button = self.query_one("#btn-answer", Button)
+                    cancel_button = self.query_one("#btn-cancel-question", Button)
+                    input_field = self.query_one("#interrupt-input", Input)
+                except Exception:
+                    return
+                if focused is input_field or focused is answer_button:
+                    self._submit_question_answer()
+                    event.stop()
+                elif focused is cancel_button:
+                    self._submit_question_cancel()
+                    event.stop()
+                return
             try:
                 focused = self.app.focused
             except Exception:
@@ -357,6 +468,8 @@ class InterruptWidget(Widget):
                 self._submit_approve()
                 event.stop()
             return
+        if self.interrupt.kind is InterruptKind.QUESTION:
+            return
         decision = approval_keyboard_action(key, self.interrupt, self._is_typing())
         if decision == ApprovalDecision.APPROVED:
             self._submit_approve()
@@ -372,7 +485,10 @@ class InterruptWidget(Widget):
             event.stop()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        self._submit_approve()
+        if self.interrupt.kind is InterruptKind.QUESTION:
+            self._submit_question_answer()
+        else:
+            self._submit_approve()
 
 
 __all__ = [

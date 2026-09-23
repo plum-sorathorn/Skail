@@ -704,6 +704,15 @@ async def test_controller_interrupt_checkpoint_preserves_live_attempt_on_recover
         delegation_approved=True,
     )
     assert result.status == "blocked"
+    events = journal.events_after(run_id=str(result.run_id))
+    assert not any(
+        event.type == "tool.failed" and getattr(event.payload, "tool", None) == "ask_user"
+        for event in events
+    )
+    question_event = next(event for event in events if event.type == "user.question")
+    assert question_event.payload.kind == "question"
+    assert question_event.payload.interrupt_id == result.pending_interrupt["question_id"]
+    assert question_event.payload.content == "Proceed?"
     recovered = recover_session(
         journal=journal,
         checkpoints=checkpoints,
@@ -738,3 +747,10 @@ async def test_controller_interrupt_checkpoint_preserves_live_attempt_on_recover
     assert resumed.status == "completed"
     assert resumed.output == "Recovered execution completed."
     assert questions.pending(f"{session_id}:{result.run_id}:lead") == ()
+    user_answer = next(
+        event
+        for event in journal.events_after(run_id=str(result.run_id))
+        if event.type == "user.answer"
+    )
+    assert user_answer.payload.kind == "question"
+    assert user_answer.payload.interrupt_id == result.pending_interrupt["question_id"]

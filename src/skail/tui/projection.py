@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
-from skail.domain.events import EventEnvelope
+from skail.domain.events import EventEnvelope, InterruptKind
 from skail.sessions.journal import SessionSnapshot
 
 BUDGET_UNAVAILABLE_COPY = "Budget details are unavailable for this provider."
@@ -120,6 +120,7 @@ class InterruptItem:
     question: str
     status: str = "pending"  # "pending", "approved", "rejected"
     payload: dict[str, Any] = field(default_factory=dict)
+    kind: InterruptKind = InterruptKind.APPROVAL
 
 
 @dataclass
@@ -683,6 +684,7 @@ class TuiProjection:
                     task_id=ap.task_id,
                     question=ap.question,
                     status="pending",
+                    kind=InterruptKind.APPROVAL,
                 )
                 self._add_transcript_item(
                     TranscriptItem(
@@ -882,17 +884,31 @@ class TuiProjection:
 
         elif ev_type == "user.question":
             content = getattr(event.payload, "content", "Pending user question")
+            interrupt_id = getattr(event.payload, "interrupt_id", None) or str(event.event_id)
+            options = getattr(event.payload, "options", ())
             self.pending_interrupt = InterruptItem(
-                approval_id=str(event.event_id),
+                approval_id=str(interrupt_id),
                 task_id=task_id_str,
                 question=content or "Question",
                 status="pending",
+                payload={
+                    "kind": InterruptKind.QUESTION.value,
+                    "question_id": str(interrupt_id),
+                    "prompt": content or "Question",
+                    "options": tuple(options),
+                    "reason": getattr(event.payload, "reason", None),
+                    "blocking_scope": getattr(event.payload, "blocking_scope", None),
+                    "session_id": str(event.session_id),
+                    "run_id": str(event.run_id),
+                    "plan_id": self.current_plan_id,
+                },
+                kind=InterruptKind.QUESTION,
             )
             self._add_transcript_item(
                 TranscriptItem(
                     id=str(event.event_id),
-                    role="approval",
-                    title="User Question",
+                    role="question",
+                    title="QUESTION · Your answer is needed",
                     content=content or "",
                     status="pending",
                     collapsed=False,
@@ -902,8 +918,13 @@ class TuiProjection:
             )
 
         elif ev_type == "user.answer":
-            if self.pending_interrupt:
-                self.pending_interrupt.status = "approved"
+            interrupt_id = getattr(event.payload, "interrupt_id", None)
+            if (
+                self.pending_interrupt is not None
+                and self.pending_interrupt.kind is InterruptKind.QUESTION
+                and (interrupt_id is None or self.pending_interrupt.approval_id == interrupt_id)
+            ):
+                self.pending_interrupt = None
             content = getattr(event.payload, "content", "Answered")
             self._add_transcript_item(
                 TranscriptItem(
@@ -916,6 +937,32 @@ class TuiProjection:
                     can_collapse=True,
                 )
             )
+
+        elif ev_type == "user.cancellation":
+            interrupt_id = getattr(event.payload, "interrupt_id", None)
+            is_question_cancellation = (
+                getattr(event.payload, "kind", None) is InterruptKind.QUESTION
+                or self.pending_interrupt is not None
+                and self.pending_interrupt.kind is InterruptKind.QUESTION
+            )
+            if is_question_cancellation and (
+                self.pending_interrupt is not None
+                and (interrupt_id is None or self.pending_interrupt.approval_id == interrupt_id)
+            ):
+                self.pending_interrupt = None
+            if is_question_cancellation:
+                self._add_transcript_item(
+                    TranscriptItem(
+                        id=str(event.event_id),
+                        role="system",
+                        title="Question Cancelled",
+                        content="The waiting run was cancelled.",
+                        status="cancelled",
+                        collapsed=False,
+                        can_collapse=False,
+                        task_id=task_id_str,
+                    )
+                )
 
         elif ev_type.startswith("plan."):
             suffix = ev_type.split(".", 1)[1]

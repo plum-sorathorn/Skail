@@ -14,6 +14,7 @@ from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from threading import get_ident
 from typing import Any, Literal
 
 from textual.app import App, ComposeResult
@@ -29,7 +30,7 @@ from skail.config.onboarding import (
     load_onboarding_receipt,
     save_onboarding_receipt,
 )
-from skail.domain.events import EventEnvelope, UserPayload
+from skail.domain.events import EventEnvelope, InterruptKind, UserPayload
 from skail.domain.ids import SessionId, new_event_id, new_run_id, new_session_id
 from skail.domain.routing import RoutingMode
 from skail.providers.credentials import (
@@ -482,7 +483,7 @@ class SkailApp(App[int]):
         self._overlay_stack: list[str] = []
         self._focus_before_overlay: Any = None
         if self.controller is not None:
-            self.controller.subscribe_events(self.apply_event)
+            self.controller.subscribe_events(self._receive_controller_event)
             self.app_state = "ready"
         elif self.runtime_factory is not None:
             if self.onboarding_receipt.completed and not bool(
@@ -770,7 +771,7 @@ class SkailApp(App[int]):
             workspace_mode=self.bootstrap.get("workspace_mode", "shared"),
         )
         self.controller = controller
-        controller.subscribe_events(self.apply_event)
+        controller.subscribe_events(self._receive_controller_event)
         if lead_model_name != "auto":
             self.projection.set_future_model(lead_model_name)
         resume_target = self.bootstrap.get("resume_session", None)
@@ -1328,11 +1329,23 @@ class SkailApp(App[int]):
 
         try:
             interrupt_container = self.query_one("#interrupt-container", Container)
+            widgets = list(interrupt_container.query(InterruptWidget))
             if self.projection.pending_interrupt:
-                if not interrupt_container.query("InterruptWidget"):
+                pending = self.projection.pending_interrupt
+                if (
+                    widgets
+                    and widgets[0].interrupt.approval_id == pending.approval_id
+                    and widgets[0].interrupt.kind is pending.kind
+                    and widgets[0].interrupt.status == pending.status
+                ):
+                    if widgets[0].interrupt != pending:
+                        widgets[0].update_interrupt(pending)
+                else:
+                    for widget in widgets:
+                        widget.remove()
                     interrupt_container.mount(InterruptWidget(self.projection.pending_interrupt))
             else:
-                for widget in interrupt_container.query("InterruptWidget"):
+                for widget in widgets:
                     widget.remove()
         except Exception:
             pass
@@ -1348,6 +1361,12 @@ class SkailApp(App[int]):
         self.projection.apply_event(event)
         if self._mounted:
             self.update_views()
+
+    def _receive_controller_event(self, event: EventEnvelope) -> None:
+        if self._loop is not None and self._thread_id != get_ident():
+            self.call_from_thread(self.apply_event, event)
+            return
+        self.apply_event(event)
 
     async def _execute_prompt(self, text: str) -> None:
         if self.controller is None:
@@ -1515,7 +1534,26 @@ class SkailApp(App[int]):
         if result.pending_interrupt:
             self._set_interrupt(result.pending_interrupt, run_id=str(result.run_id))
         else:
-            self.projection.pending_interrupt = None
+            pending = self.projection.pending_interrupt
+            preserve_question = False
+            if (
+                pending is not None
+                and pending.kind is InterruptKind.QUESTION
+                and self.question_store is not None
+            ):
+                try:
+                    preserve_question = any(
+                        question.question_id == pending.approval_id
+                        for question in self.question_store.pending(
+                            self._question_graph_id(pending.payload)
+                        )
+                    )
+                except Exception:
+                    preserve_question = True
+            if preserve_question and pending is not None:
+                pending.status = "pending"
+            else:
+                self.projection.pending_interrupt = None
         self._refresh_budget_from_journal()
         if result.output:
             answer = clean_lead_output(result.output)
@@ -1567,7 +1605,18 @@ class SkailApp(App[int]):
                     payload["plan_id"] = plans[-1].plan_id
             except Exception:
                 pass
-        approval_id = str(payload.get("question_id") or f"command:{run_id}")
+        raw_kind = payload.get("kind")
+        kind = (
+            InterruptKind.QUESTION
+            if raw_kind == InterruptKind.QUESTION.value
+            or (raw_kind is None and payload.get("question_id") is not None)
+            else InterruptKind.APPROVAL
+        )
+        approval_id = str(
+            payload.get("question_id")
+            or payload.get("approval_id")
+            or f"command:{run_id}"
+        )
         question = str(
             payload.get("prompt")
             or " ".join(
@@ -1579,6 +1628,7 @@ class SkailApp(App[int]):
             task_id=payload.get("task_id"),
             question=question,
             payload=payload,
+            kind=kind,
         )
 
     def _question_graph_id(self, payload: dict[str, Any]) -> str:
@@ -1767,33 +1817,36 @@ class SkailApp(App[int]):
         if event.input.id == "onboarding-key":
             self.onboarding_credentials.set_key(event.value)
 
+    def _command_request_for_interrupt(self, payload: dict[str, Any]) -> CommandRequest:
+        return CommandRequest(
+            str(payload["command"]),
+            tuple(str(value) for value in payload.get("arguments", ())),
+            Path(
+                str(
+                    payload.get(
+                        "cwd",
+                        self.controller.workspace
+                        if self.controller is not None
+                        else Path.cwd(),
+                    )
+                )
+            ),
+            session_id=str(payload.get("session_id", "")),
+            run_id=str(payload.get("run_id", "")),
+            task_id=str(payload.get("task_id", "")),
+            action_id=str(payload.get("action_id", "")),
+        )
+
     def on_interrupt_widget_approved(self, event: InterruptWidget.Approved) -> None:
         pending = self.projection.pending_interrupt
         if (
             pending is not None
-            and pending.payload.get("type") == "command_approval"
+            and pending.kind is InterruptKind.APPROVAL
+            and pending.payload.get("type")
+            in {"command_approval", "plan_tool_approval"}
             and self.approval_store is not None
         ):
-            request = CommandRequest(
-                str(pending.payload["command"]),
-                tuple(str(value) for value in pending.payload.get("arguments", ())),
-                Path(
-                    str(
-                        pending.payload.get(
-                            "cwd",
-                            (
-                                self.controller.workspace
-                                if self.controller is not None
-                                else Path.cwd()
-                            ),
-                        )
-                    )
-                ),
-                session_id=str(pending.payload.get("session_id", "")),
-                run_id=str(pending.payload.get("run_id", "")),
-                task_id=str(pending.payload.get("task_id", "")),
-                action_id=str(pending.payload.get("action_id", "")),
-            )
+            request = self._command_request_for_interrupt(pending.payload)
             self.approval_store.decide(request, ApprovalChoice.ALLOW_ONCE)
         if self.controller is not None:
             self.projection.pending_interrupt = None
@@ -1803,44 +1856,27 @@ class SkailApp(App[int]):
             )
             self.update_views()
             return
-        if self.question_store is not None:
-            try:
-                  self.question_store.answer(
-                      event.approval_id,
-                      event.response,
-                      graph_id=self._question_graph_id(pending.payload)
-                      if pending is not None
-                      else "lead",
-                  )
-            except Exception:
-                pass
-        sid = self.session_id or new_session_id()
-        answer_ev = EventEnvelope(
-            event_id=new_event_id(),
-            session_id=sid,
-            run_id=new_run_id(),
-            sequence=len(self.projection.transcript_items) + 1,
-            type="user.answer",
-            payload=UserPayload(action="answer", content=event.response),
-        )
-        self.projection.pending_interrupt = None
-        self.apply_event(answer_ev)
+        if pending is not None and pending.kind is InterruptKind.APPROVAL:
+            if self.approval_store is not None:
+                self.projection.pending_interrupt = None
+                self._append_system_message(
+                    "Approval Granted", "The permission decision was recorded."
+                )
+                self.update_views()
 
     def on_interrupt_widget_rejected(self, event: InterruptWidget.Rejected) -> None:
+        pending = self.projection.pending_interrupt
+        if pending is not None and pending.kind is InterruptKind.QUESTION:
+            return
+        if (
+            pending is not None
+            and pending.payload.get("type")
+            in {"command_approval", "plan_tool_approval"}
+            and self.approval_store is not None
+        ):
+            request = self._command_request_for_interrupt(pending.payload)
+            self.approval_store.decide(request, ApprovalChoice.REJECT)
         if self.controller is not None:
-            pending = self.projection.pending_interrupt
-            if (
-                pending is not None
-                and pending.payload.get("question_id")
-                and self.question_store is not None
-            ):
-                try:
-                    self.question_store.cancel(
-                        str(pending.payload["question_id"]),
-                        graph_id=self._question_graph_id(pending.payload),
-                    )
-                except Exception:
-                    pass
             self.controller.reject_interrupted()
         self._clear_queued_prompts("The waiting run was cancelled:")
         self.projection.pending_interrupt = None
@@ -1852,6 +1888,109 @@ class SkailApp(App[int]):
                 content="User rejected approval request.",
             )
         )
+        self.update_views()
+
+    def on_interrupt_widget_question_answered(
+        self, event: InterruptWidget.QuestionAnswered
+    ) -> None:
+        pending = self.projection.pending_interrupt
+        if (
+            pending is None
+            or pending.kind is not InterruptKind.QUESTION
+            or pending.approval_id != event.question_id
+        ):
+            return
+        options = pending.payload.get("options", ())
+        if options and event.response not in options:
+            self._append_system_message(
+                "Answer not accepted", "Choose one of the available options and try again."
+            )
+            self.update_views()
+            return
+        pending.status = "answering"
+        self.update_views()
+        if self.controller is not None:
+            self._run_active = True
+            self._active_worker = self.run_worker(
+                self._resume_prompt(event.response), exclusive=True
+            )
+            self.update_views()
+            return
+        if self.question_store is not None:
+            try:
+                self.question_store.answer(
+                    event.question_id,
+                    event.response,
+                    graph_id=self._question_graph_id(pending.payload),
+                )
+            except Exception:
+                pending.status = "pending"
+                self._append_system_message(
+                    "Answer not accepted", "Check the available choices and answer again."
+                )
+                self.update_views()
+                return
+        sid = self.session_id or new_session_id()
+        self.apply_event(
+            EventEnvelope(
+                event_id=new_event_id(),
+                session_id=sid,
+                run_id=new_run_id(),
+                sequence=len(self.projection.transcript_items) + 1,
+                type="user.answer",
+                payload=UserPayload(
+                    action="answer",
+                    content=event.response,
+                    kind=InterruptKind.QUESTION,
+                    interrupt_id=event.question_id,
+                ),
+            )
+        )
+
+    def on_interrupt_widget_question_cancelled(
+        self, event: InterruptWidget.QuestionCancelled
+    ) -> None:
+        pending = self.projection.pending_interrupt
+        if (
+            pending is None
+            or pending.kind is not InterruptKind.QUESTION
+            or pending.approval_id != event.question_id
+        ):
+            return
+        if self.question_store is not None:
+            try:
+                self.question_store.cancel(
+                    event.question_id,
+                    graph_id=self._question_graph_id(pending.payload),
+                )
+            except Exception:
+                self._append_system_message(
+                    "Question still pending", "The waiting question could not be cancelled."
+                )
+                self.update_views()
+                return
+        pending.status = "cancelling"
+        self.update_views()
+        if self.controller is not None:
+            self.controller.reject_interrupted()
+        else:
+            sid = self.session_id or new_session_id()
+            self.apply_event(
+                EventEnvelope(
+                    event_id=new_event_id(),
+                    session_id=sid,
+                    run_id=new_run_id(),
+                    sequence=len(self.projection.transcript_items) + 1,
+                    type="user.cancellation",
+                    payload=UserPayload(
+                        action="cancellation",
+                        content="The waiting run was cancelled.",
+                        kind=InterruptKind.QUESTION,
+                        interrupt_id=event.question_id,
+                    ),
+                )
+            )
+        self._clear_queued_prompts("The waiting run was cancelled:")
         self.update_views()
 
     def on_plan_view_plan_accepted(self, event: PlanView.PlanAccepted) -> None:

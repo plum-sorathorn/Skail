@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
@@ -20,6 +21,13 @@ from skail.domain.ids import (
 
 REDACTED = "[REDACTED]"
 _SENSITIVE_KEYS = frozenset({"api_key", "apikey", "authorization", "password", "secret", "token"})
+
+
+class InterruptKind(StrEnum):
+    QUESTION = "question"
+    APPROVAL = "approval"
+
+
 ALLOWED_EVENT_TYPES = frozenset(
     {
         "session.created",
@@ -212,6 +220,11 @@ class UserPayload(PayloadBase):
     family: Literal["user"] = "user"
     action: str
     content: str | None = None
+    kind: InterruptKind | None = None
+    interrupt_id: str | None = None
+    options: tuple[str, ...] = ()
+    reason: str | None = None
+    blocking_scope: str | None = None
 
 
 class DiagnosticPayload(PayloadBase):

@@ -700,6 +700,12 @@ Required event families:
 - plan node ready/started/terminal and decision checkpoint;
 - workspace snapshot, change-set validation, and integration outcome.
 
+User question events carry `kind=question`, a stable interrupt ID, the prompt, and its optional
+choices and blocking metadata. `user.answer` is emitted only after the durable question store accepts
+the answer; `user.cancellation` carries the interrupt kind and ID. Permission approval interrupts use
+`kind=approval` in their pending runtime payload. A framework graph interrupt is control flow and
+must not be projected as `tool.failed`; actual tool exceptions remain failures.
+
 ### 14.2 Projections
 
 The TUI, JSONL mode, local journal, and tests consume the same events. The TUI may retain local display state but must be reconstructible from a session snapshot plus subsequent events. Agent status must not be inferred from text messages.

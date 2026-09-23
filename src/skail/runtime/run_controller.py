@@ -41,6 +41,7 @@ from skail.domain.events import (
     DiagnosticPayload,
     EventEnvelope,
     EventPayload,
+    InterruptKind,
     LifecyclePayload,
     ModelPayload,
     SecretRedactor,
@@ -1612,6 +1613,7 @@ class RunController:
             )
             if result.status == "approval_required":
                 self._pending_interrupt_payload = {
+                    "kind": "approval",
                     "type": "plan_tool_approval",
                     "plan_id": next(
                         persisted.plan_id
@@ -1997,6 +1999,22 @@ class RunController:
                     ),
                     usage_authority=usage.authority.value if usage is not None else None,
                 )
+            elif event_type.startswith("user."):
+                content = (
+                    self.redaction.scrub_text(reason)[:500]
+                    if isinstance(reason, str)
+                    else None
+                )
+                payload = UserPayload(
+                    action=suffix,
+                    kind=(
+                        InterruptKind.QUESTION
+                        if suffix in {"question", "answer"}
+                        else None
+                    ),
+                    interrupt_id=subject,
+                    content=content,
+                )
             else:
                 clean_reason: str | None = None
                 if isinstance(reason, str) and reason:
@@ -2366,6 +2384,31 @@ class RunController:
                 tx.update_task_status(task_id=str(lead_task_id), status=TaskStatus.RUNNING)
                 tx.update_run_status(run_id=str(run_id), status="blocked")
                 tx.update_session_status(session_id=str(self.session_id), status="interrupted")
+                if pending_interrupt is not None and pending_interrupt.get("kind") == "question":
+                    raw_options = pending_interrupt.get("options", ())
+                    options = (
+                        tuple(option for option in raw_options if isinstance(option, str))
+                        if isinstance(raw_options, (list, tuple))
+                        else ()
+                    )
+                    self._append_event(
+                        tx,
+                        run_id=run_id,
+                        type="user.question",
+                        payload=UserPayload(
+                            action="question",
+                            kind=InterruptKind.QUESTION,
+                            interrupt_id=str(pending_interrupt.get("question_id", "")),
+                            content=str(pending_interrupt.get("prompt", "Question")),
+                            options=options,
+                            reason=str(pending_interrupt.get("reason", "")),
+                            blocking_scope=str(
+                                pending_interrupt.get("blocking_scope", "task")
+                            ),
+                        ),
+                        task_id=lead_task_id,
+                        attempt_id=lead_attempt_id,
+                    )
                 self._reconcile_unlaunched_admissions()
             await _save_checkpoint(
                 "interrupted",
@@ -2884,12 +2927,6 @@ class RunController:
                 or self._checkpoint_thread_id(pending.run_id)
             }
         }
-        if self._resume_lead_on_recovery:
-            self._emit_event(
-                run_id=pending.run_id,
-                type="user.answer",
-                payload=UserPayload(action="answer", content=answer),
-            )
         async with self.checkpoints.saver(str(self.session_id)) as saver:
             await saver.setup()
             restored = self._restored_decision
@@ -3110,6 +3147,7 @@ class RunController:
         pending = self._pending_run
         if pending is None:
             raise RuntimeError("no interrupted run is available to reject")
+        interrupt = self._pending_interrupt_payload or {}
         with self.journal.transaction() as tx:
             tx.update_attempt_status(
                 attempt_id=str(pending.lead_attempt_id), status=AttemptStatus.BLOCKED
@@ -3126,7 +3164,24 @@ class RunController:
         self._emit_event(
             run_id=pending.run_id,
             type="user.cancellation",
-            payload=UserPayload(action="cancellation", content="interrupt rejected"),
+            payload=UserPayload(
+                action="cancellation",
+                kind=(
+                    InterruptKind.QUESTION
+                    if interrupt.get("kind") == "question"
+                    else InterruptKind.APPROVAL
+                ),
+                interrupt_id=(
+                    str(interrupt["question_id"])
+                    if interrupt.get("question_id") is not None
+                    else None
+                ),
+                content=(
+                    "question cancelled"
+                    if interrupt.get("kind") == "question"
+                    else "approval rejected"
+                ),
+            ),
         )
         self._pending_run = None
         self._pending_interrupt_payload = None

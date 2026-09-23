@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from skail.domain.events import InterruptKind
 from skail.tui.projection import InterruptItem
 from skail.tui.widgets.interrupts import (
     ApprovalDecision,
@@ -60,6 +61,19 @@ def test_terminal_states_hide_buttons() -> None:
     assert should_render_buttons(_pending()) is True
     assert should_render_buttons(approved) is False
     assert should_render_buttons(rejected) is False
+
+
+def test_questions_never_use_approval_keyboard_actions() -> None:
+    question = InterruptItem(
+        approval_id="question-1",
+        task_id=None,
+        question="Which option?",
+        kind=InterruptKind.QUESTION,
+    )
+
+    assert should_render_buttons(question) is True
+    assert approval_keyboard_action("a", question) is None
+    assert approval_keyboard_action("r", question) is None
 
 
 def test_dedupe_same_approval_id_single_widget() -> None:

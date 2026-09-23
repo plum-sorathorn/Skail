@@ -12,6 +12,7 @@ from skail.domain.events import (
     CheckpointPayload,
     DiagnosticPayload,
     EventEnvelope,
+    InterruptKind,
     LifecyclePayload,
     ModelPayload,
     PlanPayload,
@@ -70,7 +71,16 @@ def _envelope_data(payload: object, *, event_type: str) -> dict[str, object]:
             "checkpoint.created",
             CheckpointPayload(action="created", checkpoint_id="checkpoint-1"),
         ),
-        ("user.question", UserPayload(action="question", content="Proceed?")),
+        (
+            "user.question",
+            UserPayload(
+                action="question",
+                kind=InterruptKind.QUESTION,
+                interrupt_id="question-1",
+                content="Proceed?",
+                options=("yes", "no"),
+            ),
+        ),
         (
             "invariant.failed",
             DiagnosticPayload(code="runtime.invariant", summary="Invariant failed"),

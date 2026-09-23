@@ -14,7 +14,8 @@ from fakes.provider import (
 from fakes.provider import (
     FakeProviderChatModel as DeterministicFakeChatModel,
 )
-from textual.widgets import Button, Static, TabbedContent
+from textual.containers import Container
+from textual.widgets import Button, Input, Static, TabbedContent
 
 from skail.cli.main import RuntimeModelSet
 from skail.runtime.redaction import RedactionRegistry
@@ -26,7 +27,9 @@ from skail.tui.commands import command_requires_args
 from skail.tui.overlays.model_picker import ModelPickerOverlay
 from skail.tui.overlays.theme_picker import ThemePickerOverlay
 from skail.tui.projection import TuiProjection
+from skail.tui.widgets.chat import ActivitySpinner
 from skail.tui.widgets.composer import ComposerTextArea
+from skail.tui.widgets.interrupts import InterruptWidget
 
 
 class _MemoryCredentialStore:
@@ -124,6 +127,111 @@ async def test_new_prompt_is_rejected_while_an_interrupt_is_pending() -> None:
         assert area.text == "Start a different task"
         assert app.projection.pending_interrupt is pending
         assert any(item.title == "Interrupt pending" for item in app.projection.transcript_items)
+
+
+@pytest.mark.asyncio
+async def test_question_interrupt_pilot_has_answer_and_cancel_actions() -> None:
+    app = SkailApp()
+    app._set_interrupt(
+        {
+            "kind": "question",
+            "question_id": "question-1",
+            "prompt": "Which output format?",
+            "options": ["JSON", "Markdown"],
+            "session_id": "session-12345678",
+            "plan_id": "plan-87654321",
+        },
+        run_id="run-1",
+    )
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        card = app.query_one("#interrupt-container", Container).query_one(InterruptWidget)
+        title = str(card.query_one(".interrupt-title", Static).renderable)
+        assert "QUESTION" in title
+        assert "Which output format?" in str(
+            card.query_one(".interrupt-question", Static).renderable
+        )
+        assert "Session 12345678 · Run run-1 · Plan 87654321" in str(
+            card.query_one("#interrupt-owner", Static).renderable
+        )
+        assert str(card.query_one("#btn-answer", Button).label) == "Answer"
+        assert str(card.query_one("#btn-cancel-question", Button).label) == "Cancel run"
+        assert not card.query("#btn-approve, #btn-reject")
+        app._run_active = True
+        app.update_views()
+        spinner = app.query_one("#activity-spinner", ActivitySpinner)
+        assert spinner.spinner_label == "WAITING"
+
+        answer = card.query_one("#interrupt-input", Input)
+        answer.value = "JSON"
+        await pilot.click("#btn-answer")
+        await pilot.pause()
+
+        assert card.interrupt.status == "answering"
+        assert app.projection.transcript_items[-1].title == "User Response"
+        assert app.projection.transcript_items[-1].content == "JSON"
+        assert app.projection.pending_interrupt is None
+        assert spinner.spinner_label == "RUNNING"
+
+
+@pytest.mark.asyncio
+async def test_invalid_question_answer_keeps_wait_pending() -> None:
+    app = SkailApp()
+    app._set_interrupt(
+        {
+            "kind": "question",
+            "question_id": "question-options",
+            "prompt": "Choose a format.",
+            "options": ["JSON", "Markdown"],
+        },
+        run_id="run-options",
+    )
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        app.query_one("#interrupt-input", Input).value = "CSV"
+        await pilot.click("#btn-answer")
+        await pilot.pause()
+
+        assert app.projection.pending_interrupt is not None
+        assert app.projection.transcript_items[-1].title == "Answer not accepted"
+
+
+@pytest.mark.asyncio
+async def test_question_cancel_pilot_shows_run_cancellation_copy() -> None:
+    app = SkailApp()
+    app._set_interrupt(
+        {"kind": "question", "question_id": "question-cancel", "prompt": "Proceed?"},
+        run_id="run-cancel",
+    )
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await pilot.click("#btn-cancel-question")
+        await pilot.pause()
+
+        assert app.projection.pending_interrupt is None
+        assert app.projection.transcript_items[-1].title == "Question Cancelled"
+        assert app.projection.transcript_items[-1].content == "The waiting run was cancelled."
+
+
+@pytest.mark.asyncio
+async def test_permission_interrupt_pilot_keeps_approve_reject_actions() -> None:
+    app = SkailApp()
+    app._set_interrupt(
+        {"kind": "approval", "type": "command_approval", "command": "git push"},
+        run_id="run-approval",
+    )
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        card = app.query_one("#interrupt-container", Container).query_one(InterruptWidget)
+        title = str(card.query_one(".interrupt-title", Static).renderable)
+        assert "APPROVAL REQUIRED" in title
+        assert str(card.query_one("#btn-approve", Button).label) == "Approve A"
+        assert str(card.query_one("#btn-reject", Button).label) == "Reject R"
+        assert not card.query("#btn-answer, #btn-cancel-question")
 
 
 def test_interrupt_projection_keeps_run_and_plan_ownership() -> None:

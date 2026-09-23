@@ -29,9 +29,9 @@ corrections govern the work:
 | LIVE-004 / OUT-003 coroutine warning | Queue shutdown is unified across slash cancel/quit, Ctrl+C, and app exit; real Textual tests pass; live confirmation pending | Route every quit path through one queue shutdown sequence |
 | LIVE-005 long tool and repair loops | Run-wide call cap and repeated decision/tool failure bounds implemented; live confirmation pending | Add a run-scoped call/turn boundary and visible terminal outcome |
 | LIVE-006 later run cites earlier plan | Offline reproduction confirmed shared checkpoint context leakage; run-scoped fix is covered, live confirmation pending | Trace checkpoint thread, plan ownership, and pending question across runs |
-| LIVE-007 / OUT-004 question shown as tool failure | Open; `ask_user` interrupt becomes `tool.failed` | Classify normal interrupt as waiting, preserve real failures |
+| LIVE-007 / OUT-004 question shown as tool failure | Offline fix suppresses expected graph-interrupt failures and emits a typed question event; real `ask_user` errors still fail; live S6 confirmation pending | Confirm question wait and resume with provider-side billing evidence |
 | OUT-002 internal criteria in final answer | Offline presentation path fixed; the exact S1 model response is absent from its export/checkpoint, so origin and live status remain unverified | Preserve structured evidence while presenting a clean answer; confirm with a matching live observation |
-| OUT-005 question labeled approval | Open; `InterruptWidget` uses approval title/buttons for all interrupts | Render question and permission approval by type |
+| OUT-005 question labeled approval | Offline UI separates question answer/cancel controls from permission approval controls and displays owner suffixes; live confirmation pending | Confirm question and approval cards in the live TUI |
 
 Task 0 evidence review is complete for the exported sessions: all ten `session-*.json` files were
 checked, including S5 plan admission in run `46335ece-a442-4a0b-bb14-19f220c73846` and the later
@@ -53,7 +53,8 @@ instruction on the same session previously reused the session checkpoint thread 
 old prompt in the new model input. Checkpoints now record run-scoped thread IDs; resumed runs retain
 their owning thread, while new runs start fresh. A pending question blocks direct run creation, and
 the TUI rejects new composer prompts until resolution. This reproduction did not restart the
-process, so it provides no evidence that the in-memory queue survives restart.
+process, so it provides no evidence that the in-memory queue survives restart. Task 6 adds run and
+plan owner suffixes to pending interrupt cards.
 
 Task 4 implementation is complete offline. Successful foreground runs retain FIFO dispatch; whole-run
 cancel and shutdown clear queued prompts with visible copy. Slash commands bypass the prompt queue,
@@ -226,6 +227,13 @@ Acceptance:
 - S6 resumes one question and one attempt, without replaying the completed provider call.
 
 Verification: runtime event contract test, Textual pilot, and recovery integration test.
+
+Offline implementation carries `InterruptKind` and stable IDs in question events, suppresses
+`GraphInterrupt` from tool-failure telemetry while preserving actual tool exceptions, and emits the
+answer event only after `QuestionStore` accepts the response. The TUI renders separate question and
+permission cards, validates listed choices, keeps `WAITING` until the accepted answer/cancellation,
+and shows session/run/plan owner suffixes. Recovery and Textual pilot coverage passes. Live S6 and
+matching S4 confirmation remain pending.
 
 ### 7. Verify earlier fixes
 

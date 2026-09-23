@@ -13,6 +13,7 @@ from skail.domain.events import (
     BudgetPayload,
     DiagnosticPayload,
     EventEnvelope,
+    InterruptKind,
     PlanPayload,
     TaskPayload,
     ToolPayload,
@@ -238,6 +239,12 @@ def test_collapsible_and_uncollapsible_invariants() -> None:
     )
     proj.apply_event(question_ev)
     q_item = proj.transcript_items[-1]
+    assert proj.pending_interrupt is not None
+    assert proj.pending_interrupt.kind is InterruptKind.QUESTION
+    assert proj.pending_interrupt.payload["session_id"] == str(sid)
+    assert proj.pending_interrupt.payload["run_id"] == str(rid)
+    assert q_item.role == "question"
+    assert q_item.title == "QUESTION · Your answer is needed"
     assert q_item.can_collapse is False
     assert q_item.collapsed is False
     assert proj.toggle_collapse(q_item.id) is False

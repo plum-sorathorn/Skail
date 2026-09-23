@@ -52,6 +52,9 @@ Non-interactive single-response mode:
 Machine-readable event streaming mode:
 - **stdout**: Emits valid UTF-8 JSON lines, each encoding an `EventEnvelope` (schema version 1).
 - **terminal event**: The final emitted JSON line is guaranteed to be a terminal lifecycle event: `run.completed`, `run.failed`, `run.blocked`, or `run.cancelled`.
+- **interrupts**: `user.question`, `user.answer`, and `user.cancellation` carry a typed interrupt
+  kind and stable ID. Question events use `kind=question`; expected graph waits are not failed tool
+  calls.
 - **completed output**: `run.completed.payload.output` preserves the redacted final model response. Valid JSON is emitted as structured JSON data; plain-text output remains a string.
 - **invocation identity**: Every event emitted for one CLI invocation carries the same `invocation_id`, which is distinct from the resumable `run_id`.
 - Exactly one terminal lifecycle event is emitted for an invocation that creates or resumes a persisted run. Failures before run persistence return the documented exit code without fabricating a terminal event.
