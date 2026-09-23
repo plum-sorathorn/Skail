@@ -1,5 +1,8 @@
 # Defect Remediation Plan: Live Agentic Validation
 
+The operator prompts, scenario acceptance checks, spend gates, and evidence procedure for the
+remaining interactive run are in `tasks/live-agentic-test-plan.md`.
+
 ## Goal and scope
 
 Close every issue in `out/live-agentic/BUGS.md` and `OUTPUT_MISFORMATS.md`, including defects
