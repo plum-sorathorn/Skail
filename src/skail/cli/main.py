@@ -42,6 +42,7 @@ from skail.domain.routing import RoutingMode
 from skail.domain.security import ProjectTrustLevel, identify_workspace
 from skail.domain.sessions import SessionRecord
 from skail.runtime.interrupts import QuestionStore
+from skail.runtime.presentation import present_lead_answer
 from skail.runtime.redaction import RedactionRegistry
 from skail.sessions.service import SessionService
 from skail.tools.approvals import ApprovalStore
@@ -1105,9 +1106,9 @@ async def _execute_instruction(
     # Output rendering for completed status
     if args.print_mode:
         render_print_stderr(f"[INFO] Run {result.run_id} completed successfully.")
-        render_print_stdout(result.output)
+        render_print_stdout(present_lead_answer(result.output))
     elif not args.json_mode:
-        render_print_stdout(result.output)
+        render_print_stdout(present_lead_answer(result.output))
 
     return EXIT_OK
 

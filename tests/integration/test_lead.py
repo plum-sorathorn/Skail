@@ -12,6 +12,7 @@ from fakes.provider import FakeProviderAdapter
 from langchain_core.messages import AIMessage
 
 from skail.agents.lead import LeadControls
+from skail.domain.events import SecretRedactor
 from skail.domain.ids import new_session_id
 from skail.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
 from skail.routing.assignment import (
@@ -587,7 +588,19 @@ async def test_lead_completion_persists_terminal_lifecycle_and_context_packet(
         session_id=session_id,
         workspace=tmp_path,
         journal=journal,
-        models={"lead-model": ScriptedChatModel(responses=[AIMessage(content="Done.")])},
+        models={
+            "lead-model": ScriptedChatModel(
+                responses=[
+                    AIMessage(
+                        content=(
+                            '{"answer":"Done.","verification":[{"criterion":'
+                            '"The request is complete","passed":true,'
+                            '"evidence":"No edits were needed."}]}'
+                        )
+                    )
+                ]
+            )
+        },
     )
 
     result = await controller.run_instruction("Finish work")
@@ -599,6 +612,44 @@ async def test_lead_completion_persists_terminal_lifecycle_and_context_packet(
     assert snapshot.attempts[0].status == "succeeded"
     assert snapshot.context_packets[0].run_id == str(result.run_id)
     assert snapshot.context_packets[0].payload["objective"] == "Finish work"
+    completed = next(event for event in snapshot.events if event.type == "run.completed")
+    assert completed.payload.output == {
+        "answer": "Done.",
+        "verification": [
+            {
+                "criterion": "The request is complete",
+                "passed": True,
+                "evidence": "No edits were needed.",
+            }
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_completed_output_redacts_registered_secrets_before_return(tmp_path: Path) -> None:
+    secret = "sk-test-secret-value"
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Redacted output", created_at=datetime.now(UTC)
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": ScriptedChatModel(responses=[AIMessage(content=f"Echo {secret}")])},
+        redactor=SecretRedactor((secret,)),
+    )
+
+    result = await controller.run_instruction("Reply directly")
+
+    assert result.output == "Echo [REDACTED]"
+    completed = next(
+        event
+        for event in journal.get_session_snapshot(str(session_id)).events
+        if event.type == "run.completed"
+    )
+    assert completed.payload.output == "Echo [REDACTED]"
 
 
 @pytest.mark.asyncio

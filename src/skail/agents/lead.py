@@ -37,7 +37,11 @@ subagent_type). The description may be plain text or one JSON object with: descr
 success_criteria, depends_on (persisted task IDs), priority, write_scope, model_policy,
 budget_usd, and background. subagent_type and profile are aliases; description may
 itself be a JSON-encoded object string. Preserve the user's criteria, dependencies,
-scope, model constraints, and budget. Never invent dependency IDs. Operational tools
+scope, model constraints, and budget. Never invent dependency IDs. Give the user a concise answer
+with relevant file/function citations; do not paste criteria, verification objects, route data, or
+Python representations into prose. If returning JSON, put user-facing text in an `answer` or
+`summary` field and keep verification in separate structured fields. Preserve technical detail the
+user explicitly requests. Operational tools
 take exact args: grep(pattern, path='.', glob=None) e.g. {"pattern": "SKAIL_LIVE_OK",
 "path": ".", "glob": "*.py"}; read(file_path, offset=0, limit=2000) e.g.
 {"file_path": "src/skail/agents/lead.py"}; ls(path='.') e.g. {"path": "."};
@@ -120,17 +124,20 @@ def resolve_lead_controls(
                 "with the current delegation policy or three-child limit"
             )
 
-    updates: dict[str, object] = {}
-    if direct_only:
-        updates.update(delegation="off", direct_only=True)
-    if no_write:
-        updates["write_allowed"] = False
-    if required_agent_count is not None:
-        updates.update(
-            required_agent_count=required_agent_count,
-            max_children=required_agent_count,
-        )
-    return replace(resolved, **updates)
+    return replace(
+        resolved,
+        delegation="off" if direct_only else resolved.delegation,
+        write_allowed=False if no_write else resolved.write_allowed,
+        required_agent_count=(
+            required_agent_count
+            if required_agent_count is not None
+            else resolved.required_agent_count
+        ),
+        max_children=(
+            required_agent_count if required_agent_count is not None else resolved.max_children
+        ),
+        direct_only=direct_only or resolved.direct_only,
+    )
 
 
 #: Operational tools the lead must not call directly in worktree mode. The

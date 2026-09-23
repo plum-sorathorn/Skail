@@ -44,6 +44,7 @@ Skail uses standardized, deterministic process exit codes:
 
 Non-interactive single-response mode:
 - **stdout**: Contains strictly the final lead agent response text. No progress indicators, banners, or diagnostic logging.
+- Registered secret values are redacted from the returned lead output before it is rendered.
 - **stderr**: Contains progress logs, warnings, approvals, and error details.
 
 ### 3.2 JSONL Mode (`--jsonl`, with `--json` alias)
@@ -51,6 +52,7 @@ Non-interactive single-response mode:
 Machine-readable event streaming mode:
 - **stdout**: Emits valid UTF-8 JSON lines, each encoding an `EventEnvelope` (schema version 1).
 - **terminal event**: The final emitted JSON line is guaranteed to be a terminal lifecycle event: `run.completed`, `run.failed`, `run.blocked`, or `run.cancelled`.
+- **completed output**: `run.completed.payload.output` preserves the redacted final model response. Valid JSON is emitted as structured JSON data; plain-text output remains a string.
 - **invocation identity**: Every event emitted for one CLI invocation carries the same `invocation_id`, which is distinct from the resumable `run_id`.
 - Exactly one terminal lifecycle event is emitted for an invocation that creates or resumes a persisted run. Failures before run persistence return the documented exit code without fabricating a terminal event.
 - **stderr**: Reserved for fatal process-level panics or critical runtime errors.

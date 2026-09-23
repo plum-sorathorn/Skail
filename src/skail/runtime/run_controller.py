@@ -109,6 +109,7 @@ from skail.runtime.failure_monitor import RunModelCallBudget
 from skail.runtime.interrupts import QuestionStore
 from skail.runtime.leases import WorkspaceLeaseManager
 from skail.runtime.model_middleware import TaskBoundModelMiddleware
+from skail.runtime.presentation import model_content_to_text, structured_output_for_jsonl
 from skail.runtime.redaction import RedactionRegistry
 from skail.runtime.scheduler import ChildScheduler
 from skail.runtime.task_registry import TaskRegistry
@@ -2335,11 +2336,11 @@ class RunController:
         messages = cast(list[BaseMessage], result_state.get("messages", []))
 
         output_text = ""
+        output_content: Any = None
         for message in reversed(messages):
             if isinstance(message, AIMessage) and message.content:
-                output_text = (
-                    message.content if isinstance(message.content, str) else str(message.content)
-                )
+                output_content = self.redactor.scrub(message.content)
+                output_text = model_content_to_text(output_content)
                 break
 
         is_interrupted = bool(result_state.get("__interrupt__"))
@@ -2456,13 +2457,11 @@ class RunController:
         if checkpoint_state is not None:
             messages = cast(list[BaseMessage], checkpoint_state.get("messages", []))
             output_text = ""
+            output_content = None
             for message in reversed(messages):
                 if isinstance(message, AIMessage) and message.content:
-                    output_text = (
-                        message.content
-                        if isinstance(message.content, str)
-                        else str(message.content)
-                    )
+                    output_content = self.redactor.scrub(message.content)
+                    output_text = model_content_to_text(output_content)
                     break
         if checkpoint_blocked:
             if self._pending_interrupt_payload is not None:
@@ -2610,7 +2609,10 @@ class RunController:
                 tx,
                 run_id=run_id,
                 type="run.completed",
-                payload=LifecyclePayload(status="completed"),
+                payload=LifecyclePayload(
+                    status="completed",
+                    output=structured_output_for_jsonl(output_content),
+                ),
             )
 
         self._finalize_assignment_budget(lead_assignment)
@@ -3049,11 +3051,7 @@ class RunController:
             output_text = ""
             for message in reversed(messages):
                 if isinstance(message, AIMessage) and message.content:
-                    output_text = (
-                        message.content
-                        if isinstance(message.content, str)
-                        else str(message.content)
-                    )
+                    output_text = model_content_to_text(self.redactor.scrub(message.content))
                     break
             return RunResult(
                 run_id=pending.run_id,
@@ -3069,11 +3067,11 @@ class RunController:
             )
 
         output_text = ""
+        output_content: Any = None
         for message in reversed(messages):
             if isinstance(message, AIMessage) and message.content:
-                output_text = (
-                    message.content if isinstance(message.content, str) else str(message.content)
-                )
+                output_content = self.redactor.scrub(message.content)
+                output_text = model_content_to_text(output_content)
                 break
         with self.journal.transaction() as tx:
             tx.update_attempt_status(
@@ -3086,7 +3084,10 @@ class RunController:
                 tx,
                 run_id=pending.run_id,
                 type="run.completed",
-                payload=LifecyclePayload(status="completed"),
+                payload=LifecyclePayload(
+                    status="completed",
+                    output=structured_output_for_jsonl(output_content),
+                ),
             )
         self.usage_settler.settle_attempt(str(pending.lead_assignment.assignment_id))
         self._release_lead_allowances()
@@ -3444,9 +3445,7 @@ class RunController:
                 child_output = ""
                 for msg in reversed(inner_messages):
                     if isinstance(msg, AIMessage) and msg.content:
-                        child_output = (
-                            msg.content if isinstance(msg.content, str) else str(msg.content)
-                        )
+                        child_output = model_content_to_text(self.redactor.scrub(msg.content))
                         break
                 result = parse_child_result(
                     child_output,

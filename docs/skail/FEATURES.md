@@ -717,14 +717,21 @@ Tool calls and child updates may collapse by default but cannot disappear. Error
 
 ### Print mode
 
-- stdout: final lead response only;
+- stdout: one human-readable lead answer only. For structured final responses, Skail extracts a
+  non-empty `answer`, `final_answer`, `response`, `message`, `reply`, `content`, `text`, `output`,
+  `result`, `final`, or `summary` string field. Evidence-only objects produce an explicit no-answer
+  message; unknown structured output remains readable.
 - stderr: progress, warnings, approvals, and errors;
 - process code reflects completed, failed, blocked, cancelled, or usage error.
+- Plain-text answers are preserved as authored so requested technical detail is not deleted.
+- Registered secret values are redacted from lead output before chat or print rendering.
 
 ### JSONL mode
 
 - stdout: `EventEnvelope` JSON objects, one per line;
 - terminal object: `run.completed`, `run.failed`, `run.blocked`, or `run.cancelled`;
+- `run.completed.payload.output`: redacted final model output, parsed as JSON when it is valid JSON;
+  structured verification remains available here while chat and print present only the answer.
 - schema version is required;
 - malformed provider text is always nested as escaped data, never raw output framing.
 

@@ -143,6 +143,7 @@ class LifecyclePayload(PayloadBase):
     status: str
     error_type: str | None = None
     error_message: str | None = None
+    output: Any | None = None
 
 
 class ModelPayload(PayloadBase):

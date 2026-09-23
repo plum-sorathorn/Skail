@@ -102,6 +102,23 @@ def test_event_decimal_amount_uses_a_string_at_the_json_boundary() -> None:
     assert '"amount_usd":"0.0100"' in event.to_json()
 
 
+def test_run_completed_event_preserves_structured_lead_output() -> None:
+    output = {
+        "answer": "Updated src/example.py:run.",
+        "verification": [{"criterion": "Required check", "passed": True}],
+    }
+    event = EventEnvelope.model_validate(
+        _envelope_data(
+            LifecyclePayload(status="completed", output=output),
+            event_type="run.completed",
+        )
+    )
+
+    restored = EventEnvelope.from_json(event.to_json())
+
+    assert restored.payload.output == output  # type: ignore[attr-defined]
+
+
 def test_unknown_schema_version_is_rejected() -> None:
     data = _envelope_data(LifecyclePayload(status="started"), event_type="run.started")
     data["schema_version"] = 2

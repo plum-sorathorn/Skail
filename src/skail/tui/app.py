@@ -38,6 +38,7 @@ from skail.providers.credentials import (
     KeyringCredentialStore,
 )
 from skail.runtime.interrupts import QuestionStore
+from skail.runtime.presentation import present_lead_answer
 from skail.sessions.journal import SessionSnapshot
 from skail.sessions.service import SessionService
 from skail.tools.approvals import ApprovalChoice, ApprovalStore
@@ -131,75 +132,9 @@ _RUNTIME_ERROR_COPY = (
     "Review provider settings or retry initialization.\n\n[R] Retry   [S] Setup   [Q] Quit"
 )
 
-_LEAD_TEXT_FIELDS = (
-    "answer",
-    "final_answer",
-    "message",
-    "response",
-    "reply",
-    "content",
-    "text",
-    "output",
-    "result",
-    "final",
-)
-
-
-def _format_structured_value(value: Any) -> str:
-    if isinstance(value, str):
-        return value.strip()
-    if isinstance(value, list):
-        return ", ".join(
-            rendered for item in value if (rendered := _format_structured_value(item))
-        )
-    if isinstance(value, dict):
-        return "; ".join(
-            f"{key.replace('_', ' ').capitalize()}: {rendered}"
-            for key, item in value.items()
-            if (rendered := _format_structured_value(item))
-        )
-    if value is None:
-        return ""
-    return str(value)
-
-
 def clean_lead_output(output: str) -> str:
-    """Render structured lead output as a readable TUI message."""
-    text = output.strip()
-    if not text:
-        return ""
-    if text.startswith("```") and text.endswith("```"):
-        lines = text.splitlines()
-        text = "\n".join(lines[1:-1]).strip()
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError:
-        return text
-    if isinstance(payload, str):
-        return payload.strip()
-    if not isinstance(payload, dict):
-        return _format_structured_value(payload)
-
-    for field in _LEAD_TEXT_FIELDS:
-        value = payload.get(field)
-        rendered = _format_structured_value(value)
-        if rendered:
-            return rendered
-
-    summary = _format_structured_value(payload.get("summary"))
-    if summary:
-        details = [
-            f"{field.replace('_', ' ').capitalize()}: {rendered}"
-            for field in ("changed_paths", "verification", "follow_up")
-            if (rendered := _format_structured_value(payload.get(field)))
-        ]
-        return "\n\n".join((summary, *details))
-
-    return "\n".join(
-        f"{key.replace('_', ' ').capitalize()}: {rendered}"
-        for key, value in payload.items()
-        if (rendered := _format_structured_value(value))
-    )
+    """Render the user-facing answer without flattening verification evidence."""
+    return present_lead_answer(output)
 
 
 def format_masthead(version: str, provider_label: str | None, clock: str) -> str:
@@ -1583,14 +1518,42 @@ class SkailApp(App[int]):
             self.projection.pending_interrupt = None
         self._refresh_budget_from_journal()
         if result.output:
+            answer = clean_lead_output(result.output)
+        else:
+            answer = ""
+        if answer:
             self.projection.transcript_items.append(
                 TranscriptItem(
                     id=f"lead-{len(self.projection.transcript_items)}",
                     role="lead",
                     title="Skail Response",
-                    content=clean_lead_output(result.output),
+                    content=answer,
                 )
             )
+            return
+        if result.pending_interrupt is not None:
+            return
+        status = getattr(result, "status", "completed")
+        outcomes = {
+            "blocked": (
+                "Execution blocked",
+                "Review the run's budget, safety, or interaction requirements before retrying.",
+            ),
+            "failed": (
+                "Execution failed",
+                "Review the run events and error details before retrying.",
+            ),
+            "cancelled": ("Execution cancelled", "No final answer was produced."),
+            "completed": (
+                "No user-facing answer",
+                "The run produced no final answer. Review the recorded run events for context.",
+            ),
+        }
+        title, content = outcomes.get(
+            str(status),
+            ("Execution ended", f"The run ended with status {status}. Review its recorded events."),
+        )
+        self._append_system_message(title, content)
 
     def _set_interrupt(self, payload: dict[str, Any], *, run_id: str) -> None:
         payload = dict(payload)
