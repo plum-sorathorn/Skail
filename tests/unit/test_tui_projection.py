@@ -305,7 +305,7 @@ def test_budget_event_projection() -> None:
         payload=BudgetPayload(action='charged', amount_usd=Decimal('1.50')),
     )
     proj.apply_event(chg_ev)
-    assert proj.budget_item.authoritative_actual_usd == Decimal('1.50')
+    assert proj.budget_item.estimated_actual_usd == Decimal('1.50')
     assert proj.budget_item.available_usd == Decimal('6.50')
     assert proj.footer_data.session_cost_usd == Decimal('1.50')
 
@@ -668,6 +668,7 @@ def test_projection_budget_uses_latest_run_only() -> None:
     assert proj.budget_item.authoritative_actual_usd == Decimal("0.25")
     assert proj.budget_item.reserved_usd == Decimal("0.50")
     assert proj.budget_item.available_usd == Decimal("9.25")
+    assert proj.footer_data.session_cost_usd == Decimal("0.55")
 
 
 def test_snapshot_budget_events_do_not_double_persisted_ledger_rows() -> None:
@@ -875,7 +876,8 @@ def test_live_and_resumed_projections_agree() -> None:
                 usage_id="u-agree",
                 task_id=None,
                 amount_usd=Decimal("0.50"),
-                authoritative=True,
+                authoritative=False,
+                authority="token_derived_estimate",
                 idempotency_key="u-agree-key",
             ),
         ),
@@ -897,8 +899,8 @@ def test_live_and_resumed_projections_agree() -> None:
 
     # Both must agree on key execution states:
     assert (
-        proj_resumed.budget_item.authoritative_actual_usd
-        == proj_live.budget_item.authoritative_actual_usd
+        proj_resumed.budget_item.estimated_actual_usd
+        == proj_live.budget_item.estimated_actual_usd
     )
     assert proj_resumed.budget_item.reserved_usd == proj_live.budget_item.reserved_usd
     assert proj_resumed.footer_data.active_mode == proj_live.footer_data.active_mode

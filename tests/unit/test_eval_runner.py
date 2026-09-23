@@ -199,10 +199,12 @@ def test_evaluation_runner_runs_deterministic_fake_suite() -> None:
     # create a genuine parallel workload, so it must not manufacture a speedup.
     assert not report.comparison.all_gates_passed
 
-    # Scripted provider usage is runtime evidence, not a route estimate.
+    # Scripted tokens are priced at each assignment's model rates, not the
+    # provider fake's dollar field or the route reservation.
     auto_cost = report.policy_summaries[EvaluationPolicy.AUTO.value].median_cost_usd
     quality_cost = report.policy_summaries[EvaluationPolicy.QUALITY.value].median_cost_usd
-    assert auto_cost == quality_cost == Decimal("0.02")
+    assert auto_cost == Decimal("0.0001")
+    assert quality_cost == Decimal("0.0003")
 
     # Markdown rendering should produce formatted tables
     md = render_markdown_report(report)
@@ -262,8 +264,8 @@ def test_scripted_usage_is_recorded_independently_of_route_estimates() -> None:
         fixtures=[fixture], policies=[EvaluationPolicy.AUTO], candidates=inflated_candidates
     ).run()
 
-    assert report.results[0].total_cost_usd == Decimal("0.020")
-    assert report.raw_records[0].usage_cost_usd == Decimal("0.020")
+    assert report.results[0].total_cost_usd == Decimal("0.000090")
+    assert report.raw_records[0].usage_cost_usd == Decimal("0.000090")
 
 
 def test_disabling_runtime_writes_fails_a_required_mutation_fixture() -> None:

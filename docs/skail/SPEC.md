@@ -680,3 +680,5 @@ Neither engineering readiness nor a release tag proves a broad savings claim.
    [ADR 0006](../decisions/0006-adaptive-execution-and-release-boundaries.md).
 7. Use the global-state and instruction-precedence contract accepted in
    [ADR 0007](../decisions/0007-global-state-and-instruction-precedence.md).
+8. Use the in-house token-cost ledger contract accepted in
+   [ADR 0008](../decisions/0008-in-house-token-cost-ledger.md).

@@ -192,7 +192,7 @@ async def test_llmgateway_keeps_missing_stream_cost_unknown() -> None:
     assert usage.authority is UsageAuthority.TOKEN_DERIVED_ESTIMATE
 
 
-def test_llmgateway_marks_reported_gateway_cost_as_authoritative() -> None:
+def test_llmgateway_uses_tokens_without_trusting_reported_gateway_cost() -> None:
     adapter = LLMGatewayAdapter(_config(), api_key="fixture-credential")
     response = AIMessage(
         content="done",
@@ -203,8 +203,40 @@ def test_llmgateway_marks_reported_gateway_cost_as_authoritative() -> None:
     usage = adapter.normalize_usage(response)
 
     assert usage is not None
-    assert usage.cost_usd == Decimal("0.00042")
-    assert usage.authority is UsageAuthority.AUTHORITATIVE_ACTUAL
+    assert usage.cost_usd is None
+    assert usage.authority is UsageAuthority.TOKEN_DERIVED_ESTIMATE
+
+
+async def test_llmgateway_preserves_cached_input_token_count() -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "choices": [{"message": {"role": "assistant", "content": "done"}}],
+                "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 20,
+                    "prompt_tokens_details": {"cached_tokens": 80},
+                    "cost": 99,
+                },
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        adapter = LLMGatewayAdapter(
+            _config(), api_key="fixture-credential", http_async_client=client
+        )
+        response = await adapter.create_model(_profile(), ModelOptions()).ainvoke("work")
+
+    usage = adapter.normalize_usage(response)
+    assert usage is not None
+    assert (usage.input_tokens, usage.cached_input_tokens, usage.output_tokens) == (
+        100,
+        80,
+        20,
+    )
+    assert usage.cost_usd is None
 
 
 @pytest.mark.asyncio

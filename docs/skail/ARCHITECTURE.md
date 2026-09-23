@@ -411,8 +411,9 @@ Every fallback creates a new assignment ID and event. There is no invisible prov
 
 ### 8.1 Ledger terms
 
-- `actual`: normalized provider usage already incurred;
-- `estimated_actual`: incurred usage whose provider did not return authoritative counts;
+- `actual`: historical provider-authoritative usage already incurred;
+- `estimated_actual`: incurred usage calculated locally from measured tokens and frozen prices,
+  or conservatively estimated when complete tokens are unavailable;
 - `reserved`: allowance for approved but unfinished calls/tasks;
 - `available`: hard limit minus actual, estimated actual, and reserved;
 - `lead_continuation_allowance`: reserved capacity for the lead to process child results.
@@ -430,7 +431,10 @@ insert reservation
 commit
 ```
 
-When a call completes, convert the relevant reservation to usage in one transaction. Release unused reservation. If authoritative usage exceeds the reservation, record the bounded overshoot and make future gates use the new balance.
+When a call completes, price its measured tokens at the assigned model's frozen rates and convert
+the relevant reservation to usage in one transaction. Release unused reservation. If the local
+cost exceeds the reservation, record the bounded overshoot and make future gates use the new
+balance. Child task usage shares the parent run's ledger.
 
 ### 8.3 Parallel batches
 

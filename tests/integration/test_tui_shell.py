@@ -258,7 +258,72 @@ async def test_tui_shell_real_projection_updates() -> None:
 
         assert plan_view.plan_items[node_id].state == "succeeded"
         budget_view = app.query_one("#budget-view", BudgetView)
-        assert budget_view.item.authoritative_actual_usd == Decimal("0.45")
+        assert budget_view.item.estimated_actual_usd == Decimal("0.45")
+
+
+async def test_tui_main_page_includes_child_usage_in_run_total() -> None:
+    run_id = str(new_run_id())
+    older_run_id = str(new_run_id())
+    snapshot = SessionSnapshot(
+        session_id=str(new_session_id()),
+        status="active",
+        runs=(
+            RunSnapshot(
+                run_id=older_run_id,
+                status="completed",
+                budget_limit_usd=Decimal("1.00"),
+            ),
+            RunSnapshot(
+                run_id=run_id,
+                status="running",
+                budget_limit_usd=Decimal("1.00"),
+            ),
+        ),
+        tasks=(),
+        attempts=(),
+        assignments=(),
+        budget_reservations=(),
+        usage_records=(
+            UsageSnapshot(
+                usage_id="older-usage",
+                task_id="older-task",
+                run_id=older_run_id,
+                amount_usd=Decimal("0.030"),
+                authoritative=False,
+                authority="token_derived_estimate",
+                idempotency_key="older-usage",
+            ),
+            UsageSnapshot(
+                usage_id="lead-usage",
+                task_id="lead-task",
+                run_id=run_id,
+                amount_usd=Decimal("0.002"),
+                authoritative=False,
+                authority="token_derived_estimate",
+                idempotency_key="lead-usage",
+            ),
+            UsageSnapshot(
+                usage_id="child-usage",
+                task_id="child-task",
+                run_id=run_id,
+                amount_usd=Decimal("0.010"),
+                authoritative=False,
+                authority="token_derived_estimate",
+                idempotency_key="child-usage",
+            ),
+        ),
+        approvals=(),
+        events=(),
+    )
+    app = SkailApp(initial_snapshot=snapshot)
+
+    async with app.run_test(size=(120, 40)):
+        status = str(app.query_one("#dateline", Static).renderable)
+        assert "session $0.0420" in status
+        assert "run $0.0120" in status
+        assert app.query_one("#budget-view", BudgetView).item.estimated_actual_usd == Decimal(
+            "0.012"
+        )
 
 
 @pytest.mark.asyncio

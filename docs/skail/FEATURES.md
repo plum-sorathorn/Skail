@@ -407,7 +407,9 @@ Before a child batch starts, Skail retains enough budget for at least one lead s
 - At the warning threshold, emit one warning per threshold crossing.
 - A denied reservation returns `budget_blocked` with cheaper qualified choices if any.
 - User budget increases affect future gates; they do not rewrite recorded estimates.
-- Provider-reported usage replaces the matching estimate when possible and is labelled authoritative.
+- Measured input, output, and cached-input tokens replace the matching attempt estimate at
+  the model prices frozen on that assignment. Provider-supplied dollar amounts do not settle
+  the Skail ledger. Incomplete usage stays conservative or unresolved.
 
 ## 12. Concurrency and scheduling
 
@@ -859,5 +861,6 @@ paired live evaluation with preregistered completion, cost, latency, and safety 
 - Root instructions are additive and source-labelled in built-in, global, trusted-workspace order.
   Their bounded, redacted, pinned context cannot widen code-owned safety, permission, budget,
   concurrency, delegation, or filesystem boundaries.
-- Reservation, provider-authoritative actual, token-derived actual estimate, conservative fallback,
-  and unknown cost remain separate through the journal, events, projections, resume, and export.
+- Reservation, token-derived estimate, conservative fallback, and unknown cost remain separate
+  through the journal, events, projections, resume, and export. Historical
+  provider-authoritative records retain their original labels.

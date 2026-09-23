@@ -113,9 +113,13 @@ toggles the highlighted model, Ctrl+Shift+A toggles the filtered set, and Escape
 themes are Dark, Light, System, Pistachio Night, Pistachio Paper, and Mint Porcelain; preview is
 temporary until Enter commits it.
 
-Budget output distinguishes provider-authoritative actual, token-derived estimate, conservative
-estimate, unknown cost, and reserved amount. Token-derived amounts use prices frozen on the
-assignment and are not replaced by the full preflight reservation.
+Budget output distinguishes historical provider-authoritative actual, token-derived estimate,
+conservative estimate, unknown cost, and reserved amount. New measured calls use token counts
+and prices frozen on the assignment; provider-supplied dollar amounts do not settle the ledger.
+The current-run budget total includes lead and child tasks; the TUI status strip shows cumulative
+cost across the session's runs. Session export schema version 2 adds
+`provider_calls` with token counts, call IDs, statuses, and frozen pricing, plus `model_usage`
+totals across the session. An unresolved call makes its model's total cost null.
 
 Provider-live validation is explicit and bounded:
 

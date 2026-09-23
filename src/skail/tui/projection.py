@@ -573,7 +573,9 @@ class TuiProjection:
             )
 
         self.budget_item = budget
-        self.footer_data.session_cost_usd = incurred
+        self.footer_data.session_cost_usd = sum(
+            (usage.amount_usd for usage in snapshot.usage_records), Decimal("0")
+        )
         self.footer_data.budget_limit_usd = budget.hard_limit_usd
 
     def apply_snapshot(self, snapshot: SessionSnapshot) -> None:
@@ -781,10 +783,8 @@ class TuiProjection:
             else lead_model_name,
             active_mode=self.footer_data.active_mode,
             routing_mode="auto",
-            session_cost_usd=(
-                self.budget_item.authoritative_actual_usd
-                + self.budget_item.estimated_actual_usd
-                + self.budget_item.unknown_cost_usd
+            session_cost_usd=sum(
+                (usage.amount_usd for usage in snapshot.usage_records), Decimal("0")
             ),
             budget_limit_usd=self.budget_item.hard_limit_usd,
             context_tokens_estimated=context_tokens,
@@ -1098,11 +1098,13 @@ class TuiProjection:
                 remaining_res = self.budget_item.reserved_usd - amount
                 self.budget_item.reserved_usd = max(Decimal("0.00"), remaining_res)
             elif action == "charged":
-                self.budget_item.authoritative_actual_usd += amount
+                self.budget_item.estimated_actual_usd += amount
+                self.footer_data.session_cost_usd += amount
             elif action == "warned":
                 self.budget_item.warning_state = True
             elif action == "unknown":
                 self.budget_item.unknown_cost_usd += amount
+                self.footer_data.session_cost_usd += amount
 
             if self.budget_item.hard_limit_usd is not None:
                 committed = (
@@ -1115,8 +1117,6 @@ class TuiProjection:
                     Decimal("0.00"),
                     self.budget_item.hard_limit_usd - committed,
                 )
-            self.footer_data.session_cost_usd = self.budget_item.authoritative_actual_usd
-
         # Recalculate active agent count
         self.footer_data.active_agents_count = sum(
             1

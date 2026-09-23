@@ -285,7 +285,7 @@ def test_budget_state_labels_and_lines() -> None:
     assert budget_state_label("normal") == "normal"
     lines = render_budget_lines(0.5, 1.0, {"c1": 0.2})
     assert lines[0] == "BUDGET"
-    assert "Session $0.50 / $1.00" in lines[1]
+    assert "Run $0.50 / $1.00" in lines[1]
     assert len([line for line in lines if "■" in line or "·" in line]) == 1
     assert any("Remaining" in line for line in lines)
     assert any("c1" in line for line in lines)

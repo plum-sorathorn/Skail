@@ -42,6 +42,9 @@ precedence rule without allowing prompt text to weaken code-owned safety policy.
    conservative attempt estimate is used only when usage cannot be measured and is labelled as
    such. Missing cost is never encoded as reported zero.
 
+Decision 6's cost precedence was superseded by
+[ADR 0008](./0008-in-house-token-cost-ledger.md). The other decisions remain in force.
+
 ## Consequences
 
 - Normal operation leaves repositories and temporary worktrees free of Skail-created `.skail`

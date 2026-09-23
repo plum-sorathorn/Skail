@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -94,8 +95,81 @@ class SessionExporter:
 
         events_list = [ev.model_dump(mode="json") for ev in snapshot.events]
 
+        with self.journal._connect() as connection:
+            call_rows = connection.execute(
+                "SELECT c.call_id,c.status,c.input_tokens,c.output_tokens,c.amount_usd,"
+                "c.authority,u.cached_input_tokens,a.assignment_id,a.provider,a.model,"
+                "a.payload_json,t.task_id,t.run_id "
+                "FROM provider_calls c "
+                "JOIN assignments a ON a.assignment_id=c.assignment_id "
+                "JOIN attempts p ON p.attempt_id=a.attempt_id "
+                "JOIN tasks t ON t.task_id=p.task_id "
+                "JOIN runs r ON r.run_id=t.run_id "
+                "LEFT JOIN assignment_call_usage u "
+                "ON u.assignment_id=a.assignment_id AND u.call_id=c.call_id "
+                "WHERE r.session_id=? ORDER BY c.created_at,c.call_id",
+                (session_id,),
+            ).fetchall()
+        provider_calls = []
+        model_totals: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in call_rows:
+            pricing = json.loads(row["payload_json"]).get("pricing_evidence", {})
+            provider_calls.append(
+                {
+                    "call_id": row["call_id"],
+                    "run_id": row["run_id"],
+                    "task_id": row["task_id"],
+                    "assignment_id": row["assignment_id"],
+                    "provider": row["provider"],
+                    "model": row["model"],
+                    "status": row["status"],
+                    "input_tokens": row["input_tokens"],
+                    "output_tokens": row["output_tokens"],
+                    "cached_input_tokens": row["cached_input_tokens"],
+                    "cost_usd": row["amount_usd"],
+                    "authority": row["authority"],
+                    "pricing_evidence": pricing,
+                }
+            )
+            key = (row["provider"], row["model"])
+            total = model_totals.setdefault(
+                key,
+                {
+                    "provider": key[0],
+                    "model": key[1],
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cached_input_tokens": 0,
+                    "known_cost_usd": Decimal("0"),
+                    "unresolved_calls": 0,
+                },
+            )
+            total["input_tokens"] += row["input_tokens"] or 0
+            total["output_tokens"] += row["output_tokens"] or 0
+            total["cached_input_tokens"] += row["cached_input_tokens"] or 0
+            if (
+                row["amount_usd"] is None
+                or row["input_tokens"] is None
+                or row["output_tokens"] is None
+            ):
+                total["unresolved_calls"] += 1
+            else:
+                total["known_cost_usd"] += Decimal(row["amount_usd"])
+        model_usage = [
+            {
+                **{k: v for k, v in total.items() if k != "known_cost_usd"},
+                "known_cost_usd": format(total["known_cost_usd"], "f"),
+                "total_cost_usd": (
+                    None
+                    if total["unresolved_calls"]
+                    else format(total["known_cost_usd"], "f")
+                ),
+            }
+            for _, total in sorted(model_totals.items())
+        ]
+
         raw_export: dict[str, Any] = {
-            "schema_version": 1,
+            "schema_version": 2,
             "session_id": snapshot.session_id,
             "title": snapshot.title,
             "status": snapshot.status,
@@ -116,6 +190,8 @@ class SessionExporter:
             "routes": routes_list,
             "budget_reservations": reservations_list,
             "usage": usage_list,
+            "provider_calls": provider_calls,
+            "model_usage": model_usage,
             "approvals": approvals_list,
             "verification": verification_results or {},
             "events": events_list,

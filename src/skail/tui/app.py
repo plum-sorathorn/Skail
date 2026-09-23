@@ -1122,12 +1122,20 @@ class SkailApp(App[int]):
     def _render_status_strip(self) -> str:
         """Return the ATELIER dateline markup for the current application state."""
         f = self.projection.footer_data
+        budget = self.projection.budget_item
+        run_cost = (
+            budget.authoritative_actual_usd
+            + budget.estimated_actual_usd
+            + budget.unknown_cost_usd
+        )
         ratio: float | None = None
         if f.budget_limit_usd is not None and f.budget_limit_usd > 0:
-            ratio = min(1.0, float(f.session_cost_usd / f.budget_limit_usd))
-        cost = f"${f.session_cost_usd:.4f}"
+            ratio = min(
+                1.0, float((run_cost + budget.reserved_usd) / f.budget_limit_usd)
+            )
+        cost = f"session ${f.session_cost_usd:.4f}"
         if f.budget_limit_usd is not None:
-            cost = f"{cost} / ${f.budget_limit_usd:.2f}"
+            cost = f"{cost} · run ${run_cost:.4f}/${f.budget_limit_usd:.2f}"
         running = 0
         queued = 0
         for child in self.projection.children_view():

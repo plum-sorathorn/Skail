@@ -4,7 +4,7 @@ import hashlib
 import json
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -722,33 +722,14 @@ class AssignmentUsageSettler:
         values = messages if isinstance(messages, list) else [response]
         normalized = [adapter.normalize_usage(value) for value in values]
         observed = [value for value in normalized if value is not None]
-        if not observed:
+        if not observed or len(observed) != len(values):
             return None
-        costs = [value.cost_usd for value in observed]
-        measured_tokens = any(
-            value.input_tokens or value.output_tokens for value in observed
-        )
-        cost_usd = sum((cost for cost in costs if cost is not None), Decimal("0"))
-        complete_cost = all(cost is not None for cost in costs)
         return NormalizedUsage(
             input_tokens=sum(value.input_tokens for value in observed),
             output_tokens=sum(value.output_tokens for value in observed),
             cached_input_tokens=sum(value.cached_input_tokens for value in observed),
-            cost_usd=cost_usd if complete_cost else None,
-            authority=(
-                UsageAuthority.AUTHORITATIVE_ACTUAL
-                if len(observed) == len(values)
-                and all(
-                    value.authority is UsageAuthority.AUTHORITATIVE_ACTUAL
-                    for value in observed
-                )
-                and complete_cost
-                else (
-                    UsageAuthority.TOKEN_DERIVED_ESTIMATE
-                    if measured_tokens and not complete_cost
-                    else UsageAuthority.ESTIMATED_ACTUAL
-                )
-            ),
+            cost_usd=None,
+            authority=UsageAuthority.TOKEN_DERIVED_ESTIMATE,
         )
 
     def record_call(self, assignment_id: str, response: object, *, call_id: str) -> None:
@@ -771,6 +752,23 @@ class AssignmentUsageSettler:
             )
         else:
             usage_unknown = False
+            pricing = json.loads(row["payload_json"]).get("pricing_evidence", {})
+            local_cost = _token_cost_usd(
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                cached_input_tokens=usage.cached_input_tokens,
+                pricing=pricing,
+            )
+            usage = usage.model_copy(
+                update={
+                    "cost_usd": local_cost,
+                    "authority": (
+                        UsageAuthority.TOKEN_DERIVED_ESTIMATE
+                        if local_cost is not None
+                        else UsageAuthority.UNKNOWN
+                    ),
+                }
+            )
         cost_known = usage.cost_usd is not None
         stored_cost = usage.cost_usd if usage.cost_usd is not None else Decimal("0")
         values = (
@@ -941,7 +939,7 @@ def _token_cost_usd(
             + Decimal(cached_input_tokens) * Decimal(str(cached_rate))
             + Decimal(output_tokens) * Decimal(str(output_price))
         ) / Decimal("1000000")
-        return total.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+        return total
     except (ArithmeticError, TypeError, ValueError):
         return None
 

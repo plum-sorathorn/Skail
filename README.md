@@ -20,7 +20,7 @@ Skail is an agentic AI and multi-agent coding harness built on [DeepAgents](http
 
 Skail runs locally on your machine without a proxy server or background daemon. It exposes an interactive terminal UI (cockpit), a scriptable CLI, and versioned JSONL event streaming for automated pipelines.
 
-> **Status: Alpha v0.1.0.** The [evaluation](docs/skail/EVALUATION.md) and [performance](docs/skail/PERFORMANCE.md) documents record offline engineering checks and performance measurements. They do not establish live-provider quality or savings. Skail's budget gates are application-level controls; provider-side accounting determines billed spend.
+> **Status: Alpha v0.1.0.** The [evaluation](docs/skail/EVALUATION.md) and [performance](docs/skail/PERFORMANCE.md) documents record offline engineering checks and performance measurements. They do not establish live-provider quality or savings. Skail's budget gates use in-house token-cost estimates; they do not guarantee billed spend.
 
 ---
 
@@ -28,7 +28,7 @@ Skail runs locally on your machine without a proxy server or background daemon. 
 
 Building an ad-hoc coding agent is straightforward. Making it dependable across planning, parallel work, cost containment, crash recovery, and verification is where harnesses typically break down. Skail enforces these guarantees in deterministic runtime code:
 
-- **Application Budget Gates**: Skail reserves and gates work against its cost estimates, tracks provider-reported usage, and blocks unsafe replay when accounting is uncertain. Provider billing records determine actual spend; set any spend cap through the provider.
+- **Application Budget Gates**: Skail prices measured input, output, and cached-input tokens using rates frozen for each model assignment. The TUI shows cumulative session cost including lead and child agents; missing usage remains conservative or unresolved, and unsafe replay is blocked.
 - **Safe Parallel Subagents**: Up to three child agents can run concurrently. Writers use isolated Git worktrees when enabled and safe; otherwise, a write lease serializes shared-workspace changes.
 - **Adaptive Task Execution**: Direct execution for simple fixes, checkpointed discovery for open exploration, or typed dependency graphs for multi-step implementations.
 - **Task-Bound Model Routing**: Each lead run and child attempt receives a durable model assignment matched to capability requirements, role floors, and budget mode.
@@ -186,7 +186,7 @@ flowchart LR
 | **Discovery** | Tasks requiring repository reconnaissance before planning | Read-only discovery frontier with checkpoints | Read-only workspace before work is admitted |
 | **Planned** | Multi-file or parallel changes with defined dependencies | Durable plan nodes release when prerequisites finish | Worktrees when enabled and safe; otherwise serialized shared-workspace writes |
 
-> **Security & Boundary Notice**: Skail is a local application boundary running with your user permissions. Confinement, approvals, redaction, and application-level budget gates govern actions that pass through the harness. Provider billing records are the authority for actual spend; provider-side limits control charges when configured. Host operating system security remains the user's responsibility.
+> **Security & Boundary Notice**: Skail is a local application boundary running with your user permissions. Confinement, approvals, redaction, and application-level budget gates govern actions that pass through the harness. The local ledger estimates token-priced usage; extra fees and incomplete usage can make actual charges differ. Host operating system security remains the user's responsibility.
 
 ---
 
