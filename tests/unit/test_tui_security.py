@@ -220,8 +220,9 @@ def test_twin_sail_logo_placed_onboarding_help_readme() -> None:
     panel.workspace = "."
     panel.session_id = "new"
     assert render_logo_text() in panel.render_step().plain
-    # README fenced text block with version line.
+    # README masthead displays the brand image and current release version.
     readme = Path("README.md").read_text(encoding="utf-8")
-    assert "```text" in readme
-    assert render_logo_text() in readme
+    logo_asset = Path("docs/assets/skail-logo.jpg")
+    assert logo_asset.is_file()
+    assert '<img src="docs/assets/skail-logo.jpg" alt="Skail Logo"' in readme
     assert "v0.1.0" in readme

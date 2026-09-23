@@ -1,172 +1,170 @@
-<p align="center"><strong>SKAIL</strong></p>
+<p align="center">
+  <img src="docs/assets/skail-logo.jpg" alt="Skail Logo" width="160" />
+</p>
 
-```text
-Twin sail mark (v0.1.0, monochrome, never animated):
-      /\|\
-     /  | \
-    /___|__\
-   /____|___\
-   \________/
-    S K A I L
-```
-
+<h1 align="center">Skail</h1>
 
 <p align="center">
-  A Python multi-agent coding harness built on DeepAgents and LangGraph.
+  <strong>A budget-aware, local-first multi-agent coding harness built on DeepAgents and LangGraph.</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/plum-sorathorn/Skail/actions/workflows/ci.yml"><img src="https://github.com/plum-sorathorn/Skail/actions/workflows/ci.yml/badge.svg?branch=skail" alt="CI"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.12%2B-blue.svg?style=flat-square" alt="Python 3.12+"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
-  <a href="https://github.com/langchain-ai/deepagents"><img src="https://img.shields.io/badge/DeepAgents-multi--agent-blue.svg?style=flat-square" alt="DeepAgents"></a>
-  <a href="https://github.com/langchain-ai/langgraph"><img src="https://img.shields.io/badge/LangGraph-orchestration-blue.svg?style=flat-square" alt="LangGraph"></a>
-  <a href="https://github.com/langchain-ai/langchain"><img src="https://img.shields.io/badge/LangChain-framework-blue.svg?style=flat-square" alt="LangChain"></a>
-  <a href="https://github.com/Textualize/textual"><img src="https://img.shields.io/badge/Textual-TUI-blue.svg?style=flat-square" alt="Textual"></a>
-  <a href="https://github.com/pydantic/pydantic"><img src="https://img.shields.io/badge/Pydantic-validation-blue.svg?style=flat-square" alt="Pydantic"></a>
-  <a href="https://www.sqlite.org/"><img src="https://img.shields.io/badge/SQLite-storage-blue.svg?style=flat-square" alt="SQLite"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.12%2B-3776AB.svg?style=flat-square" alt="Python 3.12+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2ea44f.svg?style=flat-square" alt="License: MIT"></a>
+  <a href="docs/skail/EVALUATION.md"><img src="https://img.shields.io/badge/Release-0.1.0%20Alpha-f0883e.svg?style=flat-square" alt="Release: 0.1.0 Alpha"></a>
+  <a href="https://github.com/langchain-ai/deepagents"><img src="https://img.shields.io/badge/DeepAgents-multi--agent-8b5cf6.svg?style=flat-square" alt="DeepAgents"></a>
+  <a href="https://github.com/langchain-ai/langgraph"><img src="https://img.shields.io/badge/LangGraph-orchestration-0d9488.svg?style=flat-square" alt="LangGraph"></a>
+  <a href="https://github.com/Textualize/textual"><img src="https://img.shields.io/badge/Textual-TUI-d946ef.svg?style=flat-square" alt="Textual"></a>
+  <a href="https://github.com/pydantic/pydantic"><img src="https://img.shields.io/badge/Pydantic-validation-e92063.svg?style=flat-square" alt="Pydantic"></a>
+  <a href="https://www.sqlite.org/"><img src="https://img.shields.io/badge/SQLite-storage-003B57.svg?style=flat-square" alt="SQLite"></a>
 </p>
 
-# Skail
+<p align="center">
+  <img src="docs/assets/cockpit-preview.png" alt="Skail Terminal Cockpit Preview" width="850" />
+</p>
 
-Skail is an agentic AI and multi-agent coding harness built on
-[DeepAgents](https://github.com/langchain-ai/deepagents). It uses
-**[LangGraph](https://github.com/langchain-ai/langgraph)** for durable,
-stateful orchestration—including direct execution, dependency-aware task graphs, checkpointing,
-human-in-the-loop interrupts, and resumable sessions—and
-**[LangChain](https://github.com/langchain-ai/langchain)** abstractions for LLM
-provider integration, model invocation, structured output, and tool calling.
+Skail is an agentic AI and multi-agent coding harness built on [DeepAgents](https://github.com/langchain-ai/deepagents) and [LangGraph](https://github.com/langchain-ai/langgraph). It provides deterministic runtime controls for application-level budgets, workspace writes, task-bound model routing, and durable SQLite persistence, so developers can delegate complex, parallel coding workflows with bounded, reviewable changes.
 
-Its systems stack combines **[Pydantic](https://github.com/pydantic/pydantic)** contracts,
-**[SQLite](https://www.sqlite.org/)** persistence, asynchronous Python
-concurrency, Git worktree isolation, budget-aware model routing, provider usage accounting,
-context engineering, and a **[Textual](https://github.com/Textualize/textual)** terminal UI. Skail coordinates specialized subagents while
-enforcing task dependencies, bounded retries, verification evidence, permissions, and Skail-owned
-budget gates in deterministic runtime code. Skail's budget is an application-level control;
-provider-side usage and account controls determine billed spend.
+Skail runs locally on your machine without a proxy server or background daemon. It exposes an interactive terminal UI (cockpit), a scriptable CLI, and versioned JSONL event streaming for automated pipelines.
 
-Skail runs locally without a proxy server or daemon and exposes an interactive TUI, a conventional
-CLI, and versioned JSONL event streaming for automation. The Python distribution is
-`skail-harness`; the console command is `skail`.
+> **Release Status (Alpha v0.1.0)**: Release evidence is documented in the [evaluation](docs/skail/EVALUATION.md) and [performance](docs/skail/PERFORMANCE.md) specifications. Skail's budget gates are application-level safety controls; provider-side accounting determines billed spend.
+
+---
 
 ## Why Skail?
 
-Building a coding agent is straightforward. Making it dependable across planning, parallel work,
-cost control, recovery, and verification is the harder part. Skail provides those runtime
-guarantees out of the box:
+Building an ad-hoc coding agent is straightforward. Making it dependable across planning, parallel work, cost containment, crash recovery, and verification is where harnesses typically break down. Skail enforces these guarantees in deterministic runtime code:
 
-- **Adaptive execution** — simple requests stay direct; complex work can use discovery checkpoints
-  or a typed, dependency-aware plan.
-- **Task-bound model routing** — each lead run and child attempt receives a durable provider/model
-  assignment based on capability, role, evidence, health, and budget.
-- **Budget control** — reservations gate work against Skail's estimates, usage is tracked once, and
-  uncertain accounting blocks unsafe replay. Provider-side usage remains the billing authority.
-- **Safe parallel work** — up to three children can run concurrently; writers use reproducible Git
-  worktrees when available and serialized integration when changes return.
-- **Human checkpoints** — project trust, tool approvals, questions, steering, and cancellation are
-  enforced by runtime policy rather than prompt compliance.
-- **Durable sessions** — SQLite-backed plans, assignments, events, approvals, usage, checkpoints,
-  compaction, recovery, and exports survive interruption.
-- **Context engineering** — bounded task packets, skills, memory, artifact references, output
-  offloading, and compaction keep model context focused.
-- **Terminal-native interfaces** — work interactively in the TUI, capture only the final answer, or
-  consume a stable JSONL event stream from scripts.
+- **Application Budget Gates**: Skail reserves and gates work against its cost estimates, tracks provider-reported usage, and blocks unsafe replay when accounting is uncertain. Provider-side usage and account limits determine and cap billed spend.
+- **Safe Parallel Subagents**: Up to three child agents can run concurrently. Writers use isolated Git worktrees when enabled and safe; otherwise, a write lease serializes shared-workspace changes.
+- **Adaptive Task Execution**: Direct execution for simple fixes, checkpointed discovery for open exploration, or typed dependency graphs for multi-step implementations.
+- **Task-Bound Model Routing**: Each lead run and child attempt receives a durable model assignment matched to capability requirements, role floors, and budget mode.
+- **Human Checkpoints and Approvals**: Tool approvals, project trust levels, interactive clarification questions, and execution steering are enforced by code policy rather than prompt hope.
+- **Durable SQLite Sessions**: Run, plan, assignment, event, approval, and usage records support recovery and export. Resuming restores the owning run's checkpoint; new instructions start fresh run context.
+- **Terminal Cockpit and Scriptable CLI**: Work interactively in the full Textual TUI cockpit, or run headlessly in scripts, CI pipelines, and cron jobs via `-p` and `--jsonl`.
+- **Zero Daemons, Local Boundary**: Direct execution on the host machine without external proxies, background daemons, or remote infrastructure.
 
-The control plane runs locally with SQLite state and direct provider adapters; no service
-infrastructure is required.
+---
 
-## Release status
+## Getting Started
 
-Skail is version 0.1.0 and is classified as Alpha. Release evidence is tracked in the
-[evaluation](docs/skail/EVALUATION.md) and [performance](docs/skail/PERFORMANCE.md) documents.
-Exact-final-commit Windows/Linux verification is pending. Offline tests do not establish live-provider
-quality or savings, and provider-side usage is required to establish billed spend.
+### 1. Installation
 
-## Getting started
-
-### Quickstart from source
+Skail requires Python 3.12 or newer and Git.
 
 ```powershell
+# Clone the repository
 git clone https://github.com/plum-sorathorn/Skail -b skail
 cd Skail
+
+# Install in editable mode with development tools
 python -m pip install -e ".[dev]"
 
-# Verify the installation without credentials
+# Verify the installation offline
 python scripts\smoke.py
 ```
 
-`skail auth check` checks credential availability without contacting a provider. `skail models list`
-shows configured models and the last validated local catalog snapshot. Launching `skail` performs
-startup setup and opens the TUI:
+### 2. Configure Credentials
+
+Set your provider API key in your environment. Skail supports Anthropic, OpenAI, LLM Gateway, and OpenAI-compatible endpoints:
 
 ```powershell
+# Anthropic
+$env:ANTHROPIC_API_KEY = "replace-with-your-key"
+
+# Or OpenAI
+$env:OPENAI_API_KEY = "replace-with-your-key"
+
+# Or LLM Gateway
+$env:LLMGATEWAY_API_KEY = "replace-with-your-key"
+
+# Verify credentials without making external API calls
 skail auth check
-skail models list
-skail
 ```
 
-Useful bounded invocations:
+Credentials can also be stored securely in your OS keyring during first-time interactive setup.
+
+### 3. Launch Skail
+
+Launch the interactive cockpit or run targeted commands directly from the shell:
 
 ```powershell
-# Cap spend and parallelism while preferring isolated writers
-skail --budget 2.50 --mode economy --max-agents 2 --workspace worktree `
-  "Implement and verify this change"
+# Launch the interactive Textual TUI cockpit
+skail
 
-# Emit versioned events for automation
-skail --jsonl --budget 1.00 "Inspect the repository and report findings"
+# One-shot execution: inspect code and print the final answer
+skail -p "Inspect the CLI parser and report all supported flags"
 
-# Resume durable work
+# Apply Skail's estimated run budget and request worktree isolation when available
+skail --budget 2.50 --mode economy --workspace worktree `
+  "Implement and verify session resume error handling"
+
+# Stream versioned JSONL events for scripts or automation
+skail --jsonl --budget 1.00 "Run smoke verification"
+```
+
+---
+
+## Supported Providers and Model Routing
+
+Skail decouples runtime task roles from specific models, enabling budget-aware routing across different providers:
+
+| Provider | Environment Variable | Extra Dependency | Notes |
+| --- | --- | --- | --- |
+| **Anthropic** | `ANTHROPIC_API_KEY` | `skail-harness[anthropic]` | Select model IDs enabled for your account. |
+| **OpenAI** | `OPENAI_API_KEY` | `skail-harness[openai]` | Select model IDs enabled for your account. |
+| **LLM Gateway** | `LLMGATEWAY_API_KEY` | Core adapter | Uses the gateway's validated model catalog. |
+| **OpenAI-Compatible** | Configured per provider | `skail-harness[openai-compatible]` | Set `base_url`, model IDs, and the configured key environment variable. |
+
+Model availability changes over time. Use `skail models list` to inspect configured models and the local catalog snapshot. Install provider extras as needed; for example, use `python -m pip install -e ".[anthropic]"` to add Anthropic support to a core installation.
+
+### Routing Modes
+
+Pass `--mode <mode>` or use the `/mode` command inside the cockpit:
+
+| Mode | Behavior | Best Used For |
+| --- | --- | --- |
+| **auto** *(default)* | Selects models dynamically based on task requirements, role floors, and budget limits | Everyday balanced engineering work |
+| **economy** | Prefers cost-effective models while respecting minimum role floors | High-volume tasks, documentation, and simple refactoring |
+| **quality** | Allocates frontier reasoning models to planning, lead orchestration, and code generation | Complex multi-file architectural refactoring and debugging |
+| **manual** | Enforces user-selected models without automatic tier adjustments | Explicit benchmarking and targeted testing |
+
+---
+
+## Interactive Cockpit (TUI)
+
+Launching `skail` opens the full Textual terminal cockpit. The cockpit runs an onboarding check on first launch (provider selection, project trust verification, and theme preference) and connects directly to the local SQLite session store.
+
+### Key Controls
+
+| Shortcut / Command | Action |
+| --- | --- |
+| `Shift+Tab` | Cycle through the Agents, Plan, Route, and Budget panels while keeping the composer focused |
+| `Alt+P` | Open the model picker overlay (affects subsequent attempts) |
+| `/mode` | Switch the active routing mode (`auto`, `economy`, `quality`, `manual`) |
+| `Ctrl+T` | Open Mission Control overlay to inspect active child agent tasks |
+| `Ctrl+Shift+T` | Refocus the chat composer input |
+| `Ctrl+O` | Open full transcript viewer overlay |
+| `Ctrl+Enter` | Queue a follow-up prompt while a task run is actively executing |
+| `?` | Open keyboard shortcuts and help overlay |
+| `Esc` | Navigate back one level without approving pending actions |
+
+### Resuming Durable Sessions
+
+Run records and usage are stored in the local journal; runnable state is stored in the checkpoint database. Resuming an interrupted session restores its active run. A new instruction starts a fresh run context:
+
+```powershell
+# List existing sessions
 skail sessions list
-skail --resume <session-id>
+
+# Resume a specific session
+skail -r <session-id>
+
+# Resume the most recent session
+skail -c
 ```
 
-See the [CLI contract](docs/skail/CLI.md) for every flag, subcommand, output mode, and exit code.
-
-### Clean uninstall
-
-The uninstall script removes Skail's OS-keyring credential entries, the complete `~/.skail` state
-root, and the installed `skail-harness` package. Pass explicit old workspace roots only when you also
-want their legacy local `.skail` directories removed:
-
-```powershell
-.\scripts\uninstall_skail.ps1 -Yes
-.\scripts\uninstall_skail.ps1 -Yes -LegacyWorkspaceRoots C:\path\to\old-workspace
-```
-
-The operation is destructive. It does not scan arbitrary drives for unknown historical folders.
-
-### Interactive TUI
-
-Launch `skail` in a TTY to mount the cockpit immediately; provider and model
-setup runs in a background worker after the shell is visible. First run walks
-a mount-first 5-step onboarding ladder:
-
-1. Welcome (Twin sail mark + overview)
-2. Provider (LLM Gateway / OpenAI / Anthropic)
-3. Trust (trust this exact folder, or restricted mode)
-4. Theme (Dark / Light / System / Pistachio Night / Pistachio Paper / Mint Porcelain with live preview)
-5. Ready (receipt with the exact `skail -r <session-id>` resume command)
-
-```powershell
-# Normal interactive start after provider setup
-skail auth check
-skail models list
-skail
-```
-
-Keybindings: `Shift+Tab` cycles the Agents, Plan, Route, and Budget panels while
-keeping the composer focused, `Alt+P` opens the model picker (future attempts
-only), and `/mode` changes routing mode. The transcript and side panels are
-display-only; the removed Ctrl+A/B/P/R bindings cannot steal focus. `Esc` goes
-back one step and never approves (pending approvals stay pending), `Ctrl+O`
-opens the transcript overlay, `Ctrl+T` opens Mission Control (child agents),
-`Ctrl+Shift+T` focuses chat/composer, and `?` opens the shortcuts pane
-(type-to-filter). While a run is active, `Ctrl+Enter` queues a follow-up; take
-back the newest queued prompt from the queue view. `skail -r <session-id>`
-resumes any durable session.
-Headless use is unchanged: `skail -p "<prompt>"` prints the final answer,
-`skail --jsonl` streams versioned events, `-c` continues, `-r` resumes, and
-`--no-session` runs without persistence.
+---
 
 ## Architecture
 
@@ -187,69 +185,92 @@ flowchart LR
     Journal --> Resume[Resume · replay · export]
 ```
 
-| Execution path | Best for | Coordination | Workspace behavior |
+### Execution Topology
+
+| Execution Path | Best For | Coordination | Workspace Isolation |
 | --- | --- | --- | --- |
-| Direct | Small edits, inspection, and focused commands | The lead works in its normal tool loop | Shared workspace with policy-enforced writes |
-| Discovery | Work whose shape depends on repository evidence | Read-only frontier, checkpoint, then evidence-backed revision | Read-only discovery before later admitted work |
-| Planned | Multi-step or parallel work with known dependencies | Durable nodes release when verified prerequisites complete | Isolated worktrees when safe; serialized fallback and integration |
+| **Direct** | Small edits, quick inspection, and focused commands | Lead agent runs a direct tool loop | Shared workspace with policy-enforced writes |
+| **Discovery** | Tasks requiring repository reconnaissance before planning | Read-only discovery frontier with checkpoints | Read-only workspace before work is admitted |
+| **Planned** | Multi-file or parallel changes with defined dependencies | Durable plan nodes release when prerequisites finish | Worktrees when enabled and safe; otherwise serialized shared-workspace writes |
 
-> **Skail is a local application boundary.** It runs with the invoking user's operating-system
-> permissions. Workspace confinement, trust, approvals, redaction, and budgets govern actions that
-> pass through Skail; trusted programs and privileged host processes remain the user's
-> responsibility.
+> **Security & Boundary Notice**: Skail is a local application boundary running with your user permissions. Confinement, approvals, redaction, and application-level budget gates govern actions that pass through the harness. Provider-side usage and account limits remain the authority for billed spend; host operating system security remains the user's responsibility.
 
-## Documentation
+---
 
-| Section | What you'll find |
-| --- | --- |
-| [Product specification](docs/skail/SPEC.md) | Product behavior, users, commands, configuration, and acceptance criteria |
-| [Architecture](docs/skail/ARCHITECTURE.md) | Runtime topology, graph composition, persistence, routing, budgets, and safety boundaries |
-| [Feature contracts](docs/skail/FEATURES.md) | Exact behavior for agents, tools, sessions, approvals, context, and terminal interfaces |
-| [CLI reference](docs/skail/CLI.md) | Invocation syntax, subcommands, JSONL framing, and process exit codes |
-| [Threat model](docs/skail/THREAT_MODEL.md) | Trust boundaries, mitigations, and residual host-level risks |
-| [Evaluation](docs/skail/EVALUATION.md) | Independent fixtures, raw evidence, routing gates, and qualification rules |
-| [Performance](docs/skail/PERFORMANCE.md) | Reproducible runtime, rendering, persistence, and context measurements |
-| [Changelog](CHANGELOG.md) | Notable v0.1.0 fixes, performance evidence, and release status |
-| [Dependencies](docs/skail/DEPENDENCIES.md) | Pinned runtime dependencies, provider extras, and transitive tooling |
+## Benchmarks and Evaluation
 
-## Benchmarks
-
-Skail includes reproducible local benchmarks ([bench_runner](benchmarks/bench_runner.py)) and an independently scored offline evaluation suite.
-Run them against the same source and environment you want to measure:
+Skail includes reproducible local benchmarks and an independently scored offline evaluation suite:
 
 ```powershell
+# Run performance and latency benchmark suite
 python benchmarks\bench_runner.py --json --repetitions 5
+
+# Run deterministic routing and qualification evals
 python scripts\eval_routing.py --paired-runtime --output $env:TEMP\skail-eval.json
+
+# Run release boundary validation
 python scripts\release_check.py
 ```
 
-The suite measures orchestration, persistence, context, rendering, workspace, and paired execution
-behavior from raw records. Deterministic scripted evidence verifies the engineering contract;
-it is not a live-provider quality or savings claim.
+The evaluation suite validates orchestration contracts, persistence integrity, context bounds, and rendering performance against recorded fixtures. Deterministic scripted evaluation tests harness guarantees independently of live provider costs.
+
+---
+
+## Documentation
+
+Comprehensive architecture, specifications, and contracts are located in the `docs/` directory:
+
+| Document | Description |
+| --- | --- |
+| [Product Specification](docs/skail/SPEC.md) | System requirements, user personas, CLI interface, and acceptance criteria |
+| [Architecture Reference](docs/skail/ARCHITECTURE.md) | Runtime topology, graph composition, state machine, and persistence |
+| [Feature Contracts](docs/skail/FEATURES.md) | Exact contracts for agents, tools, sessions, approvals, and context engine |
+| [CLI Specification](docs/skail/CLI.md) | Complete CLI argument parser, flags, exit codes, and JSONL schema |
+| [Threat Model](docs/skail/THREAT_MODEL.md) | Security boundaries, trust levels, and host isolation mitigations |
+| [Evaluation Guide](docs/skail/EVALUATION.md) | Offline fixture evaluation, routing gates, and qualification scoring |
+| [Performance Hardening](docs/skail/PERFORMANCE.md) | Benchmarking methodology, memory limits, and context compaction rules |
+| [Dependency Audit](docs/skail/DEPENDENCIES.md) | Pinned runtime dependencies, provider extras, and license audit |
+| [Changelog](CHANGELOG.md) | Version history, release milestones, and fixed defects |
+
+---
 
 ## Contributing
 
-Issues, pull requests, tests, and documentation improvements are welcome. Read
-[AGENTS.md](AGENTS.md) for the repository conventions and keep changes focused, typed, offline by
-default, and backed by the appropriate tests.
+Contributions, issues, and feature proposals are welcome. Please read [AGENTS.md](AGENTS.md) for coding standards, typing requirements, and architecture constraints.
+
+To run the local verification suite:
 
 ```powershell
+# Run test suite
 rtk pytest -q
+
+# Run code style, typing, and smoke checks
 python -m ruff check src tests scripts evals benchmarks
 python -m mypy src\skail
 python scripts\smoke.py
 python scripts\package_check.py
 ```
 
-Report bugs or propose changes through [GitHub Issues](https://github.com/plum-sorathorn/Skail/issues).
-For the project's security boundaries, start with the [threat model](docs/skail/THREAT_MODEL.md).
+Report issues and submit pull requests on [GitHub Issues](https://github.com/plum-sorathorn/Skail/issues).
 
-## Project links
+---
 
-- [GitHub repository](https://github.com/plum-sorathorn/Skail)
-- [Issue tracker](https://github.com/plum-sorathorn/Skail/issues)
-- [Documentation index](docs/skail/README.md)
+## Maintenance and Uninstall
+
+To cleanly remove Skail from your system, including its OS keyring credentials, configuration files in `~/.skail`, and the installed package:
+
+```powershell
+# Remove credentials, state root, and installed package
+.\scripts\uninstall_skail.ps1 -Yes
+
+# Optionally clean legacy workspace roots
+.\scripts\uninstall_skail.ps1 -Yes -LegacyWorkspaceRoots C:\path\to\workspace
+```
+
+The uninstall script is destructive and strictly scoped to Skail-managed paths.
+
+---
 
 ## License
 
-Skail is released under the [MIT License](LICENSE).
+Skail is open-source software licensed under the [MIT License](LICENSE).
