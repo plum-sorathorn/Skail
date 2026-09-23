@@ -39,6 +39,10 @@ S4 retry question in run `ea102525-dc0f-412d-92f4-deddf12b6458`. The export does
 persistence across restart. Provider-side usage history and a capped test key remain pending; no
 paid validation call has been made during remediation.
 
+A final read-only provider CLI status check found no dashboard session. The account usage and key
+budget commands therefore could not provide an independent billing baseline or a provider-enforced
+cap. The prior USD 0.4376813 remains Skail-exported usage plus estimates, not provider spend.
+
 Task 1 implementation is complete offline. Run-specific controls enforce direct/no-delegation,
 no-write, and exact agent-count constraints before plan admission. Focused unit, contract, and
 integration regressions pass. The live S2 confirmation remains pending.
