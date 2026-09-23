@@ -16,7 +16,8 @@
   - Offline implementation: shared TUI/print presenter, structured JSONL completion output, secret redaction, actionable empty/failed status copy, and a mounted Textual rendering pilot. Focused regression suite passes (110 tests); Ruff, mypy, and Graphify update pass. Keep unchecked pending a matching live S1 observation: the session export and checkpoint contain no final message, so the reported output's origin remains unknown.
 - [ ] 6. Render normal questions as waiting, with question-specific controls and no tool error.
   - Offline implementation adds typed question events, keeps expected graph interrupts out of `tool.failed`, separates question answer/cancel from permission Approve/Reject, and shows session/run/plan owner suffixes. Focused offline regressions: 213 passed; the final owner-label/recovery subset: 16 passed. Ruff, mypy, and Graphify update pass. Live S6 confirmation remains pending.
-- [ ] 7. Audit earlier fixes with focused CLI and TUI checks.
+- [x] 7. Audit earlier fixes with focused CLI and TUI checks.
+  - Evidence: five catalog/list/refresh tests and four warning-as-error queue/cancel pilots pass; controller and real TUI cancellation checks show no framework traceback. Live confirmation for LIVE-001/003/004 and OUT-001/003 remains pending.
 - [ ] 8. Clear the three full offline suite failures.
 - [ ] Checkpoint: Ruff, mypy, unit/contract, smoke, and full offline suite pass.
 - [ ] 9. Re-run the remaining live scenarios with provider-side billing deltas under USD 10.

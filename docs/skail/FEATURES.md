@@ -337,6 +337,8 @@ atomically replaced after a successful refresh. A transient refresh failure may 
 authentication, malformed-response, and successful-empty-access failures do not silently fall back.
 Unknown, malformed, or stale prices cannot authorize a hard-budget route. A discovered model without
 trusted quality capability evidence remains manual-only but is executable after explicit selection.
+An unpriced manual assignment is allowed only in `manual` routing mode when no Skail hard budget or
+task limit is active; configured names alone do not imply trusted pricing or automatic eligibility.
 
 ### Merge order
 

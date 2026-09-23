@@ -23,9 +23,9 @@ corrections govern the work:
 
 | Issue | Current assessment | Repair or proof needed |
 |---|---|---|
-| LIVE-001 catalog with no prices | Refresh command fixed the empty cache path; list still needs a clear unpriced state | Verify fresh install, empty/error refresh, current prices, CLI docs |
+| LIVE-001 catalog with no prices | Offline list/refresh tests distinguish unavailable and unpriced entries; current provider catalog/prices remain unverified | Confirm provider discovery and price coverage live; keep provider spend limit separate |
 | LIVE-002 direct request admitted a plan | Runtime guard implemented and offline regressions pass; live confirmation pending | Enforce explicit direct/no-delegation intent at admission |
-| LIVE-003 / OUT-001 cancellation traceback | Logger fix in `370475e`; live TUI exit was not rechecked | Test both Ctrl+C and slash quit with a running call |
+| LIVE-003 / OUT-001 cancellation traceback | Offline controller and real Textual slash-cancel checks pass without traceback; live-provider confirmation pending | Confirm cancellation during a bounded live call |
 | LIVE-004 / OUT-003 coroutine warning | Queue shutdown is unified across slash cancel/quit, Ctrl+C, and app exit; real Textual tests pass; live confirmation pending | Route every quit path through one queue shutdown sequence |
 | LIVE-005 long tool and repair loops | Run-wide call cap and repeated decision/tool failure bounds implemented; live confirmation pending | Add a run-scoped call/turn boundary and visible terminal outcome |
 | LIVE-006 later run cites earlier plan | Offline reproduction confirmed shared checkpoint context leakage; run-scoped fix is covered, live confirmation pending | Trace checkpoint thread, plan ownership, and pending question across runs |
@@ -248,6 +248,12 @@ Acceptance:
 - Ctrl+C and slash quit both leave a clean terminal and no queued coroutine warning.
 
 Verification: focused CLI, cancellation, and TUI tests plus one local interactive quit check.
+
+Offline audit passed: five catalog/list/refresh cases cover missing snapshots, unpriced selection,
+successful refresh, and empty-refresh preservation; a real Textual slash-cancel test confirms clean
+cancellation copy without a framework traceback; and slash cancel/quit, Ctrl+C, and app-exit queue
+pilots pass with runtime warnings treated as errors. Their linked live defects remain pending because
+provider-side billing baseline and spend controls are not available.
 
 ### 8. Clear the offline test failures
 

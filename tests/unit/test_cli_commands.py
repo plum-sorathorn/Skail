@@ -6,7 +6,7 @@ from pathlib import Path
 
 from skail.cli import commands
 from skail.config.loader import ResolvedConfig
-from skail.config.models import ProviderConfig, SkailConfig
+from skail.config.models import ProviderConfig, RoutingConfig, SkailConfig
 from skail.providers.catalog_sources import (
     CatalogEntry,
     CatalogSource,
@@ -60,6 +60,85 @@ def test_models_list_reports_local_llmgateway_catalog(
     ) == 0
     assert any("LLMGateway catalog: 1 models" in line for line in rendered)
     assert any("llmgateway:accessible/model" in line for line in rendered)
+
+
+def test_models_list_distinguishes_configured_unpriced_model_from_priced_catalog(
+    monkeypatch, tmp_path: Path
+) -> None:
+    entry = CatalogEntry(
+        provider="llmgateway",
+        model="unpriced/model",
+        source=CatalogSource.DISCOVERED,
+        as_of=datetime(2026, 9, 22, tzinfo=UTC),
+        trusted=True,
+        provenance="llmgateway:/v1/models?exclude_deprecated=true",
+        fields={},
+    )
+    cache_path = tmp_path / "catalog.json"
+    save_catalog_cache(
+        cache_path,
+        (entry,),
+        provider="llmgateway",
+        endpoint="https://api.llmgateway.io/v1/models",
+    )
+    rendered: list[str] = []
+    monkeypatch.setattr(commands, "catalog_cache_path", lambda: cache_path)
+    monkeypatch.setattr(commands, "render_print_stdout", rendered.append)
+    resolved = ResolvedConfig(
+        config=SkailConfig(
+            routing=RoutingConfig(lead_model="llmgateway:unpriced/model"),
+            providers={
+                "llmgateway": ProviderConfig(
+                    type="openai-compatible",
+                    base_url="https://api.llmgateway.io/v1",
+                    models=("unpriced/model",),
+                )
+            },
+        ),
+        provenance={},
+        warnings=(),
+    )
+
+    assert commands.handle_models(
+        Namespace(models_action="list"), resolved_config=resolved
+    ) == 0
+
+    assert any("Configured Providers and Models:" in line for line in rendered)
+    catalog_summary = "LLMGateway catalog: 1 models; 0 with prompt/completion pricing"
+    assert any(catalog_summary in line for line in rendered)
+    assert any("selected llmgateway:unpriced/model" in line for line in rendered)
+    assert any(
+        "llmgateway:unpriced/model" in line and "unavailable" in line
+        for line in rendered
+    )
+
+
+def test_models_list_marks_configured_model_when_catalog_is_unavailable(
+    monkeypatch, tmp_path: Path
+) -> None:
+    rendered: list[str] = []
+    monkeypatch.setattr(commands, "catalog_cache_path", lambda: tmp_path / "missing.json")
+    monkeypatch.setattr(commands, "render_print_stdout", rendered.append)
+    resolved = ResolvedConfig(
+        config=SkailConfig(
+            providers={
+                "llmgateway": ProviderConfig(
+                    type="openai-compatible",
+                    base_url="https://api.llmgateway.io/v1",
+                    models=("configured/model",),
+                )
+            }
+        ),
+        provenance={},
+        warnings=(),
+    )
+
+    assert commands.handle_models(
+        Namespace(models_action="list"), resolved_config=resolved
+    ) == 0
+
+    assert any("llmgateway:configured/model" in line for line in rendered)
+    assert "\nLLMGateway catalog: unavailable" in rendered
 
 
 def test_models_refresh_discovers_and_persists_catalog_without_printing_credential(

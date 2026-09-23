@@ -1,3 +1,6 @@
+import asyncio
+import logging
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -19,7 +22,7 @@ from skail.tools.execution import CommandRequest
 from skail.tui.app import SkailApp
 from skail.tui.commands import dispatch_slash_command, parse_slash_command
 from skail.tui.projection import InterruptItem, TuiProjection
-from skail.tui.widgets.composer import PromptComposer
+from skail.tui.widgets.composer import ComposerTextArea, PromptComposer
 from skail.tui.widgets.interrupts import InterruptWidget
 from tests.fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_call_message
 
@@ -382,6 +385,55 @@ async def test_tui_answer_resumes_the_interrupted_controller(tmp_path: Path) -> 
             for item in app.projection.transcript_items
         ), [item.content for item in app.projection.transcript_items]
         assert journal.get_session_snapshot(str(sid)).runs[-1].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_tui_slash_cancel_has_no_framework_traceback(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.migrate()
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="TUI cancellation", created_at=datetime.now(UTC)
+    )
+    started = asyncio.Event()
+
+    async def hold_call(_model: ScriptedChatModel, _call: object) -> None:
+        started.set()
+        await asyncio.Event().wait()
+
+    model = ScriptedChatModel(
+        responses=[AIMessage(content="unused")],
+        async_call_hook=hold_call,
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": model},
+        default_lead_model="lead-model",
+        state_dir=tmp_path / "state",
+    )
+    app = SkailApp(controller=controller, session_id=session_id, journal=journal)
+
+    with caplog.at_level(logging.ERROR, logger="skail.runtime.run_controller"):
+        async with app.run_test(size=(120, 40)) as pilot:
+            app.on_prompt_composer_prompt_submitted(PromptComposer.PromptSubmitted("Cancel me"))
+            await asyncio.wait_for(started.wait(), timeout=2)
+            worker = app._active_worker
+            assert worker is not None
+            app.query_one("#composer-input", ComposerTextArea).text = "/cancel"
+            await pilot.press("enter")
+            await asyncio.wait_for(worker.wait(), timeout=2)
+            await pilot.pause()
+
+    assert journal.get_session_snapshot(str(session_id)).runs[0].status == "cancelled"
+    assert any(
+        item.content == "Execution cancelled." for item in app.projection.transcript_items
+    )
+    assert "Traceback (most recent call last)" not in caplog.text
+    assert "asyncio.exceptions.CancelledError" not in caplog.text
 
 
 @pytest.mark.asyncio

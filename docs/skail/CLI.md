@@ -82,6 +82,10 @@ Machine-readable event streaming mode:
 - `skail models list`: List built-in profiles, selected provider models, and the last validated local LLMGateway catalog snapshot, including refresh age and price coverage.
 - `skail models show <name>`: Display built-in profile details or local catalog fields, pricing, timestamps, and provenance for `PROVIDER:MODEL`.
 
+Configured model names are listed independently from the validated catalog. Missing prices display
+as unavailable; selecting an unpriced model does not qualify it for automatic hard-budget routing.
+Unpriced manual assignment is limited to `manual` mode with no Skail hard budget or task limit.
+
 The authenticated LLMGateway catalog is refreshed when `skail` starts and stored at
 `~/.skail/catalog/llmgateway.json`. A transient refresh failure may use the last validated snapshot;
 authentication, protocol, malformed-response, and empty-access failures remain actionable errors.
