@@ -8,16 +8,9 @@
   <strong>A budget-aware, local-first multi-agent coding harness built on DeepAgents and LangGraph.</strong>
 </p>
 
-<p align="center">
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.12%2B-3776AB.svg?style=flat-square" alt="Python 3.12+"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2ea44f.svg?style=flat-square" alt="License: MIT"></a>
-  <a href="docs/skail/EVALUATION.md"><img src="https://img.shields.io/badge/Release-0.1.0%20Alpha-f0883e.svg?style=flat-square" alt="Release: 0.1.0 Alpha"></a>
-  <a href="https://github.com/langchain-ai/deepagents"><img src="https://img.shields.io/badge/DeepAgents-multi--agent-8b5cf6.svg?style=flat-square" alt="DeepAgents"></a>
-  <a href="https://github.com/langchain-ai/langgraph"><img src="https://img.shields.io/badge/LangGraph-orchestration-0d9488.svg?style=flat-square" alt="LangGraph"></a>
-  <a href="https://github.com/Textualize/textual"><img src="https://img.shields.io/badge/Textual-TUI-d946ef.svg?style=flat-square" alt="Textual"></a>
-  <a href="https://github.com/pydantic/pydantic"><img src="https://img.shields.io/badge/Pydantic-validation-e92063.svg?style=flat-square" alt="Pydantic"></a>
-  <a href="https://www.sqlite.org/"><img src="https://img.shields.io/badge/SQLite-storage-003B57.svg?style=flat-square" alt="SQLite"></a>
-</p>
+[Python 3.12+](https://www.python.org/downloads/) · [MIT License](LICENSE) · [Evaluation](docs/skail/EVALUATION.md)
+
+[DeepAgents](https://github.com/langchain-ai/deepagents) · [LangGraph](https://github.com/langchain-ai/langgraph) · [Textual](https://github.com/Textualize/textual) · [Pydantic](https://github.com/pydantic/pydantic) · [SQLite](https://www.sqlite.org/)
 
 <p align="center">
   <img src="docs/assets/cockpit-preview.png" alt="Skail Terminal Cockpit Preview" width="850" />
@@ -27,7 +20,7 @@ Skail is an agentic AI and multi-agent coding harness built on [DeepAgents](http
 
 Skail runs locally on your machine without a proxy server or background daemon. It exposes an interactive terminal UI (cockpit), a scriptable CLI, and versioned JSONL event streaming for automated pipelines.
 
-> **Release Status (Alpha v0.1.0)**: Release evidence is documented in the [evaluation](docs/skail/EVALUATION.md) and [performance](docs/skail/PERFORMANCE.md) specifications. Skail's budget gates are application-level safety controls; provider-side accounting determines billed spend.
+> **Status: Alpha v0.1.0.** The [evaluation](docs/skail/EVALUATION.md) and [performance](docs/skail/PERFORMANCE.md) documents record offline engineering checks and performance measurements. They do not establish live-provider quality or savings. Skail's budget gates are application-level controls; provider-side accounting determines billed spend.
 
 ---
 
@@ -35,14 +28,14 @@ Skail runs locally on your machine without a proxy server or background daemon. 
 
 Building an ad-hoc coding agent is straightforward. Making it dependable across planning, parallel work, cost containment, crash recovery, and verification is where harnesses typically break down. Skail enforces these guarantees in deterministic runtime code:
 
-- **Application Budget Gates**: Skail reserves and gates work against its cost estimates, tracks provider-reported usage, and blocks unsafe replay when accounting is uncertain. Provider-side usage and account limits determine and cap billed spend.
+- **Application Budget Gates**: Skail reserves and gates work against its cost estimates, tracks provider-reported usage, and blocks unsafe replay when accounting is uncertain. Provider billing records determine actual spend; set any spend cap through the provider.
 - **Safe Parallel Subagents**: Up to three child agents can run concurrently. Writers use isolated Git worktrees when enabled and safe; otherwise, a write lease serializes shared-workspace changes.
 - **Adaptive Task Execution**: Direct execution for simple fixes, checkpointed discovery for open exploration, or typed dependency graphs for multi-step implementations.
 - **Task-Bound Model Routing**: Each lead run and child attempt receives a durable model assignment matched to capability requirements, role floors, and budget mode.
 - **Human Checkpoints and Approvals**: Tool approvals, project trust levels, interactive clarification questions, and execution steering are enforced by code policy rather than prompt hope.
 - **Durable SQLite Sessions**: Run, plan, assignment, event, approval, and usage records support recovery and export. Resuming restores the owning run's checkpoint; new instructions start fresh run context.
 - **Terminal Cockpit and Scriptable CLI**: Work interactively in the full Textual TUI cockpit, or run headlessly in scripts, CI pipelines, and cron jobs via `-p` and `--jsonl`.
-- **Zero Daemons, Local Boundary**: Direct execution on the host machine without external proxies, background daemons, or remote infrastructure.
+- **Local Control Plane**: Skail runs its control plane on your machine and calls configured model providers directly. It requires no Skail-hosted proxy or background daemon.
 
 ---
 
@@ -126,7 +119,7 @@ Pass `--mode <mode>` or use the `/mode` command inside the cockpit:
 | --- | --- | --- |
 | **auto** *(default)* | Selects models dynamically based on task requirements, role floors, and budget limits | Everyday balanced engineering work |
 | **economy** | Prefers cost-effective models while respecting minimum role floors | High-volume tasks, documentation, and simple refactoring |
-| **quality** | Allocates frontier reasoning models to planning, lead orchestration, and code generation | Complex multi-file architectural refactoring and debugging |
+| **quality** | Prefers higher-capability models for planning, lead orchestration, and code generation | Complex multi-file architectural refactoring and debugging |
 | **manual** | Enforces user-selected models without automatic tier adjustments | Explicit benchmarking and targeted testing |
 
 ---
@@ -193,7 +186,7 @@ flowchart LR
 | **Discovery** | Tasks requiring repository reconnaissance before planning | Read-only discovery frontier with checkpoints | Read-only workspace before work is admitted |
 | **Planned** | Multi-file or parallel changes with defined dependencies | Durable plan nodes release when prerequisites finish | Worktrees when enabled and safe; otherwise serialized shared-workspace writes |
 
-> **Security & Boundary Notice**: Skail is a local application boundary running with your user permissions. Confinement, approvals, redaction, and application-level budget gates govern actions that pass through the harness. Provider-side usage and account limits remain the authority for billed spend; host operating system security remains the user's responsibility.
+> **Security & Boundary Notice**: Skail is a local application boundary running with your user permissions. Confinement, approvals, redaction, and application-level budget gates govern actions that pass through the harness. Provider billing records are the authority for actual spend; provider-side limits control charges when configured. Host operating system security remains the user's responsibility.
 
 ---
 
@@ -205,14 +198,14 @@ Skail includes reproducible local benchmarks and an independently scored offline
 # Run performance and latency benchmark suite
 python benchmarks\bench_runner.py --json --repetitions 5
 
-# Run deterministic routing and qualification evals
+# Run the paired offline evaluation
 python scripts\eval_routing.py --paired-runtime --output $env:TEMP\skail-eval.json
 
 # Run release boundary validation
 python scripts\release_check.py
 ```
 
-The evaluation suite validates orchestration contracts, persistence integrity, context bounds, and rendering performance against recorded fixtures. Deterministic scripted evaluation tests harness guarantees independently of live provider costs.
+The offline evaluation suite checks routing and orchestration against deterministic scripted fixtures. The benchmark suite measures persistence, context assembly, and TUI rendering separately. Neither establishes real-provider quality or billed spend and savings.
 
 ---
 
@@ -242,7 +235,7 @@ To run the local verification suite:
 
 ```powershell
 # Run test suite
-rtk pytest -q
+python -m pytest -q
 
 # Run code style, typing, and smoke checks
 python -m ruff check src tests scripts evals benchmarks
