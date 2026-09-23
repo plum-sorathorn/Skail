@@ -20,30 +20,35 @@ The S5 plan belonged to run `46335ece-a442-4a0b-bb14-19f220c73846`; the conflict
 belonged to later S4 retry run `ea102525-dc0f-412d-92f4-deddf12b6458`. A queued prompt
 surviving a process restart has not been demonstrated.
 
-## Gate 1: independent billing and model qualification
+## Gate 1: in-house ledger and model qualification
 
 Complete this gate before any paid model request:
 
-1. Obtain the provider's own usage/billing view and record a timestamped baseline. Reconcile the
-   earlier interrupted calls from provider records. If the earlier campaign's provider spend cannot
-   be determined, do not claim that its total stayed below USD 10.
-2. Configure and verify a provider-side spend limit for the disposable test key/project. The
-   campaign must stay below **USD 10 total provider spend**. Use USD 8.50 as the normal stop point
-   and reserve the remainder for delayed accounting or an already-started call. Skail's `/budget`
-   and exported ledger are product outputs under test, not spending authority.
-3. Refresh/list the current provider catalog. Select three distinct priced models with tools and
+1. Refresh/list the current provider catalog through Skail. Select three distinct priced models with tools and
    structured output: `LEAD_MODEL`, `ECONOMY_MODEL`, and `IMPLEMENTER_MODEL`. Record the exact
-   provider model IDs and current provider prices; do not reuse September 22 prices without
-   verification. At least two selected models must execute during the matrix.
-4. Check credentials without printing values. If provider billing, spend control, or model
-   qualification is unavailable, stop before paid calls and record the blocker in `RUN_LOG.md`.
+   provider model IDs, catalog revision, and input/output/cached-input rates. Do not reuse
+   September 22 prices without a refresh. Use text-only requests without non-token fee features.
+   At least two selected models must execute during the matrix.
+2. Start a fresh, zero-balance **in-house campaign ledger**. For each completed call, use its
+   measured input, output, and cached-input counts with the prices frozen on that assignment.
+   Sum all lead and child calls across all runs in the durable session. Keep the historical
+   September 22 estimates separate; their actual charges remain unknown.
+3. Keep the previously required provider-side spend cap as a separate safety backstop, configured
+   without the LLM Gateway CLI. The in-house ledger controls scenario decisions; the provider cap
+   does not supply ledger amounts. Stop if the cap cannot be verified. Use USD 8.50 as the normal
+   in-house stop point against the USD 10 campaign ceiling.
+4. Check credentials without printing values. If pricing, token accounting, or the spend backstop
+   is unavailable, stop before paid calls and record the blocker in `RUN_LOG.md`.
 
-After **each** scenario, obtain a fresh provider-side usage delta and record it in `COSTS.csv`.
-Reconcile an interrupted call before another paid scenario. Stop if billing is delayed or
-ambiguous, a scenario exceeds its allocation, or the next scenario cannot fit below the normal
-stop point. Do not infer provider spend from Skail's estimates.
+After **each** scenario, export schema version 2, independently recompute each call from
+`provider_calls` token counts and frozen prices, and compare the sum with `model_usage`, the
+run ledger, and the TUI's cumulative session total. The budget panel remains current-run scoped.
+Record input/output/cached tokens, model rates, local cost, and cumulative
+local cost in `COSTS.csv`. A missing or ambiguous call stays unresolved: do not start another
+paid scenario until it can be safely accounted for in-house. Stop if a scenario exceeds its
+allocation or the next one cannot fit below the normal stop point. Do not use the LLM Gateway CLI.
 
-| Scenario | Maximum additional provider spend (USD) |
+| Scenario | Maximum additional in-house token cost (USD) |
 |---|---:|
 | S1 direct read-only | 0.10 |
 | S2 direct implementation | 0.55 |
@@ -55,7 +60,8 @@ stop point. Do not infer provider spend from Skail's estimates.
 | S8 natural escalation, only if eligible | 1.50 |
 
 These are per-scenario stop thresholds, not permission to exceed the USD 10 campaign ceiling.
-Recalculate remaining headroom from **provider-side** evidence before each scenario.
+Recalculate remaining headroom from the cumulative in-house ledger before each scenario. The
+token formula is an estimate of billed spend because extra fees or missing usage can differ.
 
 ## Gate 2: disposable fixture and session
 
@@ -78,7 +84,8 @@ skail --lead-model <LEAD_MODEL> `
   --mode auto --max-agents 3 --delegation auto --workspace worktree
 ```
 
-Do not pass `--budget` as the financial control. Enter scenario prompts through the TUI. Keep
+One run's `--budget` cannot enforce the cumulative ceiling across several runs. Enter scenario
+prompts through the TUI. Keep
 S1-S7 in the same durable session, including the S6 quit/resume. Record the session ID and
 selected model set. The model picker (`Alt+P`) and `/model` affect future assignments; confirm
 the resulting assignment in the export rather than trusting the displayed selection alone.
@@ -99,7 +106,7 @@ skail sessions export <SESSION_ID> --output out/live-agentic/session-<scenario>-
 ```
 
 Never copy credentials, unrestricted tool output, or secrets into logs or screenshots. Record
-provider billing before/after/delta separately from Skail-exported actuals and estimates.
+the in-house token-cost calculation separately from conservative estimates and unresolved calls.
 
 ## Scenario matrix
 
@@ -212,7 +219,7 @@ blocked/actionable outcome without a false success, workaround write, or unrestr
 
 ### S8 — Natural escalation only
 
-Run only if sufficient independently verified spend headroom remains. Prompt:
+Run only if sufficient in-house ledger headroom remains. Prompt:
 
 > Delegate one implementer task to fix the concurrency defect described by
 > `tests/test_integration.py`. Preserve the task identity, run the focused test, and if the
@@ -228,7 +235,7 @@ force escalation.
 
 Stop the current scenario immediately for a secret leak, outside-workspace successful write,
 destructive action, duplicate paid call, incorrect task/run ownership, unsafe concurrent writers,
-repeated model calls beyond the boundary, or uncertain provider accounting. Preserve the
+repeated model calls beyond the boundary, or uncertain in-house accounting. Preserve the
 workspace and exports for diagnosis. Add a defect to `BUGS.md` or `OUTPUT_MISFORMATS.md` with
 the scenario, IDs, model, expected/actual result, reproduction, evidence, provider cost impact,
 suspected layer, and regression recommendation. Mark uncertain causes as hypotheses.
@@ -236,6 +243,7 @@ suspected layer, and regression recommendation. Mark uncertain causes as hypothe
 At the end, independently run fixture `python -m pytest -q`, inspect its Git status and
 `git diff --check`, and compare all exports with TUI observations. Update the remediation
 checklist and evidence files. Report each scenario as pass, fail, blocked as expected, skipped, or
-not exercised; exact models and prices; provider-side spend by scenario and total; Skail ledger
-discrepancies; defects; and limitations. If billing evidence remains unavailable, report the
-live matrix as pending without making paid calls.
+not exercised; exact models and frozen prices; per-model token counts; in-house cost by scenario
+and total; unresolved calls; defects; and limitations. Do not describe this calculation as
+verified provider billing. If the spend backstop remains unavailable, report the live matrix as
+pending without making paid calls.

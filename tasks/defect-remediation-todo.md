@@ -1,7 +1,10 @@
 # Defect Remediation Checklist
 
-- [ ] 0. Reconcile run IDs, plan ownership, and cost authority; obtain independent provider billing.
+- [ ] 0. Reconcile run IDs and plan ownership; establish new in-house token-cost evidence.
   - Evidence review completed across all ten session exports; run ownership correction recorded in `BUGS.md` and `RUN_LOG.md`. A read-only provider CLI status check found no dashboard session; account usage and key limits remain unavailable without it. No paid call was made.
+  - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
+    model rates, price measured tokens locally, and include child calls in the parent run. Prior
+    exports lack per-call tokens and remain historical estimates.
 - [x] 1. Enforce explicit direct, no-delegation, no-write, and exact-child constraints at admission.
   - Evidence: `tests/unit/test_lead_intent.py`, `tests/contract/test_execution_decisions.py`, and focused `tests/integration/test_lead.py` regressions pass; live S2 confirmation remains pending.
 - [x] 2. Bound repeated decision/tool loops and preserve uncertain call accounting.
@@ -22,6 +25,9 @@
   - Evidence: the no-credentials subprocess uses the null keyring backend, the initialization replay pilot waits asynchronously for its worker barrier, and the README assertion matches the current image masthead.
 - [x] Checkpoint: Ruff, mypy, unit/contract, smoke, and full offline suite pass.
   - Verification: Ruff passed; mypy found no issues in 126 source files; unit/contract passed (865 passed, 2 skipped); smoke passed; full offline suite passed (1136 passed, 5 skipped).
-- [ ] 9. Re-run the remaining live scenarios with provider-side billing deltas under USD 10.
+- [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
   - Not exercised: read-only provider CLI status found no dashboard session. Provider-side usage baseline and a capped key could not be obtained, so no paid call was made; S6/S7 remain unrun and S8 was not forced.
+  - Future runs use export schema version 2 `provider_calls` and `model_usage`; compare local
+    per-model calculations with the TUI's lead-plus-child run total after each scenario. The
+    LLM Gateway CLI is removed from the procedure.
 - [ ] Update `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, and `COSTS.csv` with verified outcomes.

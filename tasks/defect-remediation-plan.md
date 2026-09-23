@@ -7,8 +7,10 @@ remaining interactive run are in `tasks/live-agentic-test-plan.md`.
 
 Close every issue in `out/live-agentic/BUGS.md` and `OUTPUT_MISFORMATS.md`, including defects
 marked fixed that still need end-to-end confirmation. Restore the unfinished direct, parallel,
-planned, interrupt, safety, and output scenarios without using Skail's ledger to enforce the
-external spending ceiling. This document plans the fixes and makes no paid calls.
+planned, interrupt, safety, and output scenarios using the in-house token-cost ledger defined in
+[ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md). The previous provider-billing
+gate below records the historical stop decision; future validation follows
+`tasks/live-agentic-test-plan.md` without the LLM Gateway CLI. This document makes no paid calls.
 
 The logs were reviewed against the current source and exported run events. Two evidence
 corrections govern the work:
@@ -26,13 +28,13 @@ corrections govern the work:
 
 | Issue | Current assessment | Repair or proof needed |
 |---|---|---|
-| LIVE-001 catalog with no prices | Offline list/refresh tests distinguish unavailable and unpriced entries; current provider catalog/prices remain unverified | Confirm provider discovery and price coverage live; keep provider spend limit separate |
+| LIVE-001 catalog with no prices | Offline list/refresh tests distinguish unavailable and unpriced entries; current provider catalog/prices remain unverified | Confirm current prices and freeze them per assignment before live calls |
 | LIVE-002 direct request admitted a plan | Runtime guard implemented and offline regressions pass; live confirmation pending | Enforce explicit direct/no-delegation intent at admission |
 | LIVE-003 / OUT-001 cancellation traceback | Offline controller and real Textual slash-cancel checks pass without traceback; live-provider confirmation pending | Confirm cancellation during a bounded live call |
 | LIVE-004 / OUT-003 coroutine warning | Queue shutdown is unified across slash cancel/quit, Ctrl+C, and app exit; real Textual tests pass; live confirmation pending | Route every quit path through one queue shutdown sequence |
 | LIVE-005 long tool and repair loops | Run-wide call cap and repeated decision/tool failure bounds implemented; live confirmation pending | Add a run-scoped call/turn boundary and visible terminal outcome |
 | LIVE-006 later run cites earlier plan | Offline reproduction confirmed shared checkpoint context leakage; run-scoped fix is covered, live confirmation pending | Trace checkpoint thread, plan ownership, and pending question across runs |
-| LIVE-007 / OUT-004 question shown as tool failure | Offline fix suppresses expected graph-interrupt failures and emits a typed question event; real `ask_user` errors still fail; live S6 confirmation pending | Confirm question wait and resume with provider-side billing evidence |
+| LIVE-007 / OUT-004 question shown as tool failure | Offline fix suppresses expected graph-interrupt failures and emits a typed question event; real `ask_user` errors still fail; live S6 confirmation pending | Confirm question wait and resume with in-house call accounting |
 | OUT-002 internal criteria in final answer | Offline presentation path fixed; the exact S1 model response is absent from its export/checkpoint, so origin and live status remain unverified | Preserve structured evidence while presenting a clean answer; confirm with a matching live observation |
 | OUT-005 question labeled approval | Offline UI separates question answer/cancel controls from permission approval controls and displays owner suffixes; live confirmation pending | Confirm question and approval cards in the live TUI |
 
@@ -79,21 +81,21 @@ appropriate panel or export and show a clean answer in the chat.
 
 Inspect the last live exports and journal rows without another provider call. Record one row per
 run with its assignment, accepted decision, plan owner, tool failures, terminal status, and cost
-authority. Obtain an independent provider billing baseline and usage history before any future
-paid validation. If that view is unavailable, the paid retest stays pending; offline repair work
-continues.
+authority. Historical provider charges remain unknown; do not retroactively label Skail's
+estimates as billed spend. For future calls, capture measured tokens and prices frozen on each
+assignment, plus unresolved call IDs. Use the current live test plan's spend gate.
 
 Acceptance:
 
-- `COSTS.csv` distinguishes external billing, Skail `authoritative_actual`, and conservative
-  estimates; none is presented as another.
+- `COSTS.csv` distinguishes historical Skail exports from new locally calculated token costs
+  and unresolved calls; none is presented as verified provider billing.
 - Each live defect cites the correct run ID and evidence, and unproven cause claims are marked as
   hypotheses.
-- Any proposed spend limit is enforced by the provider account/project when available; Skail's
-  `/budget` remains a product assertion.
+- The cumulative test ledger includes lead and child calls at their frozen per-model prices;
+  `/budget` and exported call totals agree.
 
-Verification: inspect `session-S1.json` through `session-S5-final.json` and the provider's own usage
-view. No model generation is needed.
+Verification: inspect `session-S1.json` through `session-S5-final.json`; use export schema
+version 2 for new call/token evidence. No model generation is needed for the historical review.
 
 ### 1. Enforce explicit execution intent at the admission boundary
 
@@ -139,7 +141,7 @@ Acceptance:
   actual; the reservation/uncertainty remains visible.
 
 Verification: deterministic loop and cancellation tests, then one bounded interactive smoke test
-after Task 0's external billing gate.
+after Task 0's in-house price and cost gate.
 
 ### 3. Make run and plan ownership explicit across resume
 
@@ -285,24 +287,25 @@ its worker barrier, and the README masthead assertion matches the current image.
 Ruff passed; mypy found no issues in 126 source files; unit/contract passed with 865 passed and 2
 skipped; smoke passed; full offline suite passed with 1136 passed and 5 skipped.
 
-### 9. Re-run the live matrix with independent billing control
+### 9. Re-run the live matrix with in-house token accounting
 
 Use a clean disposable fixture commit and one durable session. Complete S2, both S3 reviews, S4
 two-child concurrency/FIFO, S5 checkpoint/revision, S6 question resume, S7 boundary denial, and
 optional S8 natural escalation. Record exact model IDs, assignments, plan revisions, child peak
-concurrency, terminal states, output shapes, changed paths, independent fixture tests, and provider
-billing deltas after every scenario. Keep the original sub-USD-10 ceiling and stop rules; do not
-count Skail's budget display as independent billing evidence.
+concurrency, terminal states, output shapes, changed paths, independent fixture tests, and
+per-model token/cost evidence after every scenario. Keep the sub-USD-10 in-house ceiling and stop
+rules; do not describe the token calculation as verified provider billing.
 
 Acceptance:
 
 - Every scenario receives pass, fail, blocked-as-expected, skipped, or not-exercised with evidence.
-- Independent provider billing delta proves total spend below USD 10; interrupted calls are
-  reconciled before another paid scenario.
+- Cumulative in-house lead-plus-child token costs stay below USD 10; interrupted or missing-usage
+  calls remain unresolved and block another paid scenario until safely accounted for.
 - The open defects and output misformats are closed only after matching live observations, not
   because unit tests pass.
 
-Verification: session exports, provider billing view, TUI observations, `git diff --check`, and
+Verification: session exports with per-call tokens and frozen prices, TUI observations,
+  `git diff --check`, and
 independently rerun fixture tests.
 
 ## Dependencies and checkpoints
@@ -318,7 +321,8 @@ independently rerun fixture tests.
 
 Checkpoint after Tasks 1-2: malformed decisions and repeated calls stop predictably. Checkpoint
 after Tasks 3-4: resume and queue never mix run ownership. Checkpoint after Tasks 5-8: user output
-and full offline quality gates pass. Task 9 starts only when external billing evidence is available.
+and full offline quality gates pass. Task 9 starts only after the in-house pricing and spend
+gate in `tasks/live-agentic-test-plan.md`.
 
 Do not force escalation or change the fixture to make S8 fail. Any public event/status, CLI, or
 interrupt contract change needs its spec/ADR update in the same implementation task.
@@ -330,16 +334,16 @@ and 8 are complete offline; Tasks 3, 5, and 6 have offline repairs but still nee
 observations. No later live run proves those repairs. Use the following order for the remaining
 work, without repeating completed implementation solely to satisfy a test scenario:
 
-1. **Establish cost authority (Task 0).** Obtain the provider's usage before the first call and a
-   provider-side cap for the disposable test key. Reconcile any previously interrupted calls from
-   the provider view. Record the baseline and cap evidence separately from Skail's exported usage;
-   if either is unavailable, stop paid work and keep the live tasks pending.
+1. **Establish cost authority (Task 0).** Refresh the model catalog, record per-model rates and
+   revision, and start a fresh in-house campaign ledger. Keep prior interrupted calls labelled
+   unknown; do not fold Skail's prior estimates into verified spend. Confirm the separate spend
+   backstop required by the live plan before any paid call.
 2. **Retest the repaired paths (Tasks 3, 5, 6, and 9).** In a disposable repository, run S2 direct
    intent, S3 model switch and bounded review, S4 exactly-two-child orchestration and FIFO queue,
    S5 plan admission/cancel followed by an unrelated run, S6 question/approval/quit/resume, and S7
    safety denial. Exercise S8 only if a natural escalation occurs. Export each session immediately
    and record run ID, plan ID, exact model, terminal state, changed paths, output shape, and the
-   provider billing delta before the next paid scenario. A result is confirmed only when the live
+   in-house token-cost delta before the next paid scenario. A result is confirmed only when the live
    event stream and TUI both match the relevant acceptance criteria above.
 3. **If a defect recurs, repair its owning seam and add a failing regression first.** For direct
    intent or child-count violations, inspect `run_controller.py` and `decisions.py` admission. For
@@ -353,6 +357,6 @@ work, without repeating completed implementation solely to satisfy a test scenar
    Update the corresponding feature contract or ADR in the same change if the public behavior
    changes, then run focused tests and the full offline gate in repository order.
 4. **Close evidence (Task 9).** Update `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, and
-   `COSTS.csv` with observed pass/fail/blocked results and exact provider billing deltas. Leave
-   defects open where the original output cannot be reproduced or the provider billing view is
-   unavailable. The total provider-side delta must remain below USD 10.
+   `COSTS.csv` with observed pass/fail/blocked results, token counts, frozen rates, and local
+   cost deltas. Leave defects open where the original output cannot be reproduced. The cumulative
+   in-house token-cost total must remain below USD 10; actual provider billing is unverified.
