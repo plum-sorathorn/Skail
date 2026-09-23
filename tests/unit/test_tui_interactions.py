@@ -225,6 +225,116 @@ async def test_quitting_drops_queued_followups_without_starting_a_coroutine() ->
             await app._active_worker.wait()
 
 
+async def _start_run_with_queued_prompt(
+    app: SkailApp, controller: _BlockingController, pilot: Any
+) -> ComposerTextArea:
+    area = app.query_one("#composer-input", ComposerTextArea)
+    area.text = "first"
+    await pilot.press("enter")
+    await asyncio.wait_for(controller.started.wait(), timeout=1)
+    area.text = "queued follow-up"
+    await pilot.press("ctrl+enter")
+    await pilot.pause()
+    assert app.projection.queue == ["queued follow-up"]
+    return area
+
+
+@pytest.mark.asyncio
+async def test_slash_cancel_discards_queue_without_running_it() -> None:
+    controller = _BlockingController()
+    app = SkailApp(controller=controller)
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        area = await _start_run_with_queued_prompt(app, controller, pilot)
+        area.text = "/cancel"
+        await pilot.press("enter")
+        await pilot.pause()
+        if app._active_worker is not None:
+            await asyncio.wait_for(app._active_worker.wait(), timeout=1)
+
+        assert controller.calls == ["first"]
+        assert app.projection.queue == []
+        assert any(item.title == "Queue cleared" for item in app.projection.transcript_items)
+
+
+@pytest.mark.asyncio
+async def test_slash_quit_discards_queue_and_stops_dispatch() -> None:
+    controller = _BlockingController()
+    app = SkailApp(controller=controller)
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        area = await _start_run_with_queued_prompt(app, controller, pilot)
+        area.text = "/quit"
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert app.app_state == "quitting"
+        assert app.projection.queue == []
+        assert controller.calls == ["first"]
+        assert any(item.title == "Queue cleared" for item in app.projection.transcript_items)
+
+
+@pytest.mark.asyncio
+async def test_ctrl_c_discards_queue_without_starting_follow_up() -> None:
+    controller = _BlockingController()
+    app = SkailApp(controller=controller)
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _start_run_with_queued_prompt(app, controller, pilot)
+        await pilot.press("ctrl+c")
+        await pilot.pause()
+
+        assert app.app_state == "quitting"
+        assert app.projection.queue == []
+        assert controller.calls == ["first"]
+        assert any(item.title == "Queue cleared" for item in app.projection.transcript_items)
+
+
+@pytest.mark.asyncio
+async def test_app_unmount_discards_queue_and_cancels_active_worker() -> None:
+    controller = _BlockingController()
+    app = SkailApp(controller=controller)
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _start_run_with_queued_prompt(app, controller, pilot)
+        app.exit(0)
+        await pilot.pause()
+
+    assert app.app_state == "quitting"
+    assert app.projection.queue == []
+    assert controller.calls == ["first"]
+    assert any(item.title == "Queue cleared" for item in app.projection.transcript_items)
+
+
+@pytest.mark.asyncio
+async def test_queued_prompt_is_not_restored_in_a_new_tui_instance(tmp_path: Any) -> None:
+    journal, _, service, session_id = _session_dependencies(tmp_path)
+    controller = _BlockingController()
+    app = SkailApp(
+        controller=controller,
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+    )
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _start_run_with_queued_prompt(app, controller, pilot)
+        app.exit(0)
+        await pilot.pause()
+
+    restored = SkailApp(
+        controller=_BlockingController(),
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        initial_snapshot=journal.get_session_snapshot(session_id),
+    )
+
+    assert app.projection.queue == []
+    assert restored.projection.queue == []
+    assert controller.calls == ["first"]
+
+
 @pytest.mark.asyncio
 async def test_composer_enter_dispatches_model_slash_command() -> None:
     app = SkailApp()

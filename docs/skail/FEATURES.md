@@ -632,6 +632,11 @@ New input while a foreground run is active is classified as:
 
 The TUI makes the classification visible before destructive cancellation.
 
+Queued follow-ups run FIFO after the foreground run completes. Whole-run cancellation, an unsuccessful
+terminal outcome without a pending interrupt, `/quit`, Ctrl+C, and application shutdown discard the
+queue and show that state. A pending question keeps queued follow-ups waiting until the user resolves
+it. The queue exists only in the current TUI process and is never restored from session history.
+
 ### Background steering
 
 When experimental background support is enabled, `/steer` sends a bounded update through the async adapter. It cannot expand permissions, budget, depth, or write scope without normal validation.
@@ -648,7 +653,8 @@ Each run has its own LangGraph checkpoint thread, identified by its session and 
 an interrupted run restores that run's transcript, task graph, assignments, usage, reservations,
 pending questions, and trust context. A new instruction starts a fresh checkpoint thread and does
 not inherit a cancelled run's plan or model transcript. Session history remains visible in the TUI
-and journal. Orphaned in-flight provider calls become interrupted; Skail does not replay them
+  and journal. The TUI's in-memory follow-up queue is not part of the checkpoint and is not restored.
+  Orphaned in-flight provider calls become interrupted; Skail does not replay them
 without reconciliation evidence.
 
 ### Planned dispatch and plan-node recovery

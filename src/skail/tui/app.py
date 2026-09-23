@@ -996,6 +996,8 @@ class SkailApp(App[int]):
             self.projection.queue.clear()
             self._run_active = False
             return
+        if self.app_state != "ready":
+            return
         if self.projection.pending_interrupt is not None or not self._run_active:
             return
         if not self.projection.queue:
@@ -1427,7 +1429,11 @@ class SkailApp(App[int]):
         try:
             result = await self.controller.run_instruction(text, controls=controls)
             self._apply_run_result(result)
+            result_status = getattr(result, "status", "completed")
+            if result.pending_interrupt is None and result_status != "completed":
+                self._clear_queued_prompts(f"Run ended {result_status}:")
         except (KeyboardInterrupt, asyncio.CancelledError):
+            self._clear_queued_prompts("Foreground run cancelled:")
             self.projection.transcript_items.append(
                 TranscriptItem(
                     id=f"cancel-{len(self.projection.transcript_items)}",
@@ -1437,6 +1443,7 @@ class SkailApp(App[int]):
                 )
             )
         except Exception as exc:
+            self._clear_queued_prompts("Foreground run failed:")
             self.projection.transcript_items.append(
                 TranscriptItem(
                     id=f"err-{len(self.projection.transcript_items)}",
@@ -1484,7 +1491,11 @@ class SkailApp(App[int]):
         try:
             result = await self.controller.resume_interrupted(answer)
             self._apply_run_result(result)
+            result_status = getattr(result, "status", "completed")
+            if result.pending_interrupt is None and result_status != "completed":
+                self._clear_queued_prompts(f"Run ended {result_status}:")
         except Exception as exc:
+            self._clear_queued_prompts("Resumed run failed:")
             self.projection.transcript_items.append(
                 TranscriptItem(
                     id=f"err-{len(self.projection.transcript_items)}",
@@ -1509,6 +1520,61 @@ class SkailApp(App[int]):
         except Exception:
             return
         self.projection.apply_budget_snapshot(snapshot)
+
+    def _clear_queued_prompts(self, reason: str) -> int:
+        queued = len(self.projection.queue)
+        self.projection.queue.clear()
+        if queued:
+            prompt_word = "prompt" if queued == 1 else "prompts"
+            self._append_system_message(
+                "Queue cleared",
+                f"{reason} {queued} queued {prompt_word} discarded. Submit them again when ready.",
+            )
+        return queued
+
+    def _cancel_foreground_run(self) -> None:
+        self._clear_queued_prompts("Foreground cancellation:")
+        worker = self._active_worker
+        if worker is not None and not worker.is_finished:
+            worker.cancel()
+        else:
+            self._run_active = False
+        self.update_views()
+
+    def _begin_shutdown(self) -> None:
+        if self.app_state == "quitting":
+            return
+        self.app_state = "quitting"
+        self._run_active = False
+        self._clear_queued_prompts("Application shutdown:")
+        if self._active_worker is not None:
+            try:
+                self._active_worker.cancel()
+            except Exception:
+                pass
+        if self.session_service is not None and self.session_id is not None:
+            try:
+                self.session_service.journal.update_session_status(
+                    session_id=str(self.session_id), status="idle"
+                )
+            except Exception:
+                pass
+        self.update_views()
+
+    def on_unmount(self, event: Any) -> None:
+        """Drop queued work if Textual is closed by the host window lifecycle."""
+        _ = event
+        self._begin_shutdown()
+
+    def exit(
+        self,
+        result: Any = None,
+        return_code: int = 0,
+        message: Any = None,
+    ) -> None:
+        """Apply queue and worker shutdown before Textual exits the event loop."""
+        self._begin_shutdown()
+        super().exit(result, return_code=return_code, message=message)
 
     def _apply_run_result(self, result: Any) -> None:
         if result.pending_interrupt:
@@ -1602,13 +1668,7 @@ class SkailApp(App[int]):
                     "Project is trusted." if trusted else "Project is untrusted."
                 )
             if result.action == "quit":
-                if self._active_worker is not None:
-                    self._active_worker.cancel()
-                if self.session_service is not None and self.session_id is not None:
-                    self.session_service.journal.update_session_status(
-                        session_id=str(self.session_id), status="idle"
-                    )
-                self.app_state = "quitting"
+                self._begin_shutdown()
                 self.exit(0)
                 return
             if result.action == "view" and result.target_view:
@@ -1619,10 +1679,8 @@ class SkailApp(App[int]):
             elif result.action == "cancel":
                 if result.target_id:
                     self.request_child_cancel(result.target_id)
-                elif self._active_worker is not None:
-                    self._active_worker.cancel()
-                    self._active_worker = None
-                    self._run_active = False
+                else:
+                    self._cancel_foreground_run()
             elif result.action == "steer":
                 controller = self.controller
                 request_steer = getattr(controller, "request_steer", None)
@@ -1814,13 +1872,14 @@ class SkailApp(App[int]):
                 and self.question_store is not None
             ):
                 try:
-                      self.question_store.cancel(
-                          str(pending.payload["question_id"]),
-                          graph_id=self._question_graph_id(pending.payload),
-                      )
+                    self.question_store.cancel(
+                        str(pending.payload["question_id"]),
+                        graph_id=self._question_graph_id(pending.payload),
+                    )
                 except Exception:
                     pass
             self.controller.reject_interrupted()
+        self._clear_queued_prompts("The waiting run was cancelled:")
         self.projection.pending_interrupt = None
         self.projection.transcript_items.append(
             TranscriptItem(
@@ -2270,21 +2329,7 @@ class SkailApp(App[int]):
             self.update_views()
 
     async def action_quit(self) -> None:
-        self.app_state = "quitting"
-        self._run_active = False
-        self.projection.queue.clear()
-        if self._active_worker is not None:
-            try:
-                self._active_worker.cancel()
-            except Exception:
-                pass
-        if self.session_service is not None and self.session_id is not None:
-            try:
-                self.session_service.journal.update_session_status(
-                    session_id=str(self.session_id), status="idle"
-                )
-            except Exception:
-                pass
+        self._begin_shutdown()
         self.exit(0)
 
 

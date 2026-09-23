@@ -445,6 +445,11 @@ mouse clicks and keyboard focus cannot activate them. `Shift+Tab` cycles Agents 
 Budget while focus remains in the composer. Routing mode is changed with `/mode`; the former
 Ctrl+A/B/P/R panel bindings are not part of the interface.
 
+Follow-ups use an in-memory FIFO queue and run after successful foreground completion. Whole-run
+cancellation, unsuccessful terminal outcomes, `/quit`, Ctrl+C, and application exit discard queued
+prompts with visible copy. Resume restores the active run and its pending question, never queued
+composer text.
+
 ## 14. CLI contract
 
 ```text

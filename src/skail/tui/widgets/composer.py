@@ -547,6 +547,12 @@ class PromptComposer(Widget):
         self._refresh_status()
         self.post_message(self.PromptQueued(cleaned))
 
+    def _send_or_queue(self, text: str, *, queue_if_busy: bool) -> None:
+        if text.lstrip().startswith("/") or not queue_if_busy:
+            self._submit_text(text)
+        else:
+            self._queue_text(text)
+
     async def handle_composer_key(self, area: TextArea, event: events.Key) -> bool:
         draft = self.draft_text
         if event.key == "escape" and self._palette_open:
@@ -563,10 +569,9 @@ class PromptComposer(Widget):
             return True
         if event.key == "ctrl+enter":
             if draft.strip():
-                if self.run_active or self.queue_items:
-                    self._queue_text(draft)
-                else:
-                    self._submit_text(draft)
+                self._send_or_queue(
+                    draft, queue_if_busy=self.run_active or bool(self.queue_items)
+                )
             return True
         if event.key == "shift+enter":
             start, end = area.selection
@@ -592,10 +597,7 @@ class PromptComposer(Widget):
                         self._submit_text(f"/{match.command}")
                 return True
             if draft.strip():
-                if self.queue_items:
-                    self._queue_text(draft)
-                else:
-                    self._submit_text(draft)
+                self._send_or_queue(draft, queue_if_busy=bool(self.queue_items))
             return True
         if event.key == "up":
             if self._palette_open and self._matches:
@@ -671,10 +673,7 @@ class PromptComposer(Widget):
                     return
                 self._submit_text(f"/{match.command}")
                 return
-            if self.queue_items:
-                self._queue_text(draft)
-            else:
-                self._submit_text(draft)
+            self._send_or_queue(draft, queue_if_busy=bool(self.queue_items))
 
     def on_click(self, event: events.Click) -> None:
         widget = getattr(event, "widget", None)
