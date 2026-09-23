@@ -12,10 +12,6 @@
 
 [DeepAgents](https://github.com/langchain-ai/deepagents) · [LangGraph](https://github.com/langchain-ai/langgraph) · [Textual](https://github.com/Textualize/textual) · [Pydantic](https://github.com/pydantic/pydantic) · [SQLite](https://www.sqlite.org/)
 
-<p align="center">
-  <img src="docs/assets/cockpit-preview.png" alt="Skail Terminal Cockpit Preview" width="850" />
-</p>
-
 Skail is an agentic AI and multi-agent coding harness built on [DeepAgents](https://github.com/langchain-ai/deepagents) and [LangGraph](https://github.com/langchain-ai/langgraph). It provides deterministic runtime controls for application-level budgets, workspace writes, task-bound model routing, and durable SQLite persistence, so developers can delegate complex, parallel coding workflows with bounded, reviewable changes.
 
 Skail runs locally on your machine without a proxy server or background daemon. It exposes an interactive terminal UI (cockpit), a scriptable CLI, and versioned JSONL event streaming for automated pipelines.
