@@ -18,7 +18,9 @@ from textual.containers import Container
 from textual.widgets import Button, Input, Static, TabbedContent
 
 from skail.cli.main import RuntimeModelSet
+from skail.domain.events import InterruptKind
 from skail.runtime.redaction import RedactionRegistry
+from skail.runtime.run_controller import RunController
 from skail.sessions.checkpoints import CheckpointStore
 from skail.sessions.journal import Journal
 from skail.sessions.service import SessionService
@@ -593,6 +595,49 @@ def test_runtime_attach_preserves_explicit_lead_model_for_prompt_controls(tmp_pa
 
     assert app.projection.model_for_future() == "lead-model"
     assert app.projection.footer_data.lead_model == "lead-model"
+
+
+async def test_lazy_resume_mounts_restored_question_card(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="booted")
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+
+    def restore(controller: RunController) -> bool:
+        controller._pending_interrupt_payload = {
+            "kind": "question",
+            "question_id": "restored-question",
+            "prompt": "Choose JSON or CSV",
+            "options": ("JSON", "CSV"),
+        }
+        return True
+
+    monkeypatch.setattr(RunController, "restore_interrupted", restore)
+    app = SkailApp(
+        runtime_factory=lambda: _runtime_set(model),
+        bootstrap={
+            "workspace": str(tmp_path),
+            "session_id": session_id,
+            "resume_session": session_id,
+        },
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    app._enabled_models = {"lead-model"}
+    app.app_state = "initializing"
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        for _ in range(30):
+            await pilot.pause()
+            if app.app_state == "ready":
+                break
+        assert app.app_state == "ready"
+        assert app.projection.pending_interrupt is not None
+        assert app.projection.pending_interrupt.kind is InterruptKind.QUESTION
+        assert app.query_one(InterruptWidget).query_one("#interrupt-input", Input)
 
 
 @pytest.mark.asyncio

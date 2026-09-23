@@ -777,6 +777,9 @@ class SkailApp(App[int]):
         resume_target = self.bootstrap.get("resume_session", None)
         if resume_target is not None:
             controller.restore_interrupted()
+            snapshot = self.journal.get_session_snapshot(str(self.session_id))
+            self.projection.apply_snapshot(snapshot)
+            self._restore_pending_interrupt(snapshot)
         self.onboarding_credentials.clear()
         selection_required = bool(
             getattr(runtime_models, "selection_required", False)
@@ -1601,6 +1604,25 @@ class SkailApp(App[int]):
         )
         self._append_system_message(title, content)
 
+    def _restore_pending_interrupt(self, snapshot: SessionSnapshot) -> bool:
+        controller = self.controller
+        if (
+            controller is None
+            or controller.pending_interrupt is None
+            or self.projection.pending_interrupt is not None
+        ):
+            return False
+        owner = next(
+            (run for run in reversed(snapshot.runs) if run.status == "blocked"), None
+        )
+        if owner is None and snapshot.runs:
+            owner = snapshot.runs[-1]
+        self._set_interrupt(
+            controller.pending_interrupt,
+            run_id=owner.run_id if owner is not None else "restored",
+        )
+        return True
+
     def _set_interrupt(self, payload: dict[str, Any], *, run_id: str) -> None:
         payload = dict(payload)
         payload.setdefault("session_id", str(self.session_id or ""))
@@ -1728,6 +1750,8 @@ class SkailApp(App[int]):
                         resume_res.session.session_id
                     )
                     self.apply_snapshot(snapshot)
+                    if self._restore_pending_interrupt(snapshot):
+                        self.update_views()
             elif (
                 result.action == "compact"
                 and self.session_service is not None
