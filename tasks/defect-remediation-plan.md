@@ -319,3 +319,37 @@ and full offline quality gates pass. Task 9 starts only when external billing ev
 
 Do not force escalation or change the fixture to make S8 fail. Any public event/status, CLI, or
 interrupt contract change needs its spec/ADR update in the same implementation task.
+
+## Next execution pass after the offline repairs
+
+The September 22 run is the latest live-agentic matrix in `out/live-agentic`. Tasks 1, 2, 4, 7,
+and 8 are complete offline; Tasks 3, 5, and 6 have offline repairs but still need matching live
+observations. No later live run proves those repairs. Use the following order for the remaining
+work, without repeating completed implementation solely to satisfy a test scenario:
+
+1. **Establish cost authority (Task 0).** Obtain the provider's usage before the first call and a
+   provider-side cap for the disposable test key. Reconcile any previously interrupted calls from
+   the provider view. Record the baseline and cap evidence separately from Skail's exported usage;
+   if either is unavailable, stop paid work and keep the live tasks pending.
+2. **Retest the repaired paths (Tasks 3, 5, 6, and 9).** In a disposable repository, run S2 direct
+   intent, S3 model switch and bounded review, S4 exactly-two-child orchestration and FIFO queue,
+   S5 plan admission/cancel followed by an unrelated run, S6 question/approval/quit/resume, and S7
+   safety denial. Exercise S8 only if a natural escalation occurs. Export each session immediately
+   and record run ID, plan ID, exact model, terminal state, changed paths, output shape, and the
+   provider billing delta before the next paid scenario. A result is confirmed only when the live
+   event stream and TUI both match the relevant acceptance criteria above.
+3. **If a defect recurs, repair its owning seam and add a failing regression first.** For direct
+   intent or child-count violations, inspect `run_controller.py` and `decisions.py` admission. For
+   repeated calls, inspect the run-wide counter in `model_middleware.py` and terminal event path in
+   `run_controller.py`. For old plans or questions appearing in new runs, compare checkpoint
+   `thread_id`, run ID, and plan ID in `checkpoints.py`, `run_controller.py`, and TUI pending state;
+   do not attribute this to queue persistence without a restart reproduction. For quit/cancel
+   warnings, test the real Textual shutdown paths in `app.py`. For answer or question misformats,
+   compare raw model output, structured `run.completed` payload, TUI projection, and the rendered
+   widget. Keep expected graph interrupts out of `tool.failed` while preserving real tool errors.
+   Update the corresponding feature contract or ADR in the same change if the public behavior
+   changes, then run focused tests and the full offline gate in repository order.
+4. **Close evidence (Task 9).** Update `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, and
+   `COSTS.csv` with observed pass/fail/blocked results and exact provider billing deltas. Leave
+   defects open where the original output cannot be reproduced or the provider billing view is
+   unavailable. The total provider-side delta must remain below USD 10.
