@@ -74,3 +74,28 @@ def test_lead_guidance_reaches_system_prompt(tmp_path: Path) -> None:
     assert "execution_decision" in system_text, (
         f"guidance missing from system prompt; got {system_text!r}"
     )
+
+
+def test_pinned_context_reaches_the_lead_system_prompt_once(tmp_path: Path) -> None:
+    model = ScriptedChatModel(responses=[AIMessage(content="done")])
+    gate = ExecutionDecisionGate(admit_plan=lambda plan: None)
+    agent = build_production_lead(
+        model,
+        workspace=tmp_path,
+        controls=LeadControls(),
+        leases=WorkspaceLeaseManager(),
+        extension_tools=[execution_decision_tool(gate)],
+        session_id="test-session",
+        run_id="test-run",
+        context_prompt="instructions:workspace: workspace canary",
+    )
+
+    getattr(agent, "invoke")({"messages": [HumanMessage(content="hello")]})  # type: ignore[operator]
+
+    first_call = model.calls[0]
+    system_text = "\n".join(
+        str(getattr(message, "content", ""))
+        for message in first_call
+        if isinstance(message, SystemMessage)
+    )
+    assert system_text.count("workspace canary") == 1

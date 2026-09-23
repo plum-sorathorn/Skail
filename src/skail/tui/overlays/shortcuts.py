@@ -152,6 +152,27 @@ class ShortcutsOverlay(Screen):  # type: ignore[type-arg]
         except Exception:
             pass
 
+    def _refresh_grid(self) -> None:
+        try:
+            from textual.widgets import Static
+
+            left, right = shortcut_grid_columns(self.registry, self.filter_query)
+            left_col = self.query_one("#shortcuts-col-left")
+            right_col = self.query_one("#shortcuts-col-right")
+            left_col.remove_children()
+            right_col.remove_children()
+            for line in left:
+                left_col.mount(Static(line))
+            for line in right:
+                right_col.mount(Static(line))
+        except Exception:
+            pass
+
+    def on_input_changed(self, event: Any) -> None:
+        val = getattr(event, "value", "")
+        self.set_filter(val)
+        self._refresh_grid()
+
     def compose(self) -> Any:
         try:
             from textual.containers import Horizontal, Vertical
@@ -162,11 +183,11 @@ class ShortcutsOverlay(Screen):  # type: ignore[type-arg]
             yield ovl_rule_strong()
             yield Input(placeholder="Filter shortcuts", id="shortcuts-filter")
             with Horizontal(classes="ovl-grid"):
-                with Vertical(classes="ovl-col"):
+                with Vertical(id="shortcuts-col-left", classes="ovl-col"):
                     for line in left:
                         yield Static(line)
                 yield Static("", id="hairline", classes="hairline")
-                with Vertical(classes="ovl-col"):
+                with Vertical(id="shortcuts-col-right", classes="ovl-col"):
                     for line in right:
                         yield Static(line)
             yield ovl_foot(SHORTCUTS_FOOT)

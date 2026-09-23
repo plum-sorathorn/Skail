@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import argparse
-
-from skail.smoke import run_fake_provider_smoke
+from skail.cli.main import build_parser
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run Skail's offline smoke check.")
-    parser.add_argument("--fake-provider", action="store_true", required=True)
-    parser.parse_args()
-    print(run_fake_provider_smoke())
+    help_text = build_parser().format_help()
+    if "Skail" not in help_text or "--fake-provider" in help_text:
+        raise RuntimeError("Skail CLI smoke contract failed")
+    print("Skail offline smoke: ok")
     return 0
 
 

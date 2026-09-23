@@ -1,6 +1,5 @@
 """Semantic theme tokens for the Skail TUI (single source of truth).
 
-Draft source: docs/skail/TUI_REVAMP_DRAFT.md sections 3.1-3.2.
 Every widget must consume these tokens; no raw hex value may appear in
 widget CSS, Rich markup, or rendering logic outside this module.
 """
@@ -14,7 +13,14 @@ from typing import Literal
 
 from rich.style import Style
 
-ThemeName = Literal["dark", "light", "system"]
+ThemeName = Literal[
+    "dark",
+    "light",
+    "system",
+    "pistachio-night",
+    "pistachio-paper",
+    "mint-porcelain",
+]
 
 HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
@@ -201,6 +207,45 @@ LIGHT_THEME = ThemeTokens(
     link="#2F6E92",
 )
 
+PISTACHIO_NIGHT_THEME = ThemeTokens(
+    background="#101713", surface="#18221C", surface_raised="#203029", surface_inset="#0B110E",
+    border="#385044", border_strong="#56735D", text="#E8F0E8", text_muted="#A8B8AA",
+    text_faint="#77897B", accent="#9FD3A9", accent_soft="#294133", mode_quality="#B7A6D9",
+    mode_economy="#9FD3A9", mode_manual="#E5C27F", delegation="#B7A6D9", budget_fill="#9FD3A9",
+    budget_warning="#E5C27F", budget_critical="#F18A82", budget_empty="#2B3B31",
+    diff_added="#A9D99E", diff_added_surface="#203A29", diff_removed="#F18A82",
+    diff_removed_surface="#3C2425", dimmed="#77897B", error="#F18A82", error_surface="#3C2425",
+    approval="#E5C27F", approval_surface="#3B321F", agent_one="#86B7D5", agent_two="#C0A4E8",
+    agent_three="#9FD3A9", shimmer_base="#77897B", shimmer_peak="#F5FFF5", focus_ring="#BDE8C4",
+    selection="#2D4A39", link="#A8D8E8",
+)
+
+PISTACHIO_PAPER_THEME = ThemeTokens(
+    background="#F1F3E7", surface="#FAFBF4", surface_raised="#E4E9D8", surface_inset="#E9EEDF",
+    border="#B9C5AF", border_strong="#82957A", text="#243128", text_muted="#667468",
+    text_faint="#849286", accent="#648F5A", accent_soft="#DDE8C9", mode_quality="#65539A",
+    mode_economy="#3E7655", mode_manual="#8A6200", delegation="#65539A", budget_fill="#648F5A",
+    budget_warning="#8A6200", budget_critical="#A83D35", budget_empty="#D4DDC9",
+    diff_added="#3E7655", diff_added_surface="#D8EBD8", diff_removed="#A83D35",
+    diff_removed_surface="#F2D9D5", dimmed="#849286", error="#A83D35", error_surface="#F2D9D5",
+    approval="#8A6200", approval_surface="#F6E9BF", agent_one="#2F6E92", agent_two="#65539A",
+    agent_three="#3E7655", shimmer_base="#B9C5AF", shimmer_peak="#243128", focus_ring="#416D3A",
+    selection="#D4E4CC", link="#2F6E92",
+)
+
+MINT_PORCELAIN_THEME = ThemeTokens(
+    background="#E9F0EB", surface="#F7FAF7", surface_raised="#DCE8E1", surface_inset="#E1EBE5",
+    border="#AFC7BA", border_strong="#789B89", text="#1F2E28", text_muted="#61736A",
+    text_faint="#809188", accent="#468E71", accent_soft="#CFE7DA", mode_quality="#66539A",
+    mode_economy="#34745B", mode_manual="#8A6200", delegation="#66539A", budget_fill="#468E71",
+    budget_warning="#8A6200", budget_critical="#A43D3A", budget_empty="#C9DAD0",
+    diff_added="#34745B", diff_added_surface="#D3EBDD", diff_removed="#A43D3A",
+    diff_removed_surface="#F1D9D7", dimmed="#809188", error="#A43D3A", error_surface="#F1D9D7",
+    approval="#8A6200", approval_surface="#F5E9C3", agent_one="#2F6E92", agent_two="#66539A",
+    agent_three="#34745B", shimmer_base="#AFC7BA", shimmer_peak="#1F2E28", focus_ring="#2E6D54",
+    selection="#C7DED2", link="#2F6E92",
+)
+
 
 def theme_token_names() -> tuple[str, ...]:
     """Return the canonical draft token names."""
@@ -245,7 +290,35 @@ def get_theme(name: ThemeName) -> ThemeTokens:
         return LIGHT_THEME
     if name == "dark":
         return DARK_THEME
+    if name == "pistachio-night":
+        return PISTACHIO_NIGHT_THEME
+    if name == "pistachio-paper":
+        return PISTACHIO_PAPER_THEME
+    if name == "mint-porcelain":
+        return MINT_PORCELAIN_THEME
     raise KeyError("Use resolve_system_theme() for the 'system' theme name.")
+
+
+def contrast_ratio(foreground: str, background: str) -> float:
+    """Return the WCAG contrast ratio for two six-digit hex colors."""
+    def channel(value: str) -> float:
+        channel_value = int(value, 16) / 255
+        return (
+            channel_value / 12.92
+            if channel_value <= 0.04045
+            else ((channel_value + 0.055) / 1.055) ** 2.4
+        )
+
+    def luminance(color: str) -> float:
+        return (
+            0.2126 * channel(color[1:3])
+            + 0.7152 * channel(color[3:5])
+            + 0.0722 * channel(color[5:7])
+        )
+
+    first, second = luminance(foreground), luminance(background)
+    lighter, darker = max(first, second), min(first, second)
+    return (lighter + 0.05) / (darker + 0.05)
 
 
 def resolve_system_theme(detected: str | None = None) -> tuple[ThemeTokens, str]:

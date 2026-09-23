@@ -1,23 +1,23 @@
-"""Windward logo constants for the Skail TUI (Phase 4).
+"""Twin sail logo constants for the Skail TUI.
 
-The full 6-row mark is monochrome text only and is never animated.
-Header uses the fallback-safe compact mark ``S│``.
+The full six-row mark is monochrome text only and is never animated.
+The main masthead uses the compact fallback-safe text mark.
 """
 
 from __future__ import annotations
 
-WINDWARD_LOGO: list[str] = [
-    "   ■",
-    "  ■■│",
-    " ■■■│",
-    "■■■■│",
-    "  ▪ │",
-    "━━━━━━━",
+TWIN_SAIL_LOGO: list[str] = [
+    "      /\\|\\",
+    "     /  | \\",
+    "    /___|__\\",
+    "   /____|___\\",
+    "   \\________/",
+    "    S K A I L",
 ]
 
-COMPACT_MARK = "S\u2502"
+COMPACT_MARK = "/\\| S K A I L"
 
-LOGO_TEXT = "\n".join(WINDWARD_LOGO)
+LOGO_TEXT = "\n".join(TWIN_SAIL_LOGO)
 
 
 def render_logo_text() -> str:
@@ -38,7 +38,7 @@ def compact_mark() -> str:
 __all__ = [
     "COMPACT_MARK",
     "LOGO_TEXT",
-    "WINDWARD_LOGO",
+    "TWIN_SAIL_LOGO",
     "compact_mark",
     "help_header",
     "render_logo_text",

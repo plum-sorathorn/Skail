@@ -67,6 +67,24 @@ async def test_devpass_sends_its_explicit_canonical_plan_model_unchanged() -> No
     assert transport.last_request.headers["authorization"] == "Bearer fixture-credential"
 
 
+@pytest.mark.asyncio
+async def test_devpass_discovers_gateway_catalog_under_its_provider_identity() -> None:
+    transport = ProviderHTTPFixtureTransport(provider="devpass")
+    async with httpx.AsyncClient(transport=transport) as client:
+        adapter = DevPassAdapter(
+            _devpass_config(),
+            api_key="fixture-credential",
+            http_async_client=client,
+        )
+
+        discovered = await adapter.discover_models()
+
+    assert discovered
+    assert all(entry.provider == "devpass" for entry in discovered)
+    assert transport.last_request.method == "GET"
+    assert transport.last_request.path == "/v1/models"
+
+
 def test_devpass_classifies_a_plan_rejection_as_invalid_model() -> None:
     adapter = DevPassAdapter(_devpass_config(), api_key="fixture-credential")
     request = httpx.Request("POST", f"{LLMGATEWAY_BASE_URL}/chat/completions")

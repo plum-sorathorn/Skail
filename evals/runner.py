@@ -18,6 +18,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable
 
 from evals.evidence import evaluation_provenance
+from evals.provider_adapter import EvaluationUsageAdapter
 from evals.report import compare_policies, generate_policy_summary
 from evals.schema import (
     CANONICAL_PAIRED_RUNTIME_PROFILE,
@@ -40,7 +41,6 @@ from skail.agents.lead import LeadControls
 from skail.agents.profiles import builtin_profiles
 from skail.domain.ids import new_session_id
 from skail.domain.routing import TaskAssignment
-from skail.providers.fake import FakeProviderAdapter
 from skail.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
 from skail.routing.assignment import RoutingSnapshot, config_revision
 from skail.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
@@ -214,7 +214,7 @@ def default_eval_candidates() -> tuple[RouteCandidate, ...]:
             ),
         ),
         ModelProfile(
-            provider="fake",
+            provider="eval-provider",
             model="explorer",
             support_level=ProviderSupportLevel.NATIVE,
             input_usd_per_million=Decimal("1.25"),
@@ -620,7 +620,7 @@ class EvaluationRunner:
             run_id=run_id,
             timestamp=datetime.now(UTC),
             catalog_revision=catalog_revision,
-            provider_mode="fake",
+            provider_mode="deterministic",
             fixture_count=len(self.fixtures),
             run_profile_id=self._run_profile_id,
             paired_seeds=self.paired_seeds,
@@ -681,7 +681,7 @@ class EvaluationRunner:
                         interrupts_count=0,
                         error=error,
                         catalog_revision=catalog_revision,
-                        provider_mode="fake",
+                        provider_mode="deterministic",
                     ),
                     raw_record,
                 )
@@ -701,7 +701,7 @@ class EvaluationRunner:
                 runtime_models[candidate.profile.model] = model
                 runtime_models[f"{candidate.profile.provider}:{candidate.profile.model}"] = model
 
-            child_model_name = "fake:explorer"
+            child_model_name = "eval-provider:explorer"
             child_model = _FixtureChatModel(
                 model_name="explorer",
                 final_response=script.final_response,
@@ -748,8 +748,7 @@ class EvaluationRunner:
                         budget_limit_usd=Decimal("100.00"),
                         catalog_revision=catalog_revision,
                         providers={
-                            "eval-provider": FakeProviderAdapter(),
-                            "fake": FakeProviderAdapter(),
+                            "eval-provider": EvaluationUsageAdapter(),
                         },
                         candidates_fn=lambda: RoutingSnapshot(
                             catalog_revision=catalog_revision,
@@ -831,7 +830,7 @@ class EvaluationRunner:
                 context_metrics=context_metrics,
                 error=error_msg,
                 catalog_revision=catalog_revision,
-                provider_mode="fake",
+                provider_mode="deterministic",
                 child_wall_seconds=(0.0 if run_result is None else run_result.child_wall_seconds),
                 child_peak_active=(0 if run_result is None else run_result.child_peak_active),
                 child_count=(0 if run_result is None else run_result.child_count),

@@ -71,7 +71,7 @@ def _report(*, timestamp: datetime | None = None) -> EvaluationReport:
         run_id="eval-test",
         timestamp=timestamp or datetime.now(UTC),
         catalog_revision="catalog-test",
-        provider_mode="fake",
+        provider_mode="deterministic",
         fixture_count=1,
         provenance=provenance,
         policy_controls=policy_controls,
@@ -90,7 +90,7 @@ def _report(*, timestamp: datetime | None = None) -> EvaluationReport:
                 assignments=(
                     ExecutedAssignment(
                         attempt_number=1,
-                        provider="fake",
+                        provider="eval-provider",
                         model="model",
                         routing_mode=RoutingMode.AUTO,
                         capability_floor=0.5,
@@ -281,7 +281,7 @@ def test_release_eval_validation_rejects_missing_paired_repetition() -> None:
         run_id="eval-paired",
         timestamp=datetime.now(UTC),
         catalog_revision="catalog-test",
-        provider_mode="fake",
+        provider_mode="deterministic",
         fixture_count=1,
         paired_seeds=(42,),
         repetitions=2,

@@ -6,6 +6,14 @@ TDD RED first: these target pure helpers + widget state machine in
 
 from __future__ import annotations
 
+from decimal import Decimal
+from types import SimpleNamespace
+
+from rich.text import Text
+from textual.widgets import Static
+
+from skail.sessions.journal import RunSnapshot, SessionSnapshot, UsageSnapshot
+from skail.tui.app import SkailApp, clean_lead_output
 from skail.tui.projection import TranscriptItem
 from skail.tui.widgets.chat import (
     ChatTranscript,
@@ -24,6 +32,132 @@ def _item(item_id: str, content: str = "hello") -> TranscriptItem:
     return TranscriptItem(
         id=item_id, role="lead", title="Lead", content=content
     )
+
+
+def test_clean_lead_output_extracts_human_message_from_json() -> None:
+    assert clean_lead_output('{"answer":"The change is complete.","status":"done"}') == (
+        "The change is complete."
+    )
+
+
+def test_clean_lead_output_keeps_plain_text_unchanged() -> None:
+    assert clean_lead_output("The change is complete.") == "The change is complete."
+
+
+def test_apply_run_result_renders_clean_lead_message() -> None:
+    app = SkailApp()
+
+    app._apply_run_result(
+        SimpleNamespace(
+            pending_interrupt=None,
+            output='{"answer":"The change is complete.","status":"done"}',
+        )
+    )
+
+    assert app.projection.transcript_items[-1].content == "The change is complete."
+
+
+async def test_tui_pilot_renders_answer_without_structured_verification() -> None:
+    answer = "Updated `src/skail/runtime/run_controller.py:2335` and verified the change."
+    app = SkailApp()
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        app._apply_run_result(
+            SimpleNamespace(
+                pending_interrupt=None,
+                status="completed",
+                output=(
+                    '{"answer":"Updated `src/skail/runtime/run_controller.py:2335` '
+                    'and verified the change.","verification":[{"criterion":"No delegation",'
+                    '"passed":true,"evidence":"No task was created."}]}'
+                ),
+            )
+        )
+        app.update_views()
+        await pilot.pause()
+
+        chat = app.query_one("#chat-transcript", ChatTranscript)
+        lead = chat.query_one(".role-lead", TranscriptItemWidget)
+        rendered = lead.query_one(".msg-measure", Static).renderable
+        visible_text = rendered.plain if isinstance(rendered, Text) else str(rendered)
+
+        assert visible_text == answer
+        assert visible_text.count(answer) == 1
+        assert "Criterion" not in visible_text
+        assert "Passed" not in visible_text
+
+
+def test_apply_blocked_run_without_output_shows_an_actionable_state() -> None:
+    app = SkailApp()
+
+    app._apply_run_result(
+        SimpleNamespace(pending_interrupt=None, output="", status="blocked")
+    )
+
+    assert app.projection.transcript_items[-1].title == "Execution blocked"
+    assert "budget, safety, or interaction" in app.projection.transcript_items[-1].content
+
+
+def test_apply_failed_and_cancelled_runs_show_explicit_outcomes() -> None:
+    app = SkailApp()
+
+    for status, title in (("failed", "Execution failed"), ("cancelled", "Execution cancelled")):
+        app._apply_run_result(SimpleNamespace(pending_interrupt=None, output="", status=status))
+        assert app.projection.transcript_items[-1].title == title
+        assert app.projection.transcript_items[-1].content
+
+
+def test_apply_run_result_does_not_report_empty_success_as_an_answer() -> None:
+    app = SkailApp()
+
+    app._apply_run_result(
+        SimpleNamespace(pending_interrupt=None, output="", status="completed")
+    )
+
+    assert app.projection.transcript_items[-1].title == "No user-facing answer"
+    assert "produced no final answer" in app.projection.transcript_items[-1].content
+
+
+def test_apply_run_result_refreshes_settled_budget_from_journal() -> None:
+    snapshot = SessionSnapshot(
+        session_id="session-budget-refresh",
+        status="idle",
+        runs=(
+            RunSnapshot(
+                run_id="run-budget-refresh",
+                status="completed",
+                budget_limit_usd=Decimal("1.00"),
+            ),
+        ),
+        tasks=(),
+        attempts=(),
+        assignments=(),
+        budget_reservations=(),
+        usage_records=(
+            UsageSnapshot(
+                usage_id="usage-budget-refresh",
+                task_id=None,
+                amount_usd=Decimal("0.04"),
+                authoritative=True,
+                idempotency_key="usage-budget-refresh",
+                run_id="run-budget-refresh",
+            ),
+        ),
+        approvals=(),
+        events=(),
+    )
+    app = SkailApp()
+    app.controller = SimpleNamespace(
+        journal=SimpleNamespace(get_session_snapshot=lambda _session_id: snapshot),
+        session_id="session-budget-refresh",
+    )
+    app.projection.budget_item.reserved_usd = Decimal("0.50")
+
+    app._apply_run_result(SimpleNamespace(pending_interrupt=None, output="Done."))
+
+    assert app.projection.budget_item.authoritative_actual_usd == Decimal("0.04")
+    assert app.projection.budget_item.reserved_usd == Decimal("0.00")
+    assert app.projection.budget_item.available_usd == Decimal("0.96")
 
 
 def test_diff_no_remount_on_stream_update() -> None:

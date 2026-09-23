@@ -3,8 +3,9 @@ from __future__ import annotations
 import httpx
 
 from skail.config.models import ProviderConfig
+from skail.providers.catalog_sources import CatalogEntry
 from skail.providers.errors import ProviderError, ProviderErrorKind
-from skail.providers.llmgateway import LLMGATEWAY_BASE_URL
+from skail.providers.llmgateway import LLMGATEWAY_BASE_URL, _discover_gateway_models
 from skail.providers.models import ProviderSupportLevel
 from skail.providers.openai_compatible import OpenAICompatibleAdapter
 
@@ -23,6 +24,9 @@ class DevPassAdapter(OpenAICompatibleAdapter):
         if config.base_url != LLMGATEWAY_BASE_URL:
             raise ValueError(f"DevPass base_url must be {LLMGATEWAY_BASE_URL}")
         super().__init__("devpass", config, api_key=api_key, http_async_client=http_async_client)
+
+    async def discover_models(self) -> tuple[CatalogEntry, ...]:
+        return await _discover_gateway_models(self)
 
     def classify_error(self, error: Exception) -> ProviderError:
         normalized = super().classify_error(error)

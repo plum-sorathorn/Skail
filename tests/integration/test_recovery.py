@@ -34,6 +34,7 @@ def _record_real_checkpoint(
     store: CheckpointStore,
     *,
     session_id: str,
+    thread_id: str | None = None,
     idempotency_key: str,
     status: str,
     payload: dict[str, object],
@@ -44,7 +45,8 @@ def _record_real_checkpoint(
     graph.add_node("record", lambda state: {"marker": state["marker"]})
     graph.add_edge(START, "record")
     graph.add_edge("record", END)
-    config = {"configurable": {"thread_id": session_id}}
+    checkpoint_thread_id = thread_id or session_id
+    config = {"configurable": {"thread_id": checkpoint_thread_id}}
     with store.sync_saver(session_id) as saver:
         compiled = graph.compile(checkpointer=saver)
         compiled.invoke({"marker": idempotency_key}, config=config)
@@ -58,6 +60,7 @@ def _record_real_checkpoint(
         payload=payload,
         created_at=NOW,
         live_idempotency_keys=live_idempotency_keys,
+        thread_id=checkpoint_thread_id,
     )
 
 
@@ -71,6 +74,25 @@ async def test_checkpoint_store_exposes_the_supported_langgraph_saver(
         await saver.setup()
 
     assert store.path.exists()
+
+
+def test_latest_valid_checkpoint_uses_its_recorded_run_thread(tmp_path: Path) -> None:
+    store = CheckpointStore(tmp_path / "run-thread-checkpoints.sqlite")
+    session_id = "run-thread-session"
+    thread_id = f"{session_id}:run-1"
+    _record_real_checkpoint(
+        store,
+        session_id=session_id,
+        thread_id=thread_id,
+        idempotency_key="run-1:checkpoint-1",
+        status="committed",
+        payload={"run_id": "run-1"},
+    )
+
+    record = store.latest_valid(session_id)
+
+    assert record is not None
+    assert record.thread_id == thread_id
 
 
 def test_checkpoint_writers_share_the_recovery_session_lock(tmp_path: Path) -> None:
@@ -682,6 +704,15 @@ async def test_controller_interrupt_checkpoint_preserves_live_attempt_on_recover
         delegation_approved=True,
     )
     assert result.status == "blocked"
+    events = journal.events_after(run_id=str(result.run_id))
+    assert not any(
+        event.type == "tool.failed" and getattr(event.payload, "tool", None) == "ask_user"
+        for event in events
+    )
+    question_event = next(event for event in events if event.type == "user.question")
+    assert question_event.payload.kind == "question"
+    assert question_event.payload.interrupt_id == result.pending_interrupt["question_id"]
+    assert question_event.payload.content == "Proceed?"
     recovered = recover_session(
         journal=journal,
         checkpoints=checkpoints,
@@ -716,3 +747,10 @@ async def test_controller_interrupt_checkpoint_preserves_live_attempt_on_recover
     assert resumed.status == "completed"
     assert resumed.output == "Recovered execution completed."
     assert questions.pending(f"{session_id}:{result.run_id}:lead") == ()
+    user_answer = next(
+        event
+        for event in journal.events_after(run_id=str(result.run_id))
+        if event.type == "user.answer"
+    )
+    assert user_answer.payload.kind == "question"
+    assert user_answer.payload.interrupt_id == result.pending_interrupt["question_id"]

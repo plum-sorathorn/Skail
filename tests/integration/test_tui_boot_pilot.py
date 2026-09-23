@@ -4,14 +4,33 @@ from __future__ import annotations
 
 import pytest
 
+from skail.config.onboarding import OnboardingReceipt, save_onboarding_receipt
 from skail.tui.app import SkailApp
 from skail.tui.widgets.onboarding import OnboardingPanel
 
 pytestmark = pytest.mark.asyncio
 
 
+class _MemoryCredentialStore:
+    def __init__(self) -> None:
+        self.values: dict[tuple[str, str], str] = {}
+
+    def get(self, provider: str, reference: str) -> str | None:
+        return self.values.get((provider, reference))
+
+    def set(self, provider: str, reference: str, value: str) -> None:
+        self.values[(provider, reference)] = value
+
+    def delete(self, provider: str, reference: str) -> None:
+        self.values.pop((provider, reference), None)
+
+
 def _bootstrap(**overrides: object) -> dict[str, object]:
-    base: dict[str, object] = {"workspace": ".", "session_id": "01JPILOT"}
+    base: dict[str, object] = {
+        "workspace": ".",
+        "session_id": "01JPILOT",
+        "credential_store": _MemoryCredentialStore(),
+    }
     base.update(overrides)
     return base
 
@@ -30,6 +49,36 @@ async def test_no_credential_boot_mounts_onboarding(
         await pilot.pause()
 
 
+async def test_completed_device_onboarding_is_reused_without_inheriting_project_trust(
+    tmp_path,
+) -> None:
+    receipt_path = tmp_path / "home" / "onboarding.json"
+    save_onboarding_receipt(
+        OnboardingReceipt(
+            completed=True,
+            provider="openai",
+            selected_model="openai:gpt-4o-mini",
+            enabled_models=("openai:gpt-4o-mini",),
+            theme="dark",
+        ),
+        path=receipt_path,
+    )
+    app = SkailApp(
+        runtime_factory=lambda: None,
+        bootstrap=_bootstrap(
+            workspace=str(tmp_path / "second-workspace"),
+            project_trusted=False,
+            onboarding_path=receipt_path,
+        ),
+    )
+
+    assert app.app_state == "onboarding"
+    assert app.onboarding_state.step == "trust"
+    assert app.onboarding_state.provider == "openai"
+    assert app.current_theme_name == "dark"
+    assert app.onboarding_receipt.selected_model == "openai:gpt-4o-mini"
+
+
 async def test_welcome_step_is_visible(monkeypatch: pytest.MonkeyPatch) -> None:
     for var in ("LLMGATEWAY_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
         monkeypatch.delenv(var, raising=False)
@@ -40,25 +89,20 @@ async def test_welcome_step_is_visible(monkeypatch: pytest.MonkeyPatch) -> None:
         await pilot.pause()
 
 
-async def test_fake_provider_path_reaches_ready_receipt(
+async def test_provider_list_contains_only_live_providers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for var in ("LLMGATEWAY_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
         monkeypatch.delenv(var, raising=False)
     app = SkailApp(runtime_factory=lambda: None, bootstrap=_bootstrap())
     async with app.run_test() as pilot:
-        app.onboarding_choose_fake()
-        assert app.onboarding_state.provider == "fake"
         app.onboarding_confirm()
-        app.onboarding_trust_folder()
-        app.onboarding_state.theme = "dark"
-        app.onboarding_confirm()
-        assert app.onboarding_state.step == "ready"
         panel = app.query_one(OnboardingPanel)
         text = panel.render_step().plain
-        assert "READY" in text
-        assert "Fake provider" in text
-        assert "skail -r 01JPILOT" in text
+        assert "LLM Gateway" in text
+        assert "OpenAI" in text
+        assert "Anthropic" in text
+        assert "Fake provider" not in text
         await pilot.pause()
 
 

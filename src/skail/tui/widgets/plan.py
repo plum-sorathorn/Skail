@@ -176,6 +176,8 @@ def revision_lines(
 class PlanView(VerticalScroll):
     """Plan panel with proposed/rejected cards and receipts."""
 
+    can_focus = False
+
     DEFAULT_CSS = """
     PlanView {
         width: 100%;
@@ -364,6 +366,9 @@ class PlanView(VerticalScroll):
                 event.stop()
             except Exception:
                 pass
+
+    def on_input_submitted(self, event: Any) -> None:
+        self.request_changes()
 
 
 __all__ = [

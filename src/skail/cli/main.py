@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
 from collections.abc import Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -25,6 +25,8 @@ from skail.cli.render import (
     render_print_stdout,
 )
 from skail.config.loader import ConfigValidationError, load_config
+from skail.config.migration import StateMigrationError, migrate_legacy_workspace_state
+from skail.config.onboarding import onboarding_path
 from skail.config.paths import (
     default_checkpoints_path,
     default_journal_path,
@@ -32,6 +34,7 @@ from skail.config.paths import (
     sessions_dir,
     user_config_path,
     user_data_dir,
+    workspace_state_path,
 )
 from skail.config.trust import ProjectTrustStore
 from skail.domain.ids import SessionId, new_invocation_id, new_run_id
@@ -39,6 +42,7 @@ from skail.domain.routing import RoutingMode
 from skail.domain.security import ProjectTrustLevel, identify_workspace
 from skail.domain.sessions import SessionRecord
 from skail.runtime.interrupts import QuestionStore
+from skail.runtime.presentation import present_lead_answer
 from skail.runtime.redaction import RedactionRegistry
 from skail.sessions.service import SessionService
 from skail.tools.approvals import ApprovalStore
@@ -47,9 +51,10 @@ if TYPE_CHECKING:
     from skail.config.models import SkailConfig
     from skail.providers.base import ProviderAdapter
     from skail.providers.catalog import ModelCatalog
+    from skail.providers.catalog_sources import CatalogEntry
     from skail.providers.models import ModelProfile
     from skail.routing.assignment import RoutingSnapshot
-    from skail.routing.selector import RouteCandidate
+    from skail.routing.selector import RouteCandidate, RouteFailure
     from skail.sessions.checkpoints import CheckpointStore
     from skail.sessions.journal import Journal
 
@@ -68,6 +73,9 @@ class RuntimeModelSet:
     config: SkailConfig | None = None
     redaction: RedactionRegistry | None = None
     candidates: tuple[RouteCandidate, ...] = ()
+    selection_required: bool = False
+    lead_failure: RouteFailure | None = None
+    catalog_degraded: bool = False
 
     def __iter__(self) -> Iterator[Any]:
         yield self.models
@@ -86,7 +94,12 @@ class RuntimeModelSet:
         )
 
 
-def _route_candidate(profile: ModelProfile, *, hard_budget: bool) -> RouteCandidate:
+def _route_candidate(
+    profile: ModelProfile,
+    *,
+    hard_budget: bool,
+    enabled: bool | None = None,
+) -> RouteCandidate:
     from skail.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
     from skail.routing.selector import RouteCandidate
     estimate = estimate_attempt_cost(
@@ -105,8 +118,31 @@ def _route_candidate(profile: ModelProfile, *, hard_budget: bool) -> RouteCandid
         estimate_assumptions=estimate.assumptions,
         configured=True,
         healthy=True,
-        enabled=(not hard_budget or estimate.cost_usd is not None),
+        enabled=(
+            (not hard_budget or estimate.cost_usd is not None)
+            if enabled is None
+            else enabled
+        ),
     )
+
+
+def _run_discovery(
+    adapter: ProviderAdapter,
+    *,
+    timeout_seconds: float = 15.0,
+) -> tuple[CatalogEntry, ...]:
+    """Run an async provider discovery call from both sync and async bootstrap paths."""
+    async def discover() -> tuple[CatalogEntry, ...]:
+        return await asyncio.wait_for(
+            adapter.discover_models(), timeout=timeout_seconds
+        )
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(discover())
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(lambda: asyncio.run(discover())).result()
 
 
 KNOWN_SUBCOMMANDS = frozenset({"auth", "models", "sessions", "config", "smoke"})
@@ -250,12 +286,6 @@ def _add_common_options(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="mark current project as denied",
     )
-    parser.add_argument(
-        "--fake-provider",
-        dest="fake_provider",
-        action="store_true",
-        help="use deterministic offline fake provider",
-    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -279,6 +309,7 @@ def build_parser() -> argparse.ArgumentParser:
     models_parser = subparsers.add_parser("models", help="inspect models and profiles")
     models_sub = models_parser.add_subparsers(dest="models_action")
     models_sub.add_parser("list", help="list models and profiles")
+    models_sub.add_parser("refresh", help="refresh the provider model catalog")
     models_show = models_sub.add_parser("show", help="show model or profile details")
     models_show.add_argument("model_name", nargs="?", default=None)
 
@@ -301,10 +332,6 @@ def build_parser() -> argparse.ArgumentParser:
     config_sub = config_parser.add_subparsers(dest="config_action")
     config_sub.add_parser("show", help="display resolved layered configuration")
     config_sub.add_parser("path", help="display configuration file paths")
-
-    # smoke
-    smoke_parser = subparsers.add_parser("smoke", help="run offline package smoke check")
-    smoke_parser.add_argument("--fake-provider", action="store_true", default=False)
 
     return parser
 
@@ -434,12 +461,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         handle_config,
         handle_models,
         handle_sessions,
-        handle_smoke,
     )
 
     workspace = Path.cwd()
 
     identity = identify_workspace(workspace)
+    try:
+        migrate_legacy_workspace_state(identity, workspace)
+    except (OSError, StateMigrationError) as exc:
+        render_print_stderr(f"Configuration error: cannot migrate legacy state: {exc}")
+        return EXIT_USAGE
     trust_store = ProjectTrustStore(user_data_dir() / "trust.sqlite")
     trusted = trust_store.assess(identity).level is ProjectTrustLevel.TRUSTED
     cli_overrides: dict[str, Any] = {}
@@ -468,8 +499,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         render_print_stderr(f"Configuration error: {exc}")
         return EXIT_USAGE
     # 4. Handle stateless subcommands before journal/checkpoint storage init
-    if args.subcommand == "smoke":
-        return handle_smoke(args)
     if args.subcommand == "config":
         return handle_config(
             args,
@@ -478,9 +507,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             resolved_config=resolved_config,
         )
     if args.subcommand == "auth":
-        return handle_auth(args)
+        return handle_auth(args, resolved_config=resolved_config)
     if args.subcommand == "models":
-        return handle_models(args)
+        return handle_models(args, resolved_config=resolved_config)
 
     # 5. Storage and session initialization
     redaction = RedactionRegistry()
@@ -544,8 +573,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             render_print_stderr(NON_TTY_USAGE_ERROR)
             return EXIT_FAILURE
 
-    approvals = ApprovalStore(workspace / ".skail" / "approvals.sqlite")
-    question_store = QuestionStore(workspace / ".skail" / "questions.sqlite")
+    approvals = ApprovalStore(workspace_state_path(identity, "approvals.sqlite"))
+    question_store = QuestionStore(workspace_state_path(identity, "questions.sqlite"))
 
     # 8. Interactive TUI execution: mount shell first, build runtime lazily.
     if interactive_tty:
@@ -557,7 +586,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         bootstrap = {
             "workspace": str(workspace),
             "session_id": session_record.session_id,
-            "fake_provider": bool(getattr(args, "fake_provider", False)),
             "initial_prompt": prompt_text or None,
             "max_agents": args.max_agents,
             "delegation": args.delegation,
@@ -566,6 +594,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             "workspace_mode": args.workspace_mode,
             "project_trusted": trusted,
             "resume_session": args.resume_session,
+            "credential_envs": tuple(
+                provider.api_key_env
+                for provider in resolved_config.config.providers.values()
+                if provider.api_key_env
+            ),
+            "onboarding_path": str(onboarding_path()),
         }
         app = SkailApp(
             session_service=session_service,
@@ -608,10 +642,12 @@ def _build_runtime_models(
 ) -> RuntimeModelSet:
     from skail.config.models import SkailConfig
     from skail.providers.catalog import ModelCatalog
+    from skail.providers.catalog_sources import (
+        load_catalog_snapshot,
+        save_catalog_cache,
+    )
     from skail.providers.credentials import EnvironmentCredentialResolver
     from skail.providers.errors import ProviderConfigurationError
-    from skail.providers.fake import DeterministicFakeChatModel
-    from skail.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
 
     config = getattr(args, "effective_config", SkailConfig())
     catalog = ModelCatalog.from_entries(
@@ -622,59 +658,13 @@ def _build_runtime_models(
     lead_model_name = args.lead_model or args.default_model or "auto"
     child_model_name = args.default_model or "implementer-model"
 
-    if getattr(args, "fake_provider", False):
-        resp = (
-            f"Skail completed task: {prompt}"
-            if prompt
-            else "Skail completed task."
-        )
-        lead_fake = DeterministicFakeChatModel(
-            model_name=lead_model_name,
-            response_text=resp,
-        )
-        lead_key = lead_model_name if ":" in lead_model_name else f"fake:{lead_model_name}"
-        child_key = child_model_name if ":" in child_model_name else f"fake:{child_model_name}"
-        models = {lead_key: lead_fake, child_key: lead_fake}
-        fake_profiles = tuple(
-            ModelProfile(
-                provider="fake",
-                model=key.split(":", 1)[1],
-                support_level=ProviderSupportLevel.NATIVE,
-                input_usd_per_million=Decimal("1"),
-                output_usd_per_million=Decimal("2"),
-                context_tokens=128_000,
-                max_output_tokens=8_192,
-                supports_tools=True,
-                supports_structured_output=True,
-                capability=CapabilityVector(
-                    coding=0.9,
-                    reasoning=0.9,
-                    tool_reliability=0.9,
-                    latency=0.9,
-                ),
-                auto_eligible=True,
-            )
-            for key in models
-        )
-        from skail.providers.fake import FakeProviderAdapter
-
-        return RuntimeModelSet(
-            models,
-            lead_key,
-            child_key,
-            {"fake": FakeProviderAdapter(lead_fake)},
-            catalog=catalog,
-            config=config,
-            redaction=redaction,
-            candidates=tuple(
-                _route_candidate(profile, hard_budget=args.budget is not None)
-                for profile in fake_profiles
-            ),
-        )
-
     cred_resolver = EnvironmentCredentialResolver(redaction)
     provider_configs = getattr(args, "provider_configs", {})
-    candidate_providers = tuple(provider_configs)
+    candidate_providers = (
+        tuple(provider_configs)
+        if provider_configs
+        else ("llmgateway", "openai", "anthropic")
+    )
     resolved_cred = None
     selected_provider = None
     selected_config = None
@@ -693,11 +683,11 @@ def _build_runtime_models(
                 if p_name == "anthropic"
                 else None
             )
-        if env_var and os.environ.get(env_var):
+        if env_var:
             try:
                 resolved_cred = cred_resolver.resolve(p_name, env_var)
                 selected_provider = p_name
-            except Exception:
+            except ProviderConfigurationError:
                 pass
     else:
         for p_name in candidate_providers:
@@ -713,37 +703,126 @@ def _build_runtime_models(
                     if p_name == "anthropic"
                     else None
                 )
-            if env_var and os.environ.get(env_var):
+            if env_var:
                 try:
                     resolved_cred = cred_resolver.resolve(p_name, env_var)
                     selected_provider = p_name
                     selected_config = candidate_config
                     break
-                except Exception:
+                except ProviderConfigurationError:
                     pass
 
     if resolved_cred is None or selected_provider is None:
         raise ProviderConfigurationError(
             "default",
-            "No provider credentials configured in environment. "
-            "Set LLMGATEWAY_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY, "
-            "or pass --fake-provider for deterministic offline execution.",
+            "No provider credential is available. Complete onboarding again, or set "
+            "LLMGATEWAY_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY in the environment.",
+        )
+
+    if selected_provider in {"llmgateway", "devpass"}:
+        from skail.config.models import ProviderConfig
+        from skail.config.paths import user_data_dir
+        from skail.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
+
+        discovery_config = selected_config or ProviderConfig(
+            type="openai-compatible",
+            base_url=LLMGATEWAY_BASE_URL,
+            models=("__catalog_discovery__",),
+        )
+        if not discovery_config.models:
+            discovery_config = discovery_config.model_copy(
+                update={"models": ("__catalog_discovery__",)}
+            )
+        discovery_adapter: ProviderAdapter
+        if selected_provider == "devpass":
+            from skail.providers.devpass import DevPassAdapter
+
+            discovery_adapter = DevPassAdapter(
+                discovery_config,
+                api_key=resolved_cred.reveal(),
+            )
+        else:
+            discovery_adapter = LLMGatewayAdapter(
+                discovery_config,
+                api_key=resolved_cred.reveal(),
+            )
+        configured_cache_path = getattr(args, "catalog_cache_path", None)
+        cache_path = (
+            Path(configured_cache_path)
+            if configured_cache_path is not None
+            else user_data_dir() / "catalog" / f"{selected_provider}.json"
+        )
+        catalog_endpoint = f"{LLMGATEWAY_BASE_URL}/models"
+        catalog_query = {"exclude_deprecated": True}
+        degraded_catalog = False
+        try:
+            discovered_entries = _run_discovery(discovery_adapter)
+        except Exception as exc:
+            classified = discovery_adapter.classify_error(exc)
+            from skail.providers.errors import ProviderErrorKind
+
+            if classified.kind not in {ProviderErrorKind.TRANSIENT, ProviderErrorKind.RATE_LIMIT}:
+                raise ProviderConfigurationError(
+                    selected_provider,
+                    classified.summary,
+                ) from exc
+            cached_snapshot = load_catalog_snapshot(
+                cache_path,
+                provider=selected_provider,
+                endpoint=catalog_endpoint,
+            )
+            if cached_snapshot is None:
+                raise ProviderConfigurationError(
+                    selected_provider,
+                    "model discovery failed and no valid catalog cache is available",
+                ) from exc
+            discovered_entries = cached_snapshot.entries
+            degraded_catalog = True
+        else:
+            if not discovered_entries and not config.catalog.entries:
+                raise ProviderConfigurationError(
+                    "llmgateway",
+                    "the authenticated catalog contains no accessible models",
+                )
+            save_catalog_cache(
+                cache_path,
+                discovered_entries,
+                provider=selected_provider,
+                endpoint=catalog_endpoint,
+                query=catalog_query,
+            )
+        catalog = ModelCatalog.from_entries(
+            (*config.catalog.entries, *discovered_entries),
+            now=datetime.now(UTC),
+            price_max_age=timedelta(days=30),
         )
 
     if ":" not in lead_model_name:
+        configured_models = set(
+            provider_configs[selected_provider].models
+            if selected_provider in provider_configs
+            else ()
+        )
+        has_configured_overlap = any(
+            profile.model in configured_models
+            for (provider, _), profile in catalog.profiles.items()
+            if provider == selected_provider
+        )
         eligible = [
             profile
             for (provider, _), profile in catalog.profiles.items()
             if provider == selected_provider
-            and profile.model in provider_configs[selected_provider].models
+            and (
+                not has_configured_overlap or profile.model in configured_models
+            )
             and catalog.is_auto_eligible(profile, hard_budget=args.budget is not None)
         ]
-        if not eligible:
+        if not eligible and lead_model_name != "auto":
             raise ProviderConfigurationError(
                 selected_provider,
-                "no configured catalog model is eligible for automatic routing",
+                "no discovered model has trusted capability and pricing evidence "
+                "for automatic routing",
             )
-        lead_model_name = f"{selected_provider}:{eligible[0].model}"
     child_model_name = lead_model_name
 
     models_dict: dict[str, Any] = {}
@@ -753,12 +832,33 @@ def _build_runtime_models(
         from skail.providers.base import ModelOptions
         from skail.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
 
-        actual_model = (
-            lead_model_name.split(":")[-1] if ":" in lead_model_name else "gpt-4o"
+        catalog_profiles = tuple(
+            profile
+            for (provider, _), profile in catalog.profiles.items()
+            if provider == selected_provider
         )
+        allowed_models = tuple(profile.model for profile in catalog_profiles)
+        if not allowed_models:
+            raise ProviderConfigurationError(
+                selected_provider,
+                "no accessible models are present in the provider catalog",
+            )
+        requested_model = (
+            lead_model_name.split(":", 1)[-1]
+            if lead_model_name != "auto"
+            else None
+        )
+        actual_model = requested_model or catalog_profiles[0].model
+        if requested_model is not None and not any(
+            profile.model == requested_model for profile in catalog_profiles
+        ):
+            actual_model = catalog_profiles[0].model
         cfg = selected_config or ProviderConfig(
-            type="openai-compatible", base_url=LLMGATEWAY_BASE_URL, models=(actual_model,)
+            type="openai-compatible",
+            base_url=LLMGATEWAY_BASE_URL,
+            models=allowed_models,
         )
+        cfg = cfg.model_copy(update={"models": allowed_models})
         adapter: ProviderAdapter
         if selected_provider == "devpass":
             from skail.providers.devpass import DevPassAdapter
@@ -767,14 +867,28 @@ def _build_runtime_models(
         else:
             adapter = LLMGatewayAdapter(cfg, api_key=resolved_cred.reveal())
         provider_adapters[selected_provider] = adapter
-        try:
-            profile = catalog.profile(selected_provider, actual_model)
-        except KeyError as exc:
+        if not any(profile.model == actual_model for profile in catalog_profiles):
             raise ProviderConfigurationError(
-                "llmgateway", "model is absent from the configured catalog"
-            ) from exc
-        chat_model = adapter.create_model(profile, ModelOptions())
-        models_dict[f"{selected_provider}:{actual_model}"] = chat_model
+                selected_provider,
+                "requested model is absent from the accessible provider catalog",
+            )
+        for profile in catalog_profiles:
+            models_dict[f"{selected_provider}:{profile.model}"] = adapter.create_model(
+                profile, ModelOptions()
+            )
+        profile = next(profile for profile in catalog_profiles if profile.model == actual_model)
+        candidates = tuple(
+            _route_candidate(
+                item,
+                hard_budget=args.budget is not None,
+                enabled=(
+                    catalog.price_is_current(item)
+                    if args.budget is not None
+                    else None
+                ),
+            )
+            for item in catalog_profiles
+        )
     else:
         from skail.providers.langchain import LangChainModelFactory, LangChainUsageAdapter
         from skail.providers.registry import LangChainProviderRegistry, ProviderRegistration
@@ -815,10 +929,54 @@ def _build_runtime_models(
             ) from exc
         models_dict[f"{selected_provider}:{actual_model}"] = chat_model
 
-    if args.default_model is None:
-        child_model_name = f"{selected_provider}:{actual_model}"
-        lead_model_name = f"{selected_provider}:{actual_model}"
-        models_dict[lead_model_name] = chat_model
+    candidate_tuple = (
+        candidates
+        if selected_provider in {"llmgateway", "devpass"}
+        else (
+            _route_candidate(
+                profile,
+                hard_budget=args.budget is not None,
+                enabled=(
+                    catalog.price_is_current(profile)
+                    if args.budget is not None
+                    else None
+                ),
+            ),
+        )
+    )
+    from skail.agents.profiles import builtin_profiles
+    from skail.routing.requirements import RequirementBuilder, TaskRisk
+    from skail.routing.selector import RouteFailure, select_lead_model
+
+    lead_profile = builtin_profiles()["lead"]
+    lead_requirements = RequirementBuilder().build(
+        role="lead",
+        risk=TaskRisk.ROUTINE,
+        mode=RoutingMode.AUTO,
+        role_hard_min=lead_profile.role_floor,
+        required_tools=True,
+        required_structured_output=True,
+    )
+    manual_model = None
+    if ":" in lead_model_name and lead_model_name != "auto":
+        manual_provider, manual_name = lead_model_name.split(":", 1)
+        manual_model = (manual_provider, manual_name)
+    selection = select_lead_model(
+        candidate_tuple,
+        lead_requirements,
+        available_budget_usd=(
+            Decimal(str(args.budget)) if args.budget is not None else None
+        ),
+        manual_model=manual_model,
+    )
+    lead_failure = selection if isinstance(selection, RouteFailure) else None
+    if lead_failure is None:
+        assert not isinstance(selection, RouteFailure)
+        chosen = selection.candidate.profile
+        lead_model_name = f"{chosen.provider}:{chosen.model}"
+        if args.default_model is None:
+            child_model_name = lead_model_name
+    selection_required = lead_failure is not None
 
     return RuntimeModelSet(
         models_dict,
@@ -828,7 +986,10 @@ def _build_runtime_models(
         catalog=catalog,
         config=config,
         redaction=redaction,
-        candidates=(_route_candidate(profile, hard_budget=args.budget is not None),),
+        candidates=candidate_tuple,
+        selection_required=selection_required,
+        lead_failure=lead_failure,
+        catalog_degraded=degraded_catalog,
     )
 
 
@@ -853,6 +1014,16 @@ async def _execute_instruction(
         runtime_models = _build_runtime_models(
             args, redaction, prompt
         )
+        if runtime_models.selection_required:
+            from skail.routing.selector import describe_route_failure
+
+            failure = runtime_models.lead_failure
+            render_print_stderr(
+                describe_route_failure(failure)
+                if failure is not None
+                else "No capable lead model is available. Select a qualified model and retry."
+            )
+            return EXIT_FAILURE
         assert runtime_models.catalog is not None
         assert runtime_models.config is not None
         has_bootstrap_candidates = bool(runtime_models.candidates)
@@ -935,9 +1106,9 @@ async def _execute_instruction(
     # Output rendering for completed status
     if args.print_mode:
         render_print_stderr(f"[INFO] Run {result.run_id} completed successfully.")
-        render_print_stdout(result.output)
+        render_print_stdout(present_lead_answer(result.output))
     elif not args.json_mode:
-        render_print_stdout(result.output)
+        render_print_stdout(present_lead_answer(result.output))
 
     return EXIT_OK
 

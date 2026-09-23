@@ -5,11 +5,11 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from fakes.provider import FakeProviderChatModel as DeterministicFakeChatModel
 
 from skail.cli.main import _build_storage
 from skail.domain.ids import SessionId, new_session_id
 from skail.providers.credentials import EnvironmentCredentialResolver
-from skail.providers.fake import DeterministicFakeChatModel
 from skail.runtime.redaction import RedactingLogFilter, RedactionRegistry
 from skail.runtime.run_controller import RunController
 from skail.sessions.checkpoints import CheckpointStore

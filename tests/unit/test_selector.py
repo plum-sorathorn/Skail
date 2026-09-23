@@ -6,7 +6,14 @@ from decimal import Decimal
 from skail.domain.routing import RoutingMode
 from skail.providers.models import CapabilityVector, ModelProfile
 from skail.routing.requirements import RequirementBuilder, TaskRisk
-from skail.routing.selector import RouteCandidate, RouteFailure, RouteSelection, select_model
+from skail.routing.selector import (
+    RouteCandidate,
+    RouteFailure,
+    RouteSelection,
+    describe_route_failure,
+    select_lead_model,
+    select_model,
+)
 
 
 def _candidate(
@@ -155,3 +162,61 @@ def test_selection_explanation_records_counts_binding_and_ranking() -> None:
     assert result.excluded_counts == {"capability_floor": 1}
     assert result.binding_constraint == "capability_floor"
     assert result.ranking_reasons
+
+
+def test_lead_selection_ranks_strength_after_hard_compatibility_filtering() -> None:
+    requirements = RequirementBuilder().build(
+        role="lead",
+        risk=TaskRisk.ROUTINE,
+        required_tools=True,
+        required_structured_output=True,
+    )
+    result = select_lead_model(
+        (
+            _candidate("p", "cheap", cost="0.01", coding=0.65, reasoning=0.65),
+            _candidate("p", "strong", cost="0.20", coding=0.95, reasoning=0.95),
+        ),
+        requirements,
+    )
+
+    assert isinstance(result, RouteSelection)
+    assert result.candidate.profile.model == "strong"
+
+
+def test_lead_selection_reports_floor_and_remediation_without_weakening_it() -> None:
+    requirements = RequirementBuilder().build(
+        role="lead",
+        risk=TaskRisk.ROUTINE,
+        required_tools=True,
+        required_structured_output=True,
+    )
+    result = select_lead_model(
+        (_candidate("p", "weak", coding=0.4, reasoning=0.4),), requirements
+    )
+
+    assert isinstance(result, RouteFailure)
+    assert result.required_capability_floor == requirements.capability_floor
+    assert result.best_candidates == ("p:weak",)
+    assert "Required capability floor" in describe_route_failure(result)
+    assert "will not silently weaken" in describe_route_failure(result)
+
+
+def test_explicit_lead_pin_does_not_require_unknown_soft_capability() -> None:
+    requirements = RequirementBuilder().build(role="lead", risk=TaskRisk.HIGH)
+    base = _candidate("p", "pinned")
+    candidate = base.model_copy(
+        update={
+            "profile": base.profile.model_copy(
+                update={"capability": None, "auto_eligible": False}
+            )
+        }
+    )
+    result = select_lead_model(
+        (candidate,),
+        requirements,
+        manual_model=("p", "pinned"),
+    )
+
+    assert isinstance(result, RouteSelection)
+    assert result.candidate.profile.model == "pinned"
+    assert result.capability_fit is None

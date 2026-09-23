@@ -9,6 +9,34 @@ from typing import Any, Literal, Protocol
 from skail.domain.events import SecretRedactor
 
 Boundary = Literal["model_calls", "time", "budget"]
+DEFAULT_MAX_MODEL_CALLS_PER_RUN = 32
+
+
+class RunModelCallLimitExceeded(RuntimeError):
+    """Raised before provider execution when the run call budget is exhausted."""
+
+    def __init__(self, max_calls: int) -> None:
+        self.code = "run.model_call_limit_exhausted"
+        self.max_calls = max_calls
+        super().__init__(
+            f"{self.code}: the run reached its limit of {max_calls} model calls; "
+            "no further provider call was started"
+        )
+
+
+class RunModelCallBudget:
+    """One counter shared by every lead and child model call in a run."""
+
+    def __init__(self, *, max_calls: int, calls_started: int = 0) -> None:
+        if max_calls < 1 or calls_started < 0:
+            raise ValueError("run.model_call_limit_invalid")
+        self.max_calls = max_calls
+        self.calls_started = calls_started
+
+    def begin_call(self) -> None:
+        if self.calls_started >= self.max_calls:
+            raise RunModelCallLimitExceeded(self.max_calls)
+        self.calls_started += 1
 
 
 class FailureRedactor(Protocol):

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from decimal import Decimal
 from typing import Any, cast
 
 import httpx
@@ -199,9 +198,6 @@ class OpenAICompatibleChatModel(BaseChatModel):
             content=message.get("content") or "",
             tool_calls=_tool_calls(message.get("tool_calls", [])),
             usage_metadata=_usage_metadata(usage),
-            response_metadata=(
-                {"skail_cost_usd": str(usage["cost"])} if "cost" in usage else {}
-            ),
         )
 
     def _body(self, messages: Sequence[BaseMessage], *, stream: bool) -> dict[str, Any]:
@@ -265,22 +261,22 @@ class OpenAICompatibleAdapter:
             return None
         if response.usage_metadata is None:
             return None
-        raw_cost = response.response_metadata.get("skail_cost_usd")
         return NormalizedUsage(
             input_tokens=response.usage_metadata["input_tokens"],
             output_tokens=response.usage_metadata["output_tokens"],
-            cost_usd=Decimal(str(raw_cost or "0")),
-            authority=(
-                UsageAuthority.AUTHORITATIVE_ACTUAL
-                if raw_cost is not None
-                else UsageAuthority.ESTIMATED_ACTUAL
-            ),
+            cached_input_tokens=int(
+                response.usage_metadata.get("input_token_details", {}).get("cache_read", 0)
+            )
+            if isinstance(response.usage_metadata.get("input_token_details"), Mapping)
+            else 0,
+            cost_usd=None,
+            authority=UsageAuthority.TOKEN_DERIVED_ESTIMATE,
         )
 
     def classify_error(self, error: Exception) -> ProviderError:
         kind = ProviderErrorKind.PROTOCOL
         code = None
-        if isinstance(error, (httpx.TimeoutException, httpx.ConnectError)):
+        if isinstance(error, (httpx.TimeoutException, httpx.ConnectError, TimeoutError)):
             kind = ProviderErrorKind.TRANSIENT
         elif isinstance(error, httpx.HTTPStatusError):
             status = error.response.status_code
@@ -408,10 +404,17 @@ def _message_value(message: BaseMessage) -> dict[str, Any]:
 def _usage_metadata(usage: Mapping[str, Any]) -> UsageMetadata:
     input_tokens = int(usage.get("prompt_tokens", 0))
     output_tokens = int(usage.get("completion_tokens", 0))
+    prompt_details = usage.get("prompt_tokens_details")
+    cached_tokens = (
+        int(prompt_details.get("cached_tokens", 0))
+        if isinstance(prompt_details, Mapping)
+        else 0
+    )
     return UsageMetadata(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=int(usage.get("total_tokens", input_tokens + output_tokens)),
+        input_token_details={"cache_read": min(input_tokens, max(0, cached_tokens))},
     )
 
 
@@ -419,9 +422,6 @@ def _usage_chunk(usage: Mapping[str, Any]) -> AIMessageChunk:
     return AIMessageChunk(
         content="",
         usage_metadata=_usage_metadata(usage),
-        response_metadata=(
-            {"skail_cost_usd": str(usage["cost"])} if "cost" in usage else {}
-        ),
     )
 
 

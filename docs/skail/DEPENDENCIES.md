@@ -1,7 +1,7 @@
 # Skail Dependency and License Audit
 
 Status: Active
-Audit date: 2026-09-13
+Audit date: 2026-09-21
 
 ## Scope and method
 
@@ -21,6 +21,7 @@ so a clean-candidate audit must repeat the resolved dependency check before rele
 | langgraph-checkpoint | 4.2.0 / 4.2.0 | MIT | Not affected by [GHSA-fjqc-hq36-qh5p](https://osv.dev/vulnerability/GHSA-fjqc-hq36-qh5p), which is fixed in 4.1.1. |
 | langgraph-checkpoint-sqlite | 3.1.1 / 3.1.1 | MIT | At the fixed version for [GHSA-47pj-3jcm-6whg](https://github.com/advisories/GHSA-47pj-3jcm-6whg). |
 | httpx | `>=0.28,<1` / 0.28.1 | BSD-3-Clause | No matching direct-package OSV finding identified; the non-exact range requires candidate-time resolution evidence. |
+| keyring | `>=25.7,<26` / 25.7.0 | MIT | Official metadata supports Python 3.9+; candidate-time transitive audit remains required. |
 | textual | `>=1.0.0` / 1.0.0 | MIT | No matching direct-package OSV finding identified; the non-exact range requires candidate-time resolution evidence. |
 
 The two LangGraph checkpoint findings above were reviewed on 2026-09-13. They are not release

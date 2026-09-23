@@ -12,10 +12,12 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from langchain_core.messages import AIMessage
 from pydantic import ValidationError
 
 from skail.domain.events import EventPayload, ModelPayload
 from skail.domain.usage import NormalizedUsage, UsageAuthority
+from skail.providers.langchain import LangChainUsageAdapter
 from skail.tools.assembly import RuntimeActivityMiddleware
 
 
@@ -91,6 +93,39 @@ def test_normalized_usage_maps_into_payload_telemetry() -> None:
     assert payload.output_tokens == 3
     assert payload.cost_usd == 0.0125
     assert payload.usage_authority == "estimated_actual"
+
+
+def test_langchain_usage_preserves_tokens_without_inventing_zero_cost() -> None:
+    response = AIMessage(
+        content="hi",
+        usage_metadata={"input_tokens": 120, "output_tokens": 8, "total_tokens": 128},
+    )
+
+    usage = LangChainUsageAdapter("fixture").normalize_usage(response)
+
+    assert usage is not None
+    assert (usage.input_tokens, usage.output_tokens) == (120, 8)
+    assert usage.cost_usd is None
+    assert usage.authority is UsageAuthority.TOKEN_DERIVED_ESTIMATE
+
+
+def test_missing_cost_is_distinct_from_reported_zero() -> None:
+    missing = NormalizedUsage(
+        input_tokens=1,
+        output_tokens=1,
+        cost_usd=None,
+        authority=UsageAuthority.TOKEN_DERIVED_ESTIMATE,
+    )
+    reported_zero = NormalizedUsage(
+        input_tokens=1,
+        output_tokens=1,
+        cost_usd=Decimal("0"),
+        authority=UsageAuthority.AUTHORITATIVE_ACTUAL,
+    )
+
+    assert missing.cost_usd is None
+    assert reported_zero.cost_usd == Decimal("0")
+    assert missing.authority is not reported_zero.authority
 
 
 def test_wrap_model_call_emits_usage_on_model_completed() -> None:

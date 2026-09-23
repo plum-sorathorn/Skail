@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from argparse import Namespace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from skail.agents.profiles import builtin_profiles
@@ -10,6 +12,7 @@ from skail.cli.exit_codes import EXIT_FAILURE, EXIT_OK, EXIT_USAGE
 from skail.cli.render import render_print_stderr, render_print_stdout
 from skail.config.loader import ResolvedConfig, load_config
 from skail.config.paths import (
+    catalog_cache_path,
     default_checkpoints_path,
     default_journal_path,
     project_config_path,
@@ -17,18 +20,17 @@ from skail.config.paths import (
     user_config_path,
 )
 from skail.domain.sessions import SessionStatus
+from skail.providers.credentials import (
+    CredentialStore,
+    CredentialStoreUnavailable,
+    EnvironmentCredentialResolver,
+    KeyringCredentialStore,
+)
+from skail.providers.errors import ProviderConfigurationError
+from skail.runtime.redaction import RedactionRegistry
 from skail.sessions.export import SessionExporter
 from skail.sessions.journal import Journal
 from skail.sessions.service import SessionService
-from skail.smoke import run_fake_provider_smoke
-
-
-def handle_smoke(args: Namespace) -> int:
-    if getattr(args, "fake_provider", False):
-        render_print_stdout(run_fake_provider_smoke())
-        return EXIT_OK
-    render_print_stderr("smoke requires --fake-provider")
-    return EXIT_USAGE
 
 
 def handle_config(
@@ -132,31 +134,62 @@ def handle_sessions(
     return EXIT_USAGE
 
 
-def handle_auth(args: Namespace) -> int:
+def handle_auth(
+    args: Namespace,
+    *,
+    resolved_config: ResolvedConfig | None = None,
+    credential_store: CredentialStore | None = None,
+) -> int:
     subaction = getattr(args, "auth_action", "status") or "status"
-    keys = {
-        "LLMGATEWAY_API_KEY": os.environ.get("LLMGATEWAY_API_KEY"),
-        "DEVPASS_TOKEN": os.environ.get("DEVPASS_TOKEN"),
-        "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY"),
-        "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY"),
+    references = {
+        "llmgateway": "LLMGATEWAY_API_KEY",
+        "devpass": "DEVPASS_TOKEN",
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
     }
+    if resolved_config is not None:
+        for name, provider_config in resolved_config.config.providers.items():
+            if provider_config.api_key_env:
+                references[name] = provider_config.api_key_env
+    store = credential_store or KeyringCredentialStore()
+    keys: dict[str, bool] = {}
+    for provider_name, reference in references.items():
+        available = bool(os.environ.get(reference))
+        if not available:
+            try:
+                available = bool(store.get(provider_name, reference))
+            except CredentialStoreUnavailable:
+                available = False
+        keys[reference] = keys.get(reference, False) or available
     if subaction == "check":
-        configured = [k for k, v in keys.items() if v]
-        if not configured:
-            render_print_stdout("No provider credentials configured in environment.")
+        configured_references = [
+            reference for reference, available in keys.items() if available
+        ]
+        if not configured_references:
+            render_print_stdout(
+                "No provider credential found in the environment or OS credential store."
+            )
         else:
-            render_print_stdout(f"Credentials detected for: {', '.join(configured)}")
+            render_print_stdout(
+                f"Credentials detected for: {', '.join(configured_references)}"
+            )
         return EXIT_OK
 
     render_print_stdout("Skail Provider Credentials Status:")
-    for name, val in keys.items():
-        status = "CONFIGURED" if val else "NOT CONFIGURED"
+    for name, configured in keys.items():
+        status = "CONFIGURED" if configured else "NOT CONFIGURED"
         render_print_stdout(f"  {name:<22}: {status}")
     return EXIT_OK
 
 
-def handle_models(args: Namespace) -> int:
+def handle_models(
+    args: Namespace,
+    *,
+    resolved_config: ResolvedConfig | None = None,
+) -> int:
     subaction = getattr(args, "models_action", "list") or "list"
+    if subaction == "refresh":
+        return _refresh_llmgateway_catalog(resolved_config)
     if subaction == "list":
         profiles = builtin_profiles()
         render_print_stdout("Built-in Agent Profiles:")
@@ -165,10 +198,50 @@ def handle_models(args: Namespace) -> int:
                 f"  {p.name:<18} [floor: {p.role_floor:.2f}] {p.description}"
             )
         render_print_stdout("\nConfigured Providers and Models:")
-        render_print_stdout("  fake:fast-model (Deterministic Offline Fake)")
-        render_print_stdout("  fake:smart-model (Deterministic Offline Fake)")
-        render_print_stdout("  fake:lead-model (Deterministic Offline Fake)")
-        render_print_stdout("  fake:implementer-model (Deterministic Offline Fake)")
+        configured_models = [
+            f"{provider}:{model}"
+            for provider, provider_config in (
+                resolved_config.config.providers.items() if resolved_config else ()
+            )
+            for model in provider_config.models
+        ]
+        if configured_models:
+            for model in configured_models:
+                render_print_stdout(f"  {model}")
+        else:
+            render_print_stdout("  No models selected. Open the model picker to choose models.")
+        from skail.providers.catalog_sources import load_catalog_snapshot
+
+        snapshot = load_catalog_snapshot(
+            catalog_cache_path(),
+            provider="llmgateway",
+            endpoint="https://api.llmgateway.io/v1/models",
+        )
+        if snapshot is None:
+            render_print_stdout("\nLLMGateway catalog: unavailable")
+        else:
+            priced = sum(
+                entry.fields.get("input_usd_per_million") is not None
+                and entry.fields.get("output_usd_per_million") is not None
+                for entry in snapshot.entries
+            )
+            age = datetime.now(UTC) - snapshot.retrieved_at
+            selected = (
+                resolved_config.config.routing.lead_model
+                if resolved_config is not None
+                else "auto"
+            )
+            render_print_stdout(
+                f"\nLLMGateway catalog: {len(snapshot.entries)} models; "
+                f"{priced} with prompt/completion pricing; age {age}; "
+                f"selected {selected}"
+            )
+            for entry in snapshot.entries:
+                input_price = entry.fields.get("input_usd_per_million", "unavailable")
+                output_price = entry.fields.get("output_usd_per_million", "unavailable")
+                render_print_stdout(
+                    f"  llmgateway:{entry.model}  in ${input_price}/M  out ${output_price}/M"
+                )
         return EXIT_OK
 
     name = getattr(args, "model_name", None)
@@ -181,7 +254,99 @@ def handle_models(args: Namespace) -> int:
             render_print_stdout(f"Capability floor: {p.role_floor}")
             render_print_stdout(f"Allowed tools: {', '.join(p.tools)}")
             return EXIT_OK
+        from skail.providers.catalog_sources import load_catalog_snapshot
+
+        provider, separator, model = name.partition(":")
+        if separator:
+            snapshot = load_catalog_snapshot(
+                catalog_cache_path(provider),
+                provider=provider,
+                endpoint=(
+                    "https://api.llmgateway.io/v1/models"
+                    if provider == "llmgateway"
+                    else None
+                ),
+            )
+            if snapshot is not None:
+                for entry in snapshot.entries:
+                    if entry.model == model:
+                        render_print_stdout(f"Model: {name}")
+                        render_print_stdout(f"Source: {entry.source.value}")
+                        render_print_stdout(f"Trusted facts: {entry.trusted}")
+                        render_print_stdout(f"As of: {entry.as_of.isoformat()}")
+                        render_print_stdout(f"Provenance: {entry.provenance}")
+                        render_print_stdout(json.dumps(entry.fields, default=str, sort_keys=True))
+                        return EXIT_OK
         render_print_stdout(f"Model/Profile: {name}")
         return EXIT_OK
 
     return EXIT_USAGE
+
+
+def _refresh_llmgateway_catalog(resolved_config: ResolvedConfig | None) -> int:
+    if resolved_config is None:
+        render_print_stderr("Model catalog refresh requires resolved configuration.")
+        return EXIT_FAILURE
+
+    provider_config = resolved_config.config.providers.get("llmgateway")
+    if provider_config is None:
+        render_print_stderr("Model catalog refresh requires an llmgateway provider.")
+        return EXIT_FAILURE
+
+    from skail.config.models import ProviderConfig
+    from skail.providers.catalog_sources import save_catalog_cache
+    from skail.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
+
+    reference = provider_config.api_key_env or "LLMGATEWAY_API_KEY"
+    try:
+        credential = EnvironmentCredentialResolver(RedactionRegistry()).resolve(
+            "llmgateway", reference
+        )
+    except ProviderConfigurationError as exc:
+        render_print_stderr(f"Model catalog refresh failed: {exc}")
+        return EXIT_FAILURE
+
+    discovery_config = provider_config
+    if discovery_config.base_url is None:
+        discovery_config = discovery_config.model_copy(
+            update={"base_url": LLMGATEWAY_BASE_URL}
+        )
+    if not discovery_config.models:
+        discovery_config = discovery_config.model_copy(
+            update={"models": ("__catalog_discovery__",)}
+        )
+    if not isinstance(discovery_config, ProviderConfig):
+        raise TypeError("invalid llmgateway provider configuration")
+
+    adapter = LLMGatewayAdapter(discovery_config, api_key=credential.reveal())
+    try:
+        entries = asyncio.run(adapter.discover_models())
+    except Exception as exc:
+        classified = adapter.classify_error(exc)
+        render_print_stderr(f"Model catalog refresh failed: {classified.summary}.")
+        return EXIT_FAILURE
+
+    if not entries:
+        render_print_stderr(
+            "Model catalog refresh failed: provider returned no accessible models."
+        )
+        return EXIT_FAILURE
+
+    cache_path = catalog_cache_path("llmgateway")
+    save_catalog_cache(
+        cache_path,
+        entries,
+        provider="llmgateway",
+        endpoint=f"{LLMGATEWAY_BASE_URL}/models",
+        query={"exclude_deprecated": True},
+    )
+    priced = sum(
+        entry.fields.get("input_usd_per_million") is not None
+        and entry.fields.get("output_usd_per_million") is not None
+        for entry in entries
+    )
+    render_print_stdout(
+        f"Refreshed LLM Gateway catalog: {len(entries)} models; "
+        f"{priced} with prompt/completion pricing."
+    )
+    return EXIT_OK

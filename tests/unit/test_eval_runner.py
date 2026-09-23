@@ -199,10 +199,12 @@ def test_evaluation_runner_runs_deterministic_fake_suite() -> None:
     # create a genuine parallel workload, so it must not manufacture a speedup.
     assert not report.comparison.all_gates_passed
 
-    # Scripted provider usage is runtime evidence, not a route estimate.
+    # Scripted tokens are priced at each assignment's model rates, not the
+    # provider fake's dollar field or the route reservation.
     auto_cost = report.policy_summaries[EvaluationPolicy.AUTO.value].median_cost_usd
     quality_cost = report.policy_summaries[EvaluationPolicy.QUALITY.value].median_cost_usd
-    assert auto_cost == quality_cost == Decimal("0.02")
+    assert auto_cost == Decimal("0.0001")
+    assert quality_cost == Decimal("0.0003")
 
     # Markdown rendering should produce formatted tables
     md = render_markdown_report(report)
@@ -262,8 +264,8 @@ def test_scripted_usage_is_recorded_independently_of_route_estimates() -> None:
         fixtures=[fixture], policies=[EvaluationPolicy.AUTO], candidates=inflated_candidates
     ).run()
 
-    assert report.results[0].total_cost_usd == Decimal("0.020")
-    assert report.raw_records[0].usage_cost_usd == Decimal("0.020")
+    assert report.results[0].total_cost_usd == Decimal("0.000090")
+    assert report.raw_records[0].usage_cost_usd == Decimal("0.000090")
 
 
 def test_disabling_runtime_writes_fails_a_required_mutation_fixture() -> None:
@@ -352,12 +354,12 @@ def test_task_eval_result_child_metric_defaults() -> None:
 def test_default_candidates_include_manual_child_pin() -> None:
     candidates = default_eval_candidates()
     pins = {(c.profile.provider, c.profile.model) for c in candidates}
-    assert ("fake", "explorer") in pins
+    assert ("eval-provider", "explorer") in pins
 
     reqs = RequirementBuilder().build(
         role="explorer", risk=TaskRisk.ROUTINE, mode=RoutingMode.MANUAL
     )
-    selection = select_model(candidates, reqs, manual_model=("fake", "explorer"))
+    selection = select_model(candidates, reqs, manual_model=("eval-provider", "explorer"))
     assert not isinstance(selection, RouteFailure)
     assert selection.candidate.profile.model == "explorer"
     assert not selection.candidate.profile.auto_eligible

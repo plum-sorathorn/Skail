@@ -19,8 +19,10 @@ from langchain_core.tools import tool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import interrupt
 
+from skail.config.paths import workspace_state_dir
+from skail.domain.security import identify_workspace
 from skail.domain.usage import NormalizedUsage
-from skail.runtime.deepagents_adapter import build_lead_agent
+from skail.runtime.deepagents_adapter import build_lead_agent, is_graph_interrupt
 from skail.runtime.failure_monitor import FailureMonitor
 from skail.runtime.interrupts import QuestionStore
 from skail.runtime.leases import WorkspaceLeaseManager
@@ -428,23 +430,22 @@ def _is_decision_gate_rejection(name: str, result: object) -> bool:
     return (
         text.startswith("execution.decision_required")
         or text.startswith("execution.decision_exhausted")
+        or text.startswith("execution.intent_conflict")
+        or text.startswith("execution.agent_count_conflict")
+        or text.startswith("execution.agent_scope_conflict")
         or text.startswith("decision.")
     )
 
 
-def _is_decision_exhausted_rejection(result: object) -> bool:
-    """True for the terminal-lock marker emitted once decision repairs are spent.
+def _is_decision_requirement_rejection(result: object) -> bool:
+    """True when an operational tool simply arrived before a decision."""
 
-    Unlike `execution.decision_required` (still repairable, counted as blocked),
-    an exhausted gate must surface as a monitor error so the run fails loudly
-    instead of completing silently with every tool gated.
-    """
     content = getattr(result, "content", None)
     if isinstance(content, list):
         content = " ".join(str(part) for part in content)
     if not isinstance(content, str):
         return False
-    return content.strip().startswith("execution.decision_exhausted")
+    return content.strip().startswith("execution.decision_required")
 
 
 def _tool_result_status(result: object) -> str | None:
@@ -480,6 +481,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         redactor: Any,
         model_response_observer: Callable[[ModelResponse[Any]], None] | None = None,
         usage_normalizer: Callable[[ModelResponse[Any]], NormalizedUsage | None] | None = None,
+        model_call_guard: Callable[[], None] | None = None,
     ) -> None:
         self.model_name = model_name
         self.emit = emit
@@ -487,6 +489,7 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         self._redactor = redactor
         self.model_response_observer = model_response_observer
         self.usage_normalizer = usage_normalizer
+        self.model_call_guard = model_call_guard
 
     def _emit_failure(self, name: str, reason_value: object) -> None:
         reason = _failure_reason(reason_value, self._redactor)
@@ -527,6 +530,8 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         request: ModelRequest[Any],
         handler: Callable[[ModelRequest[Any]], ModelResponse[Any]],
     ) -> ModelResponse[Any]:
+        if self.model_call_guard is not None:
+            self.model_call_guard()
         self.emit("model.started", self.model_name)
         try:
             response = handler(request)
@@ -549,6 +554,8 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
         request: ModelRequest[Any],
         handler: Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]],
     ) -> ModelResponse[Any]:
+        if self.model_call_guard is not None:
+            self.model_call_guard()
         self.emit("model.started", self.model_name)
         try:
             response = await handler(request)
@@ -596,6 +603,9 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             result = await handler(request)
         except Exception as exc:
             self.monitor.discard_call_window()
+            if is_graph_interrupt(exc):
+                self.monitor.observe_progress()
+                raise
             self._emit_failure(name, exc)
             signal = self.monitor.observe_error(exc, tool=name)
             if signal is not None:
@@ -606,16 +616,16 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             self.monitor.discard_call_window()
             self._emit_failure(name, getattr(result, "content", "tool error"))
             if _is_decision_gate_rejection(name, result):
-                if _is_decision_exhausted_rejection(result):
+                if _is_decision_requirement_rejection(result):
+                    self.monitor.observe_error(
+                        getattr(result, "content", "tool blocked"), blocked=True
+                    )
+                else:
                     signal = self.monitor.observe_error(
                         getattr(result, "content", "tool error"), tool=name
                     )
                     if signal is not None:
                         raise RuntimeError(signal)
-                else:
-                    self.monitor.observe_error(
-                        getattr(result, "content", "tool blocked"), blocked=True
-                    )
             else:
                 signal = self.monitor.observe_error(
                     getattr(result, "content", "tool error"), tool=name
@@ -654,6 +664,9 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             result = handler(request)
         except Exception as exc:
             self.monitor.discard_call_window()
+            if is_graph_interrupt(exc):
+                self.monitor.observe_progress()
+                raise
             self._emit_failure(name, exc)
             signal = self.monitor.observe_error(exc, tool=name)
             if signal is not None:
@@ -664,16 +677,16 @@ class RuntimeActivityMiddleware(AgentMiddleware[Any, Any, Any]):
             self.monitor.discard_call_window()
             self._emit_failure(name, getattr(result, "content", "tool error"))
             if _is_decision_gate_rejection(name, result):
-                if _is_decision_exhausted_rejection(result):
+                if _is_decision_requirement_rejection(result):
+                    self.monitor.observe_error(
+                        getattr(result, "content", "tool blocked"), blocked=True
+                    )
+                else:
                     signal = self.monitor.observe_error(
                         getattr(result, "content", "tool error"), tool=name
                     )
                     if signal is not None:
                         raise RuntimeError(signal)
-                else:
-                    self.monitor.observe_error(
-                        getattr(result, "content", "tool blocked"), blocked=True
-                    )
             else:
                 signal = self.monitor.observe_error(
                     getattr(result, "content", "tool error"), tool=name
@@ -747,16 +760,18 @@ def build_default_agent(
     lease_manager: WorkspaceLeaseManager | None = None,
     extra_middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
     blocked_tool_message: Callable[[str], str] | None = None,
-    runtime_event: Callable[[str, str], None] | None = None,
+    runtime_event: Callable[..., None] | None = None,
     runtime_model_name: str | None = None,
-    model_response_observer: Callable[[ModelResponse[Any]], None] | None = None,
-    usage_normalizer: Callable[[ModelResponse[Any]], NormalizedUsage | None] | None = None,
+      model_response_observer: Callable[[ModelResponse[Any]], None] | None = None,
+      usage_normalizer: Callable[[ModelResponse[Any]], NormalizedUsage | None] | None = None,
+      model_call_guard: Callable[[], None] | None = None,
     allowed_write_paths: tuple[str, ...] = (),
     forbidden_host_paths: tuple[Path, ...] = (),
     execute_allowed: bool = True,
     system_prompt: str | None = None,
     session_id: str = "",
     run_id: str = "",
+    state_dir: Path | None = None,
 ) -> Any:
     """Assemble pinned DeepAgents tools behind Skail's workspace and shell policy."""
 
@@ -765,7 +780,10 @@ def build_default_agent(
         raise ValueError(f"unknown tool profile: {profile}")
     policy = ExecutionPolicy(workspace, execution_context)
     redaction = redactor or RedactionRegistry()
-    artifacts = ArtifactStore(workspace / ".skail" / "artifacts", redaction)
+    artifacts = ArtifactStore(
+        (state_dir or workspace_state_dir(identify_workspace(workspace))) / "artifacts",
+        redaction,
+    )
 
     @tool("execute")
     def execute(command: str, arguments: tuple[str, ...] = ()) -> dict[str, Any]:
@@ -796,6 +814,7 @@ def build_default_agent(
         if result.status == "approval_required":
             interrupt(
                 {
+                    "kind": "approval",
                     "type": "command_approval",
                     "command": command,
                     "arguments": arguments,
@@ -848,6 +867,7 @@ def build_default_agent(
         )
         answer = interrupt(
             {
+                "kind": "question",
                 "question_id": question.question_id,
                 "prompt": prompt,
                 "options": options,
@@ -858,9 +878,10 @@ def build_default_agent(
         )
         if not isinstance(answer, str):
             raise ValueError("question answer must be a string")
-        return question_store.answer(
-            question.question_id, answer, graph_id=graph_id
-        ).answer or ""
+        answered = question_store.answer(question.question_id, answer, graph_id=graph_id)
+        if runtime_event is not None:
+            runtime_event("user.answer", question.question_id, answered.answer or "")
+        return answered.answer or ""
 
     custom_tools: list[Any] = list(extension_tools)
     visible_names = frozenset(item.name for item in registry.visible_to(profile))
@@ -874,7 +895,11 @@ def build_default_agent(
     if "ask_user" in visible_names:
         custom_tools.append(ask_user)
     activity_middleware: list[AgentMiddleware[Any, Any, Any]] = []
-    if runtime_event is not None or model_response_observer is not None:
+    if (
+        runtime_event is not None
+        or model_response_observer is not None
+        or model_call_guard is not None
+    ):
         activity_middleware.append(
             RuntimeActivityMiddleware(
                 model_name=str(
@@ -884,6 +909,7 @@ def build_default_agent(
                 redactor=redaction,
                 model_response_observer=model_response_observer,
                 usage_normalizer=usage_normalizer,
+                model_call_guard=model_call_guard,
             )
         )
     return build_lead_agent(
@@ -897,6 +923,7 @@ def build_default_agent(
             lease_manager=lease_manager,
             allowed_write_paths=allowed_write_paths,
             forbidden_host_paths=forbidden_host_paths,
+            state_dir=state_dir,
         ),
         skills=skills,
         memory=memory,

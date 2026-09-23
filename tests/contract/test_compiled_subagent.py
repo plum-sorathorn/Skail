@@ -365,7 +365,9 @@ def test_compiled_tool_loop_keeps_transport_fallback_binding_for_later_calls() -
     child = build_compiled_task_subagent(
         name="fallback-child",
         description="Keep fallback sticky.",
-        assignment=SpikeAssignment("primary-assignment", "attempt", "primary"),
+        assignment=SpikeAssignment(
+            "primary-assignment", "attempt", "primary", provider="fake"
+        ),
         models={"primary": primary, "fallback": fallback},
         tools=[probe],
         providers={"fake": FakeProviderAdapter(primary)},

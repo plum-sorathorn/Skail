@@ -2,23 +2,18 @@
 
 Boots SkailApp headless via Textual's ``run_test`` (same pattern as
 ``tests/integration/test_tui_shell.py``), injects representative traffic
-through the seams the integration tests already use -- public projection
-dataclasses (``tests/integration/test_tui_panels.py``) plus
-``SkailApp.apply_event`` envelopes applied before mount
-(``test_tui_shell_early_events_before_mount``) -- then exports:
+through the seams the integration tests already use, then exports matching
+120x40 PNG and SVG files for each maintained theme.
 
-- design/tui-redesigns/current/current-main.svg          (120x40, wide)
-- design/tui-redesigns/current/current-main-narrow.svg   (80x40, sidebar hidden)
-- design/tui-redesigns/current/current-main.txt          (plain-text 120x40 frame)
-- design/tui-redesigns/current/current-main*.png         (only if a converter is importable)
-
-Usage: python scripts/dev_tui_screenshot.py
+Usage: python scripts/dev_tui_screenshot.py --themes pistachio-night
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import io
+import sys
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -41,7 +36,8 @@ from skail.tui.projection import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT_DIR = ROOT / "design" / "tui-redesigns" / "current"
+OUT_DIR = ROOT / "design" / "tui-themes"
+THEME_NAMES = ("pistachio-night", "pistachio-paper", "mint-porcelain")
 
 WIDE_SIZE = (120, 40)
 NARROW_SIZE = (80, 40)
@@ -200,9 +196,9 @@ def frame_text(app: SkailApp, width: int, height: int) -> str:
     return "\n".join(lines) + "\n"
 
 
-async def capture(width: int, height: int) -> tuple[str, str, bool]:
+async def capture(theme: str, width: int, height: int) -> tuple[str, str, bool]:
     """Boot the app, inject traffic, return (svg, plain-text frame, narrow?)."""
-    app = SkailApp(theme_name="dark", projection=build_projection())
+    app = SkailApp(theme_name=theme, projection=build_projection())  # type: ignore[arg-type]
     async with app.run_test(size=(width, height)) as pilot:
         await pilot.pause()
         await pilot.pause()
@@ -212,81 +208,75 @@ async def capture(width: int, height: int) -> tuple[str, str, bool]:
     return svg, frame, narrow
 
 
-def export_pngs(svg_wide: str, svg_narrow: str) -> str:
-    """Best-effort PNG twins; skipped when no converter is importable."""
+def export_png(svg: str, output: Path) -> str:
+    """Convert one SVG to PNG; converter absence is a hard failure."""
     try:
-        import cairosvg
+        import cairosvg  # type: ignore[import-untyped]
 
         cairosvg.svg2png(
-            bytestring=svg_wide.encode("utf-8"),
-            write_to=str(OUT_DIR / "current-main.png"),
+            bytestring=svg.encode("utf-8"),
+            write_to=str(output),
         )
-        cairosvg.svg2png(
-            bytestring=svg_narrow.encode("utf-8"),
-            write_to=str(OUT_DIR / "current-main-narrow.png"),
-        )
-        return "PNG: written via cairosvg"
+        return "cairosvg"
     except ImportError:
         pass
     except Exception as exc:  # native cairo deps may be missing on Windows
         print(f"cairosvg failed, trying svglib: {exc}")
     try:
-        from reportlab.graphics import renderPM
+        import cairo
+
+        sys.modules["cairocffi"] = cairo
+        import cairosvg
+
+        cairosvg.svg2png(bytestring=svg.encode("utf-8"), write_to=str(output))
+        return "cairosvg+pycairo"
+    except ImportError:
+        pass
+    except Exception as exc:
+        print(f"cairosvg+pycairo failed, trying reportlab: {exc}")
+    try:
+        import cairo
+
+        # rlPyCairo prefers cairocffi, while Windows wheels provide pycairo.
+        sys.modules.setdefault("cairocffi", cairo)
+        from reportlab.graphics import renderPM  # type: ignore[import-untyped]
         from svglib.svglib import svg2rlg
 
-        for svg, name in (
-            (svg_wide, "current-main.png"),
-            (svg_narrow, "current-main-narrow.png"),
-        ):
-            drawing = svg2rlg(io.StringIO(svg))
-            if drawing is not None:
-                renderPM.drawToFile(drawing, str(OUT_DIR / name), fmt="PNG")
-        return "PNG: written via svglib+reportlab"
+        drawing = svg2rlg(io.StringIO(svg))
+        if drawing is None:
+            raise RuntimeError("SVG converter returned no drawing")
+        renderPM.drawToFile(drawing, str(output), fmt="PNG")
+        return "svglib+reportlab"
     except ImportError:
-        return "PNG: skipped (neither cairosvg nor svglib/reportlab importable)"
+        raise RuntimeError(
+            "PNG conversion requires cairosvg or svglib/reportlab; install a converter"
+        )
     except Exception as exc:
-        return f"PNG: skipped (converter error: {exc})"
+        raise RuntimeError(f"PNG conversion failed: {exc}") from exc
 
 
 async def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--themes", nargs="+", choices=THEME_NAMES, default=list(THEME_NAMES))
+    args = parser.parse_args()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    # -- wide 120x40 ------------------------------------------------------
-    svg_wide, frame, narrow_wide = await capture(*WIDE_SIZE)
-    assert not narrow_wide, "120x40 must not carry the .narrow class"
-    assert "<svg" in svg_wide[:200], "wide capture is not an SVG"
-    (OUT_DIR / "current-main.svg").write_text(svg_wide, encoding="utf-8")
-    (OUT_DIR / "current-main.txt").write_text(frame, encoding="utf-8")
-
-    # SVG text runs are split per word/token, so only single-token needles
-    # are safe there; the plain-text frame keeps whole lines.
-    svg_tokens = ("YOU", "LEAD", "TOOL", "read_file", "AGENT", "$0.4500", "Model:")
-    missing_svg = [needle for needle in svg_tokens if needle not in svg_wide]
-    txt_labels = ("YOU", "LEAD", "Active Agents: 2", "Cost: $0.4500 / $15.00")
-    missing_txt = [needle for needle in txt_labels if needle not in frame]
-    rail_visible = "AGENT" in (svg_wide + frame) and "waiting" in frame
-    print(f"wide 120x40: tokens missing in SVG: {missing_svg or 'none'}")
-    print(f"wide 120x40: labels missing in TXT: {missing_txt or 'none'}")
-    print(f"wide 120x40: rail rows rendered: {rail_visible}")
-
-    # -- narrow 80x40 ------------------------------------------------------
-    svg_narrow, frame_narrow, narrow_cls = await capture(*NARROW_SIZE)
-    assert narrow_cls, "80x40 must carry the .narrow class"
-    assert "<svg" in svg_narrow[:200], "narrow capture is not an SVG"
-    (OUT_DIR / "current-main-narrow.svg").write_text(svg_narrow, encoding="utf-8")
-    rail_in_narrow = "AGENT" in (svg_narrow + frame_narrow)
-    chat_in_narrow = "YOU" in (svg_narrow + frame_narrow)
-    sidebar_hidden = (not rail_in_narrow) and chat_in_narrow
-    print(f"narrow 80x40: rail text present: {rail_in_narrow} (expect False)")
-    print(f"narrow 80x40: sidebar hidden: {sidebar_hidden}")
-
-    # -- optional PNG twins --------------------------------------------------
-    print(export_pngs(svg_wide, svg_narrow))
-
-    print("wrote:")
-    for path in sorted(OUT_DIR.iterdir()):
-        if path.is_file():
-            print(f"  {path} ({path.stat().st_size} bytes)")
+    for theme in args.themes:
+        svg, frame, narrow = await capture(theme, *WIDE_SIZE)
+        assert not narrow, f"{theme} 120x40 must not carry the .narrow class"
+        assert "<svg" in svg[:200], f"{theme} capture is not an SVG"
+        svg = "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
+        svg_path = OUT_DIR / f"{theme}.svg"
+        png_path = OUT_DIR / f"{theme}.png"
+        svg_path.write_text(svg, encoding="utf-8")
+        missing = [
+            needle for needle in ("YOU", "LEAD", "AGENT", "read_file") if needle not in frame
+        ]
+        if missing:
+            raise AssertionError(f"{theme} screenshot content missing: {missing}")
+        converter = export_png(svg, png_path)
+        if not png_path.is_file() or png_path.stat().st_size == 0:
+            raise RuntimeError(f"{theme} PNG was not produced")
+        print(f"{theme}: 120x40, converter={converter}, png={png_path}, svg={svg_path}")
 
 
 if __name__ == "__main__":

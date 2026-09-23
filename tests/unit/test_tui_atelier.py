@@ -121,13 +121,13 @@ def test_receipt_lines_bold_primary_and_faint_continuation() -> None:
         "[b]\u2713 wrote 3 files[/]",
         "[b]\u2713 passed 5 checks[/]",
     ]
-    # mirrors the fork receipt's newline layout (commands.fork_receipt)
+    # Receipts preserve the multiline resume command layout.
     forked = receipt_lines(
-        ["Session forked: 01JDEF\nResume this fork with:\nskail -r 01JDEF"]
+        ["Session resumed: 01JDEF\nResume later with:\nskail -r 01JDEF"]
     )
     assert forked == [
-        "[b]\u2713 Session forked: 01JDEF[/]",
-        "[textFaint]  Resume this fork with:[/]",
+        "[b]\u2713 Session resumed: 01JDEF[/]",
+        "[textFaint]  Resume later with:[/]",
         "[textFaint]  skail -r 01JDEF[/]",
     ]
 
@@ -406,12 +406,11 @@ def test_render_dateline_narrow_wraps_to_two_rows() -> None:
 
 
 def test_render_margin_drawer_label_and_kbd_chips() -> None:
-    """Drawer = letterspaced active-tab label + four faint [on $surfaceRaised] chips."""
+    """Drawer = letterspaced active-tab label + the Shift+Tab panel gesture."""
     markup = render_margin_drawer("Agents")
     assert "A G E N T S" in markup
-    for key in ("^A", "^P", "^R", "^B"):
-        assert key in markup
-    assert markup.count("[on $surfaceRaised]") == 4
+    assert "⇧TAB" in markup
+    assert markup.count("[on $surfaceRaised]") == 1
     for name, spaced in (
         ("Plan", "P L A N"),
         ("Route", "R O U T E"),

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypedDict
 
 from skail.tui.logo import help_header
 from skail.tui.projection import TuiProjection
@@ -9,7 +9,16 @@ from skail.tui.projection import TuiProjection
 THEME_USAGE = "Usage: /theme [dark|light|system]"
 _VALID_THEMES = ("dark", "light", "system")
 
-_FORK_FALLBACK_ID = "01JDEF"
+
+
+class CommandSpec(TypedDict):
+    command: str
+    aliases: list[str]
+    synopsis: str
+    description: str
+    keywords: list[str]
+    args_required: bool
+    category: str
 
 
 @dataclass
@@ -26,7 +35,7 @@ class SlashCommandResult:
 
 # Registry is the single source of truth for help + palette. Widgets must
 # import this instead of maintaining a second hardcoded command list.
-COMMAND_REGISTRY: list[dict[str, Any]] = [
+COMMAND_REGISTRY: list[CommandSpec] = [
     {
         "command": "/help",
         "aliases": [],
@@ -42,6 +51,24 @@ COMMAND_REGISTRY: list[dict[str, Any]] = [
         "synopsis": "/agents",
         "description": "Display task tree and agent rail",
         "keywords": ["agents", "tasks", "rail", "children"],
+        "args_required": False,
+        "category": "view",
+    },
+    {
+        "command": "/agent",
+        "aliases": [],
+        "synopsis": "/agent <task_id>",
+        "description": "Focus one agent's events and result",
+        "keywords": ["agent", "task", "focus"],
+        "args_required": True,
+        "category": "view",
+    },
+    {
+        "command": "/tasks",
+        "aliases": [],
+        "synopsis": "/tasks",
+        "description": "Show planned and executing task records",
+        "keywords": ["tasks", "todos", "plan"],
         "args_required": False,
         "category": "view",
     },
@@ -118,6 +145,24 @@ COMMAND_REGISTRY: list[dict[str, Any]] = [
         "category": "run",
     },
     {
+        "command": "/steer",
+        "aliases": [],
+        "synopsis": "/steer <id> <message>",
+        "description": "Update a background task when supported",
+        "keywords": ["steer", "update", "background"],
+        "args_required": True,
+        "category": "run",
+    },
+    {
+        "command": "/mode",
+        "aliases": [],
+        "synopsis": "/mode <auto|economy|quality|manual>",
+        "description": "Change routing mode for future assignments",
+        "keywords": ["mode", "routing", "economy", "quality", "manual"],
+        "args_required": True,
+        "category": "run",
+    },
+    {
         "command": "/quit",
         "aliases": [],
         "synopsis": "/quit",
@@ -153,15 +198,6 @@ COMMAND_REGISTRY: list[dict[str, Any]] = [
         "args_required": False,
         "category": "view",
     },
-    {
-        "command": "/fork",
-        "aliases": [],
-        "synopsis": "/fork [turn]",
-        "description": "Fork the session from a turn for parallel exploration",
-        "keywords": ["fork", "branch", "copy", "session"],
-        "args_required": False,
-        "category": "session",
-    },
 ]
 
 
@@ -173,7 +209,7 @@ def _registry_help_text() -> str:
         [
             "",
             "Keybindings:",
-            "  Shift+Tab  Cycle routing mode (Quality/Economy/Manual)",
+            "  Shift+Tab  Cycle Agents/Plan/Route/Budget (composer stays focused)",
             "  Alt+P      Model picker (future attempts only)",
             "  Esc        Back one step / keep approval pending (never approves)",
             "  Ctrl+O     Transcript overlay (full scrollback + search)",
@@ -183,9 +219,8 @@ def _registry_help_text() -> str:
             "",
             "Queue: Ctrl+Enter queues while a run is active; "
             "take back the newest queued prompt from the queue view.",
-            "Onboarding: 5 steps (Welcome > Provider > Trust > Theme > Ready); "
-            "choose Fake provider or restart with skail --fake-provider.",
-            "Receipts include the exact resume command: skail -r <session-id>.",
+            "Onboarding: connect a provider, select models, confirm workspace trust, "
+            "and choose a theme.",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -213,12 +248,12 @@ def _normalize_query(query: str) -> str:
     return text.split()[0] if text else ""
 
 
-def search_commands(query: str) -> list[dict[str, Any]]:
+def search_commands(query: str) -> list[CommandSpec]:
     """Deterministic registry search: prefix > subsequence > desc/kw > alpha."""
     needle = _normalize_query(query)
     if not needle:
         return sorted(COMMAND_REGISTRY, key=lambda e: str(e["command"]))
-    scored: list[tuple[int, str, int, dict[str, Any]]] = []
+    scored: list[tuple[int, str, int, CommandSpec]] = []
     for index, entry in enumerate(COMMAND_REGISTRY):
         name = str(entry["command"]).lstrip("/").lower()
         desc = str(entry.get("description", "")).lower()
@@ -240,20 +275,6 @@ def search_commands(query: str) -> list[dict[str, Any]]:
         scored.append((rank, name, index, entry))
     scored.sort(key=lambda row: (row[0], row[1], row[2]))
     return [row[3] for row in scored]
-
-
-def fork_receipt(new_session_id: str | None = None) -> str:
-    """Build the fork receipt; falls back to the fixture id in tests."""
-    if new_session_id:
-        fid = str(new_session_id)
-    else:
-        try:
-            from skail.domain.ids import new_session_id as _new_sid
-
-            fid = str(_new_sid())
-        except Exception:
-            fid = _FORK_FALLBACK_ID
-    return f"Session forked: {fid}\nResume this fork with:\nskail -r {fid}"
 
 
 def resume_receipt(session_id: str) -> str:
@@ -285,10 +306,21 @@ def _resolve_alias(cmd: str) -> str:
     return cmd
 
 
+def command_requires_args(command: str) -> bool:
+    """Return True if the command strictly requires arguments."""
+    cmd = command.lstrip("/").lower()
+    resolved = _resolve_alias(cmd)
+    for entry in COMMAND_REGISTRY:
+        if str(entry["command"]).lstrip("/").lower() == resolved:
+            return bool(entry.get("args_required", False))
+    return False
+
+
 def dispatch_slash_command(
     line: str,
     projection: TuiProjection,
     background_supported: bool = False,
+    available_models: set[str] | None = None,
 ) -> SlashCommandResult:
     cmd, args = parse_slash_command(line)
     if not cmd:
@@ -401,6 +433,16 @@ def dispatch_slash_command(
                 payload={"picker": "model"},
             )
         model_name = args[0]
+        if (
+            available_models is not None
+            and model_name not in available_models
+            and model_name.split(":", 1)[-1] not in available_models
+        ):
+            return SlashCommandResult(
+                command="model",
+                action="error",
+                output_message=f"Unknown or inaccessible model '{model_name}'.",
+            )
         projection.set_future_model(model_name)
         return SlashCommandResult(
             command="model",
@@ -442,18 +484,6 @@ def dispatch_slash_command(
             action="missions",
             target_view="missions",
             output_message="Missions view opened.",
-        )
-
-    if cmd == "fork":
-        receipt = fork_receipt()
-        projection.note_receipt(receipt)
-        fork_id = receipt.splitlines()[0].split(":")[-1].strip()
-        return SlashCommandResult(
-            command="fork",
-            action="fork",
-            output_message=receipt,
-            target_id=fork_id,
-            payload={"fork_id": fork_id},
         )
 
     if cmd == "cancel":
@@ -549,11 +579,12 @@ def dispatch_slash_command(
 
 __all__ = [
     "COMMAND_REGISTRY",
+    "CommandSpec",
     "HELP_TEXT",
     "THEME_USAGE",
     "SlashCommandResult",
+    "command_requires_args",
     "dispatch_slash_command",
-    "fork_receipt",
     "parse_slash_command",
     "resume_receipt",
     "search_commands",

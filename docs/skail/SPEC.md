@@ -1,8 +1,8 @@
 # Specification: Skail
 
 > Status note: this is a normative product contract. Its requirements are implemented and verified
-> only where the active tracker, tests, or named evidence say so; it is not a blanket capability or
-> release-qualification claim. See [the feature matrix](FEATURE_PARITY_ROADMAP.md).
+> only where tests or named evidence say so; it is not a blanket capability or
+> release-qualification claim.
 
 Status: Approved
 Date: 2026-09-02
@@ -158,7 +158,12 @@ The lead should delegate when at least one of these is true:
 
 The lead should normally work directly when the request is a question, a localized edit, a short serial operation, or delegation overhead would be comparable to the work.
 
-These are prompt-level behavioral rules, not hard routing gates. Explicit user instructions take precedence.
+  These are prompt-level behavioral rules, not hard routing gates. Explicit user instructions take precedence.
+
+  Each run permits at most 32 model calls shared across its lead and child agents. Skail checks this
+  boundary before each provider request; exhaustion ends the run with `run.model_call_limit_exhausted`
+  and starts no additional call. Repeated identical tool errors and invalid execution decisions are
+  bounded by runtime failure monitoring.
 
 ### 5.2 Subagent behavior
 
@@ -315,6 +320,11 @@ Git operations initially use `execute`; Skail will not add a redundant Git tool 
 
 Tool visibility is profile-specific. Explorer and reviewer profiles do not receive write tools. Any profile with `execute` is treated as potentially write-capable for scheduling and approval because a shell can modify files even when `write_file` is hidden.
 
+`ask_user` produces a typed `question` wait with an answer field and a separate run-cancel action.
+Permission approvals remain typed `approval` interrupts and use Approve/Reject controls. An expected
+graph interrupt is not a tool failure; only an actual tool or question-store error is reported as
+failed.
+
 ## 9. Agent profiles
 
 | Profile | Purpose | Default tools | Default write posture |
@@ -378,13 +388,29 @@ Safety denials and missing user authority produce `blocked`, not `failed`, and d
 
 ## 12. Sessions and persistence
 
-- LangGraph checkpointing is authoritative for runnable state and transcript recovery.
+- LangGraph checkpointing is authoritative for runnable state and transcript recovery. Each run
+  uses its own checkpoint thread keyed by session and run ID; resuming a run reuses that thread.
 - Skail maintains a separate local SQLite journal for session metadata, task lifecycle, route decisions, approvals, and usage.
 - User data lives under `~/.skail/`.
 - Context compaction may be lossy, but checkpoints and exported session history preserve the underlying record.
-- Resume restores the lead conversation, active task states, model assignments, budget accounting, and pending approvals.
+- Resume restores the current run's lead conversation, active task states, model assignments, budget
+  accounting, and pending questions/approvals. A new instruction starts a fresh run context; prior
+  session history stays visible to the user but is not injected as execution authority.
 - Local telemetry is enabled; external telemetry and LangSmith tracing are disabled unless explicitly configured.
 - Credentials never appear in checkpoints, event payloads, prompts, or exports.
+
+### 12.1 Global state and root instructions
+
+Skail creates one physical `.skail` directory per user at `~/.skail`. Workspace-scoped state is
+namespaced below `~/.skail/workspaces/<canonical-workspace-identity>/`; repositories and isolated
+worktrees do not receive runtime `.skail` directories. Legacy local state may be imported
+non-destructively and idempotently, with a redacted migration receipt and no automatic deletion.
+
+Before each lead or child attempt, context assembly appends applicable root instructions in this
+order: built-in Skail rules, `~/.skail/AGENTS.md`, then trusted `<workspace>/AGENTS.md`. Components
+are bounded, secret-redacted, source-labelled, revision-hashed, and pinned for the attempt. A
+workspace file found in an untrusted project is reported as ignored. These instructions cannot
+relax code-owned safety, approval, permission, budget, concurrency, or filesystem boundaries.
 
 ## 13. Terminal experience
 
@@ -413,6 +439,21 @@ Required commands:
 | `/trust` | Inspect or set project trust. |
 | `/config` | Inspect effective layered configuration and sources. |
 | `/quit` | Exit after safely flushing local metadata. |
+
+Interactive help also exposes `/help`, `/theme [dark|light|system]`, `/model`, and
+`/missions` (`/children` is an alias). These entries use the same registry as parsing,
+completion, and dispatch. `/fork` is intentionally not exposed: durable session forking has no
+persisted contract yet.
+
+The composer is the main-screen interaction anchor. The transcript and side panels are passive;
+mouse clicks and keyboard focus cannot activate them. `Shift+Tab` cycles Agents → Plan → Route →
+Budget while focus remains in the composer. Routing mode is changed with `/mode`; the former
+Ctrl+A/B/P/R panel bindings are not part of the interface.
+
+Follow-ups use an in-memory FIFO queue and run after successful foreground completion. Whole-run
+cancellation, unsuccessful terminal outcomes, `/quit`, Ctrl+C, and application exit discard queued
+prompts with visible copy. Resume restores the active run and its pending question, never queued
+composer text.
 
 ## 14. CLI contract
 
@@ -445,11 +486,15 @@ With no prompt in a terminal, `skail` starts interactive mode. Print mode emits 
 Precedence, highest first:
 
 1. CLI flags and explicit current-session changes.
-2. Trusted project `.skail/config.toml`.
+2. Trusted workspace configuration in the global workspace namespace.
 3. User `~/.skail/config.toml`.
 4. Built-in defaults.
 
 Secrets are resolved from environment variables or an OS credential store. Project configuration may reference a secret's environment-variable name but may not contain the secret value.
+
+Onboarding choices are device-global and versioned. Credential resolution is explicit environment
+variable, OS credential store, then interactive entry; interactive values are never persisted in
+Skail files, logs, checkpoints, exports, screenshots, or test evidence.
 
 Illustrative configuration:
 
@@ -492,7 +537,7 @@ python -m pip install -e ".[dev]"
 python -m pytest
 python -m pytest tests\unit -q
 python -m pytest tests\contract tests\integration -q
-python scripts\smoke.py --fake-provider
+python scripts\smoke.py
 python scripts\eval_routing.py --fixture evals\fixtures
 graphify update .
 ```
@@ -521,8 +566,6 @@ tests/
 evals/                      replayable quality/cost/orchestration fixtures
 docs/skail/                product and technical source of truth
 docs/decisions/             accepted and superseded ADRs
-legacy/skail/         inert reference snapshot, excluded from Skail package
-tasks/                      active implementation plan and checklist
 ```
 
 ## 18. Code style
@@ -589,7 +632,7 @@ class RoutingPolicy(Protocol):
 ### Never
 
 - Reintroduce proxy or plugin-plane architecture.
-- Import from `legacy/skail` at runtime.
+- Reintroduce archived predecessor code into the runtime package.
 - Treat an LLM or SLM classification as safety authority.
 - Allow prompts alone to enforce filesystem or command security.
 - Switch models invisibly within a healthy task attempt.
@@ -635,3 +678,7 @@ Neither engineering readiness nor a release tag proves a broad savings claim.
 5. Target Python 3.12+. Pin the exact DeepAgents/LangGraph compatibility range only after Phase 1 contract spikes verify it.
 6. Use the adaptive execution and release boundaries accepted in
    [ADR 0006](../decisions/0006-adaptive-execution-and-release-boundaries.md).
+7. Use the global-state and instruction-precedence contract accepted in
+   [ADR 0007](../decisions/0007-global-state-and-instruction-precedence.md).
+8. Use the in-house token-cost ledger contract accepted in
+   [ADR 0008](../decisions/0008-in-house-token-cost-ledger.md).

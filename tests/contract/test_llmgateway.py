@@ -174,7 +174,7 @@ async def test_llmgateway_supports_declared_structured_output() -> None:
 
 
 @pytest.mark.asyncio
-async def test_llmgateway_marks_missing_stream_cost_as_estimated() -> None:
+async def test_llmgateway_keeps_missing_stream_cost_unknown() -> None:
     transport = ProviderHTTPFixtureTransport()
     async with httpx.AsyncClient(transport=transport) as client:
         adapter = LLMGatewayAdapter(
@@ -187,13 +187,12 @@ async def test_llmgateway_marks_missing_stream_cost_as_estimated() -> None:
 
     usage = adapter.normalize_usage(_combined(chunks))
     assert usage is not None
-    assert usage.input_tokens == 7
-    assert usage.output_tokens == 3
-    assert usage.cost_usd == Decimal("0")
-    assert usage.authority is UsageAuthority.ESTIMATED_ACTUAL
+    assert (usage.input_tokens, usage.output_tokens) == (7, 3)
+    assert usage.cost_usd is None
+    assert usage.authority is UsageAuthority.TOKEN_DERIVED_ESTIMATE
 
 
-def test_llmgateway_marks_reported_gateway_cost_as_authoritative() -> None:
+def test_llmgateway_uses_tokens_without_trusting_reported_gateway_cost() -> None:
     adapter = LLMGatewayAdapter(_config(), api_key="fixture-credential")
     response = AIMessage(
         content="done",
@@ -204,8 +203,40 @@ def test_llmgateway_marks_reported_gateway_cost_as_authoritative() -> None:
     usage = adapter.normalize_usage(response)
 
     assert usage is not None
-    assert usage.cost_usd == Decimal("0.00042")
-    assert usage.authority is UsageAuthority.AUTHORITATIVE_ACTUAL
+    assert usage.cost_usd is None
+    assert usage.authority is UsageAuthority.TOKEN_DERIVED_ESTIMATE
+
+
+async def test_llmgateway_preserves_cached_input_token_count() -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "choices": [{"message": {"role": "assistant", "content": "done"}}],
+                "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 20,
+                    "prompt_tokens_details": {"cached_tokens": 80},
+                    "cost": 99,
+                },
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        adapter = LLMGatewayAdapter(
+            _config(), api_key="fixture-credential", http_async_client=client
+        )
+        response = await adapter.create_model(_profile(), ModelOptions()).ainvoke("work")
+
+    usage = adapter.normalize_usage(response)
+    assert usage is not None
+    assert (usage.input_tokens, usage.cached_input_tokens, usage.output_tokens) == (
+        100,
+        80,
+        20,
+    )
+    assert usage.cost_usd is None
 
 
 @pytest.mark.asyncio
@@ -234,7 +265,7 @@ async def test_llmgateway_runs_a_complete_loop_with_a_real_langchain_tool() -> N
 
 
 @pytest.mark.asyncio
-async def test_llmgateway_discovers_models_with_untrusted_provider_provenance() -> None:
+async def test_llmgateway_discovers_models_with_authenticated_provider_provenance() -> None:
     transport = ProviderHTTPFixtureTransport()
     async with httpx.AsyncClient(transport=transport) as client:
         adapter = LLMGatewayAdapter(
@@ -250,11 +281,12 @@ async def test_llmgateway_discovers_models_with_untrusted_provider_provenance() 
     assert entry.provider == "llmgateway"
     assert entry.model == "openai/test-model"
     assert entry.source.value == "discovered"
-    assert entry.trusted is False
+    assert entry.trusted is True
     assert entry.as_of.tzinfo is not None
     assert entry.as_of <= datetime.now(tz=entry.as_of.tzinfo)
     assert entry.fields["input_usd_per_million"] == Decimal("1.25")
     assert entry.fields["output_usd_per_million"] == Decimal("10.00")
+    assert entry.fields["cached_input_usd_per_million"] == Decimal("0.125")
     assert entry.fields["context_tokens"] == 128000
     assert entry.fields["max_output_tokens"] == 16384
     assert entry.fields["supports_tools"] is True
@@ -262,6 +294,89 @@ async def test_llmgateway_discovers_models_with_untrusted_provider_provenance() 
     assert "capability" not in entry.fields
     assert transport.last_request.method == "GET"
     assert transport.last_request.path == "/v1/models"
+    assert transport.last_request.query["exclude_deprecated"] == "true"
+    assert entry.provenance == "llmgateway:/v1/models?exclude_deprecated=true"
+
+
+@pytest.mark.asyncio
+async def test_llmgateway_keeps_malformed_prices_unavailable() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "data": [
+                    {
+                        "id": "bad-price",
+                        "pricing": {"prompt": "not-a-price", "completion": None},
+                        "context_length": 4096,
+                        "max_output": 1024,
+                        "supported_parameters": [],
+                    }
+                ]
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        adapter = LLMGatewayAdapter(
+            _config(), api_key="fixture-credential", http_async_client=client
+        )
+        entry = (await adapter.discover_models())[0]
+
+    assert entry.fields["input_usd_per_million"] is None
+    assert entry.fields["output_usd_per_million"] is None
+
+
+@pytest.mark.asyncio
+async def test_llmgateway_trusts_authenticated_facts_and_provider_mapping_capabilities() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "data": [
+                    {
+                        "id": "mapped-model",
+                        "pricing": {
+                            "prompt": "0.000001",
+                            "completion": "0.000002",
+                            "input_cache_read": "0.0000005",
+                        },
+                        "architecture": {
+                            "input_modalities": ["text"],
+                            "output_modalities": ["text"],
+                        },
+                        "context_length": 32768,
+                        "supported_parameters": [],
+                        "json_output": True,
+                        "providers": [
+                            {
+                                "providerId": "provider-a",
+                                "tools": True,
+                                "reasoning": True,
+                                "parallelToolCalls": True,
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        adapter = LLMGatewayAdapter(
+            _config().model_copy(update={"models": ("mapped-model",)}),
+            api_key="fixture-credential",
+            http_async_client=client,
+        )
+        entry = (await adapter.discover_models())[0]
+
+    assert entry.trusted is True
+    assert entry.fields["input_usd_per_million"] == Decimal("1")
+    assert entry.fields["output_usd_per_million"] == Decimal("2")
+    assert entry.fields["cached_input_usd_per_million"] == Decimal("0.5")
+    assert entry.fields["supports_tools"] is True
+    assert entry.fields["supports_reasoning"] is True
+    assert entry.fields["supports_structured_output"] is True
 
 
 @pytest.mark.parametrize(

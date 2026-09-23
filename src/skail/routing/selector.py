@@ -39,6 +39,25 @@ class RouteFailure(BaseModel):
     code: Literal["route.no_qualified_model"] = "route.no_qualified_model"
     excluded_counts: dict[str, int]
     binding_constraint: str | None
+    required_capability_floor: float | None = None
+    best_candidates: tuple[str, ...] = ()
+
+
+def describe_route_failure(failure: RouteFailure) -> str:
+    floor = (
+        f"{failure.required_capability_floor:.2f}"
+        if failure.required_capability_floor is not None
+        else "the lead hard requirements"
+    )
+    candidates = ", ".join(failure.best_candidates) or "none"
+    binding = failure.binding_constraint or "no candidate satisfied the hard requirements"
+    return (
+        "No capable lead model is available. "
+        f"Required capability floor: {floor}. Binding constraint: {binding}. "
+        f"Best available candidates: {candidates}. "
+        "Enable a qualified model or select one that meets the floor, then retry; "
+        "Skail will not silently weaken the lead requirements."
+    )
 
 
 def _capability_fit(profile: ModelProfile) -> float | None:
@@ -68,18 +87,33 @@ def _exclusion_reason(
         return "model_disabled"
     if requirements.mode is not RoutingMode.MANUAL and not profile.auto_eligible:
         return "auto_ineligible"
-    if requirements.tools_required and profile.supports_tools is not True:
+    if requirements.tools_required and (
+        profile.supports_tools is False
+        or (requirements.mode is not RoutingMode.MANUAL and profile.supports_tools is not True)
+    ):
         return "tools_unsupported"
-    if requirements.structured_output_required and profile.supports_structured_output is not True:
+    if requirements.structured_output_required and (
+        profile.supports_structured_output is False
+        or (
+            requirements.mode is not RoutingMode.MANUAL
+            and profile.supports_structured_output is not True
+        )
+    ):
         return "structured_output_unsupported"
     if (
         profile.context_tokens is None
-        or profile.context_tokens < requirements.minimum_context_tokens
+        and requirements.mode is not RoutingMode.MANUAL
+    ) or (
+        profile.context_tokens is not None
+        and profile.context_tokens < requirements.minimum_context_tokens
     ):
         return "context_too_small"
     if (
         profile.max_output_tokens is None
-        or profile.max_output_tokens < requirements.minimum_output_tokens
+        and requirements.mode is not RoutingMode.MANUAL
+    ) or (
+        profile.max_output_tokens is not None
+        and profile.max_output_tokens < requirements.minimum_output_tokens
     ):
         return "output_too_small"
     if not frozenset(requirements.modalities).issubset(frozenset(profile.input_modalities)):
@@ -164,4 +198,74 @@ def select_model(
         excluded_counts=counts,
         binding_constraint=binding,
         ranking_reasons=(ranking,),
+    )
+
+
+def select_lead_model(
+    candidates: tuple[RouteCandidate, ...],
+    requirements: RoutingRequirements,
+    *,
+    available_budget_usd: Decimal | None = None,
+    manual_model: tuple[str, str] | None = None,
+) -> RouteSelection | RouteFailure:
+    """Select the strongest hard-qualified lead candidate with stable ties."""
+    effective = requirements
+    if manual_model is not None:
+        effective = requirements.model_copy(
+            update={"mode": RoutingMode.MANUAL, "capability_floor": None}
+        )
+    included: list[RouteCandidate] = []
+    excluded: Counter[str] = Counter()
+    for candidate in sorted(
+        candidates, key=lambda item: (item.profile.provider, item.profile.model)
+    ):
+        reason = _exclusion_reason(
+            candidate,
+            effective,
+            available_budget_usd=available_budget_usd,
+            manual_model=manual_model,
+        )
+        if reason is None:
+            included.append(candidate)
+        else:
+            excluded[reason] += 1
+    if not included:
+        available = sorted(
+            candidates,
+            key=lambda item: (
+                -(_capability_fit(item.profile) or 0.0),
+                item.profile.provider,
+                item.profile.model,
+            ),
+        )
+        return RouteFailure(
+            excluded_counts=dict(sorted(excluded.items())),
+            binding_constraint=(
+                min(excluded, key=lambda reason: (-excluded[reason], reason))
+                if excluded
+                else None
+            ),
+            required_capability_floor=effective.capability_floor,
+            best_candidates=tuple(
+                f"{item.profile.provider}:{item.profile.model}" for item in available[:3]
+            ),
+        )
+
+    def rank(candidate: RouteCandidate) -> tuple[object, ...]:
+        profile = candidate.profile
+        if effective.mode is RoutingMode.MANUAL:
+            return (profile.provider, profile.model)
+        capability = profile.capability
+        fit = _capability_fit(profile)
+        assert capability is not None and fit is not None
+        return (-fit, -capability.tool_reliability, profile.provider, profile.model)
+
+    chosen = min(included, key=rank)
+    return RouteSelection(
+        candidate=chosen,
+        capability_fit=_capability_fit(chosen.profile),
+        included_count=len(included),
+        excluded_counts=dict(sorted(excluded.items())),
+        binding_constraint=None,
+        ranking_reasons=("capability_fit,tool_reliability,stable_key",),
     )

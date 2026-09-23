@@ -26,6 +26,7 @@ dependencies = [
   "langgraph-checkpoint==4.2.0",
   "langgraph-checkpoint-sqlite==3.1.1",
   "httpx>=0.28,<1",
+  "keyring>=25.7,<26",
   "textual>=1.0.0,<2",
 ]
 
@@ -57,7 +58,7 @@ namespaces = false
 minversion = "8.0"
 testpaths = ["tests"]
 pythonpath = [".", "src", "tests"]
-norecursedirs = ["legacy", ".git", "build", "dist"]
+norecursedirs = [".git", "build", "dist"]
 addopts = ["--strict-config", "--strict-markers", "--import-mode=importlib"]
 asyncio_mode = "auto"
 markers = [
@@ -72,12 +73,10 @@ markers = [
 python_version = "3.12"
 files = ["src/skail"]
 strict = true
-exclude = "^legacy/"
 
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-exclude = ["legacy"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

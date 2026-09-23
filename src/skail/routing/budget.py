@@ -234,12 +234,20 @@ class BudgetLedger:
             if reservation is None:
                 raise KeyError(reservation_id)
             existing = connection.execute(
-                "SELECT usage_id,amount_usd,authoritative,idempotency_key "
+                "SELECT usage_id,amount_usd,authoritative,authority,idempotency_key "
                 "FROM usage_records WHERE reservation_id=?",
                 (reservation_id,),
             ).fetchone()
             authoritative = usage.authority is UsageAuthority.AUTHORITATIVE_ACTUAL
-            values = (usage_id, format(usage.cost_usd, "f"), int(authoritative), idempotency_key)
+            if usage.cost_usd is None:
+                raise ValueError("usage settlement requires a resolved cost")
+            values = (
+                usage_id,
+                format(usage.cost_usd, "f"),
+                int(authoritative),
+                usage.authority.value,
+                idempotency_key,
+            )
             if existing is not None:
                 if tuple(existing) == values:
                     return
@@ -252,9 +260,9 @@ class BudgetLedger:
                     )
                 ):
                     connection.execute(
-                        "UPDATE usage_records SET amount_usd=?,authoritative=1 "
+                        "UPDATE usage_records SET amount_usd=?,authoritative=1,authority=? "
                         "WHERE reservation_id=?",
-                        (format(usage.cost_usd, "f"), reservation_id),
+                        (format(usage.cost_usd, "f"), usage.authority.value, reservation_id),
                     )
                     self._update_warning(connection, reservation["run_id"])
                     return
@@ -267,15 +275,16 @@ class BudgetLedger:
                 raise ReservationStateError(f"cannot settle {reservation['status']} reservation")
             connection.execute(
                 "INSERT INTO usage_records "
-                "(usage_id,run_id,task_id,amount_usd,authoritative,idempotency_key,"
-                "created_at,reservation_id) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "(usage_id,run_id,task_id,amount_usd,authoritative,authority,"
+                "idempotency_key,created_at,reservation_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
                 (
                     usage_id,
                     reservation["run_id"],
                     reservation["task_id"],
                     format(usage.cost_usd, "f"),
                     int(authoritative),
+                    usage.authority.value,
                     idempotency_key,
                     _now(),
                     reservation_id,

@@ -2,7 +2,6 @@
 
 > Status note: these are normative behavior contracts. A section is not an assertion that every
 > integration has production parity; tested scope and demonstrated gaps are recorded in the
-> [feature matrix](FEATURE_PARITY_ROADMAP.md).
 
 Status: Approved
 Date: 2026-09-02
@@ -62,8 +61,11 @@ Its prompt defines delegation heuristics, but the runtime enforces user directiv
 - `delegation=off`: the `task` tool is hidden or rejects calls before scheduling;
 - `delegation=ask`: proposed tasks require user confirmation before launch;
 - `delegation=auto`: valid tasks launch within concurrency, safety, and budget gates;
-- explicit “do this yourself” applies to that instruction even when the configured default is `auto`;
-- explicit “use N agents” is honored up to configured and hard limits, or Skail explains the conflict.
+- explicit “do this yourself” and “do not delegate” apply to that instruction even when the configured default is `auto`; a conflicting execution decision is rejected before its plan is admitted;
+- explicit “do not edit” removes write-capable lead tools and rejects write-capable plan nodes for that run;
+- explicit “use N agents” requires exactly N agent nodes with pairwise-disjoint resource scopes, within the configured and hard three-child limits; a count or scope conflict is reported before plan admission.
+
+These constraints belong to one run and do not carry into the next prompt. Stable rejection codes are `execution.intent_conflict`, `execution.agent_count_conflict`, and `execution.agent_scope_conflict`.
 
 ### Direct-versus-delegate heuristic
 
@@ -327,6 +329,17 @@ Validate and use the exact model. If it cannot satisfy a required capability, re
 - replayable Skail evaluations;
 - provider pricing/capability metadata where authoritative.
 
+For LLM Gateway, the authenticated `GET /v1/models?exclude_deprecated=true` response is the
+runtime model and pricing source. Prompt, completion, and input cache-read prices remain exact
+`Decimal` values normalized to per-million-token fields; retrieval time and endpoint provenance
+are retained. The validated local snapshot lives at `~/.skail/catalog/llmgateway.json` and is
+atomically replaced after a successful refresh. A transient refresh failure may use that snapshot;
+authentication, malformed-response, and successful-empty-access failures do not silently fall back.
+Unknown, malformed, or stale prices cannot authorize a hard-budget route. A discovered model without
+trusted quality capability evidence remains manual-only but is executable after explicit selection.
+An unpriced manual assignment is allowed only in `manual` routing mode when no Skail hard budget or
+task limit is active; configured names alone do not imply trusted pricing or automatic eligibility.
+
 ### Merge order
 
 User overrides > evaluated Skail evidence > maintained entries > discovered metadata. A higher source may fill or explicitly replace fields, and provenance is retained per field.
@@ -360,7 +373,9 @@ LLM Gateway is first-class. Skail uses its OpenAI-compatible `/v1` endpoint, mod
 
 ### DevPass
 
-DevPass is retained through the same explicit OpenAI-compatible adapter shape and its own base URL/configuration. It does not share hardcoded credentials or catalog identity with LLM Gateway.
+DevPass is retained through the same explicit OpenAI-compatible adapter shape and canonical gateway
+endpoint, with its own credential and catalog identity. It uses the shared authenticated model
+discovery contract while preserving the `devpass:` namespace.
 
 ### Other providers
 
@@ -392,7 +407,9 @@ Before a child batch starts, Skail retains enough budget for at least one lead s
 - At the warning threshold, emit one warning per threshold crossing.
 - A denied reservation returns `budget_blocked` with cheaper qualified choices if any.
 - User budget increases affect future gates; they do not rewrite recorded estimates.
-- Provider-reported usage replaces the matching estimate when possible and is labelled authoritative.
+- Measured input, output, and cached-input tokens replace the matching attempt estimate at
+  the model prices frozen on that assignment. Provider-supplied dollar amounts do not settle
+  the Skail ledger. Incomplete usage stays conservative or unresolved.
 
 ## 12. Concurrency and scheduling
 
@@ -436,9 +453,15 @@ Initial triggers:
 - three identical consecutive tool calls;
 - two consecutive tool errors;
 - same normalized error twice;
-- exhausted configured model-call/time/budget boundary.
+- exhausted configured model-call/time/budget boundary;
+- a hard run limit of 32 model calls shared across the lead and every child.
 
 Tool arguments are normalized without secrets. Semantically different searches or a corrected retry do not count as identical.
+
+Rejected execution decisions count as errors, so repeated conflicts stop the run instead of continuing the
+model/tool loop. The 32-call run limit is checked before the next provider request and ends the run with
+`run.model_call_limit_exhausted`; it does not change the two-attempt child limit. Calls already in flight are finalized
+from known usage, while ambiguous provider outcomes remain unresolved for reconciliation.
 
 ### Provider failures
 
@@ -599,6 +622,21 @@ content in the first stable release.
 
 Any agent may create a structured question interrupt. It includes prompt, optional choices, reason, blocking scope, and task ID. The answer is recorded and delivered only to the waiting graph state.
 
+A question interrupt carries `kind=question` and its stable question ID through the `user.question`
+event and TUI projection. Its card is labeled `QUESTION · Your answer is needed` and offers an
+answer field plus a separate `Cancel run` action. Permission interrupts carry `kind=approval` and
+retain the `Approve`/`Reject` controls. A normal graph interrupt is a wait transition, not a
+`tool.failed` event; an actual question-store or validation error remains a tool failure.
+
+The controller emits `user.answer` only after `QuestionStore` accepts and records the answer. The
+TUI keeps the question pending while the run resumes and clears `WAITING` after the resumed run
+returns with that recorded answer. In the TUI, cancellation records the question cancellation before
+clearing the pending state.
+
+While a question or approval is pending, a new instruction is not sent to the waiting graph as an
+answer. The TUI keeps the interrupt pending and visibly rejects the new prompt; the runtime also
+rejects direct new-run calls with `run.pending_interrupt` until the user resolves the interrupt.
+
 ### Foreground steering
 
 New input while a foreground run is active is classified as:
@@ -608,6 +646,11 @@ New input while a foreground run is active is classified as:
 - cancellation/replacement of the current run.
 
 The TUI makes the classification visible before destructive cancellation.
+
+Queued follow-ups run FIFO after the foreground run completes. Whole-run cancellation, an unsuccessful
+terminal outcome without a pending interrupt, `/quit`, Ctrl+C, and application shutdown discard the
+queue and show that state. A pending question keeps queued follow-ups waiting until the user resolves
+it. The queue exists only in the current TUI process and is never restored from session history.
 
 ### Background steering
 
@@ -621,7 +664,13 @@ States: `active`, `idle`, `interrupted`, `completed`, `archived`. Exiting the TU
 
 ### Resume
 
-Resume restores transcript, lead/task graph states, assignments, task tree, usage, reservations, pending questions, and trust context. Orphaned in-flight provider calls become interrupted; Skail does not charge or replay them without reconciliation evidence.
+Each run has its own LangGraph checkpoint thread, identified by its session and run IDs. Resume of
+an interrupted run restores that run's transcript, task graph, assignments, usage, reservations,
+pending questions, and trust context. A new instruction starts a fresh checkpoint thread and does
+not inherit a cancelled run's plan or model transcript. Session history remains visible in the TUI
+  and journal. The TUI's in-memory follow-up queue is not part of the checkpoint and is not restored.
+  Orphaned in-flight provider calls become interrupted; Skail does not replay them
+without reconciliation evidence.
 
 ### Planned dispatch and plan-node recovery
 
@@ -678,19 +727,29 @@ Displays hard limit, authoritative actual, estimated actual, reserved, available
 ### Event stream
 
 Tool calls and child updates may collapse by default but cannot disappear. Error and approval events remain visible until acknowledged.
+Question cards and permission-approval cards remain distinct in the event projection and TUI. The
+TUI keeps `WAITING` through resume until the accepted answer event arrives. Interrupt cards display
+the owning session and run IDs, plus the plan ID when one exists.
 
 ## 23. Non-interactive output
 
 ### Print mode
 
-- stdout: final lead response only;
+- stdout: one human-readable lead answer only. For structured final responses, Skail extracts a
+  non-empty `answer`, `final_answer`, `response`, `message`, `reply`, `content`, `text`, `output`,
+  `result`, `final`, or `summary` string field. Evidence-only objects produce an explicit no-answer
+  message; unknown structured output remains readable.
 - stderr: progress, warnings, approvals, and errors;
 - process code reflects completed, failed, blocked, cancelled, or usage error.
+- Plain-text answers are preserved as authored so requested technical detail is not deleted.
+- Registered secret values are redacted from lead output before chat or print rendering.
 
 ### JSONL mode
 
 - stdout: `EventEnvelope` JSON objects, one per line;
 - terminal object: `run.completed`, `run.failed`, `run.blocked`, or `run.cancelled`;
+- `run.completed.payload.output`: redacted final model output, parsed as JSON when it is valid JSON;
+  structured verification remains available here while chat and print present only the answer.
 - schema version is required;
 - malformed provider text is always nested as escaped data, never raw output framing.
 
@@ -716,7 +775,7 @@ Demonstrate that “budget-aware orchestration” improves completed-work econom
 
 ### Fixture shape
 
-Each fixture defines repository snapshot, user prompt, allowed tools, success oracle, risk/profile hints unavailable to the model only where needed for scoring, deterministic fake-provider behavior or approved live-provider matrix, and expected route invariants.
+Each fixture defines repository snapshot, user prompt, allowed tools, success oracle, risk/profile hints unavailable to the model only where needed for scoring, deterministic scripted behavior or an approved live-provider matrix, and expected route invariants.
 
 ### Suites
 
@@ -788,3 +847,20 @@ paired live evaluation with preregistered completion, cost, latency, and safety 
 10. Terminal state and cost survive resume without duplicate execution.
 11. User changes and partial child work are never discarded silently.
 12. Legacy Skail code is reference-only and cannot be imported by Skail.
+
+## 28. Global state, instructions, and cost truth
+
+- Skail creates only `~/.skail`; workspace state is namespaced by canonical workspace identity
+  below that root, and normal CLI, TUI, tool, resume, and failure flows create no repository-local
+  `.skail` directory.
+- Legacy local state is imported at most once, non-destructively and idempotently, with a redacted
+  source/outcome receipt. The old directory is never silently deleted or overwritten.
+- Device-global onboarding persists only versioned provider, model, and theme choices. Credentials
+  resolve from environment, OS credential store, then interactive entry; plaintext persistence is
+  forbidden.
+- Root instructions are additive and source-labelled in built-in, global, trusted-workspace order.
+  Their bounded, redacted, pinned context cannot widen code-owned safety, permission, budget,
+  concurrency, delegation, or filesystem boundaries.
+- Reservation, token-derived estimate, conservative fallback, and unknown cost remain separate
+  through the journal, events, projections, resume, and export. Historical
+  provider-authoritative records retain their original labels.

@@ -36,12 +36,14 @@ class PolicyFilesystemBackend(FilesystemBackend):
         lease_manager: WorkspaceLeaseManager | None = None,
         allowed_write_paths: tuple[str, ...] = (),
         forbidden_host_paths: tuple[Path, ...] = (),
+        state_dir: Path | None = None,
     ) -> None:
         super().__init__(root_dir=root_dir, virtual_mode=True)
         self.boundary = FilesystemBoundary(
             root_dir,
             redactor=redactor,
             forbidden_host_paths=forbidden_host_paths,
+            state_dir=state_dir,
         )
         self.task_id = task_id
         self.lease_manager = lease_manager

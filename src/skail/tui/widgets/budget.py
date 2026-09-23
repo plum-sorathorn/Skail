@@ -40,7 +40,7 @@ def render_budget_lines(
     model = budget_view_model(float(used), float(limit))
     lines = [
         "BUDGET",
-        f"Session ${float(used):.2f} / ${float(limit):.2f}",
+        f"Run ${float(used):.2f} / ${float(limit):.2f}",
         f"{model.cells} {model.pct:.1f}%",
         budget_state_label(model.state),
     ]
@@ -199,6 +199,8 @@ def budget_panel_lines(item: BudgetViewItem) -> list[str]:
 
 class BudgetView(VerticalScroll):
     """ATELIER BUDGET tab: hairline head, money, 23-cell meter, legend, BREAKDOWN."""
+
+    can_focus = False
 
     DEFAULT_CSS = """
     BudgetView {

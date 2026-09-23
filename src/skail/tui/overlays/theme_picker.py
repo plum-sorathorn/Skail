@@ -25,15 +25,26 @@ def _app_for(host: object) -> Any:
         return None
 
 
-THEME_OPTIONS: tuple[str, ...] = ("Dark", "Light", "System")
+THEME_OPTIONS: tuple[str, ...] = (
+    "Dark",
+    "Light",
+    "System",
+    "Pistachio Night",
+    "Pistachio Paper",
+    "Mint Porcelain",
+)
 SYSTEM_FALLBACK_NOTE = "System preference unavailable; using Dark."
+
+
+def _theme_key(value: str) -> str:
+    return value.strip().lower().replace(" ", "-")
 
 
 def theme_rows(current: str) -> list[str]:
     """Return option rows with ● marking the current theme."""
     rows: list[str] = []
     for option in THEME_OPTIONS:
-        marker = "\u25cf" if option.lower() == current.strip().lower() else " "
+        marker = "\u25cf" if _theme_key(option) == _theme_key(current) else " "
         rows.append(f"{marker} {option}")
     return rows
 
@@ -58,24 +69,26 @@ class ThemePickerOverlay(Screen):  # type: ignore[type-arg]
         self.previous = current
         self.index = 0
         for i, option in enumerate(THEME_OPTIONS):
-            if option.lower() == current.strip().lower():
+            if _theme_key(option) == _theme_key(current):
                 self.index = i
                 break
 
     def rows(self) -> list[str]:
-        opts = [o.lower() for o in THEME_OPTIONS]
-        cur = THEME_OPTIONS[self.index].lower() if self.index < len(opts) else self.current
-        _ = opts
+        cur = (
+            _theme_key(THEME_OPTIONS[self.index])
+            if self.index < len(THEME_OPTIONS)
+            else _theme_key(self.current)
+        )
         out: list[str] = []
         for option in THEME_OPTIONS:
-            marker = "\u25cf" if option.lower() == cur else " "
+            marker = "\u25cf" if _theme_key(option) == cur else " "
             out.append(f"{marker} {option}")
         return out
 
     def move(self, delta: int) -> str:
         """Move selection and live-preview via ``apply_theme_preview``."""
         self.index = (self.index + delta) % len(THEME_OPTIONS)
-        name = THEME_OPTIONS[self.index].lower()
+        name = _theme_key(THEME_OPTIONS[self.index])
         try:
             app = _app_for(self)
             if app is not None and hasattr(app, "apply_theme_preview"):
@@ -85,10 +98,12 @@ class ThemePickerOverlay(Screen):  # type: ignore[type-arg]
         return name
 
     def commit(self) -> str:
-        name = THEME_OPTIONS[self.index].lower()
+        name = _theme_key(THEME_OPTIONS[self.index])
         try:
             app = _app_for(self)
-            if app is not None and hasattr(app, "apply_theme_preview"):
+            if app is not None and hasattr(app, "commit_theme"):
+                app.commit_theme(name)
+            elif app is not None and hasattr(app, "apply_theme_preview"):
                 app.apply_theme_preview(name)
         except Exception:
             pass
@@ -115,6 +130,16 @@ class ThemePickerOverlay(Screen):  # type: ignore[type-arg]
             pass
         return str(previous)
 
+    def _refresh_rows(self) -> None:
+        try:
+            row_widgets = list(self.query(".theme-row"))
+            new_rows = self.rows()
+            for widget, text in zip(row_widgets, new_rows):
+                if hasattr(widget, "update"):
+                    widget.update(text)
+        except Exception:
+            pass
+
     def compose(self) -> Any:
         try:
             from textual.widgets import Static
@@ -122,7 +147,7 @@ class ThemePickerOverlay(Screen):  # type: ignore[type-arg]
             yield ovl_head("THEME", hint="enter commits \u00b7 esc restores")
             yield ovl_rule_strong()
             for row in self.rows():
-                yield Static(row)
+                yield Static(row, classes="theme-row")
             yield ovl_foot(THEME_FOOT)
         except Exception:
             return
@@ -144,6 +169,7 @@ class ThemePickerOverlay(Screen):  # type: ignore[type-arg]
                 pass
         elif key in ("up", "down"):
             self.move(-1 if key == "up" else 1)
+            self._refresh_rows()
             try:
                 event.stop()
             except Exception:

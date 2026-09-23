@@ -27,6 +27,17 @@ def test_workspace_identity_uses_canonical_path_and_filesystem_identity(tmp_path
     assert isinstance(identity.inode, int)
 
 
+def test_lexical_workspace_paths_resolve_to_the_same_identity(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    root_identity = identify_workspace(workspace)
+    equivalent_identity = identify_workspace(workspace / ".")
+
+    assert root_identity == equivalent_identity
+    assert root_identity.key == equivalent_identity.key
+
+
 def test_platform_workspace_identity_fixtures_round_trip_deterministically() -> None:
     fixtures = json.loads((FIXTURES / "workspace_identities.json").read_text(encoding="utf-8"))
 

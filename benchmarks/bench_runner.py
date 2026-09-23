@@ -240,19 +240,15 @@ def _run_cli_timed(
 
 
 def benchmark_cli_runtime() -> dict[str, float]:
-    """Measure CLI parsing separately from an offline end-to-end fake-provider response."""
+    """Measure two credential-free CLI startup paths."""
     with tempfile.TemporaryDirectory(prefix="skail-bench-cli-") as directory:
         workspace = Path(directory)
         environment = _isolated_cli_environment(workspace)
         help_seconds = _run_cli_timed(["--help"], environment, workspace)
-        first_fake_response_seconds = _run_cli_timed(
-            ["--print", "offline benchmark", "--model", "fake:fast-model", "--fake-provider"],
-            environment,
-            workspace,
-        )
+        version_seconds = _run_cli_timed(["--version"], environment, workspace)
     return {
         "help_seconds": help_seconds,
-        "first_fake_response_seconds": first_fake_response_seconds,
+        "version_seconds": version_seconds,
     }
 
 

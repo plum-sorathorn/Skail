@@ -2,7 +2,6 @@
 
 > Status note: this is the normative architecture contract. It does not replace implementation
 > tests, raw evidence, or exact-candidate release verification. See
-> [the feature matrix](FEATURE_PARITY_ROADMAP.md) for verified scope and gaps.
 
 Status: Approved
 Date: 2026-09-02
@@ -82,7 +81,7 @@ Skail owns these semantics and may not delegate them to prompts:
 - cost estimation, reservation, and hard budget launch gates;
 - concurrency, dependencies, delegation depth, and write leases;
 - project trust, command policy, and permissions not covered by built-in tools;
-- deterministic failure signals and the one-escalation policy;
+- run-wide model-call budgets, deterministic failure signals, and the one-escalation policy;
 - provider health, fallback recording, and usage normalization;
 - stable user-facing events, errors, CLI behavior, and persistence;
 - compatibility adapters around DeepAgents preview or changing APIs.
@@ -93,14 +92,14 @@ Skail owns these semantics and may not delegate them to prompts:
 
 ### 5.1 Lead graph
 
-`LeadBuilder` constructs one `create_deep_agent()` graph per session. Its stable components are:
+`LeadBuilder` constructs one `create_deep_agent()` graph per user-instruction run. Its stable components are:
 
 - a routed chat model supplied by `TaskBoundModelMiddleware`;
 - a system prompt assembled from Skail rules, user instructions, trusted project instructions, and the selected lead profile;
 - default tools assembled by `ToolRegistry`;
 - DeepAgents filesystem, execution, todo, skills, memory, and subagent middleware;
 - a standard `task` tool whose built-in profiles are supplied as compiled Skail task graphs;
-- a LangGraph checkpointer and session identifiers;
+- a LangGraph checkpoint thread keyed by session and run IDs;
 - event and usage middleware.
 
 The first necessary lead response ends with a final answer or records a typed execution decision.
@@ -412,8 +411,9 @@ Every fallback creates a new assignment ID and event. There is no invisible prov
 
 ### 8.1 Ledger terms
 
-- `actual`: normalized provider usage already incurred;
-- `estimated_actual`: incurred usage whose provider did not return authoritative counts;
+- `actual`: historical provider-authoritative usage already incurred;
+- `estimated_actual`: incurred usage calculated locally from measured tokens and frozen prices,
+  or conservatively estimated when complete tokens are unavailable;
 - `reserved`: allowance for approved but unfinished calls/tasks;
 - `available`: hard limit minus actual, estimated actual, and reserved;
 - `lead_continuation_allowance`: reserved capacity for the lead to process child results.
@@ -431,7 +431,10 @@ insert reservation
 commit
 ```
 
-When a call completes, convert the relevant reservation to usage in one transaction. Release unused reservation. If authoritative usage exceeds the reservation, record the bounded overshoot and make future gates use the new balance.
+When a call completes, price its measured tokens at the assigned model's frozen rates and convert
+the relevant reservation to usage in one transaction. Release unused reservation. If the local
+cost exceeds the reservation, record the bounded overshoot and make future gates use the new
+balance. Child task usage shares the parent run's ledger.
 
 ### 8.3 Parallel batches
 
@@ -611,9 +614,14 @@ Provider adapters receive resolved credentials out-of-band. Events store provide
 
 - `~/.skail/checkpoints.sqlite`: LangGraph checkpointer state;
 - `~/.skail/skail.sqlite`: Skail-owned session, task, route, usage, approval, and event journal;
+
+The only physical `.skail` directory Skail creates is the user root `~/.skail`. Workspace-scoped
+records use a canonical identity namespace below `~/.skail/workspaces/`; all path resolution is
+validated against that root. Legacy repository-local state is imported without mutation or
+deletion and receives an idempotent migration receipt.
 - `~/.skail/config.toml`: user configuration;
 - `~/.skail/agents/` and `~/.skail/skills/`: user extensions;
-- `~/.skail/cache/`: model catalog and non-authoritative caches;
+- `~/.skail/catalog/`: validated provider model catalog snapshots and non-authoritative catalog cache;
 - `~/.skail/logs/`: scrubbed diagnostic logs under retention policy.
 
 Do not depend on undocumented checkpointer tables for product queries.
@@ -696,6 +704,12 @@ Required event families:
 - plan node ready/started/terminal and decision checkpoint;
 - workspace snapshot, change-set validation, and integration outcome.
 
+User question events carry `kind=question`, a stable interrupt ID, the prompt, and its optional
+choices and blocking metadata. `user.answer` is emitted only after the durable question store accepts
+the answer; `user.cancellation` carries the interrupt kind and ID. Permission approval interrupts use
+`kind=approval` in their pending runtime payload. A framework graph interrupt is control flow and
+must not be projected as `tool.failed`; actual tool exceptions remain failures.
+
 ### 14.2 Projections
 
 The TUI, JSONL mode, local journal, and tests consume the same events. The TUI may retain local display state but must be reconstructible from a session snapshot plus subsequent events. Agent status must not be inferred from text messages.
@@ -716,6 +730,16 @@ class RunController(Protocol):
 Interactive TUI, print mode, and JSONL mode call this interface. There is no hidden HTTP layer in the initial product.
 
 ## 16. Configuration architecture
+
+Runtime configuration is split between device-global non-secret onboarding and trusted
+workspace-scoped configuration in the global namespace. A repository-local `.skail/config.toml`
+is legacy input only and is never created by normal operation. Credentials are resolved out of
+band in the order environment, OS credential store, interactive entry; secure-store failure is
+fail-closed rather than a plaintext fallback.
+
+Root instruction assembly is deterministic: built-in rules, global `~/.skail/AGENTS.md`, then a
+trusted workspace-root `AGENTS.md`. Each active component is bounded, redacted, source-labelled,
+hashed, and pinned in the context packet. Prompt instructions cannot alter runtime safety gates.
 
 Each config value carries `value`, `source`, and redacted provenance so `/config` can explain the effective result. Merge semantics are:
 

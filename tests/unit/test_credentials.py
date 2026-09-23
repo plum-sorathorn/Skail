@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from skail.providers.credentials import EnvironmentCredentialResolver
+from skail.providers.credentials import (
+    CredentialStoreUnavailable,
+    EnvironmentCredentialResolver,
+    KeyringCredentialStore,
+)
 from skail.providers.errors import ProviderConfigurationError
 from skail.providers.factory import ModelFactory, ModelFactoryKey
 from skail.runtime.redaction import RedactionRegistry
@@ -30,6 +34,76 @@ def test_missing_environment_credential_is_actionable_and_secret_free() -> None:
 
     assert "FIXTURE_API_KEY" in str(caught.value)
     assert "not set" in str(caught.value)
+
+
+class _CredentialStore:
+    def __init__(self, value: str | None = None) -> None:
+        self.value = value
+        self.saved: str | None = None
+
+    def get(self, provider: str, reference: str) -> str | None:
+        del provider, reference
+        return self.value
+
+    def set(self, provider: str, reference: str, value: str) -> None:
+        del provider, reference
+        self.saved = value
+
+    def delete(self, provider: str, reference: str) -> None:
+        del provider, reference
+        self.value = None
+
+
+def test_environment_credential_wins_over_os_store() -> None:
+    store = _CredentialStore("stored-secret")
+    resolver = EnvironmentCredentialResolver(
+        RedactionRegistry(),
+        environment={"FIXTURE_API_KEY": "environment-secret"},
+        credential_store=store,
+    )
+
+    assert resolver.resolve("fixture", "FIXTURE_API_KEY").reveal() == "environment-secret"
+    assert store.saved is None
+
+
+def test_os_store_credential_is_used_when_environment_is_missing() -> None:
+    store = _CredentialStore("stored-secret")
+    resolver = EnvironmentCredentialResolver(
+        RedactionRegistry(), environment={}, credential_store=store
+    )
+
+    assert resolver.resolve("fixture", "FIXTURE_API_KEY").reveal() == "stored-secret"
+
+
+def test_interactive_credential_requires_secure_store() -> None:
+    class UnavailableStore(_CredentialStore):
+        def get(self, provider: str, reference: str) -> str | None:
+            raise CredentialStoreUnavailable("unavailable")
+
+        def set(self, provider: str, reference: str, value: str) -> None:
+            raise CredentialStoreUnavailable("unavailable")
+
+    resolver = EnvironmentCredentialResolver(
+        RedactionRegistry(), environment={}, credential_store=UnavailableStore()
+    )
+
+    with pytest.raises(ProviderConfigurationError, match="secure credential storage"):
+        resolver.resolve("fixture", "FIXTURE_API_KEY", interactive=lambda: "secret")
+
+
+def test_keyring_store_deletes_the_scoped_credential(monkeypatch: pytest.MonkeyPatch) -> None:
+    import keyring
+
+    deleted: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        keyring,
+        "delete_password",
+        lambda service, name: deleted.append((service, name)),
+    )
+
+    KeyringCredentialStore().delete("openai", "OPENAI_API_KEY")
+
+    assert deleted == [("skail-harness", "openai:OPENAI_API_KEY")]
 
 
 def test_credential_rotation_changes_the_safe_factory_key() -> None:

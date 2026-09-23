@@ -106,6 +106,8 @@ def slot_style_inline(slot: int, theme: Any = None) -> str:
 class AgentRail(VerticalScroll):
     """Side panel: agent rows from ``children_view()`` + legacy rail."""
 
+    can_focus = False
+
     DEFAULT_CSS = """
     AgentRail {
         width: 100%;
@@ -255,6 +257,16 @@ class AgentRail(VerticalScroll):
         elif key in ("m", "M"):
             current = self.child_rows[self._selected_index % len(self.child_rows)]
             self.open_missions(current.id)
+            try:
+                event.stop()
+            except Exception:
+                pass
+        elif key in ("up", "down"):
+            delta = -1 if key == "up" else 1
+            self._selected_index = (self._selected_index + delta) % len(self.child_rows)
+            current = self.child_rows[self._selected_index]
+            self.select_child(current.id)
+            self._render_children()
             try:
                 event.stop()
             except Exception:

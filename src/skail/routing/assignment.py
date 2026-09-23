@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal
@@ -77,6 +77,14 @@ class RoutingSnapshot(BaseModel):
 
 class StaleRoutingSnapshot(RuntimeError):
     pass
+
+
+def _allows_unpriced_manual(request: AssignmentRequest, budget: Any) -> bool:
+    return (
+        request.requirements.mode.value == "manual"
+        and request.task_limit_usd is None
+        and budget.hard_limit_usd is None
+    )
 
 
 class AssignmentService:
@@ -159,7 +167,9 @@ class AssignmentService:
             )
             if isinstance(selection, RouteFailure):
                 return selection
-            if selection.candidate.estimated_cost_usd is None:
+            if selection.candidate.estimated_cost_usd is None and not _allows_unpriced_manual(
+                request, budget
+            ):
                 return RouteFailure(
                     excluded_counts={"price_unavailable_for_reservation": 1},
                     binding_constraint="price_unavailable_for_reservation",
@@ -263,7 +273,9 @@ class AssignmentService:
                         )
                     )
                     continue
-                if selection.candidate.estimated_cost_usd is None:
+                if selection.candidate.estimated_cost_usd is None and not _allows_unpriced_manual(
+                    request, budget
+                ):
                     deferred.append(request.task_id)
                     deferred_failures.append(
                         DeferredAssignment(
@@ -332,7 +344,8 @@ class AssignmentService:
         health_revision: str,
     ) -> TaskAssignment:
         candidate = selection.candidate
-        assert candidate.estimated_cost_usd is not None
+        unpriced_manual = candidate.estimated_cost_usd is None
+        reservation_amount = candidate.estimated_cost_usd or Decimal("0")
         assignment_id = new_assignment_id()
         reservation_id = new_reservation_id()
         reservation = self.ledger.reserve_in_transaction(
@@ -341,12 +354,17 @@ class AssignmentService:
                 reservation_id=str(reservation_id),
                 run_id=str(request.run_id),
                 task_id=str(request.task_id),
-                amount_usd=candidate.estimated_cost_usd,
+                amount_usd=reservation_amount,
                 idempotency_key=f"assignment-reservation:{assignment_id}",
+                purpose="unpriced_manual" if unpriced_manual else "task_attempt",
             ),
             task_limit_usd=request.task_limit_usd,
         )
         explanation = (
+            ("estimated cost unavailable; no hard-budget reservation",)
+            if unpriced_manual
+            else ()
+        ) + (
             *selection.ranking_reasons,
             f"binding_constraint={selection.binding_constraint or 'none'}",
             f"included={selection.included_count}",
@@ -360,7 +378,7 @@ class AssignmentService:
             model=candidate.profile.model,
             routing_mode=request.requirements.mode,
             capability_floor=request.requirements.capability_floor,
-            estimated_attempt_cost_usd=candidate.estimated_cost_usd,
+            estimated_attempt_cost_usd=reservation_amount,
             reservation_id=reservation_id,
             explanation=explanation,
             catalog_revision=request.catalog_revision,
@@ -389,6 +407,18 @@ class AssignmentService:
                 for item in candidate_snapshot
             ],
             "fallback_of_assignment_id": request.fallback_of_assignment_id,
+            "pricing_evidence": {
+                "catalog_revision": request.catalog_revision,
+                "input_usd_per_million": _decimal_text(
+                    candidate.profile.input_usd_per_million
+                ),
+                "output_usd_per_million": _decimal_text(
+                    candidate.profile.output_usd_per_million
+                ),
+                "cached_input_usd_per_million": _decimal_text(
+                    candidate.profile.cached_input_usd_per_million
+                ),
+            },
         }
         now = datetime.now(UTC)
         transaction.create_assignment(
@@ -692,21 +722,14 @@ class AssignmentUsageSettler:
         values = messages if isinstance(messages, list) else [response]
         normalized = [adapter.normalize_usage(value) for value in values]
         observed = [value for value in normalized if value is not None]
-        if not observed:
+        if not observed or len(observed) != len(values):
             return None
         return NormalizedUsage(
             input_tokens=sum(value.input_tokens for value in observed),
             output_tokens=sum(value.output_tokens for value in observed),
-            cost_usd=sum((value.cost_usd for value in observed), Decimal("0")),
-            authority=(
-                UsageAuthority.AUTHORITATIVE_ACTUAL
-                if len(observed) == len(values)
-                and all(
-                    value.authority is UsageAuthority.AUTHORITATIVE_ACTUAL
-                    for value in observed
-                )
-                else UsageAuthority.ESTIMATED_ACTUAL
-            ),
+            cached_input_tokens=sum(value.cached_input_tokens for value in observed),
+            cost_usd=None,
+            authority=UsageAuthority.TOKEN_DERIVED_ESTIMATE,
         )
 
     def record_call(self, assignment_id: str, response: object, *, call_id: str) -> None:
@@ -724,23 +747,45 @@ class AssignmentUsageSettler:
             usage = NormalizedUsage(
                 input_tokens=0,
                 output_tokens=0,
-                cost_usd=Decimal("0"),
-                authority=UsageAuthority.ESTIMATED_ACTUAL,
+                cost_usd=None,
+                authority=UsageAuthority.UNKNOWN,
             )
         else:
             usage_unknown = False
+            pricing = json.loads(row["payload_json"]).get("pricing_evidence", {})
+            local_cost = _token_cost_usd(
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                cached_input_tokens=usage.cached_input_tokens,
+                pricing=pricing,
+            )
+            usage = usage.model_copy(
+                update={
+                    "cost_usd": local_cost,
+                    "authority": (
+                        UsageAuthority.TOKEN_DERIVED_ESTIMATE
+                        if local_cost is not None
+                        else UsageAuthority.UNKNOWN
+                    ),
+                }
+            )
+        cost_known = usage.cost_usd is not None
+        stored_cost = usage.cost_usd if usage.cost_usd is not None else Decimal("0")
         values = (
             assignment_id,
             call_id,
             usage.input_tokens,
             usage.output_tokens,
-            format(usage.cost_usd, "f"),
+            usage.cached_input_tokens,
+            format(stored_cost, "f"),
             int(usage.authority is UsageAuthority.AUTHORITATIVE_ACTUAL),
+            int(cost_known),
         )
         with self.journal.transaction() as transaction:
             existing = transaction.connection.execute(
-                "SELECT assignment_id,call_id,input_tokens,output_tokens,amount_usd,"
-                "authoritative FROM assignment_call_usage "
+                "SELECT assignment_id,call_id,input_tokens,output_tokens,cached_input_tokens,"
+                "amount_usd,"
+                "authoritative,cost_known FROM assignment_call_usage "
                 "WHERE assignment_id=? AND call_id=?",
                 (assignment_id, call_id),
             ).fetchone()
@@ -749,7 +794,10 @@ class AssignmentUsageSettler:
                     raise ValueError("model call usage replay conflicts")
                 return
             transaction.connection.execute(
-                "INSERT INTO assignment_call_usage VALUES (?,?,?,?,?,?)", values
+                "INSERT INTO assignment_call_usage "
+                "(assignment_id,call_id,input_tokens,output_tokens,cached_input_tokens,amount_usd,"
+                "authoritative,cost_known) VALUES (?,?,?,?,?,?,?,?)",
+                values,
             )
             now = datetime.now(UTC).isoformat()
             call = transaction.connection.execute(
@@ -762,7 +810,7 @@ class AssignmentUsageSettler:
                     (
                         usage.input_tokens,
                         usage.output_tokens,
-                        None if usage_unknown else format(usage.cost_usd, "f"),
+                        None if usage_unknown or not cost_known else format(stored_cost, "f"),
                         "unknown" if usage_unknown else usage.authority.value,
                         now,
                         call_id,
@@ -793,24 +841,51 @@ class AssignmentUsageSettler:
                 (assignment_id,),
             ).fetchone()
             calls = connection.execute(
-                "SELECT input_tokens,output_tokens,amount_usd,authoritative "
+                "SELECT input_tokens,output_tokens,cached_input_tokens,amount_usd,"
+                "authoritative,cost_known "
                 "FROM assignment_call_usage WHERE assignment_id=? ORDER BY call_id",
                 (assignment_id,),
             ).fetchall()
         if assignment is None:
             raise KeyError(assignment_id)
         payload = json.loads(assignment["payload_json"])
-        all_authoritative = bool(calls) and all(row["authoritative"] for row in calls)
-        recorded_cost = sum((Decimal(row["amount_usd"]) for row in calls), Decimal("0"))
         estimated_cost = Decimal(payload["estimated_attempt_cost_usd"])
+        pricing = payload.get("pricing_evidence", {})
+        resolved_costs: list[Decimal | None] = []
+        for row in calls:
+            if row["cost_known"]:
+                resolved_costs.append(Decimal(row["amount_usd"]))
+                continue
+            resolved_costs.append(
+                _token_cost_usd(
+                    input_tokens=int(row["input_tokens"]),
+                    output_tokens=int(row["output_tokens"]),
+                    cached_input_tokens=int(row["cached_input_tokens"]),
+                    pricing=pricing,
+                )
+            )
+        all_measured = bool(calls) and all(cost is not None for cost in resolved_costs)
+        all_authoritative = bool(calls) and all(
+            row["authoritative"] and row["cost_known"] for row in calls
+        )
+        cost = (
+            sum((value for value in resolved_costs if value is not None), Decimal("0"))
+            if all_measured
+            else estimated_cost
+        )
         usage = NormalizedUsage(
             input_tokens=sum(row["input_tokens"] for row in calls),
             output_tokens=sum(row["output_tokens"] for row in calls),
-            cost_usd=recorded_cost if all_authoritative else max(recorded_cost, estimated_cost),
+            cached_input_tokens=sum(row["cached_input_tokens"] for row in calls),
+            cost_usd=cost,
             authority=(
                 UsageAuthority.AUTHORITATIVE_ACTUAL
                 if all_authoritative
-                else UsageAuthority.ESTIMATED_ACTUAL
+                else (
+                    UsageAuthority.TOKEN_DERIVED_ESTIMATE
+                    if all_measured
+                    else UsageAuthority.CONSERVATIVE_ESTIMATE
+                )
             ),
         )
         try:
@@ -836,6 +911,37 @@ class AssignmentUsageSettler:
             raise AccountingReconciliationRequired(
                 "usage settlement failed; paid execution is blocked"
             ) from error
+
+
+def _decimal_text(value: Decimal | None) -> str | None:
+    return None if value is None else format(value, "f")
+
+
+def _token_cost_usd(
+    *,
+    input_tokens: int,
+    output_tokens: int,
+    cached_input_tokens: int,
+    pricing: Mapping[str, Any],
+) -> Decimal | None:
+    if input_tokens <= 0 and output_tokens <= 0:
+        return None
+    try:
+        input_price = pricing.get("input_usd_per_million")
+        output_price = pricing.get("output_usd_per_million")
+        cached_price = pricing.get("cached_input_usd_per_million")
+        if input_price is None or output_price is None:
+            return None
+        ordinary_input = max(0, input_tokens - cached_input_tokens)
+        cached_rate = input_price if cached_price is None else cached_price
+        total = (
+            Decimal(ordinary_input) * Decimal(str(input_price))
+            + Decimal(cached_input_tokens) * Decimal(str(cached_rate))
+            + Decimal(output_tokens) * Decimal(str(output_price))
+        ) / Decimal("1000000")
+        return total
+    except (ArithmeticError, TypeError, ValueError):
+        return None
 
 
 class PersistedAssignmentRegistry:

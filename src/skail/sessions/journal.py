@@ -171,6 +171,7 @@ class ReservationSnapshot:
     amount_usd: Decimal
     status: str
     idempotency_key: str
+    run_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -180,6 +181,8 @@ class UsageSnapshot:
     amount_usd: Decimal
     authoritative: bool
     idempotency_key: str
+    authority: str = "estimated_actual"
+    run_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -598,6 +601,7 @@ class JournalTransaction:
         authoritative: bool,
         idempotency_key: str,
         created_at: datetime,
+        authority: str = "estimated_actual",
     ) -> None:
         values = (
             usage_id,
@@ -606,15 +610,16 @@ class JournalTransaction:
             format(amount_usd, "f"),
             int(authoritative),
             idempotency_key,
+            authority,
         )
         self._insert_idempotent(
             table="usage_records",
             key=idempotency_key,
-            columns="usage_id,run_id,task_id,amount_usd,authoritative,idempotency_key",
+            columns="usage_id,run_id,task_id,amount_usd,authoritative,idempotency_key,authority",
             values=values,
-            insert_values=(*values, _now(created_at)),
+            insert_values=(*values[:-1], _now(created_at), values[-1]),
             insert_columns=(
-                "usage_id,run_id,task_id,amount_usd,authoritative,idempotency_key,created_at"
+                "usage_id,run_id,task_id,amount_usd,authoritative,idempotency_key,created_at,authority"
             ),
         )
 
@@ -1130,6 +1135,7 @@ class Journal:
         authoritative: bool,
         idempotency_key: str,
         created_at: datetime,
+        authority: str = "estimated_actual",
     ) -> None:
         self._write("record_usage", **locals_without_self(locals()))
 
@@ -2001,12 +2007,13 @@ class Journal:
                 attempt_ids,
             ).fetchall()
             reservations = connection.execute(
-                f"SELECT reservation_id,task_id,amount_usd,status,idempotency_key "
+                f"SELECT reservation_id,task_id,amount_usd,status,idempotency_key,run_id "
                 f"FROM budget_reservations WHERE run_id IN ({placeholders}) ORDER BY rowid",
                 run_ids,
             ).fetchall()
             usage = connection.execute(
-                f"SELECT usage_id,task_id,amount_usd,authoritative,idempotency_key "
+                f"SELECT usage_id,task_id,amount_usd,authoritative,idempotency_key,authority,"
+                f"run_id "
                 f"FROM usage_records WHERE run_id IN ({placeholders}) ORDER BY rowid",
                 run_ids,
             ).fetchall()
@@ -2087,6 +2094,7 @@ class Journal:
                     Decimal(row["amount_usd"]),
                     row["status"],
                     row["idempotency_key"],
+                    row["run_id"],
                 )
                 for row in reservations
             ),
@@ -2097,6 +2105,8 @@ class Journal:
                     Decimal(row["amount_usd"]),
                     bool(row["authoritative"]),
                     row["idempotency_key"],
+                    row["authority"],
+                    row["run_id"],
                 )
                 for row in usage
             ),

@@ -2,11 +2,15 @@ from argparse import Namespace
 from decimal import Decimal
 from pathlib import Path
 
+import httpx
+import pytest
+
 import skail.cli.commands as commands
+import skail.cli.main as cli_main
 from skail.cli.main import _apply_run_config, _build_runtime_models, _parse_agent_models
 from skail.config.loader import ResolvedConfig
 from skail.config.models import ProviderConfig, SkailConfig
-from skail.providers.catalog_sources import CatalogEntry, CatalogSource
+from skail.providers.catalog_sources import CatalogEntry, CatalogSource, save_catalog_cache
 from skail.runtime.redaction import RedactionRegistry
 
 
@@ -65,6 +69,12 @@ def test_explicit_cli_values_override_config_and_agent_pins_are_validated() -> N
 def test_runtime_model_construction_uses_configured_provider_and_credential_reference(
     monkeypatch,
 ) -> None:
+    from skail.providers.llmgateway import LLMGatewayAdapter
+
+    async def no_discovered_models(_: LLMGatewayAdapter) -> tuple[CatalogEntry, ...]:
+        return ()
+
+    monkeypatch.setattr(LLMGatewayAdapter, "discover_models", no_discovered_models)
     args = _args(lead_model="llmgateway:test/model")
     args.fake_provider = False
     config = SkailConfig(
@@ -113,9 +123,77 @@ def test_runtime_model_construction_uses_configured_provider_and_credential_refe
     assert runtime_models.providers["llmgateway"].name == "llmgateway"
 
 
+def test_runtime_model_construction_uses_onboarding_keyring_credential(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from skail.providers.credentials import KeyringCredentialStore
+    from skail.providers.llmgateway import LLMGatewayAdapter
+
+    async def no_discovered_models(_: LLMGatewayAdapter) -> tuple[CatalogEntry, ...]:
+        return ()
+
+    monkeypatch.setattr(LLMGatewayAdapter, "discover_models", no_discovered_models)
+    monkeypatch.setattr(
+        KeyringCredentialStore,
+        "get",
+        lambda self, provider, reference: "onboarding-keyring-token",
+    )
+    monkeypatch.delenv("CUSTOM_GATEWAY_TOKEN", raising=False)
+    args = _args(lead_model="llmgateway:test/model")
+    args.fake_provider = False
+    args.catalog_cache_path = tmp_path / "catalog.json"
+    config = SkailConfig(
+        providers={
+            "llmgateway": ProviderConfig(
+                type="openai-compatible",
+                base_url="https://api.llmgateway.io/v1",
+                api_key_env="CUSTOM_GATEWAY_TOKEN",
+                models=("test/model",),
+            )
+        },
+        catalog={
+            "entries": [
+                {
+                    "provider": "llmgateway",
+                    "model": "test/model",
+                    "source": "user",
+                    "trusted": True,
+                    "as_of": "2026-09-21T00:00:00Z",
+                    "fields": {
+                        "input_usd_per_million": "1.25",
+                        "output_usd_per_million": "2.50",
+                        "context_tokens": 32768,
+                        "max_output_tokens": 4096,
+                        "supports_tools": True,
+                        "supports_structured_output": True,
+                        "capability": {
+                            "coding": 0.8,
+                            "reasoning": 0.8,
+                            "tool_reliability": 0.8,
+                            "latency": 0.8,
+                        },
+                    },
+                }
+            ]
+        },
+    )
+    _apply_run_config(args, config)
+
+    runtime_models = _build_runtime_models(args, RedactionRegistry())
+
+    assert "llmgateway:test/model" in runtime_models.models
+    assert runtime_models.providers["llmgateway"].name == "llmgateway"
+
+
 def test_runtime_bootstrap_uses_configured_catalog_without_production_defaults(
     monkeypatch,
 ) -> None:
+    from skail.providers.llmgateway import LLMGatewayAdapter
+
+    async def no_discovered_models(_: LLMGatewayAdapter) -> tuple[CatalogEntry, ...]:
+        return ()
+
+    monkeypatch.setattr(LLMGatewayAdapter, "discover_models", no_discovered_models)
     args = _args(lead_model="llmgateway:test/model")
     args.fake_provider = False
     catalog_entry = CatalogEntry(
@@ -157,6 +235,245 @@ def test_runtime_bootstrap_uses_configured_catalog_without_production_defaults(
     assert profile.input_usd_per_million == Decimal("1.25")
     assert profile.context_tokens == 32768
     assert tuple(runtime_models.models) == ("llmgateway:test/model",)
+
+
+def test_runtime_bootstrap_registers_every_discovered_gateway_model(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from skail.providers.llmgateway import LLMGatewayAdapter
+
+    entries = tuple(
+        CatalogEntry(
+            provider="llmgateway",
+            model=model,
+            source=CatalogSource.DISCOVERED,
+            trusted=False,
+            as_of="2026-09-20T00:00:00Z",
+            provenance="llmgateway:/v1/models?exclude_deprecated=true",
+            fields={
+                "input_usd_per_million": "1.00",
+                "output_usd_per_million": "2.00",
+                "context_tokens": 32768,
+                "max_output_tokens": 4096,
+                "supports_tools": True,
+            },
+        )
+        for model in ("discovered/one", "discovered/two")
+    )
+
+    async def discover(_: LLMGatewayAdapter) -> tuple[CatalogEntry, ...]:
+        return entries
+
+    monkeypatch.setattr(LLMGatewayAdapter, "discover_models", discover)
+    args = _args(lead_model="llmgateway:discovered/one")
+    args.fake_provider = False
+    args.catalog_cache_path = tmp_path / "catalog.json"
+    args.provider_configs = {
+        "llmgateway": ProviderConfig(
+            type="openai-compatible",
+            base_url="https://api.llmgateway.io/v1",
+            api_key_env="CUSTOM_GATEWAY_TOKEN",
+            models=(),
+        )
+    }
+    args.effective_config = SkailConfig(providers=args.provider_configs)
+    monkeypatch.setenv("CUSTOM_GATEWAY_TOKEN", "configured-canary-token")
+
+    runtime_models = _build_runtime_models(args, RedactionRegistry())
+
+    assert set(runtime_models.models) == {
+        "llmgateway:discovered/one",
+        "llmgateway:discovered/two",
+    }
+    assert len(runtime_models.candidates) == 2
+    assert runtime_models.catalog is not None
+    assert (
+        runtime_models.catalog.profile("llmgateway", "discovered/two").catalog_updated_at
+        is not None
+    )
+
+
+def test_discovered_only_catalog_constructs_manual_selection_runtime(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from skail.providers.llmgateway import LLMGatewayAdapter
+
+    entries = tuple(
+        CatalogEntry(
+            provider="llmgateway",
+            model=model,
+            source=CatalogSource.DISCOVERED,
+            trusted=True,
+            as_of="2026-09-20T00:00:00Z",
+            provenance="llmgateway:/v1/models?exclude_deprecated=true",
+            fields={
+                "input_usd_per_million": "1.00",
+                "output_usd_per_million": "2.00",
+                "context_tokens": 32768,
+                "max_output_tokens": 4096,
+                "supports_tools": True,
+            },
+        )
+        for model in ("discovered/one", "discovered/two")
+    )
+
+    async def discover(_: LLMGatewayAdapter) -> tuple[CatalogEntry, ...]:
+        return entries
+
+    monkeypatch.setattr(LLMGatewayAdapter, "discover_models", discover)
+    args = _args()
+    args.fake_provider = False
+    args.catalog_cache_path = tmp_path / "catalog.json"
+    args.provider_configs = {
+        "llmgateway": ProviderConfig(
+            type="openai-compatible",
+            base_url="https://api.llmgateway.io/v1",
+            api_key_env="CUSTOM_GATEWAY_TOKEN",
+            models=("legacy-model",),
+        )
+    }
+    args.effective_config = SkailConfig(providers=args.provider_configs)
+    monkeypatch.setenv("CUSTOM_GATEWAY_TOKEN", "configured-canary-token")
+
+    runtime_models = _build_runtime_models(args, RedactionRegistry())
+
+    assert runtime_models.lead_model == "auto"
+    assert runtime_models.selection_required is True
+    assert set(runtime_models.models) == {
+        "llmgateway:discovered/one",
+        "llmgateway:discovered/two",
+    }
+
+
+def test_transient_discovery_failure_uses_valid_catalog_cache(
+    monkeypatch, tmp_path: Path
+) -> None:
+    entry = CatalogEntry(
+        provider="llmgateway",
+        model="cached/model",
+        source=CatalogSource.DISCOVERED,
+        trusted=True,
+        as_of="2026-09-20T00:00:00Z",
+        fields={
+            "input_usd_per_million": "1.00",
+            "output_usd_per_million": "2.00",
+            "context_tokens": 32768,
+            "max_output_tokens": 4096,
+        },
+    )
+    cache_path = tmp_path / "catalog.json"
+    save_catalog_cache(
+        cache_path,
+        (entry,),
+        provider="llmgateway",
+        endpoint="https://api.llmgateway.io/v1/models",
+        query={"exclude_deprecated": True},
+    )
+    monkeypatch.setattr(
+        cli_main,
+        "_run_discovery",
+        lambda _: (_ for _ in ()).throw(httpx.ReadTimeout("offline")),
+    )
+    args = _args(lead_model="llmgateway:cached/model")
+    args.fake_provider = False
+    args.catalog_cache_path = cache_path
+    args.provider_configs = {
+        "llmgateway": ProviderConfig(
+            type="openai-compatible",
+            base_url="https://api.llmgateway.io/v1",
+            api_key_env="CUSTOM_GATEWAY_TOKEN",
+            models=(),
+        )
+    }
+    args.effective_config = SkailConfig(providers=args.provider_configs)
+    monkeypatch.setenv("CUSTOM_GATEWAY_TOKEN", "configured-canary-token")
+
+    runtime_models = _build_runtime_models(args, RedactionRegistry())
+
+    assert runtime_models.catalog_degraded is True
+    assert tuple(runtime_models.models) == ("llmgateway:cached/model",)
+
+
+def test_authentication_discovery_failure_does_not_use_cache(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from skail.providers.errors import ProviderConfigurationError
+
+    request = httpx.Request("GET", "https://api.llmgateway.io/v1/models")
+    response = httpx.Response(401, request=request)
+    monkeypatch.setattr(
+        cli_main,
+        "_run_discovery",
+        lambda _: (_ for _ in ()).throw(
+            httpx.HTTPStatusError(
+                "unauthorized",
+                request=request,
+                response=response,
+            )
+        ),
+    )
+    args = _args(lead_model="llmgateway:missing/model")
+    args.fake_provider = False
+    args.catalog_cache_path = tmp_path / "catalog.json"
+    args.provider_configs = {
+        "llmgateway": ProviderConfig(
+            type="openai-compatible",
+            base_url="https://api.llmgateway.io/v1",
+            api_key_env="CUSTOM_GATEWAY_TOKEN",
+            models=(),
+        )
+    }
+    args.effective_config = SkailConfig(providers=args.provider_configs)
+    monkeypatch.setenv("CUSTOM_GATEWAY_TOKEN", "configured-canary-token")
+
+    with pytest.raises(ProviderConfigurationError, match="provider request failed"):
+        _build_runtime_models(args, RedactionRegistry())
+
+
+async def test_missing_provider_credentials_report_setup_action_not_route_failure(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from skail.cli.exit_codes import EXIT_FAILURE
+    from skail.providers.credentials import EnvironmentCredentialResolver
+    from skail.providers.errors import ProviderConfigurationError
+    from skail.runtime.interrupts import QuestionStore
+    from skail.tools.approvals import ApprovalStore
+
+    def missing_credential(
+        _resolver: EnvironmentCredentialResolver, provider: str, reference: str
+    ) -> None:
+        raise ProviderConfigurationError(
+            provider, f"credential environment variable {reference} is not set"
+        )
+
+    monkeypatch.setattr(EnvironmentCredentialResolver, "resolve", missing_credential)
+    rendered: list[str] = []
+    monkeypatch.setattr(cli_main, "render_print_stderr", rendered.append)
+    args = _args(
+        effective_config=SkailConfig(),
+        provider_configs={},
+        fake_provider=False,
+        print_mode=True,
+        json_mode=False,
+    )
+
+    result = await cli_main._execute_instruction(
+        prompt="Answer directly",
+        session=object(),
+        journal=object(),
+        checkpoints=object(),
+        redaction=RedactionRegistry(),
+        approvals=ApprovalStore(),
+        question_store=QuestionStore(tmp_path / "questions.sqlite"),
+        workspace=tmp_path,
+        args=args,
+    )
+
+    assert result == EXIT_FAILURE
+    assert rendered
+    assert "No provider credential is available" in rendered[-1]
+    assert "LLMGATEWAY_API_KEY" in rendered[-1]
+    assert "capable lead model" not in rendered[-1]
 
 
 def test_config_inspection_uses_the_already_resolved_effective_config(monkeypatch) -> None:

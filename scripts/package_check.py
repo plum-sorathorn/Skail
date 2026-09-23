@@ -68,7 +68,6 @@ def verify_installation(wheel: Path, workspace: Path) -> None:
     commands = (
         ("skail", "--help"),
         ("skail", "--version"),
-        ("skail", "smoke", "--fake-provider"),
     )
     executable_dir = environment / ("Scripts" if os.name == "nt" else "bin")
     for command in commands:

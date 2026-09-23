@@ -78,6 +78,14 @@ class SkailConfig(BaseModel):
     @model_validator(mode="after")
     def validate_named_providers(self) -> SkailConfig:
         gateway = self.providers.get("llmgateway")
-        if gateway is not None and gateway.base_url != "https://api.llmgateway.io/v1":
-            raise ValueError("LLM Gateway base_url must be https://api.llmgateway.io/v1")
+        if gateway is not None:
+            canonical_url = "https://api.llmgateway.io/v1"
+            if gateway.base_url is None:
+                providers = dict(self.providers)
+                providers["llmgateway"] = gateway.model_copy(
+                    update={"base_url": canonical_url}
+                )
+                return self.model_copy(update={"providers": providers})
+            if gateway.base_url != canonical_url:
+                raise ValueError(f"LLM Gateway base_url must be {canonical_url}")
         return self

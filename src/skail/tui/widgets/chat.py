@@ -1,6 +1,5 @@
 """Incremental transcript rendering with keyed reconciliation.
 
-Draft source: docs/skail/TUI_REVAMP_DRAFT.md sections 5.2, 6.
 Phase 2: replace full-remount with keyed reconciliation,
 focusable collapsible headers with ATELIER four-column rows
 (clock | fold | role | measure), role edges, scroll pin, streaming
@@ -40,6 +39,10 @@ SPINNER_LABELS: tuple[str, ...] = (
     "THINKING",
     "DELEGATING",
     "COMPACTING",
+    "RUNNING",
+    "WAITING",
+    "STARTING",
+    "QUEUED",
 )
 
 # Roles whose expanded rows render as continuation sub-rows (fold glyph `└`).
@@ -187,7 +190,7 @@ def spinner_frame(tick: int, reduced_motion: bool = False) -> str:
 class TranscriptItemWidget(Widget):
     """Focusable single transcript item with collapse toggling."""
 
-    can_focus = True
+    can_focus = False
 
     DEFAULT_CSS = """
     TranscriptItemWidget {
@@ -442,7 +445,7 @@ class ChatTranscript(VerticalScroll):
     }
     """
 
-    can_focus = True
+    can_focus = False
 
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)  # type: ignore[arg-type]

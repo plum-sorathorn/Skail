@@ -1,0 +1,33 @@
+# Defect Remediation Checklist
+
+- [ ] 0. Reconcile run IDs and plan ownership; establish new in-house token-cost evidence.
+  - Evidence review completed across all ten session exports; run ownership correction recorded in `BUGS.md` and `RUN_LOG.md`. A read-only provider CLI status check found no dashboard session; account usage and key limits remain unavailable without it. No paid call was made.
+  - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
+    model rates, price measured tokens locally, and include child calls in the parent run. Prior
+    exports lack per-call tokens and remain historical estimates.
+- [x] 1. Enforce explicit direct, no-delegation, no-write, and exact-child constraints at admission.
+  - Evidence: `tests/unit/test_lead_intent.py`, `tests/contract/test_execution_decisions.py`, and focused `tests/integration/test_lead.py` regressions pass; live S2 confirmation remains pending.
+- [x] 2. Bound repeated decision/tool loops and preserve uncertain call accounting.
+  - Evidence: 32-call run limit is shared across lead/child middleware; exhaustion is emitted as `run.failed` with `run.model_call_limit_exhausted` before another provider call. `rtk pytest` focused regression suite: 43 passed; Ruff and Graphify update passed.
+- [x] Checkpoint: invalid decisions and read-only loops terminate with one accurate outcome.
+- [ ] 3. Reproduce and fix cross-run plan/checkpoint/question ownership.
+  - Reproduction proved that the old session thread carried a cancelled run's prompt into the next model request. Run-scoped threads, checkpoint thread metadata, pending-question guards, and TUI run/plan ownership state are implemented; focused recovery/UI tests pass. Interrupt cards now show owner suffixes. Live S4 confirmation remains pending. Queue persistence across restart remains unproven.
+- [x] 4. Unify queue behavior across cancel, Ctrl+C, slash quit, and resume.
+  - Evidence: 51 TUI interaction/command tests pass. Real Textual pilots cover `/cancel`, `/quit`, Ctrl+C, app exit, FIFO after success, and queue non-restoration; a warning-as-error exit subset passes (4 tests). Queue clearing is visible.
+- [x] Checkpoint: pending questions and queued prompts cannot silently cross run boundaries.
+- [ ] 5. Separate clean user answers from structured verification and route evidence.
+  - Offline implementation: shared TUI/print presenter, structured JSONL completion output, secret redaction, actionable empty/failed status copy, and a mounted Textual rendering pilot. Focused regression suite passes (110 tests); Ruff, mypy, and Graphify update pass. Keep unchecked pending a matching live S1 observation: the session export and checkpoint contain no final message, so the reported output's origin remains unknown.
+- [ ] 6. Render normal questions as waiting, with question-specific controls and no tool error.
+  - Offline implementation adds typed question events, keeps expected graph interrupts out of `tool.failed`, separates question answer/cancel from permission Approve/Reject, and shows session/run/plan owner suffixes. Focused offline regressions: 213 passed; the final owner-label/recovery subset: 16 passed. Ruff, mypy, and Graphify update pass. Live S6 confirmation remains pending.
+- [x] 7. Audit earlier fixes with focused CLI and TUI checks.
+  - Evidence: five catalog/list/refresh tests and four warning-as-error queue/cancel pilots pass; controller and real TUI cancellation checks show no framework traceback. Live confirmation for LIVE-001/003/004 and OUT-001/003 remains pending.
+- [x] 8. Clear the three full offline suite failures.
+  - Evidence: the no-credentials subprocess uses the null keyring backend, the initialization replay pilot waits asynchronously for its worker barrier, and the README assertion matches the current image masthead.
+- [x] Checkpoint: Ruff, mypy, unit/contract, smoke, and full offline suite pass.
+  - Verification: Ruff passed; mypy found no issues in 126 source files; unit/contract passed (865 passed, 2 skipped); smoke passed; full offline suite passed (1136 passed, 5 skipped).
+- [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
+  - Not exercised: read-only provider CLI status found no dashboard session. Provider-side usage baseline and a capped key could not be obtained, so no paid call was made; S6/S7 remain unrun and S8 was not forced.
+  - Future runs use export schema version 2 `provider_calls` and `model_usage`; compare local
+    per-model calculations with the TUI's lead-plus-child run total after each scenario. The
+    LLM Gateway CLI is removed from the procedure.
+- [ ] Update `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, and `COSTS.csv` with verified outcomes.

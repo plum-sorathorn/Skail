@@ -107,6 +107,19 @@ class ModelCatalog:
                 return False
         return True
 
+    def price_is_current(self, profile: ModelProfile) -> bool:
+        if profile.input_usd_per_million is None or profile.output_usd_per_million is None:
+            return False
+        if profile.evidence is None:
+            return False
+        for field in ("input_usd_per_million", "output_usd_per_million"):
+            evidence = profile.evidence.fields.get(field)
+            if evidence is None or not evidence.trusted:
+                return False
+            if self.now - evidence.as_of > self.price_max_age:
+                return False
+        return True
+
 
 def _merge_profile(key: tuple[str, str], entries: list[CatalogEntry]) -> ModelProfile:
     fields: dict[str, Any] = {}
@@ -142,6 +155,7 @@ def _merge_profile(key: tuple[str, str], entries: list[CatalogEntry]) -> ModelPr
                 source=entry.source,
                 as_of=entry.as_of,
                 trusted=entry.trusted,
+                provenance=entry.provenance,
             )
     capability_value = fields.get("capability")
     capability = (
@@ -184,4 +198,10 @@ def _merge_profile(key: tuple[str, str], entries: list[CatalogEntry]) -> ModelPr
 
 
 def _decimal(value: Any) -> Decimal | None:
-    return None if value is None else Decimal(str(value))
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        decimal = Decimal(str(value))
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+    return decimal if decimal.is_finite() and decimal >= 0 else None

@@ -285,7 +285,7 @@ def test_budget_state_labels_and_lines() -> None:
     assert budget_state_label("normal") == "normal"
     lines = render_budget_lines(0.5, 1.0, {"c1": 0.2})
     assert lines[0] == "BUDGET"
-    assert "Session $0.50 / $1.00" in lines[1]
+    assert "Run $0.50 / $1.00" in lines[1]
     assert len([line for line in lines if "■" in line or "·" in line]) == 1
     assert any("Remaining" in line for line in lines)
     assert any("c1" in line for line in lines)
@@ -533,11 +533,37 @@ def test_theme_commit_and_system_note() -> None:
     assert note == "System preference unavailable; using Dark."
 
 
+def test_theme_picker_commits_new_theme_separately_from_preview() -> None:
+    overlay = ThemePickerOverlay("dark")
+    overlay.index = 3
+    seen: list[str] = []
+
+    class _App:
+        def apply_theme_preview(self, name: str) -> str:
+            seen.append(f"preview:{name}")
+            return name
+
+        def commit_theme(self, name: str) -> None:
+            seen.append(f"commit:{name}")
+
+        def close_overlay(self, name: str) -> None:
+            seen.append(f"close:{name}")
+
+    overlay._test_app = _App()  # type: ignore[attr-defined]
+    assert overlay.move(0) == "pistachio-night"
+    assert overlay.commit() == "pistachio-night"
+    assert seen == [
+        "preview:pistachio-night",
+        "commit:pistachio-night",
+        "close:theme_picker",
+    ]
+
+
 # -- model picker ----------------------------------------------------------
 
 
 def test_model_picker_lists_configured_and_future_only() -> None:
-    overlay = ModelPickerOverlay(["m-a", "m-b"], "m-a")
+    overlay = ModelPickerOverlay(["m-a", "m-b"], "m-a", enabled={"m-b"})
     rows = overlay.rows()
     assert any("m-a" in r and "\u25cf" in r for r in rows)
 
@@ -644,7 +670,7 @@ def test_search_commands_drives_palette() -> None:
     assert search_commands("model")[0]["command"] == "/model"
 
 
-def test_overlay_stack_push_pop_with_focus_restore() -> None:
+def test_overlay_stack_push_pop_restores_composer_focus() -> None:
     src = inspect.getsource(app_module.SkailApp.close_overlay)
     assert "pop_screen" in src
     assert "focus" in src
@@ -658,8 +684,11 @@ def test_overlay_stack_push_pop_with_focus_restore() -> None:
 
     app = app_module.SkailApp.__new__(app_module.SkailApp)
     app._overlay_stack = ["shortcuts"]
-    widget = _Widget()
-    app._focus_before_overlay = widget
+    previous = _Widget()
+    composer = _Widget()
+    app._focus_before_overlay = previous
+    app.query_one = lambda selector: composer  # type: ignore[method-assign]
     app_module.SkailApp.close_overlay(app, "shortcuts")
     assert app._overlay_stack == []
-    assert widget.focused is True
+    assert previous.focused is False
+    assert composer.focused is True

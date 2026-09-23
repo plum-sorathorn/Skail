@@ -19,11 +19,11 @@ The inherited gates are event persistence above 100 appends/sec, snapshot query 
 storage below 1 KiB/event, projection above 50,000 events/sec, and context assembly below 10 ms.
 The 15% end-to-end gate remains a release criterion where an applicable baseline exists.
 
-The same harness separately records CLI `--help`, the first offline fake-provider response in a
-new temporary application home, bounded scheduler dispatch of four tasks (three active plus one
+The same harness separately records CLI `--help`, the offline package smoke check in a new
+temporary application home, bounded scheduler dispatch of four tasks (three active plus one
 queued), and disposable Git snapshot/worktree setup. These are operation-specific diagnostics,
 not startup or general end-to-end guarantees; they have no acceptance threshold until one is
-reviewed. The fake-provider response is an integration-overhead measurement, not provider latency.
+reviewed. The offline smoke check does not measure provider latency.
 
 `tui_rendered_updates` is separate from projection replay: it mounts a `SkailApp` in Textual's test
 renderer, starts exactly three child tasks, applies model-delta updates, flushes the render loop, and

@@ -244,7 +244,9 @@ def test_journal_returns_an_immutable_typed_session_snapshot(tmp_path: Path) -> 
     assert snapshot.attempts[0].number == 1
     assert snapshot.assignments[0].model == "quality-model"
     assert snapshot.budget_reservations[0].amount_usd == Decimal("0.40")
+    assert snapshot.budget_reservations[0].run_id == RUN_ID
     assert snapshot.usage_records[0].amount_usd == Decimal("0.12")
+    assert snapshot.usage_records[0].run_id == RUN_ID
     assert snapshot.approvals[0].status == "pending"
     assert snapshot.events == (event,)
     with pytest.raises(FrozenInstanceError):

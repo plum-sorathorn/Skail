@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import os
@@ -7,9 +8,11 @@ from pathlib import Path
 
 import pytest
 from fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_call_message
+from fakes.provider import FakeProviderAdapter
 from langchain_core.messages import AIMessage
 
 from skail.agents.lead import LeadControls
+from skail.domain.events import SecretRedactor
 from skail.domain.ids import new_session_id
 from skail.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
 from skail.routing.assignment import (
@@ -18,6 +21,8 @@ from skail.routing.assignment import (
     config_revision,
 )
 from skail.routing.selector import RouteCandidate
+from skail.runtime import run_controller as run_controller_module
+from skail.runtime.failure_monitor import RunModelCallLimitExceeded
 from skail.runtime.run_controller import RunController
 from skail.sessions.journal import Journal
 
@@ -79,6 +84,57 @@ async def test_lead_completes_direct_coding_flow_without_delegation(tmp_path: Pa
     assert result.lead_assignment.model == "lead-model"
     assert result.lead_assignment.attempt_number == 1
     assert result.lead_context_packet.task_id == str(result.run_id)
+
+
+@pytest.mark.asyncio
+async def test_no_qualified_lead_returns_actionable_result_without_calling_provider(
+    tmp_path: Path,
+) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="No lead", created_at=datetime.now(UTC)
+    )
+    weak = ModelProfile(
+        provider="fake",
+        model="weak-lead",
+        input_usd_per_million=Decimal("1"),
+        output_usd_per_million=Decimal("2"),
+        context_tokens=32_000,
+        max_output_tokens=4_000,
+        supports_tools=True,
+        supports_structured_output=False,
+        capability=CapabilityVector(
+            coding=0.5, reasoning=0.5, tool_reliability=0.5, latency=0.5
+        ),
+        auto_eligible=True,
+    )
+    model = ScriptedChatModel(responses=[AIMessage(content="must not run")])
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"weak-lead": model},
+        default_lead_model="weak-lead",
+        candidates_fn=lambda: RoutingSnapshot(
+            catalog_revision="catalog-v1",
+            config_revision=config_revision({"routing": {"mode": "auto"}}),
+            health_revision="health-v1",
+            candidates=(
+                RouteCandidate(
+                    profile=weak,
+                    estimated_cost_usd=Decimal("0.10"),
+                ),
+            ),
+        ),
+    )
+
+    result = await controller.run_instruction("answer hi")
+
+    assert result.status == "blocked"
+    assert "No capable lead model is available" in result.output
+    assert "Required capability floor" in result.output
+    assert not model.calls
 
 
 @pytest.mark.asyncio
@@ -213,6 +269,48 @@ async def test_run_failed_event_and_log_carry_error_diagnostics(
 
 
 @pytest.mark.asyncio
+async def test_cancelled_lead_does_not_log_framework_traceback(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Cancelled lead", created_at=datetime.now(UTC)
+    )
+
+    started = asyncio.Event()
+    blocked = asyncio.Event()
+
+    async def block(_: ScriptedChatModel, __) -> None:
+        started.set()
+        await blocked.wait()
+
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={
+            "lead-model": ScriptedChatModel(
+                responses=[AIMessage(content="unused")],
+                async_call_hook=block,
+            )
+        },
+        default_lead_model="lead-model",
+    )
+
+    with caplog.at_level(logging.ERROR, logger="skail.runtime.run_controller"):
+        run = asyncio.create_task(controller.run_instruction("cancel me"))
+        await started.wait()
+        run.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await run
+
+    assert "Traceback (most recent call last)" not in caplog.text
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert snapshot.runs[0].status == "cancelled"
+
+
+@pytest.mark.asyncio
 async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Path) -> None:
     journal = _journal(tmp_path)
     session_id = new_session_id()
@@ -330,7 +428,7 @@ async def test_controller_rejects_child_candidate_that_lacks_profile_tool_requir
     def candidate(model: str, *, tools: bool, auto_eligible: bool, cost: str) -> RouteCandidate:
         return RouteCandidate(
             profile=ModelProfile(
-                provider="fake",
+                provider="injected",
                 model=model,
                 support_level=ProviderSupportLevel.NATIVE,
                 input_usd_per_million=Decimal("1"),
@@ -364,6 +462,7 @@ async def test_controller_rejects_child_candidate_that_lacks_profile_tool_requir
         models={"lead-model": lead_model, "implementer-model": child_model},
         default_lead_model="lead-model",
         default_child_model="implementer-model",
+        providers={"injected": FakeProviderAdapter()},
         candidates_fn=lambda: routing_snapshot,
     )
 
@@ -489,7 +588,19 @@ async def test_lead_completion_persists_terminal_lifecycle_and_context_packet(
         session_id=session_id,
         workspace=tmp_path,
         journal=journal,
-        models={"lead-model": ScriptedChatModel(responses=[AIMessage(content="Done.")])},
+        models={
+            "lead-model": ScriptedChatModel(
+                responses=[
+                    AIMessage(
+                        content=(
+                            '{"answer":"Done.","verification":[{"criterion":'
+                            '"The request is complete","passed":true,'
+                            '"evidence":"No edits were needed."}]}'
+                        )
+                    )
+                ]
+            )
+        },
     )
 
     result = await controller.run_instruction("Finish work")
@@ -501,6 +612,44 @@ async def test_lead_completion_persists_terminal_lifecycle_and_context_packet(
     assert snapshot.attempts[0].status == "succeeded"
     assert snapshot.context_packets[0].run_id == str(result.run_id)
     assert snapshot.context_packets[0].payload["objective"] == "Finish work"
+    completed = next(event for event in snapshot.events if event.type == "run.completed")
+    assert completed.payload.output == {
+        "answer": "Done.",
+        "verification": [
+            {
+                "criterion": "The request is complete",
+                "passed": True,
+                "evidence": "No edits were needed.",
+            }
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_completed_output_redacts_registered_secrets_before_return(tmp_path: Path) -> None:
+    secret = "sk-test-secret-value"
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Redacted output", created_at=datetime.now(UTC)
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": ScriptedChatModel(responses=[AIMessage(content=f"Echo {secret}")])},
+        redactor=SecretRedactor((secret,)),
+    )
+
+    result = await controller.run_instruction("Reply directly")
+
+    assert result.output == "Echo [REDACTED]"
+    completed = next(
+        event
+        for event in journal.get_session_snapshot(str(session_id)).events
+        if event.type == "run.completed"
+    )
+    assert completed.payload.output == "Echo [REDACTED]"
 
 
 @pytest.mark.asyncio
@@ -533,3 +682,231 @@ async def test_explicit_instruction_constraints_apply_only_to_current_run(tmp_pa
     # Instruction 2: default controls - must not retain custom-lead
     res2 = await controller.run_instruction("Run 2")
     assert res2.lead_assignment.model == "lead-model"
+
+
+@pytest.mark.asyncio
+async def test_direct_user_instruction_rejects_plan_and_task_admission(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Direct intent", created_at=datetime.now(UTC)
+    )
+    planned = {
+        "mode": "planned",
+        "objective": "Inspect the requested files",
+        "constraints": [],
+        "reason": "The model incorrectly chose a plan.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "review",
+                    "kind": "checkpoint",
+                    "objective": "Review the evidence",
+                }
+            ],
+        },
+    }
+    direct = {
+        "mode": "direct",
+        "objective": "Inspect the requested files",
+        "constraints": [],
+        "reason": "The instruction requires direct execution.",
+    }
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    ("execution_decision", planned, "planned-first"),
+                    (
+                        "task",
+                        {"description": "Inspect the requested files", "subagent_type": "explorer"},
+                        "task-first",
+                    ),
+                ]
+            ),
+            parallel_tool_call_message([("execution_decision", direct, "direct-repair")]),
+            AIMessage(content="I inspected the files directly."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead},
+    )
+
+    result = await controller.run_instruction(
+        "Inspect the requested files and do this yourself without delegating."
+    )
+
+    assert result.status == "completed"
+    assert result.child_count == 0
+    assert journal.plans_for_run(str(result.run_id)) == ()
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert len([task for task in snapshot.tasks if task.run_id == str(result.run_id)]) == 1
+
+
+@pytest.mark.asyncio
+async def test_no_edit_user_instruction_blocks_write_tool(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Read only intent", created_at=datetime.now(UTC)
+    )
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "direct",
+                            "objective": "Review the workspace",
+                            "constraints": [],
+                            "reason": "The user requested inspection only.",
+                        },
+                        "decision-read-only",
+                    ),
+                    (
+                        "write_file",
+                        {"file_path": "should-not-exist.txt", "content": "blocked\n"},
+                        "write-read-only",
+                    ),
+                ]
+            ),
+            AIMessage(content="I left the workspace unchanged."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead},
+    )
+
+    result = await controller.run_instruction("Review the workspace. Do not edit files.")
+
+    assert result.status == "completed"
+    assert not (tmp_path / "should-not-exist.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_run_model_call_limit_stops_a_read_only_tool_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(run_controller_module, "MAX_MODEL_CALLS_PER_RUN", 2)
+    (tmp_path / "one.txt").write_text("one", encoding="utf-8")
+    (tmp_path / "two.txt").write_text("two", encoding="utf-8")
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Bounded tool loop", created_at=datetime.now(UTC)
+    )
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "direct",
+                            "objective": "Read the fixture files",
+                            "constraints": [],
+                            "reason": "This is a bounded read-only loop.",
+                        },
+                        "loop-decision",
+                    ),
+                    ("read_file", {"file_path": "one.txt"}, "loop-read-1"),
+                ]
+            ),
+            tool_call_message("read_file", {"file_path": "two.txt"}, call_id="loop-read-2"),
+            AIMessage(content="This response must never be requested."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead},
+    )
+
+    with pytest.raises(RunModelCallLimitExceeded, match="run.model_call_limit_exhausted"):
+        await controller.run_instruction("Read the fixture files.")
+
+    snapshot = journal.get_session_snapshot(str(session_id))
+    run = snapshot.runs[-1]
+    run_events = [event for event in snapshot.events if event.run_id == run.run_id]
+    assert run.status == "failed"
+    assert len(lead.calls) == 2
+    assert sum(event.type == "model.started" for event in run_events) == 2
+    assert sum(event.type == "run.failed" for event in run_events) == 1
+    assert not any(event.type == "run.completed" for event in run_events)
+
+
+@pytest.mark.asyncio
+async def test_run_model_call_limit_is_shared_with_child_agents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(run_controller_module, "MAX_MODEL_CALLS_PER_RUN", 2)
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Shared model call limit", created_at=datetime.now(UTC)
+    )
+    child = ScriptedChatModel(
+        model_name="explorer-model",
+        responses=[AIMessage(content='{"status":"failed","summary":"Stopped for test."}')],
+    )
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "direct",
+                            "objective": "Delegate a bounded inspection",
+                            "constraints": [],
+                            "reason": "The user requested one read-only child.",
+                        },
+                        "shared-limit-decision",
+                    ),
+                    (
+                        "task",
+                        {
+                            "description": "Inspect the current workspace",
+                            "subagent_type": "explorer",
+                        },
+                        "shared-limit-task",
+                    ),
+                ]
+            ),
+            AIMessage(content="This synthesis response must never be requested."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead, "explorer-model": child},
+        default_child_model="explorer-model",
+        profile_models={"explorer": "explorer-model"},
+    )
+
+    with pytest.raises(RunModelCallLimitExceeded, match="run.model_call_limit_exhausted"):
+        await controller.run_instruction("Delegate one read-only inspection.")
+
+    snapshot = journal.get_session_snapshot(str(session_id))
+    run = snapshot.runs[-1]
+    run_events = [event for event in snapshot.events if event.run_id == run.run_id]
+    assert len(lead.calls) == 1
+    assert len(child.calls) == 1
+    assert sum(event.type == "model.started" for event in run_events) == 2
+    assert sum(event.type == "run.failed" for event in run_events) == 1

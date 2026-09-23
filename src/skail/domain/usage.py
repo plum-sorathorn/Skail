@@ -8,6 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 class UsageAuthority(StrEnum):
     AUTHORITATIVE_ACTUAL = "authoritative_actual"
+    TOKEN_DERIVED_ESTIMATE = "token_derived_estimate"
+    CONSERVATIVE_ESTIMATE = "conservative_estimate"
+    UNKNOWN = "unknown"
     ESTIMATED_ACTUAL = "estimated_actual"
     # TODO(flag/D-12): part 2 remains. Until the estimate-on-reconcile
     # resolution lands, unknown usage stays NULL with authority='unknown' (the
@@ -22,9 +25,10 @@ class NormalizedUsage(BaseModel):
 
     input_tokens: int = Field(ge=0)
     output_tokens: int = Field(ge=0)
-    cost_usd: Decimal = Field(ge=0)
+    cached_input_tokens: int = Field(default=0, ge=0)
+    cost_usd: Decimal | None = Field(default=None, ge=0)
     authority: UsageAuthority
 
     @field_serializer("cost_usd")
-    def serialize_cost(self, value: Decimal) -> str:
-        return format(value, "f")
+    def serialize_cost(self, value: Decimal | None) -> str | None:
+        return None if value is None else format(value, "f")

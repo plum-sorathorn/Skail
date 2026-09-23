@@ -6,8 +6,10 @@ from typing import Any
 
 try:
     from textual.screen import Screen
+    from textual.widgets import Static
 except Exception:  # pragma: no cover
     Screen = object  # type: ignore[assignment,misc]
+    Static = object  # type: ignore[assignment,misc]
 
 from skail.tui.overlays.shell import OVERLAY_CSS, ovl_foot, ovl_head, ovl_rule_strong
 from skail.tui.projection import ChildView
@@ -124,15 +126,33 @@ class MissionsOverlay(Screen):  # type: ignore[type-arg]
         except Exception:
             pass
 
+    def _refresh_rows(self) -> None:
+        try:
+            header = self.query_one("#missions-header", Static)
+            header.update(self.header())
+            prompt = self.query_one("#missions-prompt", Static)
+            if self.confirming is not None:
+                prompt.update(f"[bold $budgetWarning]{CONFIRM_PROMPT}[/]")
+            else:
+                prompt.update("")
+            row_widgets = list(self.query(".mission-row"))
+            new_rows = self.rows()
+            for widget, text in zip(row_widgets, new_rows):
+                if hasattr(widget, "update"):
+                    widget.update(text)
+        except Exception:
+            pass
+
     def compose(self) -> Any:
         try:
             from textual.widgets import Static
 
             yield ovl_head("MISSION CONTROL", hint="C cancels \u00b7 esc closes")
             yield ovl_rule_strong()
-            yield Static(self.header())
+            yield Static(self.header(), id="missions-header")
             for row in self.rows():
-                yield Static(row)
+                yield Static(row, classes="mission-row")
+            yield Static("", id="missions-prompt")
             yield ovl_foot(MISSIONS_FOOT)
         except Exception:
             return
@@ -143,13 +163,31 @@ class MissionsOverlay(Screen):  # type: ignore[type-arg]
         if key == "escape":
             if self.confirming is not None:
                 self.confirming = None
+                self._refresh_rows()
             else:
                 self.close()
             try:
                 event.stop()
             except Exception:
                 pass
-        elif key == "enter":
+        elif key in ("y", "Y") and self.confirming is not None:
+            self.confirm_cancel(True)
+            self.close()
+            try:
+                event.stop()
+            except Exception:
+                pass
+        elif key in ("n", "N") and self.confirming is not None:
+            self.confirm_cancel(False)
+            self._refresh_rows()
+            try:
+                event.stop()
+            except Exception:
+                pass
+        elif key in ("up", "down") and self.overlay_children:
+            delta = -1 if key == "up" else 1
+            self.index = (self.index + delta) % len(self.overlay_children)
+            self._refresh_rows()
             try:
                 event.stop()
             except Exception:
@@ -158,6 +196,7 @@ class MissionsOverlay(Screen):  # type: ignore[type-arg]
             current = self.current()
             if current is not None:
                 self.request_cancel(current.id)
+                self._refresh_rows()
             try:
                 event.stop()
             except Exception:

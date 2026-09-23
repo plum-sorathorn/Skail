@@ -16,6 +16,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.errors import GraphInterrupt
 from langgraph.types import Command
 
 from skail.runtime.errors import FrameworkContractError
@@ -27,6 +28,12 @@ class FrameworkEvent:
     stream_mode: str
     payload: Any
     task_id: str | None = None
+
+
+def is_graph_interrupt(error: BaseException) -> bool:
+    """Identify LangGraph's expected control-flow exception behind this adapter."""
+
+    return isinstance(error, GraphInterrupt)
 
 
 def adapt_stream_part(part: Mapping[str, Any], *, task_id: str | None = None) -> FrameworkEvent:

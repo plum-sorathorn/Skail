@@ -26,7 +26,7 @@ class SpikeAssignment:
     assignment_id: str
     attempt_id: str
     model_id: str
-    provider: str = "fake"
+    provider: str = "injected"
     reservation_id: str = "spike-reservation"
 
 

@@ -55,6 +55,7 @@ class CheckpointRecord:
     live_idempotency_keys: tuple[str, ...]
     created_at: datetime
     checkpoint: dict[str, Any]
+    thread_id: str
 
 
 class CheckpointStore:
@@ -73,8 +74,20 @@ class CheckpointStore:
                 "session_id TEXT NOT NULL, checkpoint_id TEXT PRIMARY KEY, "
                 "idempotency_key TEXT NOT NULL UNIQUE, status TEXT NOT NULL, "
                 "payload_json TEXT NOT NULL, live_keys_json TEXT NOT NULL, "
-                "created_at TEXT NOT NULL)"
+                "created_at TEXT NOT NULL, thread_id TEXT NOT NULL DEFAULT '')"
             )
+            columns = {
+                str(row[1])
+                for row in connection.execute(
+                    "PRAGMA table_info(skail_checkpoint_refs)"
+                ).fetchall()
+            }
+            if "thread_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE skail_checkpoint_refs "
+                    "ADD COLUMN thread_id TEXT NOT NULL DEFAULT ''"
+                )
+            connection.commit()
         finally:
             connection.close()
 
@@ -131,6 +144,7 @@ class CheckpointStore:
         self,
         *,
         session_id: str,
+        thread_id: str | None = None,
         checkpoint_id: str,
         idempotency_key: str,
         status: str,
@@ -144,6 +158,7 @@ class CheckpointStore:
         payload_json = json.dumps(payload_data, sort_keys=True)
         live_keys = tuple(sorted(set(live_idempotency_keys or (idempotency_key,))))
         live_keys_json = json.dumps(live_keys)
+        checkpoint_thread_id = thread_id or session_id
         values = (
             session_id,
             checkpoint_id,
@@ -151,20 +166,24 @@ class CheckpointStore:
             status,
             payload_json,
             live_keys_json,
+            checkpoint_thread_id,
         )
         with self.locked(session_id):
             connection = sqlite3.connect(self.path)
             try:
                 try:
                     connection.execute(
-                        "INSERT INTO skail_checkpoint_refs VALUES (?,?,?,?,?,?,?)",
-                        (*values, created_at.isoformat()),
+                        "INSERT INTO skail_checkpoint_refs "
+                        "(session_id,checkpoint_id,idempotency_key,status,payload_json,"
+                        "live_keys_json,created_at,thread_id) VALUES (?,?,?,?,?,?,?,?)",
+                        (*values[:6], created_at.isoformat(), checkpoint_thread_id),
                     )
                     connection.commit()
                 except sqlite3.IntegrityError as exc:
                     row = connection.execute(
                         "SELECT session_id,checkpoint_id,idempotency_key,status,payload_json,"
-                        "live_keys_json FROM skail_checkpoint_refs WHERE idempotency_key=?",
+                        "live_keys_json,thread_id FROM skail_checkpoint_refs "
+                        "WHERE idempotency_key=?",
                         (idempotency_key,),
                     ).fetchone()
                     if row is not None and tuple(row) == values:
@@ -185,7 +204,7 @@ class CheckpointStore:
             try:
                 row = connection.execute(
                     "SELECT session_id,checkpoint_id,idempotency_key,status,"
-                    "payload_json,live_keys_json,created_at "
+                    "payload_json,live_keys_json,created_at,thread_id "
                     "FROM skail_checkpoint_refs WHERE session_id=? "
                     "ORDER BY created_at DESC LIMIT 1",
                     (session_id,),
@@ -210,13 +229,14 @@ class CheckpointStore:
             raise CheckpointCorruptError("checkpoint live key set is corrupt")
         if row[3] not in {"committed", "interrupted"}:
             raise CheckpointCorruptError("checkpoint metadata status is invalid")
+        thread_id = str(row[7]) or session_id
         try:
             with SqliteSaver.from_conn_string(str(self.path)) as saver:
-                latest = saver.get_tuple({"configurable": {"thread_id": session_id}})
+                latest = saver.get_tuple({"configurable": {"thread_id": thread_id}})
                 referenced = saver.get_tuple(
                     {
                         "configurable": {
-                            "thread_id": session_id,
+                            "thread_id": thread_id,
                             "checkpoint_id": row[1],
                         }
                     }
@@ -238,4 +258,5 @@ class CheckpointStore:
             tuple(live_keys_value),
             created_at,
             checkpoint,
+            thread_id,
         )

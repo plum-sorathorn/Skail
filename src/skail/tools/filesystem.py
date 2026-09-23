@@ -6,6 +6,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from skail.config.paths import workspace_state_dir
+from skail.domain.security import identify_workspace
 from skail.runtime.redaction import RedactionRegistry
 from skail.sessions.locking import process_file_lock
 
@@ -31,6 +33,7 @@ class FilesystemBoundary:
         outside_grants: list[Path] | tuple[Path, ...] = (),
         forbidden_host_paths: list[Path] | tuple[Path, ...] = (),
         redactor: RedactionRegistry | None = None,
+        state_dir: Path | None = None,
         sensitive_patterns: tuple[str, ...] = (
             ".env", "*.pem", "*.key", "id_rsa", ".git", ".skail",
         ),
@@ -41,6 +44,11 @@ class FilesystemBoundary:
             path.resolve(strict=False) for path in forbidden_host_paths
         )
         self.redactor = redactor or RedactionRegistry()
+        self.state_dir = (
+            state_dir.resolve(strict=False)
+            if state_dir is not None
+            else workspace_state_dir(identify_workspace(self.workspace))
+        )
         self.sensitive_patterns = sensitive_patterns
         self.changes: list[FileChange] = []
 
@@ -94,7 +102,7 @@ class FilesystemBoundary:
     def write_text(
         self, raw: str | Path, content: str, *, task_id: str, tool_call_id: str
     ) -> FileChange:
-        lock_path = self.workspace / ".skail" / "filesystem-boundary.lock"
+        lock_path = self.state_dir / "filesystem-boundary.lock"
         with process_file_lock(lock_path):
             path = self.resolve(raw, for_write=True)
             self._assert_not_sensitive(path)

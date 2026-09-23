@@ -17,8 +17,7 @@ from skail.tui.onboarding import NON_TTY_USAGE_ERROR
 @pytest.fixture(autouse=True)
 def isolate_cli_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # These tests call main() in-process; the CLI resolves its workspace via
-    # Path.cwd() (src/skail/cli/main.py:440) and creates approvals/questions
-    # stores under workspace/.skail (main.py:547-548). Keep that inside tmp.
+    # Path.cwd() and stores workspace state below the injected user root.
     home = tmp_path / "home"
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("USERPROFILE", str(home))
@@ -123,11 +122,11 @@ def test_non_tty_no_arg_exact_usage_error(
 @pytest.mark.parametrize(
     "argv",
     [
-        ["-p", "hello", "--fake-provider"],
-        ["--jsonl", "hello", "--fake-provider"],
-        ["-c", "hello", "--fake-provider"],
-        ["-r", "01JPARITY", "hello", "--fake-provider"],
-        ["--no-session", "-p", "hello", "--fake-provider"],
+        ["-p", "hello"],
+        ["--jsonl", "hello"],
+        ["-c", "hello"],
+        ["-r", "01JPARITY", "hello"],
+        ["--no-session", "-p", "hello"],
     ],
 )
 def test_headless_flags_delegate_without_mounting_tui(

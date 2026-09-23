@@ -24,7 +24,8 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.runnables import RunnableConfig
 
 from skail.agents.context import ContextAssembler, ContextComponent, ContextPacket
-from skail.agents.lead import LeadControls, build_production_lead
+from skail.agents.instructions import load_root_instructions
+from skail.agents.lead import LeadControls, build_production_lead, resolve_lead_controls
 from skail.agents.profile_loader import AgentProfile
 from skail.agents.profiles import builtin_profiles
 from skail.agents.result_evaluator import parse_child_result
@@ -33,12 +34,14 @@ from skail.agents.task_graph import (
     build_compiled_profile_subagent,
     decode_task_request,
 )
+from skail.config.paths import workspace_state_dir
 from skail.domain.changesets import ChangeSetStatus
 from skail.domain.decisions import ExecutionMode
 from skail.domain.events import (
     DiagnosticPayload,
     EventEnvelope,
     EventPayload,
+    InterruptKind,
     LifecyclePayload,
     ModelPayload,
     SecretRedactor,
@@ -67,6 +70,7 @@ from skail.domain.plans import (
     PlanRevision,
 )
 from skail.domain.routing import RoutingMode, TaskAssignment
+from skail.domain.security import ProjectTrustLevel, identify_workspace
 from skail.domain.tasks import (
     TERMINAL_TASK_STATUSES,
     ArtifactRef,
@@ -78,7 +82,6 @@ from skail.domain.tasks import (
 )
 from skail.domain.usage import NormalizedUsage
 from skail.providers.base import ProviderAdapter
-from skail.providers.fake import FakeProviderAdapter
 from skail.providers.fallback import FallbackBinding
 from skail.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
 from skail.routing.assignment import (
@@ -94,7 +97,7 @@ from skail.routing.assignment import (
 from skail.routing.budget import BudgetLedger
 from skail.routing.estimates import AttemptEstimateInput, estimate_attempt_cost
 from skail.routing.requirements import RequirementBuilder, TaskRisk
-from skail.routing.selector import RouteCandidate, RouteFailure
+from skail.routing.selector import RouteCandidate, RouteFailure, describe_route_failure
 from skail.runtime.changeset_integration import ChangeSetIntegrator
 from skail.runtime.decisions import (
     ExecutionDecisionGate,
@@ -103,9 +106,11 @@ from skail.runtime.decisions import (
 )
 from skail.runtime.deepagents_adapter import ChildRunGate, resume_agent
 from skail.runtime.event_bus import EventBus
+from skail.runtime.failure_monitor import RunModelCallBudget
 from skail.runtime.interrupts import QuestionStore
 from skail.runtime.leases import WorkspaceLeaseManager
 from skail.runtime.model_middleware import TaskBoundModelMiddleware
+from skail.runtime.presentation import model_content_to_text, structured_output_for_jsonl
 from skail.runtime.redaction import RedactionRegistry
 from skail.runtime.scheduler import ChildScheduler
 from skail.runtime.task_registry import TaskRegistry
@@ -131,6 +136,7 @@ from skail.tools.execution import CommandRequest, ExecutionPolicy, ExecutionSecu
 DEFAULT_CONFIG_SNAPSHOT: dict[str, Any] = {"routing": {"mode": "auto"}}
 _TOOL_RESULT_ALLOWANCE_TOKENS = 1_024
 _DEFAULT_OUTPUT_ALLOWANCE_TOKENS = 2_048
+MAX_MODEL_CALLS_PER_RUN = 32
 
 
 @dataclass(frozen=True)
@@ -160,6 +166,7 @@ class _PendingRun:
     lead_attempt_id: AttemptId
     lead_assignment: TaskAssignment
     lead_context_packet: ContextPacket
+    checkpoint_thread_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -262,9 +269,15 @@ class RunController:
         project_trusted: bool = False,
         workspace_mode: str = "shared",
         workspace_manager: WorkspaceManager | None = None,
+        state_dir: Path | None = None,
     ) -> None:
         self.session_id = session_id
         self.workspace = workspace
+        self.state_dir = (
+            state_dir.resolve(strict=False)
+            if state_dir is not None
+            else workspace_state_dir(identify_workspace(workspace))
+        )
         self.journal = journal
         self.models = dict(models)
         self.default_lead_model = default_lead_model
@@ -297,7 +310,21 @@ class RunController:
         )
         self._requirements = RequirementBuilder()
         self.registry = task_registry or TaskRegistry()
-        self.assembler = context_assembler or ContextAssembler(redactor=self.redactor)
+        root_instructions = load_root_instructions(
+            workspace=self.workspace,
+            trust=(
+                ProjectTrustLevel.TRUSTED
+                if project_trusted
+                else ProjectTrustLevel.UNTRUSTED
+            ),
+            redactor=self.redaction,
+        )
+        self.assembler = context_assembler or ContextAssembler(
+            redactor=self.redactor,
+            base_references=root_instructions,
+        )
+        if context_assembler is not None:
+            self.assembler.base_references = root_instructions
         self.budget_limit_usd = budget_limit_usd
         self.child_assigner = child_assigner
         self.delegation_approval_check: Callable[[TaskSpec, AgentProfile], bool] | None = None
@@ -306,11 +333,9 @@ class RunController:
         for key, chat_model in self.models.items():
             self._all_models[key] = chat_model
             if ":" not in key:
-                self._all_models[f"fake:{key}"] = chat_model
+                self._all_models[f"injected:{key}"] = chat_model
 
-        self.providers: dict[str, ProviderAdapter] = {"fake": FakeProviderAdapter()}
-        if providers:
-            self.providers.update(providers)
+        self.providers: dict[str, ProviderAdapter] = dict(providers or {})
 
         self.ledger = ledger or BudgetLedger(
             self.journal,
@@ -339,6 +364,7 @@ class RunController:
         self._plan_revision_checkpoints: dict[str, str] = {}
         self._restored_decision: Any | None = None
         self._resume_lead_on_recovery = True
+        self._run_model_call_budgets: dict[str, RunModelCallBudget] = {}
 
     @property
     def pending_interrupt(self) -> dict[str, Any] | None:
@@ -348,8 +374,44 @@ class RunController:
     def restored_decision(self) -> Any | None:
         return self._restored_decision
 
+    def _has_pending_question(self) -> bool:
+        if self.question_store is None:
+            return False
+        snapshot = self.journal.get_session_snapshot(str(self.session_id))
+        for run in snapshot.runs:
+            if run.status != "blocked":
+                continue
+            graph_ids = [f"{self.session_id}:{run.run_id}:lead"]
+            graph_ids.extend(
+                f"{self.session_id}:{run.run_id}:{task.task_id}"
+                for task in snapshot.tasks
+                if task.run_id == run.run_id
+            )
+            if any(self.question_store.pending(graph_id) for graph_id in graph_ids):
+                return True
+        return False
+
     def _record_model_usage(self, assignment_id: str, response: object, call_id: str = "") -> None:
         self.usage_settler.record_call(assignment_id, response, call_id=call_id)
+
+    def _model_call_budget_for_run(self, run_id: RunId) -> RunModelCallBudget:
+        key = str(run_id)
+        budget = self._run_model_call_budgets.get(key)
+        if budget is None:
+            snapshot = self.journal.get_session_snapshot(str(self.session_id))
+            calls_started = sum(
+                event.run_id == key and event.type == "model.started"
+                for event in snapshot.events
+            )
+            budget = RunModelCallBudget(
+                max_calls=MAX_MODEL_CALLS_PER_RUN,
+                calls_started=calls_started,
+            )
+            self._run_model_call_budgets[key] = budget
+        return budget
+
+    def _checkpoint_thread_id(self, run_id: RunId) -> str:
+        return f"{self.session_id}:{run_id}"
 
     def _finalize_child_budgets(self, run_id: RunId, lead_task_id: TaskId) -> None:
         """Release settled/unstarted child funds while retaining ambiguous calls."""
@@ -576,7 +638,21 @@ class RunController:
         routing_mode: RoutingMode = RoutingMode.AUTO,
     ) -> RoutingSnapshot:
         if self.candidates_fn is not None:
-            return self.candidates_fn()
+            snapshot = self.candidates_fn()
+            if for_lead and target_lead_model and target_lead_model != "auto":
+                provider, model = (
+                    target_lead_model.split(":", 1)
+                    if ":" in target_lead_model
+                    else ("injected", target_lead_model)
+                )
+                matching = tuple(
+                    candidate
+                    for candidate in snapshot.candidates
+                    if candidate.profile.provider == provider
+                    and candidate.profile.model == model
+                )
+                return snapshot.model_copy(update={"candidates": matching})
+            return snapshot
 
         effective_lead_model = target_lead_model or self.default_lead_model
         clean_lead_model = (
@@ -591,7 +667,7 @@ class RunController:
         )
         candidates: list[RouteCandidate] = []
         for key in self.models:
-            provider = "fake"
+            provider = "injected"
             model_name = key
             if ":" in key:
                 provider, model_name = key.split(":", 1)
@@ -637,9 +713,9 @@ class RunController:
         if not for_lead:
             if (
                 self.default_child_model not in self.models
-                and f"fake:{self.default_child_model}" not in self.models
+                and f"injected:{self.default_child_model}" not in self.models
             ):
-                provider = "fake"
+                provider = "injected"
                 model_name = self.default_child_model
                 if ":" in self.default_child_model:
                     provider, model_name = self.default_child_model.split(":", 1)
@@ -689,6 +765,14 @@ class RunController:
         workspace_revision: str = "git:head",
         delegation_approved: bool = False,
     ) -> RunResult:
+        if self._pending_run is None and self.checkpoints is not None:
+            self.restore_interrupted()
+        if self._pending_run is not None or self._has_pending_question():
+            raise RuntimeError(
+                "run.pending_interrupt: answer or cancel the waiting question "
+                "before starting a new run"
+            )
+        active_controls = resolve_lead_controls(instruction, controls)
         if self.checkpoints is not None:
             self.checkpoints.initialize()
             async with self.checkpoints.saver(str(self.session_id)) as saver:
@@ -696,7 +780,7 @@ class RunController:
                 return await self._run_instruction_impl(
                     instruction,
                     run_id=run_id,
-                    controls=controls,
+                      controls=active_controls,
                     workspace_revision=workspace_revision,
                     delegation_approved=delegation_approved,
                     saver=saver,
@@ -704,7 +788,7 @@ class RunController:
         return await self._run_instruction_impl(
             instruction,
             run_id=run_id,
-            controls=controls,
+              controls=active_controls,
             workspace_revision=workspace_revision,
             delegation_approved=delegation_approved,
             saver=None,
@@ -776,10 +860,12 @@ class RunController:
         lead_assignment: TaskAssignment,
         lead_task_id: TaskId,
         lead_attempt_id: AttemptId,
+        lead_context_packet: ContextPacket | None = None,
         restored_decision: Any | None = None,
     ) -> Any:
         delegation_approved = delegation_approved or controls.delegation == "auto"
         allow_delegation = controls.delegation in ("auto", "ask")
+        model_call_budget = self._model_call_budget_for_run(run_id)
         subagents: list[CompiledSubAgent] = []
         if allow_delegation:
             for profile in builtin_profiles().values():
@@ -793,10 +879,11 @@ class RunController:
                         leases=leases,
                         gate=gate,
                         scheduler=scheduler,
-                        controls=controls,
-                        delegation_approved=delegation_approved,
-                        recorded_child_results=recorded_child_results,
-                    )
+                          controls=controls,
+                          delegation_approved=delegation_approved,
+                          recorded_child_results=recorded_child_results,
+                          model_call_budget=model_call_budget,
+                      )
                 )
         lead_model_key = f"{lead_assignment.provider}:{lead_assignment.model}"
         lead_chat_model = self._all_models.get(lead_model_key)
@@ -878,6 +965,8 @@ class RunController:
                 run_id=str(run_id), decision=decision
             ),
             restored_decision=restored_decision,
+            required_mode=(ExecutionMode.DIRECT if controls.direct_only else None),
+            required_agent_count=controls.required_agent_count,
         )
 
         def observe_response(response: ModelResponse[Any]) -> None:
@@ -922,10 +1011,17 @@ class RunController:
                 attempt_id=lead_attempt_id,
             ),
             runtime_model_name=lead_assignment.model,
-            model_response_observer=observe_response,
-            usage_normalizer=usage_normalizer,
+              model_response_observer=observe_response,
+              usage_normalizer=usage_normalizer,
+              model_call_guard=model_call_budget.begin_call,
             session_id=str(self.session_id),
             run_id=str(run_id),
+            state_dir=self.state_dir,
+            context_prompt=(
+                _format_context_packet(lead_context_packet)
+                if lead_context_packet is not None
+                else None
+            ),
         )
 
     def _resolve_planned_spec(self, description: str, profile: str) -> TaskSpec | None:
@@ -1045,6 +1141,8 @@ class RunController:
             configured_model = self.fixed_profile_models.get(
                 profile.name, self.profile_models.get(profile.name)
             )
+            if configured_model is None and controls.model:
+                configured_model = controls.model
             policy = spec.request.model_policy
             if policy is not None and policy.model is not None:
                 configured_model = (
@@ -1053,7 +1151,7 @@ class RunController:
             mode = RoutingMode.MANUAL if configured_model else controls.routing_mode
             manual_model: tuple[str, str] | None = None
             if configured_model:
-                provider, model = "fake", configured_model
+                provider, model = "injected", configured_model
                 if ":" in configured_model:
                     provider, model = configured_model.split(":", 1)
                 manual_model = (provider, model)
@@ -1385,6 +1483,7 @@ class RunController:
                         controls=controls,
                         delegation_approved=delegation_approved,
                         recorded_child_results=recorded_child_results,
+                        model_call_budget=self._model_call_budget_for_run(run_id),
                     )
                     task = asyncio.create_task(
                         subagent["runnable"].ainvoke(
@@ -1514,6 +1613,7 @@ class RunController:
             )
             if result.status == "approval_required":
                 self._pending_interrupt_payload = {
+                    "kind": "approval",
                     "type": "plan_tool_approval",
                     "plan_id": next(
                         persisted.plan_id
@@ -1769,6 +1869,8 @@ class RunController:
             configured_model = self.fixed_profile_models.get(
                 profile.name, self.profile_models.get(profile.name)
             )
+            if configured_model is None and controls.model:
+                configured_model = controls.model
             if model_policy is not None and model_policy.model is not None:
                 configured_model = (
                     f"{model_policy.provider}:{model_policy.model}"
@@ -1778,7 +1880,7 @@ class RunController:
             mode = RoutingMode.MANUAL if configured_model else controls.routing_mode
             manual_model: tuple[str, str] | None = None
             if configured_model:
-                provider, model = "fake", configured_model
+                provider, model = "injected", configured_model
                 if ":" in configured_model:
                     provider, model = configured_model.split(":", 1)
                 manual_model = (provider, model)
@@ -1890,8 +1992,28 @@ class RunController:
                     model=subject,
                     input_tokens=usage.input_tokens if usage is not None else None,
                     output_tokens=usage.output_tokens if usage is not None else None,
-                    cost_usd=float(usage.cost_usd) if usage is not None else None,
+                    cost_usd=(
+                        float(usage.cost_usd)
+                        if usage is not None and usage.cost_usd is not None
+                        else None
+                    ),
                     usage_authority=usage.authority.value if usage is not None else None,
+                )
+            elif event_type.startswith("user."):
+                content = (
+                    self.redaction.scrub_text(reason)[:500]
+                    if isinstance(reason, str)
+                    else None
+                )
+                payload = UserPayload(
+                    action=suffix,
+                    kind=(
+                        InterruptKind.QUESTION
+                        if suffix in {"question", "answer"}
+                        else None
+                    ),
+                    interrupt_id=subject,
+                    content=content,
                 )
             else:
                 clean_reason: str | None = None
@@ -1966,12 +2088,14 @@ class RunController:
         ) -> None:
             if self.checkpoints is None or saver is None:
                 return
-            t = await saver.aget_tuple({"configurable": {"thread_id": str(self.session_id)}})
+            thread_id = self._checkpoint_thread_id(run_id)
+            t = await saver.aget_tuple({"configurable": {"thread_id": thread_id}})
             if t and t.config and "configurable" in t.config:
                 cid = t.config["configurable"].get("checkpoint_id")
                 if cid:
                     self.checkpoints.record(
                         session_id=str(self.session_id),
+                        thread_id=thread_id,
                         checkpoint_id=cid,
                         idempotency_key=f"run:{run_id}:{boundary}:{cid}",
                         status=status,
@@ -2039,7 +2163,7 @@ class RunController:
         )
 
         # 3. Route lead model through AssignmentService and BudgetLedger
-        lead_provider = "fake"
+        lead_provider = "injected"
         lead_model = lead_model_name
         if ":" in lead_model_name:
             lead_provider, lead_model = lead_model_name.split(":", 1)
@@ -2078,7 +2202,7 @@ class RunController:
             lambda: self._estimate_snapshot(
                 self._get_candidates(
                     for_lead=True,
-                    target_lead_model=lead_model_name,
+                    target_lead_model=active_controls.model,
                     routing_mode=active_controls.routing_mode,
                 ),
                 packet=lead_preflight_packet,
@@ -2119,7 +2243,7 @@ class RunController:
                 run_id=run_id,
                 lead_assignment=None,
                 lead_context_packet=lead_context_packet,
-                output="",
+                output=describe_route_failure(assigned_lead),
                 messages=(),
                 status="blocked",
             )
@@ -2156,10 +2280,13 @@ class RunController:
             lead_assignment=lead_assignment,
             lead_task_id=lead_task_id,
             lead_attempt_id=lead_attempt_id,
+            lead_context_packet=lead_context_packet,
         )
 
         input_message = HumanMessage(content=instruction)
-        invoke_config: RunnableConfig = {"configurable": {"thread_id": str(self.session_id)}}
+        invoke_config: RunnableConfig = {
+            "configurable": {"thread_id": self._checkpoint_thread_id(run_id)}
+        }
         try:
             result_state = cast(
                 dict[str, Any],
@@ -2174,24 +2301,27 @@ class RunController:
         except BaseException as exc:
             error_type: str | None = None
             error_message: str | None = None
+            is_cancelled = isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError))
             try:
                 error_type = f"{type(exc).__module__}.{type(exc).__name__}"
                 error_message = str(self.redactor.scrub(str(exc)))
-                failure_traceback = self.redactor.scrub(traceback.format_exc())
-                _LOGGER.error(
-                    "run failed: %s: %s\n%s",
-                    error_type,
-                    error_message,
-                    failure_traceback,
-                )
-                if _is_message_sequence_error(exc):
-                    shapes = await _collect_message_sequence_diagnostics(
-                        lead_agent, invoke_config
+                if is_cancelled:
+                    _LOGGER.info("run cancelled: %s", run_id)
+                else:
+                    failure_traceback = self.redactor.scrub(traceback.format_exc())
+                    _LOGGER.error(
+                        "run failed: %s: %s\n%s",
+                        error_type,
+                        error_message,
+                        failure_traceback,
                     )
-                    _LOGGER.error("run failed diagnostics: %s", shapes)
+                    if _is_message_sequence_error(exc):
+                        shapes = await _collect_message_sequence_diagnostics(
+                            lead_agent, invoke_config
+                        )
+                        _LOGGER.error("run failed diagnostics: %s", shapes)
             except Exception:
                 pass  # diagnostics must never mask or replace the original failure
-            is_cancelled = isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError))
             run_status = "cancelled" if is_cancelled else "failed"
             attempt_status = AttemptStatus.INTERRUPTED if is_cancelled else AttemptStatus.FAILED
             task_status = TaskStatus.RETURNED_TO_LEAD if is_cancelled else TaskStatus.FAILED
@@ -2224,11 +2354,11 @@ class RunController:
         messages = cast(list[BaseMessage], result_state.get("messages", []))
 
         output_text = ""
+        output_content: Any = None
         for message in reversed(messages):
             if isinstance(message, AIMessage) and message.content:
-                output_text = (
-                    message.content if isinstance(message.content, str) else str(message.content)
-                )
+                output_content = self.redactor.scrub(message.content)
+                output_text = model_content_to_text(output_content)
                 break
 
         is_interrupted = bool(result_state.get("__interrupt__"))
@@ -2245,6 +2375,7 @@ class RunController:
                 lead_attempt_id=lead_attempt_id,
                 lead_assignment=lead_assignment,
                 lead_context_packet=lead_context_packet,
+                checkpoint_thread_id=self._checkpoint_thread_id(run_id),
             )
             with self.journal.transaction() as tx:
                 tx.update_attempt_status(
@@ -2253,6 +2384,31 @@ class RunController:
                 tx.update_task_status(task_id=str(lead_task_id), status=TaskStatus.RUNNING)
                 tx.update_run_status(run_id=str(run_id), status="blocked")
                 tx.update_session_status(session_id=str(self.session_id), status="interrupted")
+                if pending_interrupt is not None and pending_interrupt.get("kind") == "question":
+                    raw_options = pending_interrupt.get("options", ())
+                    options = (
+                        tuple(option for option in raw_options if isinstance(option, str))
+                        if isinstance(raw_options, (list, tuple))
+                        else ()
+                    )
+                    self._append_event(
+                        tx,
+                        run_id=run_id,
+                        type="user.question",
+                        payload=UserPayload(
+                            action="question",
+                            kind=InterruptKind.QUESTION,
+                            interrupt_id=str(pending_interrupt.get("question_id", "")),
+                            content=str(pending_interrupt.get("prompt", "Question")),
+                            options=options,
+                            reason=str(pending_interrupt.get("reason", "")),
+                            blocking_scope=str(
+                                pending_interrupt.get("blocking_scope", "task")
+                            ),
+                        ),
+                        task_id=lead_task_id,
+                        attempt_id=lead_attempt_id,
+                    )
                 self._reconcile_unlaunched_admissions()
             await _save_checkpoint(
                 "interrupted",
@@ -2270,6 +2426,8 @@ class RunController:
                             "profile": active_controls.profile,
                             "write_allowed": active_controls.write_allowed,
                             "max_children": active_controls.max_children,
+                            "direct_only": active_controls.direct_only,
+                            "required_agent_count": active_controls.required_agent_count,
                             "routing_mode": active_controls.routing_mode.value,
                             "risk": active_controls.risk.value,
                         },
@@ -2342,13 +2500,11 @@ class RunController:
         if checkpoint_state is not None:
             messages = cast(list[BaseMessage], checkpoint_state.get("messages", []))
             output_text = ""
+            output_content = None
             for message in reversed(messages):
                 if isinstance(message, AIMessage) and message.content:
-                    output_text = (
-                        message.content
-                        if isinstance(message.content, str)
-                        else str(message.content)
-                    )
+                    output_content = self.redactor.scrub(message.content)
+                    output_text = model_content_to_text(output_content)
                     break
         if checkpoint_blocked:
             if self._pending_interrupt_payload is not None:
@@ -2388,6 +2544,8 @@ class RunController:
                                 "profile": active_controls.profile,
                                 "write_allowed": active_controls.write_allowed,
                                 "max_children": active_controls.max_children,
+                                "direct_only": active_controls.direct_only,
+                                "required_agent_count": active_controls.required_agent_count,
                                 "routing_mode": active_controls.routing_mode.value,
                                 "risk": active_controls.risk.value,
                             },
@@ -2494,7 +2652,10 @@ class RunController:
                 tx,
                 run_id=run_id,
                 type="run.completed",
-                payload=LifecyclePayload(status="completed"),
+                payload=LifecyclePayload(
+                    status="completed",
+                    output=structured_output_for_jsonl(output_content),
+                ),
             )
 
         self._finalize_assignment_budget(lead_assignment)
@@ -2521,7 +2682,8 @@ class RunController:
         recoverable_runs = []
         for run in snapshot.runs:
             if run.status == "blocked":
-                recoverable_runs.append(run)
+                if snapshot.status == "interrupted":
+                    recoverable_runs.append(run)
                 continue
             if run.status != "running":
                 continue
@@ -2586,6 +2748,11 @@ class RunController:
                 if self.checkpoints is not None
                 else None
             )
+            if (
+                checkpoint is not None
+                and checkpoint.payload.get("run_id") not in {None, run.run_id}
+            ):
+                raise RuntimeError("session.checkpoint_run_mismatch")
             runtime = (
                 checkpoint.payload.get("runtime", {})
                 if checkpoint is not None and isinstance(checkpoint.payload, Mapping)
@@ -2616,6 +2783,12 @@ class RunController:
                 profile=cast(str | None, control_data.get("profile")),
                 write_allowed=cast(bool | None, control_data.get("write_allowed")),
                 max_children=int(control_data.get("max_children", 3)),
+                direct_only=bool(control_data.get("direct_only", False)),
+                required_agent_count=(
+                    int(control_data["required_agent_count"])
+                    if control_data.get("required_agent_count") is not None
+                    else None
+                ),
                 routing_mode=RoutingMode(
                     str(control_data.get("routing_mode", persisted_assignment.routing_mode.value))
                 ),
@@ -2631,6 +2804,11 @@ class RunController:
                 lead_attempt_id=AttemptId(attempt.attempt_id),
                 lead_assignment=persisted_assignment,
                 lead_context_packet=packet,
+                checkpoint_thread_id=(
+                    checkpoint.thread_id
+                    if checkpoint is not None
+                    else self._checkpoint_thread_id(RunId(run.run_id))
+                ),
             )
             self._restored_decision = self.journal.get_execution_decision(run.run_id)
             allowance_ids = runtime.get("lead_allowance_ids", ())
@@ -2643,8 +2821,6 @@ class RunController:
                 )
             if self._pending_interrupt_payload is None and self.question_store is not None:
                 questions = self.question_store.pending(f"{self.session_id}:{run.run_id}:lead")
-                if not questions:
-                    questions = self.question_store.pending("lead")
                 if questions:
                     question = questions[-1]
                     self._pending_interrupt_payload = {
@@ -2745,13 +2921,12 @@ class RunController:
         gate = ChildRunGate(max_children)
         scheduler = ChildScheduler(max_children=max_children)
         child_results: list[TaskResult] = []
-        invoke_config: RunnableConfig = {"configurable": {"thread_id": str(self.session_id)}}
-        if self._resume_lead_on_recovery:
-            self._emit_event(
-                run_id=pending.run_id,
-                type="user.answer",
-                payload=UserPayload(action="answer", content=answer),
-            )
+        invoke_config: RunnableConfig = {
+            "configurable": {
+                "thread_id": pending.checkpoint_thread_id
+                or self._checkpoint_thread_id(pending.run_id)
+            }
+        }
         async with self.checkpoints.saver(str(self.session_id)) as saver:
             await saver.setup()
             restored = self._restored_decision
@@ -2771,6 +2946,7 @@ class RunController:
                 lead_assignment=pending.lead_assignment,
                 lead_task_id=pending.lead_task_id,
                 lead_attempt_id=pending.lead_attempt_id,
+                lead_context_packet=pending.lead_context_packet,
                 restored_decision=restored,
             )
             try:
@@ -2839,6 +3015,7 @@ class RunController:
                 if checkpoint_id:
                     self.checkpoints.record(
                         session_id=str(self.session_id),
+                        thread_id=str(invoke_config["configurable"]["thread_id"]),
                         checkpoint_id=checkpoint_id,
                         idempotency_key=f"run:{pending.run_id}:resumed",
                         status=(
@@ -2911,11 +3088,7 @@ class RunController:
             output_text = ""
             for message in reversed(messages):
                 if isinstance(message, AIMessage) and message.content:
-                    output_text = (
-                        message.content
-                        if isinstance(message.content, str)
-                        else str(message.content)
-                    )
+                    output_text = model_content_to_text(self.redactor.scrub(message.content))
                     break
             return RunResult(
                 run_id=pending.run_id,
@@ -2931,11 +3104,11 @@ class RunController:
             )
 
         output_text = ""
+        output_content: Any = None
         for message in reversed(messages):
             if isinstance(message, AIMessage) and message.content:
-                output_text = (
-                    message.content if isinstance(message.content, str) else str(message.content)
-                )
+                output_content = self.redactor.scrub(message.content)
+                output_text = model_content_to_text(output_content)
                 break
         with self.journal.transaction() as tx:
             tx.update_attempt_status(
@@ -2948,7 +3121,10 @@ class RunController:
                 tx,
                 run_id=pending.run_id,
                 type="run.completed",
-                payload=LifecyclePayload(status="completed"),
+                payload=LifecyclePayload(
+                    status="completed",
+                    output=structured_output_for_jsonl(output_content),
+                ),
             )
         self.usage_settler.settle_attempt(str(pending.lead_assignment.assignment_id))
         self._release_lead_allowances()
@@ -2971,6 +3147,7 @@ class RunController:
         pending = self._pending_run
         if pending is None:
             raise RuntimeError("no interrupted run is available to reject")
+        interrupt = self._pending_interrupt_payload or {}
         with self.journal.transaction() as tx:
             tx.update_attempt_status(
                 attempt_id=str(pending.lead_attempt_id), status=AttemptStatus.BLOCKED
@@ -2987,7 +3164,24 @@ class RunController:
         self._emit_event(
             run_id=pending.run_id,
             type="user.cancellation",
-            payload=UserPayload(action="cancellation", content="interrupt rejected"),
+            payload=UserPayload(
+                action="cancellation",
+                kind=(
+                    InterruptKind.QUESTION
+                    if interrupt.get("kind") == "question"
+                    else InterruptKind.APPROVAL
+                ),
+                interrupt_id=(
+                    str(interrupt["question_id"])
+                    if interrupt.get("question_id") is not None
+                    else None
+                ),
+                content=(
+                    "question cancelled"
+                    if interrupt.get("kind") == "question"
+                    else "approval rejected"
+                ),
+            ),
         )
         self._pending_run = None
         self._pending_interrupt_payload = None
@@ -3043,6 +3237,7 @@ class RunController:
         controls: LeadControls,
         delegation_approved: bool,
         recorded_child_results: list[TaskResult],
+        model_call_budget: RunModelCallBudget,
     ) -> CompiledSubAgent:
         attempt_ids: dict[str, str] = {}
 
@@ -3096,11 +3291,13 @@ class RunController:
                     )
                 elif profile.name in self.profile_models:
                     configured_model = self.profile_models[profile.name]
+                elif controls.model:
+                    configured_model = controls.model
                 elif self.candidates_fn is None:
                     configured_model = self.default_child_model
 
             if configured_model and any(
-                (p == "fake" or p == configured_model.split(":")[0])
+                (p == "injected" or p == configured_model.split(":")[0])
                 and (m == configured_model or m == configured_model.split(":")[-1])
                 for p, m in excluded
             ):
@@ -3127,7 +3324,7 @@ class RunController:
 
             manual_pin = None
             if req_mode is RoutingMode.MANUAL and configured_model:
-                prov = "fake"
+                prov = "injected"
                 m_name = configured_model
                 if ":" in configured_model:
                     prov, m_name = configured_model.split(":", 1)
@@ -3156,7 +3353,7 @@ class RunController:
                 )
                 snapshot = self._get_candidates(
                     for_lead=False,
-                    target_lead_model=controls.model or self.default_lead_model,
+                    target_lead_model=controls.model,
                     routing_mode=controls.routing_mode,
                 )
                 snapshot = self._estimate_snapshot(
@@ -3272,6 +3469,7 @@ class RunController:
                 if curr_attempt_id
                 else None,
                 runtime_model_name=assignment.model,
+                model_call_guard=model_call_budget.begin_call,
                 session_id=str(self.session_id),
                 run_id=str(run_id),
                 graph_id=f"{self.session_id}:{run_id}:{spec.task_id}",
@@ -3282,6 +3480,7 @@ class RunController:
                     and isolated_workspace is None
                 ),
                 forbidden_host_paths=(self.workspace,) if isolated_workspace is not None else (),
+                state_dir=self.state_dir,
             )
 
             formatted_prompt = _format_context_packet(packet)
@@ -3301,9 +3500,7 @@ class RunController:
                 child_output = ""
                 for msg in reversed(inner_messages):
                     if isinstance(msg, AIMessage) and msg.content:
-                        child_output = (
-                            msg.content if isinstance(msg.content, str) else str(msg.content)
-                        )
+                        child_output = model_content_to_text(self.redactor.scrub(msg.content))
                         break
                 result = parse_child_result(
                     child_output,

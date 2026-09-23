@@ -30,6 +30,8 @@ from skail.routing.selector import RouteCandidate, RouteFailure
 from skail.runtime.errors import FrameworkContractError
 from skail.runtime.task_bound import build_persisted_task_subagent
 from skail.sessions import Journal
+from skail.sessions.export import SessionExporter
+from skail.tui.projection import TuiProjection
 
 NOW = datetime(2026, 9, 2, tzinfo=UTC)
 SESSION_ID = SessionId("11111111-1111-4111-8111-111111111111")
@@ -203,7 +205,7 @@ def test_task_budget_block_is_a_structured_route_failure(tmp_path: Path) -> None
     assert journal.get_session_snapshot(str(SESSION_ID)).assignments == ()
 
 
-def test_manual_unknown_price_is_never_reserved_as_zero(tmp_path: Path) -> None:
+def test_manual_unknown_price_is_blocked_by_a_hard_budget(tmp_path: Path) -> None:
     service, journal = _service(tmp_path)
     request = _request().model_copy(
         update={
@@ -220,6 +222,30 @@ def test_manual_unknown_price_is_never_reserved_as_zero(tmp_path: Path) -> None:
     assert isinstance(result, RouteFailure)
     assert result.binding_constraint == "price_unavailable"
     assert journal.get_session_snapshot(str(SESSION_ID)).assignments == ()
+
+
+def test_manual_unknown_price_runs_without_a_hard_budget(tmp_path: Path) -> None:
+    service, journal = _service(tmp_path, limit=None)
+    request = _request().model_copy(
+        update={
+            "manual_model": ("fake", "manual"),
+            "requirements": RequirementBuilder().build(
+                role="implementer", risk=TaskRisk.ROUTINE, mode=RoutingMode.MANUAL
+            ),
+        }
+    )
+    unknown_price = _candidate("manual").model_copy(update={"estimated_cost_usd": None})
+
+    result = service.assign(request, lambda: _snapshot(unknown_price))
+
+    assert not isinstance(result, RouteFailure)
+    assert result.estimated_attempt_cost_usd == Decimal("0")
+    assert any("estimated cost unavailable" in item for item in result.explanation)
+    with journal._connect() as connection:
+        reservation = connection.execute(
+            "SELECT amount_usd,purpose FROM budget_reservations"
+        ).fetchone()
+    assert tuple(reservation) == ("0", "unpriced_manual")
 
 
 def test_batch_funds_ordered_affordable_subset_and_one_lead_allowance(tmp_path: Path) -> None:
@@ -384,12 +410,9 @@ def test_assign_batch_reports_price_unavailable_for_reservation(tmp_path: Path) 
     result = service.assign_batch(
         (_request(), manual_request), prices, lead_allowance_usd=Decimal("0.25")
     )
-    assert [assignment.task_id for assignment in result.assignments] == [TASK_ID]
-    assert result.deferred_task_ids == (second_task,)
-    assert [failure.binding_constraint for failure in result.failures] == [
-        "price_unavailable_for_reservation"
-    ]
-    assert result.failures[0].excluded_counts == {"price_unavailable_for_reservation": 1}
+    assert [assignment.task_id for assignment in result.assignments] == [TASK_ID, second_task]
+    assert result.deferred_task_ids == ()
+    assert result.failures == ()
 
 
 def test_batch_assignment_result_roundtrips_and_defaults_failures() -> None:
@@ -523,8 +546,8 @@ def test_provider_usage_normalizes_and_settles_assignment_reservation_once(
     settler.settle_attempt(str(assignment.assignment_id))
     snapshot = journal.get_session_snapshot(str(SESSION_ID))
     assert len(snapshot.usage_records) == 1
-    assert snapshot.usage_records[0].amount_usd == adapter.model.cost_usd * 2
-    assert snapshot.usage_records[0].authoritative is True
+    assert snapshot.usage_records[0].amount_usd == Decimal("0.000026")
+    assert snapshot.usage_records[0].authoritative is False
     assert snapshot.budget_reservations[0].status == "settled"
 
 
@@ -559,6 +582,10 @@ def test_provider_call_ids_are_durable_and_ambiguous_calls_block_replay(
             "SELECT call_id,ordinal,status FROM provider_calls"
         ).fetchone()
     assert tuple(row) == (first, 1, "ambiguous")
+    exported = SessionExporter(journal=journal).export(str(SESSION_ID))
+    assert exported["provider_calls"][0]["status"] == "ambiguous"
+    assert exported["model_usage"][0]["unresolved_calls"] == 1
+    assert exported["model_usage"][0]["total_cost_usd"] is None
 
 
 def test_framework_model_response_usage_is_aggregated_before_settlement(
@@ -578,7 +605,7 @@ def test_framework_model_response_usage_is_aggregated_before_settlement(
     settler.settle_attempt(str(assignment.assignment_id))
 
     snapshot = journal.get_session_snapshot(str(SESSION_ID))
-    assert snapshot.usage_records[0].amount_usd == adapter.model.cost_usd * 2
+    assert snapshot.usage_records[0].amount_usd == Decimal("0.000026")
     with journal._connect() as connection:
         call = connection.execute(
             "SELECT input_tokens,output_tokens,amount_usd,status FROM provider_calls"
@@ -586,12 +613,12 @@ def test_framework_model_response_usage_is_aggregated_before_settlement(
     assert tuple(call) == (
         adapter.model.input_tokens * 2,
         adapter.model.output_tokens * 2,
-        format(adapter.model.cost_usd * 2, "f"),
+        "0.000026",
         "completed",
     )
 
 
-def test_mixed_usage_authority_settles_as_estimated_actual(
+def test_provider_cost_fields_do_not_override_frozen_assignment_prices(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     service, journal = _service(tmp_path)
@@ -629,8 +656,223 @@ def test_mixed_usage_authority_settles_as_estimated_actual(
     settler.settle_attempt(str(assignment.assignment_id))
 
     usage = journal.get_session_snapshot(str(SESSION_ID)).usage_records[0]
-    assert usage.amount_usd == Decimal("0.20")
+    assert usage.amount_usd == Decimal("0.000022")
     assert usage.authoritative is False
+    assert usage.authority == "token_derived_estimate"
+
+
+def test_lead_and_child_costs_roll_up_once_to_parent_run_and_tui(tmp_path: Path) -> None:
+    service, journal = _service(tmp_path)
+    lead = service.assign(_request(), lambda: _snapshot(_candidate(model="lead")))
+    assert not isinstance(lead, RouteFailure)
+    child_task_id = TaskId("55555555-5555-4555-8555-555555555555")
+    child_attempt_id = AttemptId("66666666-6666-4666-8666-666666666666")
+    journal.create_task(
+        task_id=child_task_id,
+        run_id=RUN_ID,
+        description="child work",
+        status="queued",
+        idempotency_key="child-task",
+        created_at=NOW,
+    )
+    journal.create_attempt(
+        attempt_id=child_attempt_id,
+        task_id=child_task_id,
+        number=1,
+        status="assigned",
+        idempotency_key="child-attempt",
+        created_at=NOW,
+    )
+    child_candidate = _candidate(model="child").model_copy(
+        update={
+            "profile": _candidate(model="child").profile.model_copy(
+                update={
+                    "input_usd_per_million": Decimal("3"),
+                    "output_usd_per_million": Decimal("4"),
+                }
+            )
+        }
+    )
+    child = service.assign(
+        _request().model_copy(
+            update={"task_id": child_task_id, "attempt_id": child_attempt_id}
+        ),
+        lambda: _snapshot(child_candidate),
+    )
+    assert not isinstance(child, RouteFailure)
+
+    adapter = FakeProviderAdapter()
+    settler = AssignmentUsageSettler(journal, service.ledger, {"fake": adapter})
+    for assignment, input_tokens, output_tokens in (
+        (lead, 1000, 500),
+        (child, 2000, 1000),
+    ):
+        response = AIMessage(
+            content="done",
+            usage_metadata={
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+            },
+            response_metadata={"skail_cost_usd": "99"},
+        )
+        call_id = settler.begin_call(str(assignment.assignment_id))
+        settler.record_call(str(assignment.assignment_id), response, call_id=call_id)
+        settler.settle_attempt(str(assignment.assignment_id))
+
+    snapshot = journal.get_session_snapshot(str(SESSION_ID))
+    assert {row.task_id: row.amount_usd for row in snapshot.usage_records} == {
+        str(TASK_ID): Decimal("0.002000"),
+        str(child_task_id): Decimal("0.010000"),
+    }
+    assert service.ledger.snapshot(str(RUN_ID)).estimated_actual_usd == Decimal("0.012000")
+    projection = TuiProjection()
+    projection.apply_snapshot(snapshot)
+    assert projection.footer_data.session_cost_usd == Decimal("0.012000")
+    assert projection.budget_item.per_agent_costs == {
+        str(TASK_ID): Decimal("0.002000"),
+        str(child_task_id): Decimal("0.010000"),
+    }
+    exported = SessionExporter(journal=journal).export(str(SESSION_ID))
+    assert exported["schema_version"] == 2
+    assert {
+        item["model"]: (
+            item["input_tokens"],
+            item["output_tokens"],
+            Decimal(item["total_cost_usd"]),
+        )
+        for item in exported["model_usage"]
+    } == {
+        "lead": (1000, 500, Decimal("0.002")),
+        "child": (2000, 1000, Decimal("0.010")),
+    }
+    assert {item["task_id"] for item in exported["provider_calls"]} == {
+        str(TASK_ID),
+        str(child_task_id),
+    }
+
+
+def test_missing_usage_in_one_response_keeps_cost_conservative(tmp_path: Path) -> None:
+    service, journal = _service(tmp_path)
+    assignment = service.assign(_request(), lambda: _snapshot(_candidate()))
+    assert not isinstance(assignment, RouteFailure)
+    adapter = FakeProviderAdapter()
+    settler = AssignmentUsageSettler(journal, service.ledger, {"fake": adapter})
+    settler.record_call(
+        str(assignment.assignment_id),
+        ModelResponse(result=[adapter.model.invoke("measured"), AIMessage(content="missing")]),
+        call_id="partially-measured",
+    )
+    settler.settle_attempt(str(assignment.assignment_id))
+
+    usage = journal.get_session_snapshot(str(SESSION_ID)).usage_records[0]
+    assert usage.amount_usd == Decimal("0.20")
+    assert usage.authority == "conservative_estimate"
+
+
+def test_cached_input_uses_its_frozen_rate_only_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service, journal = _service(tmp_path)
+    candidate = _candidate().model_copy(
+        update={
+            "profile": _candidate().profile.model_copy(
+                update={"cached_input_usd_per_million": Decimal("0.25")}
+            )
+        }
+    )
+    assignment = service.assign(_request(), lambda: _snapshot(candidate))
+    assert not isinstance(assignment, RouteFailure)
+    adapter = FakeProviderAdapter()
+    monkeypatch.setattr(
+        adapter,
+        "normalize_usage",
+        lambda _response: NormalizedUsage(
+            input_tokens=1000,
+            output_tokens=100,
+            cached_input_tokens=800,
+            cost_usd=Decimal("99"),
+            authority=UsageAuthority.AUTHORITATIVE_ACTUAL,
+        ),
+    )
+    settler = AssignmentUsageSettler(journal, service.ledger, {"fake": adapter})
+    call_id = settler.begin_call(str(assignment.assignment_id))
+    settler.record_call(
+        str(assignment.assignment_id), adapter.model.invoke("cached"), call_id=call_id
+    )
+    settler.settle_attempt(str(assignment.assignment_id))
+
+    usage = journal.get_session_snapshot(str(SESSION_ID)).usage_records[0]
+    assert usage.amount_usd == Decimal("0.000600")
+    assert usage.authority == "token_derived_estimate"
+    exported = SessionExporter(journal=journal).export(str(SESSION_ID))
+    assert exported["provider_calls"][0]["cached_input_tokens"] == 800
+
+
+def test_sub_microdollar_call_is_not_rounded_to_zero(tmp_path: Path) -> None:
+    service, journal = _service(tmp_path)
+    candidate = _candidate().model_copy(
+        update={
+            "profile": _candidate().profile.model_copy(
+                update={
+                    "input_usd_per_million": Decimal("0.1"),
+                    "output_usd_per_million": Decimal("0.1"),
+                }
+            )
+        }
+    )
+    assignment = service.assign(_request(), lambda: _snapshot(candidate))
+    assert not isinstance(assignment, RouteFailure)
+    settler = AssignmentUsageSettler(
+        journal, service.ledger, {"fake": FakeProviderAdapter()}
+    )
+    call_id = settler.begin_call(str(assignment.assignment_id))
+    settler.record_call(
+        str(assignment.assignment_id),
+        AIMessage(
+            content="",
+            usage_metadata={"input_tokens": 1, "output_tokens": 0, "total_tokens": 1},
+            response_metadata={"skail_cost_usd": "1"},
+        ),
+        call_id=call_id,
+    )
+    settler.settle_attempt(str(assignment.assignment_id))
+
+    usage = journal.get_session_snapshot(str(SESSION_ID)).usage_records[0]
+    assert usage.amount_usd == Decimal("0.0000001")
+    assert usage.authority == "token_derived_estimate"
+
+
+def test_short_hi_call_settles_from_measured_tokens_and_frozen_prices(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service, journal = _service(tmp_path, limit="1.00")
+    assignment = service.assign(
+        _request(), lambda: _snapshot(_candidate(cost="0.30"))
+    )
+    assert not isinstance(assignment, RouteFailure)
+    adapter = FakeProviderAdapter()
+
+    def normalize(_response: object) -> NormalizedUsage:
+        return NormalizedUsage(
+            input_tokens=3_000,
+            output_tokens=1_500,
+            cost_usd=None,
+            authority=UsageAuthority.TOKEN_DERIVED_ESTIMATE,
+        )
+
+    monkeypatch.setattr(adapter, "normalize_usage", normalize)
+    settler = AssignmentUsageSettler(journal, service.ledger, {"fake": adapter})
+    call_id = settler.begin_call(str(assignment.assignment_id))
+    settler.record_call(
+        str(assignment.assignment_id), adapter.model.invoke("hi"), call_id=call_id
+    )
+    settler.settle_attempt(str(assignment.assignment_id))
+
+    usage = journal.get_session_snapshot(str(SESSION_ID)).usage_records[0]
+    assert usage.amount_usd == Decimal("0.006000")
+    assert usage.authoritative is False
+    assert usage.authority == "token_derived_estimate"
 
 
 def test_restart_allocates_next_call_without_collision(tmp_path: Path) -> None:

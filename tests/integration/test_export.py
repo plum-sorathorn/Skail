@@ -90,11 +90,14 @@ def test_session_export_includes_required_sections_and_redacts_secrets(tmp_path:
     )
 
     # 1. Structure validation
+    assert exported["schema_version"] == 2
     assert exported["session_id"] == session_id
     assert exported["title"] == "Exportable Session"
     assert "tasks" in exported
     assert "routes" in exported
     assert "usage" in exported
+    assert exported["provider_calls"] == []
+    assert exported["model_usage"] == []
     assert "verification" in exported
     assert "events" in exported
 

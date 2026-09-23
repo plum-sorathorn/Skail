@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
-from skail.domain.events import EventEnvelope
+from skail.domain.events import EventEnvelope, InterruptKind
 from skail.sessions.journal import SessionSnapshot
 
 BUDGET_UNAVAILABLE_COPY = "Budget details are unavailable for this provider."
@@ -103,6 +103,8 @@ class BudgetViewItem:
     hard_limit_usd: Decimal | None = None
     authoritative_actual_usd: Decimal = Decimal("0.00")
     estimated_actual_usd: Decimal = Decimal("0.00")
+    token_derived_actual_usd: Decimal = Decimal("0.00")
+    conservative_estimate_usd: Decimal = Decimal("0.00")
     reserved_usd: Decimal = Decimal("0.00")
     unknown_cost_usd: Decimal = Decimal("0.00")
     available_usd: Decimal | None = None
@@ -118,6 +120,7 @@ class InterruptItem:
     question: str
     status: str = "pending"  # "pending", "approved", "rejected"
     payload: dict[str, Any] = field(default_factory=dict)
+    kind: InterruptKind = InterruptKind.APPROVAL
 
 
 @dataclass
@@ -511,6 +514,70 @@ class TuiProjection:
         self.unread += 1
         return True
 
+    def apply_budget_snapshot(self, snapshot: SessionSnapshot) -> None:
+        """Refresh current-run budget state without rebuilding the transcript."""
+        current_run = snapshot.runs[-1] if snapshot.runs else None
+        current_run_id = current_run.run_id if current_run is not None else ""
+
+        def belongs_to_current_run(item: object) -> bool:
+            item_run_id = str(getattr(item, "run_id", ""))
+            return not current_run_id or not item_run_id or item_run_id == current_run_id
+
+        budget = BudgetViewItem(
+            hard_limit_usd=(
+                current_run.budget_limit_usd if current_run is not None else None
+            )
+        )
+        for usage in snapshot.usage_records:
+            if not belongs_to_current_run(usage):
+                continue
+            authority = usage.authority
+            if usage.authoritative or authority == "authoritative_actual":
+                budget.authoritative_actual_usd += usage.amount_usd
+            elif authority == "token_derived_estimate":
+                budget.token_derived_actual_usd += usage.amount_usd
+                budget.estimated_actual_usd += usage.amount_usd
+            elif authority == "conservative_estimate":
+                budget.conservative_estimate_usd += usage.amount_usd
+                budget.estimated_actual_usd += usage.amount_usd
+            elif authority == "unknown":
+                budget.unknown_cost_usd += usage.amount_usd
+            else:
+                budget.estimated_actual_usd += usage.amount_usd
+            if usage.task_id:
+                budget.per_agent_costs[usage.task_id] = (
+                    budget.per_agent_costs.get(usage.task_id, Decimal("0.00"))
+                    + usage.amount_usd
+                )
+
+        for reservation in snapshot.budget_reservations:
+            if belongs_to_current_run(reservation) and reservation.status in (
+                "active",
+                "reserved",
+            ):
+                budget.reserved_usd += reservation.amount_usd
+
+        incurred = (
+            budget.authoritative_actual_usd
+            + budget.estimated_actual_usd
+            + budget.unknown_cost_usd
+        )
+        committed = incurred + budget.reserved_usd
+        if budget.hard_limit_usd is not None:
+            budget.available_usd = max(
+                Decimal("0.00"), budget.hard_limit_usd - committed
+            )
+            budget.warning_state = bool(
+                budget.hard_limit_usd > 0
+                and committed / budget.hard_limit_usd >= Decimal("0.80")
+            )
+
+        self.budget_item = budget
+        self.footer_data.session_cost_usd = sum(
+            (usage.amount_usd for usage in snapshot.usage_records), Decimal("0")
+        )
+        self.footer_data.budget_limit_usd = budget.hard_limit_usd
+
     def apply_snapshot(self, snapshot: SessionSnapshot) -> None:
         self.transcript_items = []
         self.agent_rail_items = []
@@ -529,44 +596,8 @@ class TuiProjection:
         self.session_status = snapshot.status
 
         # 1. Budget and usage
-        limit = None
-        for run in snapshot.runs:
-            if run.budget_limit_usd is not None:
-                limit = run.budget_limit_usd
-                break
-        self.budget_item.hard_limit_usd = limit
-
-        total_authoritative = Decimal("0.00")
-        total_estimated = Decimal("0.00")
-        total_unknown = Decimal("0.00")
-        agent_costs: dict[str, Decimal] = {}
-
-        for u in snapshot.usage_records:
-            if u.authoritative:
-                total_authoritative += u.amount_usd
-            else:
-                total_estimated += u.amount_usd
-            if getattr(u, "unknown", False):
-                total_unknown += u.amount_usd
-            if u.task_id:
-                agent_costs[u.task_id] = agent_costs.get(u.task_id, Decimal("0.00")) + u.amount_usd
-
-        active_reservations = Decimal("0.00")
-        for r in snapshot.budget_reservations:
-            if r.status in ("active", "reserved"):
-                active_reservations += r.amount_usd
-
-        self.budget_item.authoritative_actual_usd = total_authoritative
-        self.budget_item.estimated_actual_usd = total_estimated
-        self.budget_item.reserved_usd = active_reservations
-        self.budget_item.unknown_cost_usd = total_unknown
-        self.budget_item.per_agent_costs = agent_costs
-        if limit is not None:
-            committed = total_authoritative + total_estimated + active_reservations + total_unknown
-            remaining = limit - committed
-            self.budget_item.available_usd = max(Decimal("0.00"), remaining)
-            if limit > 0 and (total_authoritative / limit) >= Decimal("0.80"):
-                self.budget_item.warning_state = True
+        self.apply_budget_snapshot(snapshot)
+        agent_costs = self.budget_item.per_agent_costs
 
         # 2. Routes from assignments
         attempts_by_task: dict[str, list[Any]] = {}
@@ -614,11 +645,6 @@ class TuiProjection:
                 shadow_reasons=shadow_reasons,
             )
             self.route_items[task_id] = route_item
-            if asg.estimated_cost_usd > Decimal("0.00") and total_estimated == Decimal("0.00"):
-                total_estimated += asg.estimated_cost_usd
-
-        if total_estimated > self.budget_item.estimated_actual_usd:
-            self.budget_item.estimated_actual_usd = total_estimated
 
         # 3. Agent rail items from tasks
         rail_items: list[AgentRailItem] = []
@@ -660,6 +686,7 @@ class TuiProjection:
                     task_id=ap.task_id,
                     question=ap.question,
                     status="pending",
+                    kind=InterruptKind.APPROVAL,
                 )
                 self._add_transcript_item(
                     TranscriptItem(
@@ -737,13 +764,17 @@ class TuiProjection:
         for ev in snapshot.events:
             self.apply_event(ev)
 
+        # Persisted ledger rows are authoritative; replayed budget events must
+        # not apply the same reservation or charge a second time.
+        self.apply_budget_snapshot(snapshot)
+
         # 9. Footer
         context_tokens = 0
         if snapshot.context_packets:
             context_tokens = snapshot.context_packets[-1].payload.get("estimated_tokens", 0)
 
         default_route = RouteViewItem(
-            "lead", 1, "auto", "fake", "auto", 0.7, Decimal("0"), ()
+            "lead", 1, "auto", "unassigned", "auto", 0.7, Decimal("0"), ()
         )
         lead_model_name = self.route_items.get("lead", default_route).model
         self.footer_data = FooterData(
@@ -752,8 +783,10 @@ class TuiProjection:
             else lead_model_name,
             active_mode=self.footer_data.active_mode,
             routing_mode="auto",
-            session_cost_usd=total_authoritative,
-            budget_limit_usd=limit,
+            session_cost_usd=sum(
+                (usage.amount_usd for usage in snapshot.usage_records), Decimal("0")
+            ),
+            budget_limit_usd=self.budget_item.hard_limit_usd,
             context_tokens_estimated=context_tokens,
             active_agents_count=active_count,
         )
@@ -851,17 +884,31 @@ class TuiProjection:
 
         elif ev_type == "user.question":
             content = getattr(event.payload, "content", "Pending user question")
+            interrupt_id = getattr(event.payload, "interrupt_id", None) or str(event.event_id)
+            options = getattr(event.payload, "options", ())
             self.pending_interrupt = InterruptItem(
-                approval_id=str(event.event_id),
+                approval_id=str(interrupt_id),
                 task_id=task_id_str,
                 question=content or "Question",
                 status="pending",
+                payload={
+                    "kind": InterruptKind.QUESTION.value,
+                    "question_id": str(interrupt_id),
+                    "prompt": content or "Question",
+                    "options": tuple(options),
+                    "reason": getattr(event.payload, "reason", None),
+                    "blocking_scope": getattr(event.payload, "blocking_scope", None),
+                    "session_id": str(event.session_id),
+                    "run_id": str(event.run_id),
+                    "plan_id": self.current_plan_id,
+                },
+                kind=InterruptKind.QUESTION,
             )
             self._add_transcript_item(
                 TranscriptItem(
                     id=str(event.event_id),
-                    role="approval",
-                    title="User Question",
+                    role="question",
+                    title="QUESTION · Your answer is needed",
                     content=content or "",
                     status="pending",
                     collapsed=False,
@@ -871,8 +918,13 @@ class TuiProjection:
             )
 
         elif ev_type == "user.answer":
-            if self.pending_interrupt:
-                self.pending_interrupt.status = "approved"
+            interrupt_id = getattr(event.payload, "interrupt_id", None)
+            if (
+                self.pending_interrupt is not None
+                and self.pending_interrupt.kind is InterruptKind.QUESTION
+                and (interrupt_id is None or self.pending_interrupt.approval_id == interrupt_id)
+            ):
+                self.pending_interrupt = None
             content = getattr(event.payload, "content", "Answered")
             self._add_transcript_item(
                 TranscriptItem(
@@ -885,6 +937,32 @@ class TuiProjection:
                     can_collapse=True,
                 )
             )
+
+        elif ev_type == "user.cancellation":
+            interrupt_id = getattr(event.payload, "interrupt_id", None)
+            is_question_cancellation = (
+                getattr(event.payload, "kind", None) is InterruptKind.QUESTION
+                or self.pending_interrupt is not None
+                and self.pending_interrupt.kind is InterruptKind.QUESTION
+            )
+            if is_question_cancellation and (
+                self.pending_interrupt is not None
+                and (interrupt_id is None or self.pending_interrupt.approval_id == interrupt_id)
+            ):
+                self.pending_interrupt = None
+            if is_question_cancellation:
+                self._add_transcript_item(
+                    TranscriptItem(
+                        id=str(event.event_id),
+                        role="system",
+                        title="Question Cancelled",
+                        content="The waiting run was cancelled.",
+                        status="cancelled",
+                        collapsed=False,
+                        can_collapse=False,
+                        task_id=task_id_str,
+                    )
+                )
 
         elif ev_type.startswith("plan."):
             suffix = ev_type.split(".", 1)[1]
@@ -1020,11 +1098,13 @@ class TuiProjection:
                 remaining_res = self.budget_item.reserved_usd - amount
                 self.budget_item.reserved_usd = max(Decimal("0.00"), remaining_res)
             elif action == "charged":
-                self.budget_item.authoritative_actual_usd += amount
+                self.budget_item.estimated_actual_usd += amount
+                self.footer_data.session_cost_usd += amount
             elif action == "warned":
                 self.budget_item.warning_state = True
             elif action == "unknown":
                 self.budget_item.unknown_cost_usd += amount
+                self.footer_data.session_cost_usd += amount
 
             if self.budget_item.hard_limit_usd is not None:
                 committed = (
@@ -1037,8 +1117,6 @@ class TuiProjection:
                     Decimal("0.00"),
                     self.budget_item.hard_limit_usd - committed,
                 )
-            self.footer_data.session_cost_usd = self.budget_item.authoritative_actual_usd
-
         # Recalculate active agent count
         self.footer_data.active_agents_count = sum(
             1
