@@ -92,14 +92,14 @@ Skail owns these semantics and may not delegate them to prompts:
 
 ### 5.1 Lead graph
 
-`LeadBuilder` constructs one `create_deep_agent()` graph per session. Its stable components are:
+`LeadBuilder` constructs one `create_deep_agent()` graph per user-instruction run. Its stable components are:
 
 - a routed chat model supplied by `TaskBoundModelMiddleware`;
 - a system prompt assembled from Skail rules, user instructions, trusted project instructions, and the selected lead profile;
 - default tools assembled by `ToolRegistry`;
 - DeepAgents filesystem, execution, todo, skills, memory, and subagent middleware;
 - a standard `task` tool whose built-in profiles are supplied as compiled Skail task graphs;
-- a LangGraph checkpointer and session identifiers;
+- a LangGraph checkpoint thread keyed by session and run IDs;
 - event and usage middleware.
 
 The first necessary lead response ends with a final answer or records a typed execution decision.

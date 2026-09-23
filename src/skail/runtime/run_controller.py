@@ -164,6 +164,7 @@ class _PendingRun:
     lead_attempt_id: AttemptId
     lead_assignment: TaskAssignment
     lead_context_packet: ContextPacket
+    checkpoint_thread_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -371,6 +372,23 @@ class RunController:
     def restored_decision(self) -> Any | None:
         return self._restored_decision
 
+    def _has_pending_question(self) -> bool:
+        if self.question_store is None:
+            return False
+        snapshot = self.journal.get_session_snapshot(str(self.session_id))
+        for run in snapshot.runs:
+            if run.status != "blocked":
+                continue
+            graph_ids = [f"{self.session_id}:{run.run_id}:lead"]
+            graph_ids.extend(
+                f"{self.session_id}:{run.run_id}:{task.task_id}"
+                for task in snapshot.tasks
+                if task.run_id == run.run_id
+            )
+            if any(self.question_store.pending(graph_id) for graph_id in graph_ids):
+                return True
+        return False
+
     def _record_model_usage(self, assignment_id: str, response: object, call_id: str = "") -> None:
         self.usage_settler.record_call(assignment_id, response, call_id=call_id)
 
@@ -389,6 +407,9 @@ class RunController:
             )
             self._run_model_call_budgets[key] = budget
         return budget
+
+    def _checkpoint_thread_id(self, run_id: RunId) -> str:
+        return f"{self.session_id}:{run_id}"
 
     def _finalize_child_budgets(self, run_id: RunId, lead_task_id: TaskId) -> None:
         """Release settled/unstarted child funds while retaining ambiguous calls."""
@@ -742,6 +763,13 @@ class RunController:
         workspace_revision: str = "git:head",
         delegation_approved: bool = False,
     ) -> RunResult:
+        if self._pending_run is None and self.checkpoints is not None:
+            self.restore_interrupted()
+        if self._pending_run is not None or self._has_pending_question():
+            raise RuntimeError(
+                "run.pending_interrupt: answer or cancel the waiting question "
+                "before starting a new run"
+            )
         active_controls = resolve_lead_controls(instruction, controls)
         if self.checkpoints is not None:
             self.checkpoints.initialize()
@@ -1453,6 +1481,7 @@ class RunController:
                         controls=controls,
                         delegation_approved=delegation_approved,
                         recorded_child_results=recorded_child_results,
+                        model_call_budget=self._model_call_budget_for_run(run_id),
                     )
                     task = asyncio.create_task(
                         subagent["runnable"].ainvoke(
@@ -2040,12 +2069,14 @@ class RunController:
         ) -> None:
             if self.checkpoints is None or saver is None:
                 return
-            t = await saver.aget_tuple({"configurable": {"thread_id": str(self.session_id)}})
+            thread_id = self._checkpoint_thread_id(run_id)
+            t = await saver.aget_tuple({"configurable": {"thread_id": thread_id}})
             if t and t.config and "configurable" in t.config:
                 cid = t.config["configurable"].get("checkpoint_id")
                 if cid:
                     self.checkpoints.record(
                         session_id=str(self.session_id),
+                        thread_id=thread_id,
                         checkpoint_id=cid,
                         idempotency_key=f"run:{run_id}:{boundary}:{cid}",
                         status=status,
@@ -2234,7 +2265,9 @@ class RunController:
         )
 
         input_message = HumanMessage(content=instruction)
-        invoke_config: RunnableConfig = {"configurable": {"thread_id": str(self.session_id)}}
+        invoke_config: RunnableConfig = {
+            "configurable": {"thread_id": self._checkpoint_thread_id(run_id)}
+        }
         try:
             result_state = cast(
                 dict[str, Any],
@@ -2323,6 +2356,7 @@ class RunController:
                 lead_attempt_id=lead_attempt_id,
                 lead_assignment=lead_assignment,
                 lead_context_packet=lead_context_packet,
+                checkpoint_thread_id=self._checkpoint_thread_id(run_id),
             )
             with self.journal.transaction() as tx:
                 tx.update_attempt_status(
@@ -2348,6 +2382,8 @@ class RunController:
                             "profile": active_controls.profile,
                             "write_allowed": active_controls.write_allowed,
                             "max_children": active_controls.max_children,
+                            "direct_only": active_controls.direct_only,
+                            "required_agent_count": active_controls.required_agent_count,
                             "routing_mode": active_controls.routing_mode.value,
                             "risk": active_controls.risk.value,
                         },
@@ -2466,6 +2502,8 @@ class RunController:
                                 "profile": active_controls.profile,
                                 "write_allowed": active_controls.write_allowed,
                                 "max_children": active_controls.max_children,
+                                "direct_only": active_controls.direct_only,
+                                "required_agent_count": active_controls.required_agent_count,
                                 "routing_mode": active_controls.routing_mode.value,
                                 "risk": active_controls.risk.value,
                             },
@@ -2599,7 +2637,8 @@ class RunController:
         recoverable_runs = []
         for run in snapshot.runs:
             if run.status == "blocked":
-                recoverable_runs.append(run)
+                if snapshot.status == "interrupted":
+                    recoverable_runs.append(run)
                 continue
             if run.status != "running":
                 continue
@@ -2664,6 +2703,11 @@ class RunController:
                 if self.checkpoints is not None
                 else None
             )
+            if (
+                checkpoint is not None
+                and checkpoint.payload.get("run_id") not in {None, run.run_id}
+            ):
+                raise RuntimeError("session.checkpoint_run_mismatch")
             runtime = (
                 checkpoint.payload.get("runtime", {})
                 if checkpoint is not None and isinstance(checkpoint.payload, Mapping)
@@ -2694,6 +2738,12 @@ class RunController:
                 profile=cast(str | None, control_data.get("profile")),
                 write_allowed=cast(bool | None, control_data.get("write_allowed")),
                 max_children=int(control_data.get("max_children", 3)),
+                direct_only=bool(control_data.get("direct_only", False)),
+                required_agent_count=(
+                    int(control_data["required_agent_count"])
+                    if control_data.get("required_agent_count") is not None
+                    else None
+                ),
                 routing_mode=RoutingMode(
                     str(control_data.get("routing_mode", persisted_assignment.routing_mode.value))
                 ),
@@ -2709,6 +2759,11 @@ class RunController:
                 lead_attempt_id=AttemptId(attempt.attempt_id),
                 lead_assignment=persisted_assignment,
                 lead_context_packet=packet,
+                checkpoint_thread_id=(
+                    checkpoint.thread_id
+                    if checkpoint is not None
+                    else self._checkpoint_thread_id(RunId(run.run_id))
+                ),
             )
             self._restored_decision = self.journal.get_execution_decision(run.run_id)
             allowance_ids = runtime.get("lead_allowance_ids", ())
@@ -2721,8 +2776,6 @@ class RunController:
                 )
             if self._pending_interrupt_payload is None and self.question_store is not None:
                 questions = self.question_store.pending(f"{self.session_id}:{run.run_id}:lead")
-                if not questions:
-                    questions = self.question_store.pending("lead")
                 if questions:
                     question = questions[-1]
                     self._pending_interrupt_payload = {
@@ -2823,7 +2876,12 @@ class RunController:
         gate = ChildRunGate(max_children)
         scheduler = ChildScheduler(max_children=max_children)
         child_results: list[TaskResult] = []
-        invoke_config: RunnableConfig = {"configurable": {"thread_id": str(self.session_id)}}
+        invoke_config: RunnableConfig = {
+            "configurable": {
+                "thread_id": pending.checkpoint_thread_id
+                or self._checkpoint_thread_id(pending.run_id)
+            }
+        }
         if self._resume_lead_on_recovery:
             self._emit_event(
                 run_id=pending.run_id,
@@ -2918,6 +2976,7 @@ class RunController:
                 if checkpoint_id:
                     self.checkpoints.record(
                         session_id=str(self.session_id),
+                        thread_id=str(invoke_config["configurable"]["thread_id"]),
                         checkpoint_id=checkpoint_id,
                         idempotency_key=f"run:{pending.run_id}:resumed",
                         status=(

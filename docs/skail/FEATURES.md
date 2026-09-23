@@ -618,6 +618,10 @@ content in the first stable release.
 
 Any agent may create a structured question interrupt. It includes prompt, optional choices, reason, blocking scope, and task ID. The answer is recorded and delivered only to the waiting graph state.
 
+While a question or approval is pending, a new instruction is not sent to the waiting graph as an
+answer. The TUI keeps the interrupt pending and visibly rejects the new prompt; the runtime also
+rejects direct new-run calls with `run.pending_interrupt` until the user resolves the interrupt.
+
 ### Foreground steering
 
 New input while a foreground run is active is classified as:
@@ -640,7 +644,12 @@ States: `active`, `idle`, `interrupted`, `completed`, `archived`. Exiting the TU
 
 ### Resume
 
-Resume restores transcript, lead/task graph states, assignments, task tree, usage, reservations, pending questions, and trust context. Orphaned in-flight provider calls become interrupted; Skail does not charge or replay them without reconciliation evidence.
+Each run has its own LangGraph checkpoint thread, identified by its session and run IDs. Resume of
+an interrupted run restores that run's transcript, task graph, assignments, usage, reservations,
+pending questions, and trust context. A new instruction starts a fresh checkpoint thread and does
+not inherit a cancelled run's plan or model transcript. Session history remains visible in the TUI
+and journal. Orphaned in-flight provider calls become interrupted; Skail does not replay them
+without reconciliation evidence.
 
 ### Planned dispatch and plan-node recovery
 

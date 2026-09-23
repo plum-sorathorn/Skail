@@ -244,6 +244,45 @@ async def test_question_interrupt_resume_dispatches_plan_once(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
+async def test_new_instruction_cannot_consume_a_pending_question_as_context(
+    tmp_path: Path,
+) -> None:
+    journal, checkpoints, questions, approvals = _stores(tmp_path, "pending-question")
+    session_id = _session(journal)
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message(
+                "ask_user",
+                {"prompt": "Which output should I create?", "reason": "The path is missing."},
+                call_id="pending-question",
+            )
+        ],
+    )
+    controller = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {"lead-model": lead},
+    )
+
+    first = await controller.run_instruction("Create the requested output.")
+    pending = questions.pending(f"{session_id}:{first.run_id}:lead")
+    assert first.status == "blocked"
+    assert len(pending) == 1
+
+    with pytest.raises(RuntimeError, match="run.pending_interrupt"):
+        await controller.run_instruction("Write a different file instead.")
+
+    snapshot = journal.get_session_snapshot(session_id)
+    assert len(snapshot.runs) == 1
+    assert questions.pending(f"{session_id}:{first.run_id}:lead") == pending
+
+
+@pytest.mark.asyncio
 async def test_approval_interrupt_resume_runs_approved_command_once(
     tmp_path: Path,
 ) -> None:
@@ -466,6 +505,107 @@ async def test_restarted_controller_restores_persisted_decision(
     assert result.status == "completed"
     assert result.lead_assignment is not None
     assert result.lead_assignment.assignment_id == first.lead_assignment.assignment_id
+
+
+@pytest.mark.asyncio
+async def test_new_run_does_not_inherit_cancelled_plan_checkpoint_messages(
+    tmp_path: Path,
+) -> None:
+    journal, checkpoints, questions, approvals = _stores(tmp_path, "new-run-thread")
+    session_id = _session(journal)
+    second_call_started = asyncio.Event()
+    release_second_call = asyncio.Event()
+    call_number = 0
+
+    async def pause_second_call(_: ScriptedChatModel, __) -> None:
+        nonlocal call_number
+        call_number += 1
+        if call_number == 2:
+            second_call_started.set()
+            await release_second_call.wait()
+
+    previous_instruction = "Inspect the old work and prepare a plan."
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message(
+                "execution_decision",
+                _planned_decision(
+                    [
+                        {
+                            "local_id": "review",
+                            "kind": "checkpoint",
+                            "objective": "Review evidence before implementation",
+                        }
+                    ]
+                ),
+                call_id="cancelled-plan-decision",
+            ),
+            AIMessage(content="This continuation is cancelled."),
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "direct",
+                            "objective": "Write the new output file",
+                            "constraints": [],
+                            "reason": "The new instruction is independent.",
+                        },
+                        "new-run-direct-decision",
+                    ),
+                    (
+                        "write_file",
+                        {"file_path": "new-output.txt", "content": "new run\n"},
+                        "new-run-write",
+                    ),
+                ]
+            ),
+            AIMessage(content="The new output file was written."),
+        ],
+        async_call_hook=pause_second_call,
+    )
+    controller = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {"lead-model": lead},
+    )
+
+    cancelled = asyncio.create_task(controller.run_instruction(previous_instruction))
+    await asyncio.wait_for(second_call_started.wait(), timeout=5)
+    cancelled.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled
+
+    first_snapshot = journal.get_session_snapshot(session_id)
+    first_run = first_snapshot.runs[-1]
+    first_plans = journal.plans_for_run(first_run.run_id)
+    checkpoint = checkpoints.latest_valid(session_id)
+    assert first_run.status == "cancelled"
+    assert len(first_plans) == 1
+    assert checkpoint is not None
+    assert checkpoint.payload["run_id"] == first_run.run_id
+    assert checkpoint.thread_id == f"{session_id}:{first_run.run_id}"
+    assert questions.pending(f"{session_id}:{first_run.run_id}:lead") == ()
+
+    result = await controller.run_instruction("Write new-output.txt directly.")
+
+    assert result.status == "completed"
+    assert result.run_id != first_run.run_id
+    assert (tmp_path / "new-output.txt").read_text(encoding="utf-8") == "new run\n"
+    second_decision = journal.get_execution_decision(str(result.run_id))
+    assert second_decision is not None
+    assert second_decision.mode.value == "direct"
+    assert journal.plans_for_run(str(result.run_id)) == ()
+    second_run_input = lead.calls[2]
+    assert not any(
+        getattr(message, "content", None) == previous_instruction
+        for message in second_run_input
+    )
 
 
 @pytest.mark.asyncio

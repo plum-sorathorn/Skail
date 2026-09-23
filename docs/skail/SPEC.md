@@ -383,11 +383,14 @@ Safety denials and missing user authority produce `blocked`, not `failed`, and d
 
 ## 12. Sessions and persistence
 
-- LangGraph checkpointing is authoritative for runnable state and transcript recovery.
+- LangGraph checkpointing is authoritative for runnable state and transcript recovery. Each run
+  uses its own checkpoint thread keyed by session and run ID; resuming a run reuses that thread.
 - Skail maintains a separate local SQLite journal for session metadata, task lifecycle, route decisions, approvals, and usage.
 - User data lives under `~/.skail/`.
 - Context compaction may be lossy, but checkpoints and exported session history preserve the underlying record.
-- Resume restores the lead conversation, active task states, model assignments, budget accounting, and pending approvals.
+- Resume restores the current run's lead conversation, active task states, model assignments, budget
+  accounting, and pending questions/approvals. A new instruction starts a fresh run context; prior
+  session history stays visible to the user but is not injected as execution authority.
 - Local telemetry is enabled; external telemetry and LangSmith tracing are disabled unless explicitly configured.
 - Credentials never appear in checkpoints, event payloads, prompts, or exports.
 

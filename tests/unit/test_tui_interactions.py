@@ -108,6 +108,70 @@ async def test_active_run_shows_running_indicator_until_response_arrives() -> No
 
 
 @pytest.mark.asyncio
+async def test_new_prompt_is_rejected_while_an_interrupt_is_pending() -> None:
+    controller = _BlockingController()
+    app = SkailApp(controller=controller)
+    pending = {"question_id": "question-1", "prompt": "Which file?"}
+    app.projection.pending_interrupt = pending
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        area = app.query_one("#composer-input", ComposerTextArea)
+        area.text = "Start a different task"
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert controller.calls == []
+        assert area.text == "Start a different task"
+        assert app.projection.pending_interrupt is pending
+        assert any(item.title == "Interrupt pending" for item in app.projection.transcript_items)
+
+
+def test_interrupt_projection_keeps_run_and_plan_ownership() -> None:
+    class PlanJournal:
+        def plans_for_run(self, run_id: str) -> tuple[object, ...]:
+            assert run_id == "run-1"
+            return (SimpleNamespace(plan_id="plan-1"),)
+
+    app = SkailApp(controller=_BlockingController(), journal=PlanJournal(), session_id="session-1")
+
+    app._set_interrupt(
+        {"question_id": "question-1", "prompt": "Which output?"}, run_id="run-1"
+    )
+
+    pending = app.projection.pending_interrupt
+    assert pending is not None
+    assert pending.payload["session_id"] == "session-1"
+    assert pending.payload["run_id"] == "run-1"
+    assert pending.payload["plan_id"] == "plan-1"
+    assert app._question_graph_id(pending.payload) == "session-1:run-1:lead"
+
+
+@pytest.mark.asyncio
+async def test_new_run_explains_that_a_cancelled_plan_is_inactive() -> None:
+    class CancelledPlanJournal:
+        def get_session_snapshot(self, _session_id: str) -> Any:
+            return SimpleNamespace(
+                runs=[SimpleNamespace(run_id="old-run", status="cancelled")]
+            )
+
+        def plans_for_run(self, run_id: str) -> tuple[object, ...]:
+            return (object(),) if run_id == "old-run" else ()
+
+    controller = _BlockingController()
+    controller.release.set()
+    app = SkailApp(controller=controller, journal=CancelledPlanJournal(), session_id="session")
+
+    await app._execute_prompt("Create a new file")
+
+    assert controller.calls == ["Create a new file"]
+    notice = next(
+        item for item in app.projection.transcript_items if item.title == "Starting a new run"
+    )
+    assert "previous run was cancelled" in notice.content
+    assert "plan is inactive" in notice.content
+
+
+@pytest.mark.asyncio
 async def test_followups_are_visible_and_run_fifo_from_projection_queue() -> None:
     controller = _BlockingController()
     app = SkailApp(controller=controller)

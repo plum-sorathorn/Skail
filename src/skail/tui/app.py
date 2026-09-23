@@ -952,6 +952,15 @@ class SkailApp(App[int]):
             )
             self.update_views()
             return
+        if self.projection.pending_interrupt is not None:
+            self._restore_composer_draft(text)
+            self._append_system_message(
+                "Interrupt pending",
+                "Resolve the pending question or approval before starting a new run. "
+                "This prompt was not sent, and the interrupt remains pending.",
+            )
+            self.update_views()
+            return
         if self.controller is None:
             if self.runtime_factory is not None or self.app_state in {"initializing", "error"}:
                 self._queue_initializing_prompt(text)
@@ -1406,6 +1415,7 @@ class SkailApp(App[int]):
     async def _execute_prompt(self, text: str) -> None:
         if self.controller is None:
             return
+        self._announce_cancelled_plan_inactive()
         controls = LeadControls(
             model=self.projection.footer_data.lead_model
             if self.projection.footer_data.lead_model != "auto"
@@ -1439,6 +1449,27 @@ class SkailApp(App[int]):
             if self.projection.pending_interrupt is None:
                 self._start_next_queued_prompt()
             self.update_views()
+
+    def _announce_cancelled_plan_inactive(self) -> None:
+        controller = self.controller
+        journal = self.journal or getattr(controller, "journal", None)
+        session_id = self.session_id or getattr(controller, "session_id", None)
+        if journal is None or session_id is None:
+            return
+        try:
+            snapshot = journal.get_session_snapshot(str(session_id))
+            if not snapshot.runs:
+                return
+            previous = snapshot.runs[-1]
+            if previous.status != "cancelled" or not journal.plans_for_run(previous.run_id):
+                return
+        except Exception:
+            return
+        self._append_system_message(
+            "Starting a new run",
+            "The previous run was cancelled; its plan is inactive. "
+            "This instruction starts a fresh run.",
+        )
 
     async def _execute_follow_up(self, previous: Any, text: str) -> None:
         try:
@@ -1496,6 +1527,17 @@ class SkailApp(App[int]):
             )
 
     def _set_interrupt(self, payload: dict[str, Any], *, run_id: str) -> None:
+        payload = dict(payload)
+        payload.setdefault("session_id", str(self.session_id or ""))
+        payload.setdefault("run_id", run_id)
+        journal = self.journal or getattr(self.controller, "journal", None)
+        if "plan_id" not in payload and journal is not None:
+            try:
+                plans = journal.plans_for_run(run_id)
+                if plans:
+                    payload["plan_id"] = plans[-1].plan_id
+            except Exception:
+                pass
         approval_id = str(payload.get("question_id") or f"command:{run_id}")
         question = str(
             payload.get("prompt")
@@ -1509,6 +1551,17 @@ class SkailApp(App[int]):
             question=question,
             payload=payload,
         )
+
+    def _question_graph_id(self, payload: dict[str, Any]) -> str:
+        explicit = payload.get("graph_id")
+        if isinstance(explicit, str) and explicit:
+            return explicit
+        session_id = payload.get("session_id") or self.session_id
+        run_id = payload.get("run_id")
+        if session_id and run_id:
+            task_id = payload.get("task_id") or "lead"
+            return f"{session_id}:{run_id}:{task_id}"
+        return "lead"
 
     def on_prompt_composer_prompt_submitted(
         self, event: PromptComposer.PromptSubmitted
@@ -1731,9 +1784,13 @@ class SkailApp(App[int]):
             return
         if self.question_store is not None:
             try:
-                self.question_store.answer(
-                    event.approval_id, event.response, graph_id="lead"
-                )
+                  self.question_store.answer(
+                      event.approval_id,
+                      event.response,
+                      graph_id=self._question_graph_id(pending.payload)
+                      if pending is not None
+                      else "lead",
+                  )
             except Exception:
                 pass
         sid = self.session_id or new_session_id()
@@ -1757,9 +1814,10 @@ class SkailApp(App[int]):
                 and self.question_store is not None
             ):
                 try:
-                    self.question_store.cancel(
-                        str(pending.payload["question_id"]), graph_id="lead"
-                    )
+                      self.question_store.cancel(
+                          str(pending.payload["question_id"]),
+                          graph_id=self._question_graph_id(pending.payload),
+                      )
                 except Exception:
                     pass
             self.controller.reject_interrupted()
@@ -1802,11 +1860,14 @@ class SkailApp(App[int]):
             try:
                 if decision == "accepted":
                     self.question_store.answer(
-                        str(pending.payload["question_id"]), "accept", graph_id="lead"
+                        str(pending.payload["question_id"]),
+                        "accept",
+                        graph_id=self._question_graph_id(pending.payload),
                     )
                 else:
                     self.question_store.cancel(
-                        str(pending.payload["question_id"]), graph_id="lead"
+                        str(pending.payload["question_id"]),
+                        graph_id=self._question_graph_id(pending.payload),
                     )
             except Exception:
                 pass
