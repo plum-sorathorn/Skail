@@ -48,7 +48,7 @@ A developer who:
 ## 3. Product principles
 
 1. **Just prompt; Skail will orchestrate.** Ordinary use must not require the user to design a graph or choose agents.
-2. **Explicit intent wins.** “Do this yourself,” “use a reviewer,” “do not edit,” and similar user constraints override autonomous preferences.
+2. **Explicit intent wins.** “Do this yourself,” “use a reviewer,” “do not edit,” and similar user constraints override autonomous preferences. A child-scoped “do not delegate further” limits nested child work without changing the requested top-level execution mode.
 3. **One capable lead.** The lead agent can read, edit, execute, and answer; it is not a coordinator that is helpless without children.
 4. **Delegate for leverage.** Use subagents for parallel work, specialized judgment, or context isolation—not ritualistically.
 5. **Assign models to tasks, not calls.** A task attempt has one model owner. Silent per-call model switching is prohibited.

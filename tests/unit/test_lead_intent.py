@@ -24,6 +24,16 @@ def test_mentioning_planned_execution_does_not_require_it() -> None:
     assert controls.required_mode is None
 
 
+def test_child_scoped_no_further_delegation_preserves_planned_mode() -> None:
+    controls = resolve_lead_controls(
+        "Use planned execution. Each explorer reports directly; do not delegate further."
+    )
+
+    assert controls.required_mode.value == "planned"
+    assert controls.direct_only is False
+    assert controls.delegation == "auto"
+
+
 def test_no_edit_instruction_disables_write_tools() -> None:
     controls = resolve_lead_controls("Review only. Do not edit files.")
 

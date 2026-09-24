@@ -24,7 +24,7 @@ the task was read-only and no fixture files changed. A later TUI probe succeeded
 S4 remains incomplete after two reservation-adjusted fixture runs: both admitted and launched GLM
 implementers concurrently, then each failed ambiguously and cancelled its sibling. No accepted child
 results or FIFO follow-up. Four final-run GLM calls without reliable usage were conservatively settled.
-The corrected local campaign stop total is USD 2.339476734; S4 used USD 1.512342744 of USD 1.60.
+The corrected local campaign stop total is USD 2.376594734; S4 used USD 1.512342744 of USD 1.60.
 Do not replay ambiguous assignments.
 
 S5 has six fresh runs so far. Run d58218a1-ee25-48ab-888d-dbab789a5a1f admitted a plan but
@@ -39,12 +39,24 @@ cd1bcae5-4e25-42fe-8a50-f733ae9a0543 both completed without an admitted plan or 
 two explorers had launched. S5 cost so far is USD 0.325532454, with no accepted discovery results,
 checkpoint completion, revision, or implementation.
 
+Separate S5 follow-up evidence: TUI startup run `9400f0ee-45f7-4a2f-98d0-142d25f525fc` sent
+`/help` through DevPass GPT-4.1 as a model task, costing USD 0.009016; it admitted no plan or child.
+Run `b8d63cc7-2399-43c0-9337-44601eaf22b8` was launched with a literal leading quote and the
+child-scoped phrase “Do not delegate further”; the resolver chose direct mode and rejected the
+planned decision (USD 0.012848). Run `9c251173-023c-4307-ae8e-1a7726adebc6` received unquoted
+planned intent, but two decision attempts failed `decision.plan_invalid`; no plan or child was
+admitted (USD 0.015254). S5 use including these follow-ups is USD 0.362650454 of USD 2.25. Actual
+provider spend is unknown.
+
 Offline fixes include the child TaskResult response contract (commit 935ae49), lead plan guidance
-with required effect and resource scopes, and runtime enforcement for explicit planned execution,
-including after question resume. Regressions reproduced the false success before the fix. Final
-offline gates pass: Ruff, mypy, unit/contract (886 passed, 2 skipped), smoke, and full suite
-(1169 passed, 5 skipped). Retry S5 with the explicit scoped plan, fresh run/task IDs, automatic
-explorer routing, and no verification tool node. The user confirmed DevPass approves Skail and
+with required effect and resource scopes, runtime enforcement for explicit planned execution
+(including after question resume), and child-scoped “do not delegate further” handling. Regressions
+reproduced the false successes and scope conflict before the fixes. Final offline gates pass: Ruff,
+mypy, unit/contract (887 passed, 2 skipped), smoke, and full suite (1170 passed, 5 skipped). A
+fixture-local DevPass provider alias uses the existing DevPass key through the DevPass adapter; its
+rates were refreshed from the provider model endpoint. Retry S5 with the exact revision-1 plan shape
+below, fresh run/task IDs, automatic explorer routing, and no verification tool node. The user
+confirmed DevPass approves Skail and
 waived a provider-side hard cap. Use the USD 8.50 in-house stop under the best-effort USD 10
 ceiling. Provider billing remains unknown. S6-S7 are unrun; S8 is conditional.
 Retest repaired paths and close defects only from matching live evidence.

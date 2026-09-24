@@ -66,7 +66,8 @@ Its prompt defines delegation heuristics, but the runtime enforces user directiv
 - `delegation=ask`: proposed tasks require user confirmation before launch;
 - `delegation=auto`: valid tasks launch within concurrency, safety, and budget gates;
 - explicit “use planned execution” requires an admitted `planned` decision;
-- explicit “do this yourself” and “do not delegate” apply to that instruction even when the configured default is `auto`; a conflicting execution decision is rejected before its plan is admitted;
+- explicit “do this yourself” and unscoped “do not delegate” apply to that instruction even when the configured default is `auto`; a conflicting execution decision is rejected before its plan is admitted;
+- child-scoped “do not delegate further” limits nested delegation without forcing a planned run into direct mode;
 - explicit “do not edit” removes write-capable lead tools and rejects write-capable plan nodes for that run;
 - explicit “use N agents” requires exactly N agent nodes with pairwise-disjoint resource scopes, within the configured and hard three-child limits; when the user names an agent profile, every node must use that profile; count, profile, or scope conflicts are reported before plan admission.
 
