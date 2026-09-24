@@ -4,13 +4,13 @@
   - Evidence review completed across the original exports; the S5 plan belongs to run
     `46335ece-a442-4a0b-bb14-19f220c73846` and the later conflict question to S4 retry
     `ea102525-dc0f-412d-92f4-deddf12b6458`. The DevPass run now has a frozen-rate local ledger.
-    Its campaign stop total is USD 0.656067536 through the first S4 cancellation; two calls remain
+    Its campaign stop total is USD 0.691575536 through the S4 scope-repair failure; two calls remain
     unresolved at call level but are conservatively settled. Provider billing is unverified.
   - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
     model rates, price measured tokens locally, and include child calls in the parent run. Prior
     exports lack per-call tokens and remain historical estimates.
 - [x] 1. Enforce explicit direct, no-delegation, no-write, and exact-child constraints at admission.
-  - Evidence: `tests/unit/test_lead_intent.py`, `tests/contract/test_execution_decisions.py`, and focused `tests/integration/test_lead.py` regressions pass. Live S3 run `8054131c-c6c2-488d-bb55-3d5cf71fddc3` rejected the conflicting direct-mode plan. Live S4 exposed that “exactly two child agents” did not set the exact count; commit `06ebbc9` fixes the parser and an integration regression rejects excess plan agents before admission. S4 live retry remains pending.
+  - Evidence: `tests/unit/test_lead_intent.py`, `tests/contract/test_execution_decisions.py`, and focused `tests/integration/test_lead.py` regressions pass. Live S3 run `8054131c-c6c2-488d-bb55-3d5cf71fddc3` rejected the conflicting direct-mode plan. S4 run `360dbf83-cb8e-48c6-b7af-2c85a194436d` confirmed the exact-count guard by rejecting three agent nodes; its later two-agent proposal lacked disjoint scopes and was blocked before admission. `06ebbc9` fixes the phrase matcher. A full S4 run remains pending.
 - [x] 2. Bound repeated decision/tool loops and preserve uncertain call accounting.
   - Evidence: 32-call run limit is shared across lead/child middleware; exhaustion is emitted as `run.failed` with `run.model_call_limit_exhausted` before another provider call. `rtk pytest` focused regression suite: 43 passed; Ruff and Graphify update passed.
 - [x] Checkpoint: invalid decisions and read-only loops terminate with one accurate outcome.
@@ -35,12 +35,12 @@
 - [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
   - In progress under the user's explicit best-effort waiver of a provider-side hard cap. The
     local stop point is USD 8.50 with a USD 10 ceiling. Read-only `GET /v1/key` reports DevPass
-    Lite with USD 53.59 allowance remaining before the S4 retry; this is plan allowance, not a
-    spend ledger. Current local campaign total is USD 0.656067536. S3 intent and UTF-8 rechecks
-    pass; S4 first attempt was cancelled before child calls because an over-count plan was
-    admitted. Offline fixes now cover exact child counts and terminal plan task rows; retry S4,
-    then S5-S7. S8 remains conditional. Actual provider billing is unknown because no independent
-    billing baseline/delta is available.
+    Lite with USD 53.56 allowance remaining before the next S4 retry; this is plan allowance, not
+    a spend ledger. Current local campaign total is USD 0.691575536. S3 intent and UTF-8 rechecks
+    pass; S4 count enforcement is confirmed live, but a two-agent plan without resource scopes was
+    blocked before admission. Retry S4 with explicit scope lists, then S5-S7. S8 remains
+    conditional. Actual provider billing is unknown because no independent billing baseline/delta
+    is available.
   - Future runs use export schema version 2 `provider_calls` and `model_usage`; compare local
     per-model calculations with the TUI's lead-plus-child run total after each scenario. The
     LLM Gateway CLI is removed from the procedure.

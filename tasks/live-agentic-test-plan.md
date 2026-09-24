@@ -170,19 +170,24 @@ Prompt:
 
 > Use exactly two child agents in parallel. Give one implementer exclusive ownership of
 > `src/live_fixture/parser.py` plus `tests/test_parser.py`; give the other exclusive ownership
-> of `src/live_fixture/report.py` plus `tests/test_report.py`. Implement the TODO behavior in
-> each module, run each focused test, integrate both results, then have the lead run the
-> integration test and synthesize one final answer. The write scopes must not overlap.
+> of `src/live_fixture/report.py` plus `tests/test_report.py`. Give each plan agent node an
+> explicit `resource_scopes` list containing exactly its two owned paths; create no other agent
+> nodes. Implement the TODO behavior in each module and run each focused test. After both child
+> results integrate, run the integration test through an authorized plan tool node. If worktree
+> policy prevents lead-side execution, the operator runs the integration test after the lead
+> returns; do not add a third child just for verification. Synthesize one final answer. The write
+> scopes must not overlap.
 
 While both children are active, queue with `Ctrl+Enter`:
 
 > After the active run completes, summarize which model handled each child and whether their
 > wall times overlapped. Do not modify files.
 
-Pass: exactly two first-level children, disjoint writer scopes, peak concurrency two and never
+Pass: exactly two first-level children, disjoint `resource_scopes`, peak concurrency two and never
 over three, accepted child results, independent integration test pass, and one visible FIFO
 follow-up after completion. No queued coroutine warning on cancel or quit. Record actual
-assignment timestamps; do not infer overlap from the prompt.
+assignment timestamps; do not infer overlap from the prompt. A count or scope conflict must be
+rejected before plan admission and repaired within the bounded decision allowance.
 
 ### S5 — Adaptive plan and checkpoint
 
