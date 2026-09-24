@@ -28,8 +28,10 @@ finite plan object (or JSON string of one) with a checkpoint node; discovery pla
 must all be read-only. Minimal planned shape (copy this):
 {"mode": "planned", "objective": "<goal>", "reason": "<why>", "plan":
 {"schema_version": 1, "policy_version": "adaptive-v1", "revision": 1,
-"nodes": [{"local_id": "survey", "kind": "agent", "objective": "<survey work>"},
-{"local_id": "gate", "kind": "checkpoint", "objective": "<review evidence>"}]}}
+"nodes": [{"local_id": "survey", "kind": "agent", "objective": "<survey work>",
+"effect_scope": "read", "resource_scopes": ["<survey-scope>"]},
+{"local_id": "gate", "kind": "checkpoint", "objective": "<review evidence>",
+"depends_on": ["survey"], "effect_scope": "read"}]}}
 Plan fields are validated: the plan root accepts schema_version, policy_version, revision, and
 nodes; node fields include local_id, kind, objective, depends_on, acceptance_criteria, inputs,
 output_contract, effect_scope, resource_scopes, task_features, artifact_refs, and task_lineage.

@@ -53,6 +53,12 @@ def test_lead_guidance_documents_exact_agent_resource_scopes() -> None:
     assert "resource_scopes" in TASK_PACKET_GUIDANCE
     assert "task_features.profile" in TASK_PACKET_GUIDANCE
     assert "exactly N agent nodes" in TASK_PACKET_GUIDANCE
+    minimal_plan = TASK_PACKET_GUIDANCE.split("Minimal planned shape (copy this):", 1)[1].split(
+        "Plan fields are validated:", 1
+    )[0]
+    assert '"effect_scope": "read"' in minimal_plan
+    assert '"resource_scopes": ["<survey-scope>"]' in minimal_plan
+    assert '"depends_on": ["survey"]' in minimal_plan
 
 
 def test_explicit_constraints_do_not_leak_into_the_next_run() -> None:
