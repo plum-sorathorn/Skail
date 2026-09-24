@@ -22,6 +22,7 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.widgets import Input, Static, TabbedContent, TabPane
+from textual.worker import WorkerCancelled, WorkerFailed
 
 from skail import __version__
 from skail.agents.lead import DelegationMode, LeadControls
@@ -449,6 +450,7 @@ class SkailApp(App[int]):
         self.profile_models = profile_models or {}
         self.simulated: bool = False
         self._active_worker: Any = None
+        self._shutdown_exit_pending = False
         self._run_active = False
         self._pending_prompts: deque[str] = deque()
         self._mounted: bool = False
@@ -1537,8 +1539,40 @@ class SkailApp(App[int]):
         return_code: int = 0,
         message: Any = None,
     ) -> None:
-        """Apply queue and worker shutdown before Textual exits the event loop."""
+        """Wait for the active run to settle before Textual exits the event loop."""
         self._begin_shutdown()
+        if self._shutdown_exit_pending:
+            return
+        worker = self._active_worker
+        if worker is not None and not worker.is_finished and self.is_running:
+            self._shutdown_exit_pending = True
+            self.run_worker(
+                self._wait_for_worker_then_exit(
+                    worker,
+                    result=result,
+                    return_code=return_code,
+                    message=message,
+                ),
+                name="shutdown-after-run",
+                group="shutdown",
+                exit_on_error=False,
+            )
+            return
+        super().exit(result, return_code=return_code, message=message)
+
+    async def _wait_for_worker_then_exit(
+        self,
+        worker: Any,
+        *,
+        result: Any,
+        return_code: int,
+        message: Any,
+    ) -> None:
+        try:
+            await worker.wait()
+        except (WorkerCancelled, WorkerFailed):
+            pass
+        self._shutdown_exit_pending = False
         super().exit(result, return_code=return_code, message=message)
 
     def _apply_run_result(self, result: Any) -> None:

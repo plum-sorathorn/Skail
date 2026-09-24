@@ -66,6 +66,27 @@ class _BlockingController:
         return SimpleNamespace(pending_interrupt=None, output=f"done: {text}")
 
 
+class _CleanupBlockingController(_BlockingController):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cleanup_started = asyncio.Event()
+        self.release_cleanup = asyncio.Event()
+        self.cleanup_finished = asyncio.Event()
+
+    async def run_instruction(self, text: str, **kwargs: Any) -> Any:
+        _ = kwargs
+        self.calls.append(text)
+        self.started.set()
+        try:
+            await self.release.wait()
+        except asyncio.CancelledError:
+            self.cleanup_started.set()
+            await self.release_cleanup.wait()
+            self.cleanup_finished.set()
+            raise
+        return SimpleNamespace(pending_interrupt=None, output=f"done: {text}")
+
+
 def test_command_requires_args_helper() -> None:
     assert command_requires_args("agent") is True
     assert command_requires_args("mode") is True
@@ -418,6 +439,41 @@ async def test_ctrl_c_discards_queue_without_starting_follow_up() -> None:
         assert app.projection.queue == []
         assert controller.calls == ["first"]
         assert any(item.title == "Queue cleared" for item in app.projection.transcript_items)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exit_path", ("ctrl_c", "slash_quit", "app_exit"))
+async def test_shutdown_waits_for_active_worker_cleanup(exit_path: str) -> None:
+    from textual.worker import WorkerCancelled
+
+    controller = _CleanupBlockingController()
+    app = SkailApp(controller=controller)
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _start_run_with_queued_prompt(app, controller, pilot)
+        worker = app._active_worker
+        assert worker is not None
+
+        if exit_path == "ctrl_c":
+            await pilot.press("ctrl+c")
+        elif exit_path == "slash_quit":
+            app.query_one("#composer-input", ComposerTextArea).text = "/quit"
+            await pilot.press("enter")
+        else:
+            app.exit(0)
+        await asyncio.wait_for(controller.cleanup_started.wait(), timeout=1)
+        stayed_open_for_cleanup = app.is_running
+        queue_cleared = app.projection.queue == []
+        controller.release_cleanup.set()
+        await asyncio.wait_for(controller.cleanup_finished.wait(), timeout=1)
+        try:
+            await worker.wait()
+        except WorkerCancelled:
+            pass
+
+    assert stayed_open_for_cleanup is True
+    assert queue_cleared is True
+    assert worker.is_finished
 
 
 @pytest.mark.asyncio
