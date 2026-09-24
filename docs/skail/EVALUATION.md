@@ -26,7 +26,10 @@ historical reports remain historical rather than being relabelled as current rel
 
 ## Current methodology record
 
-- The documented end-to-end parallel gate remains at 15% against the serial policy.
+- The documented end-to-end parallel gate remains at 15% against the serial policy. A
+  fixture/seed pair contributes only when every AUTO repetition records at least two
+  simultaneously active children; wall-clock differences without that observed concurrency do not
+  count and leave the pair incomplete.
 - With the same 450 ms synthetic child delay, the preserved diagnostics reported 23.4% for seed
   42 and 14.5% for seed 100. The latter fails the gate.
 - An interrupted change raised the delay to 650 ms. It was removed without using it as release

@@ -660,7 +660,8 @@ Skail is ready for stable release when:
 - production promotion of an economic strategy requires paired held-out evidence showing no lower
   observed completion than the capable direct baseline, with the preregistered confidence bound,
   and at least 20% lower aggregate cost per successful request;
-- parallel-eligible scenarios reduce median wall-clock time by at least 15% compared with the same tasks forced serial;
+- parallel-eligible scenarios with at least two simultaneously active children reduce median
+  wall-clock time by at least 15% compared with the same tasks forced serial;
 - no critical safety or data-loss defect remains open.
 
 The offline engineering boundary and live economic-qualification boundary are separate. Live
