@@ -35,6 +35,8 @@ class ExecutionDecisionGate:
         persist_decision: Callable[[ExecutionDecision], Any] | None = None,
         restored_decision: ExecutionDecision | None = None,
         required_mode: ExecutionMode | None = None,
+        requires_user_answer: bool = False,
+        question_answered: bool = False,
         required_agent_count: int | None = None,
         required_agent_profile: str | None = None,
     ) -> None:
@@ -42,6 +44,8 @@ class ExecutionDecisionGate:
         self._revise_plan = revise_plan
         self._persist_decision = persist_decision
         self._required_mode = required_mode
+        self._requires_user_answer = requires_user_answer
+        self._question_answered = question_answered
         self._required_agent_count = required_agent_count
         self._required_agent_profile = required_agent_profile
         self._repairs_remaining = 2
@@ -71,7 +75,18 @@ class ExecutionDecisionGate:
     def allows(self, tool_name: str, tool_call_id: str | None = None) -> bool:
         if tool_call_id is not None and tool_call_id in self._rejected_tool_codes:
             return False
-        return tool_name == "ask_user" or self.decision is not None
+        if tool_name == "ask_user":
+            return True
+        if self.requires_user_answer_for(tool_name):
+            return False
+        return self.decision is not None
+
+    def requires_user_answer_for(self, tool_name: str) -> bool:
+        return (
+            self._requires_user_answer
+            and not self._question_answered
+            and tool_name != "ask_user"
+        )
 
     def is_prepared_decision(self, tool_call_id: str | None) -> bool:
         return tool_call_id is not None and tool_call_id in self._prepared_decision_ids
@@ -102,6 +117,9 @@ class ExecutionDecisionGate:
                     or call_id in self._rejected_tool_codes
                 ):
                     continue
+                if self.requires_user_answer_for(name):
+                    self._reject(call_id, "execution.question_required")
+                    continue
                 if name == "execution_decision":
                     args = call.get("args")
                     if not isinstance(args, dict):
@@ -115,7 +133,12 @@ class ExecutionDecisionGate:
                         self._prepared_decision_ids.add(call_id)
                     continue
                 if not self.allows(name, call_id):
-                    self._reject(call_id, "execution.decision_required")
+                    self._reject(
+                        call_id,
+                        "execution.question_required"
+                        if self.requires_user_answer_for(name)
+                        else "execution.decision_required",
+                    )
 
     def _reject(self, tool_call_id: str, code: str) -> None:
         self._rejected_tool_codes[tool_call_id] = code
@@ -348,6 +371,8 @@ class ExecutionDecisionMiddleware(AgentMiddleware[Any, Any, Any]):
         rejection = self._gate.rejection_code(call_id)
         if rejection is not None:
             return _decision_rejected(request, rejection)
+        if self._gate.requires_user_answer_for(name):
+            return _decision_rejected(request, "execution.question_required")
         if name == "execution_decision" and self._gate.is_prepared_decision(call_id):
             return _decision_accepted(request, self._gate)
         if self._gate.allows(name, call_id) or name == "execution_decision":
@@ -366,6 +391,8 @@ class ExecutionDecisionMiddleware(AgentMiddleware[Any, Any, Any]):
         rejection = self._gate.rejection_code(call_id)
         if rejection is not None:
             return _decision_rejected(request, rejection)
+        if self._gate.requires_user_answer_for(name):
+            return _decision_rejected(request, "execution.question_required")
         if name == "execution_decision" and self._gate.is_prepared_decision(call_id):
             return _decision_accepted(request, self._gate)
         if self._gate.allows(name, call_id) or name == "execution_decision":

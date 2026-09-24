@@ -4,7 +4,7 @@
   - Evidence review completed across the original exports; the S5 plan belongs to run
     `46335ece-a442-4a0b-bb14-19f220c73846` and the later conflict question to S4 retry
     `ea102525-dc0f-412d-92f4-deddf12b6458`. The DevPass run now has a frozen-rate local ledger.
-    Its reconciled campaign stop total is USD 2.417534734 through six earlier S5 runs and four follow-up runs/probes;
+    Its reconciled campaign stop total is USD 2.424680734 through six earlier S5 runs, four follow-up runs/probes, and the first S6 probe;
     ten calls remain unresolved at call level but are conservatively settled. Provider billing is
     unverified.
   - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
@@ -24,25 +24,26 @@
 - [ ] 5. Separate clean user answers from structured verification and route evidence.
   - Offline implementation: shared TUI/print presenter, structured JSONL completion output, secret redaction, actionable empty/failed status copy, and a mounted Textual rendering pilot. Focused regression suite passes (110 tests); Ruff, mypy, and Graphify update pass. Keep unchecked pending a matching live S1 observation: the session export and checkpoint contain no final message, so the reported output's origin remains unknown.
 - [ ] 6. Render normal questions as waiting, with question-specific controls and no tool error.
-  - Offline implementation adds typed question events, keeps expected graph interrupts out of `tool.failed`, separates question answer/cancel from permission Approve/Reject, and shows session/run/plan owner suffixes. Focused offline regressions: 213 passed; the final owner-label/recovery subset: 16 passed. Ruff, mypy, and Graphify update pass. Live S6 confirmation remains pending.
+  - Offline implementation adds typed question events, keeps expected graph interrupts out of `tool.failed`, separates question answer/cancel from permission Approve/Reject, and shows session/run/plan owner suffixes. A new run-scoped question requirement permits only `ask_user` before an accepted answer, survives resume, and opens conditional writes after the answer. Focused regressions cover prose bypass, premature operation, and question-answer-resume writes.
+  - Live probe: run `72a40e66-c739-49d7-9f44-9677fdad5941` returned the requested JSON/CSV choice as final prose without `ask_user` or a `user.question` event, then completed. No files changed; local cost USD 0.007146. LIVE-029 / OUT-011 remain open pending a fresh S6 live retry.
 - [x] 7. Audit earlier fixes with focused CLI and TUI checks.
   - Evidence: five catalog/list/refresh tests and four warning-as-error queue/cancel pilots pass; controller and real TUI cancellation checks show no framework traceback. The two-case non-TTY resume guard is covered by `test_non_tty_resume_without_prompt_is_rejected_before_execution`. Lead guidance now says the coordinator launches admitted plan nodes and the lead must not call `task()` to recreate them. Live confirmation for LIVE-001/003/004 and OUT-001/003 remains pending.
 - [x] 8. Clear the three full offline suite failures.
   - Evidence: the no-credentials subprocess uses the null keyring backend, the initialization replay pilot waits asynchronously for its worker barrier, and the README assertion matches the current image masthead.
 - [x] Checkpoint: Ruff, mypy, unit/contract, smoke, and full offline suite pass.
-  - Latest verification after explicit planned-mode and child-scope enforcement: Ruff passed; mypy
-    found no issues in 126 source files; unit/contract passed (887 passed, 2 skipped); smoke passed;
-    full offline suite passed (1170 passed, 5 skipped).
+  - Latest verification after explicit planned-mode, child-scope, and question-requirement enforcement:
+    Ruff passed; mypy found no issues in 126 source files; unit/contract passed (891 passed, 2 skipped);
+    smoke passed; full offline suite passed (1175 passed, 5 skipped).
 - [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
   - The user waived a provider-side hard cap and set a best-effort USD 10 ceiling; the normal
     in-house stop remains USD 8.50. Three earlier ledger rows were corrected because they omitted
     measured calls when charging estimates for separate calls. Six original S5 runs plus a TUI
-    help probe, a quoted-prompt conflict, a plan-schema retry, and an admitted-plan explorer retry
-    have added USD 0.403590454 (USD 0.225678454 measured plus USD 0.177912 conservatively
-    estimated). The campaign stop is USD 2.417534734: USD 1.633750734 measured plus USD 0.783784
+    help probe, a quoted-prompt conflict, a plan-schema retry, an admitted-plan explorer retry, and
+    the S6 question probe have added USD 0.410736454 (USD 0.232824454 measured plus USD 0.177912
+    conservatively estimated). The campaign stop is USD 2.424680734: USD 1.640896734 measured plus USD 0.783784
     estimated.
     Ten calls lack reliable token usage and are conservatively settled; do not replay them. This
-    leaves USD 6.082465266 to the local stop and USD 7.582465266 to the campaign ceiling. S4 used
+    leaves USD 6.075319266 to the local stop and USD 7.575319266 to the campaign ceiling. S4 used
     USD 1.512342744 of its USD 1.60 allocation, leaving USD 0.087657256. S5 used USD 0.403590454
     of USD 2.25; it remains incomplete after two plan/checkpoint runs failed in explorer dispatch,
     one ambiguous lead call, one plan rejected for missing resource scopes, two false-success
@@ -54,8 +55,8 @@
     includes read effect_scope, non-empty resource_scopes, and checkpoint dependencies; its
     regression failed before the change and passes afterward. Explicit planned intent now survives
     question resume and cannot finish successfully without a matching decision. Final offline gates
-    pass: Ruff, mypy, unit/contract (887 passed, 2 skipped), smoke, and full suite
-    (1170 passed, 5 skipped).
+    pass: Ruff, mypy, unit/contract (891 passed, 2 skipped), smoke, and full suite
+    (1175 passed, 5 skipped).
   - The idle TUI resume displayed route events already present in its prior export; it started no new
     run and added no cost. The user confirmed DevPass approves Skail. Retry S5 with the explicit
     scoped plan, fresh task IDs, and automatic explorer routing, then continue S6-S7; S8 remains

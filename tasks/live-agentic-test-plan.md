@@ -12,7 +12,7 @@ Verify the offline repairs through real, operator-entered prompts in Skail's TUI
 model switching, parallel children, plans and checkpoints, queued work, question/approval handling,
 durable resume, workspace boundaries, and clean final answers. The offline quality gates passed
 before this plan was restored. S1 passed in the earlier live run; S2-S5 were incomplete or blocked;
-S6-S7 were not run; S8 is conditional. The latest corrected S4 prompt started run
+S6 was attempted once but did not raise the requested question; S7 is unrun; S8 is conditional. The latest corrected S4 prompt started run
 `7aa2bdab-ffea-470f-b8bc-6ab5e1e5e342`, but the lead call was interrupted before an execution
 decision. No plan or child was admitted and the fixture stayed unchanged. The call has no token
 counts; its USD 0.175416 assignment estimate is included as a conservative local stop charge, while
@@ -24,7 +24,7 @@ the task was read-only and no fixture files changed. A later TUI probe succeeded
 S4 remains incomplete after two reservation-adjusted fixture runs: both admitted and launched GLM
 implementers concurrently, then each failed ambiguously and cancelled its sibling. No accepted child
 results or FIFO follow-up. Four final-run GLM calls without reliable usage were conservatively settled.
-The corrected local campaign stop total is USD 2.417534734; S4 used USD 1.512342744 of USD 1.60.
+The corrected local campaign stop total is USD 2.424680734; S4 used USD 1.512342744 of USD 1.60.
 Do not replay ambiguous assignments.
 
 The first six S5 attempts were: run d58218a1-ee25-48ab-888d-dbab789a5a1f admitted a plan but
@@ -52,15 +52,18 @@ follow-ups is USD 0.403590454 of USD 2.25. Actual provider spend is unknown.
 
 Offline fixes include the child TaskResult response contract (commit 935ae49), lead plan guidance
 with required effect and resource scopes, runtime enforcement for explicit planned execution
-(including after question resume), and child-scoped “do not delegate further” handling. Regressions
-reproduced the false successes and scope conflict before the fixes. Final offline gates pass: Ruff,
-mypy, unit/contract (887 passed, 2 skipped), smoke, and full suite (1170 passed, 5 skipped). A
+(including after question resume), child-scoped “do not delegate further” handling, and an explicit
+user-question requirement that gates decisions and operations until an accepted answer. Regressions
+reproduced the false successes, scope conflict, and missing question interrupt before the fixes.
+Final offline gates pass: Ruff, mypy, unit/contract (891 passed, 2 skipped), smoke, and full suite
+(1175 passed, 5 skipped). A
 fixture-local DevPass provider alias uses the existing DevPass key through the DevPass adapter; its
 rates were refreshed from the provider model endpoint. Retry S5 with the exact revision-1 plan shape
 below, fresh run/task IDs, automatic explorer routing, and no verification tool node. The user
 confirmed DevPass approves Skail and
 waived a provider-side hard cap. Use the USD 8.50 in-house stop under the best-effort USD 10
-ceiling. Provider billing remains unknown. S6-S7 are unrun; S8 is conditional.
+ceiling. Provider billing remains unknown. S6 is awaiting live confirmation after the question guard;
+S7 is unrun; S8 is conditional.
 Retest repaired paths and close defects only from matching live evidence.
 
 The previous USD 0.4376813 is Skail-exported usage plus estimates, **not verified provider spend**.
@@ -366,6 +369,13 @@ controls are distinct from permission Approve/Reject controls; the provider call
 duplicated; only JSON export behavior is added and independently tested. Test an actual permission
 request separately if one occurs naturally; do not manufacture an unsafe write merely to show
 the approval card.
+
+Live probe run `72a40e66-c739-49d7-9f44-9677fdad5941` did not pass: GPT-4.1 returned the choice
+request as final prose, without an `ask_user` call, `user.question`, WAITING state, or file change.
+Local cost was USD 0.007146; provider billing unknown. LIVE-029 / OUT-011 track the missing runtime
+question requirement. The runtime guard now requires an `ask_user` interrupt, preserves the gate
+across resume, and permits conditional writes after the accepted answer. Offline tests pass; retry
+S6 with a fresh run before declaring it fixed.
 
 ### S7 — Workspace boundary denial
 

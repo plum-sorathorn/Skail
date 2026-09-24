@@ -410,8 +410,9 @@ def _is_decision_gate_rejection(name: str, result: object) -> bool:
     """True only for ToolMessages produced by the execution-decision gate.
 
     The gate emits `execution.decision_required` (operational tool before a
-    decision), `execution.decision_exhausted` (terminal lock: repairs spent
-    with no decision), or `decision.*` codes (rejected `execution_decision` calls) via
+    decision), `execution.question_required` (work before a required answer),
+    `execution.decision_exhausted` (terminal lock: repairs spent with no decision),
+    or `decision.*` codes (rejected `execution_decision` calls) via
     `_decision_required`/`_decision_rejected` with status="error". Requiring
     both the tool-call context (a named tool passing through this middleware)
     and the strict stable-code prefix avoids misfiring on arbitrary provider
@@ -429,6 +430,7 @@ def _is_decision_gate_rejection(name: str, result: object) -> bool:
     text = content.strip()
     return (
         text.startswith("execution.decision_required")
+        or text.startswith("execution.question_required")
         or text.startswith("execution.decision_exhausted")
         or text.startswith("execution.intent_conflict")
         or text.startswith("execution.agent_count_conflict")
@@ -445,7 +447,9 @@ def _is_decision_requirement_rejection(result: object) -> bool:
         content = " ".join(str(part) for part in content)
     if not isinstance(content, str):
         return False
-    return content.strip().startswith("execution.decision_required")
+    return content.strip().startswith(
+        ("execution.decision_required", "execution.question_required")
+    )
 
 
 def _tool_result_status(result: object) -> str | None:

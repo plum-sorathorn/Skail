@@ -862,6 +862,7 @@ class RunController:
         lead_attempt_id: AttemptId,
         lead_context_packet: ContextPacket | None = None,
         restored_decision: Any | None = None,
+        question_answered: bool = False,
     ) -> Any:
         delegation_approved = delegation_approved or controls.delegation == "auto"
         allow_delegation = controls.delegation in ("auto", "ask")
@@ -969,6 +970,8 @@ class RunController:
                 controls.required_mode
                 or (ExecutionMode.DIRECT if controls.direct_only else None)
             ),
+            requires_user_answer=controls.requires_user_answer,
+            question_answered=question_answered,
             required_agent_count=controls.required_agent_count,
             required_agent_profile=controls.required_agent_profile,
         )
@@ -1309,6 +1312,38 @@ class RunController:
             "Execution blocked: the request explicitly requires "
             f"mode={required_mode.value}, but no matching execution decision was admitted; "
             "no work was performed."
+        )
+
+    def _question_answered(
+        self,
+        run_id: RunId,
+        *,
+        interrupt: Mapping[str, Any] | None = None,
+        answer: str | None = None,
+    ) -> bool:
+        if interrupt is not None and interrupt.get("kind") == "question" and answer:
+            raw_options = interrupt.get("options", ())
+            options = (
+                tuple(item for item in raw_options if isinstance(item, str))
+                if isinstance(raw_options, (list, tuple))
+                else ()
+            )
+            if answer.strip() and (not options or answer in options):
+                return True
+        return any(
+            event.type == "user.answer"
+            and isinstance(event.payload, UserPayload)
+            and event.payload.kind is InterruptKind.QUESTION
+            and bool(event.payload.content and event.payload.content.strip())
+            for event in self.journal.events_after(run_id=str(run_id))
+        )
+
+    def _required_question_error(self, run_id: RunId, required: bool) -> str | None:
+        if not required or self._question_answered(run_id):
+            return None
+        return (
+            "Execution blocked: this request requires a user question to be answered before work, "
+            "but no accepted answer was recorded."
         )
 
     def _record_execution_gate_blocked(
@@ -2483,6 +2518,7 @@ class RunController:
                                 if active_controls.required_mode is not None
                                 else None
                             ),
+                            "requires_user_answer": active_controls.requires_user_answer,
                             "required_agent_count": active_controls.required_agent_count,
                             "required_agent_profile": active_controls.required_agent_profile,
                             "routing_mode": active_controls.routing_mode.value,
@@ -2607,6 +2643,7 @@ class RunController:
                                     if active_controls.required_mode is not None
                                     else None
                                 ),
+                                "requires_user_answer": active_controls.requires_user_answer,
                                 "required_agent_count": active_controls.required_agent_count,
                                 "required_agent_profile": active_controls.required_agent_profile,
                                 "routing_mode": active_controls.routing_mode.value,
@@ -2655,17 +2692,26 @@ class RunController:
                 child_count=len(scheduler.gate.completed),
             )
 
+        required_question_error = self._required_question_error(
+            run_id, active_controls.requires_user_answer
+        )
         required_mode_error = self._required_mode_error(run_id, active_controls.required_mode)
-        if required_mode_error is not None or self._gated_noop_requires_blocked(
+        if (
+            required_question_error is not None
+            or required_mode_error is not None
+            or self._gated_noop_requires_blocked(
             run_id=run_id, recorded_child_results=recorded_child_results
+            )
         ):
-            output_text = required_mode_error or (
+            output_text = required_question_error or required_mode_error or (
                 "Execution blocked: every operational tool call was rejected "
                 "because no execution decision was recorded "
                 "(execution.decision_required), and no work was performed."
             )
             diagnostic_code = (
-                "execution.intent_not_satisfied"
+                "execution.question_required"
+                if required_question_error is not None
+                else "execution.intent_not_satisfied"
                 if required_mode_error is not None
                 else "execution.decision_required"
             )
@@ -2849,6 +2895,7 @@ class RunController:
                     if control_data.get("required_mode") is not None
                     else None
                 ),
+                requires_user_answer=bool(control_data.get("requires_user_answer", False)),
                 required_agent_count=(
                     int(control_data["required_agent_count"])
                     if control_data.get("required_agent_count") is not None
@@ -3016,6 +3063,9 @@ class RunController:
                 lead_attempt_id=pending.lead_attempt_id,
                 lead_context_packet=pending.lead_context_packet,
                 restored_decision=restored,
+                question_answered=self._question_answered(
+                    pending.run_id, interrupt=interrupt, answer=answer
+                ),
             )
             try:
                 result_state = (
@@ -3171,16 +3221,26 @@ class RunController:
                 child_count=len(gate.completed),
             )
 
+        required_question_error = self._required_question_error(
+            pending.run_id, pending.controls.requires_user_answer
+        )
         required_mode_error = self._required_mode_error(
             pending.run_id, pending.controls.required_mode
         )
-        if required_mode_error is not None:
+        if required_question_error is not None or required_mode_error is not None:
+            error_message = required_question_error or required_mode_error
+            assert error_message is not None
+            diagnostic_code = (
+                "execution.question_required"
+                if required_question_error is not None
+                else "execution.intent_not_satisfied"
+            )
             self._record_execution_gate_blocked(
                 run_id=pending.run_id,
                 task_id=pending.lead_task_id,
                 attempt_id=pending.lead_attempt_id,
-                code="execution.intent_not_satisfied",
-                summary=required_mode_error,
+                code=diagnostic_code,
+                summary=error_message,
             )
             self._finalize_assignment_budget(pending.lead_assignment)
             self._release_lead_allowances()
@@ -3190,7 +3250,7 @@ class RunController:
                 run_id=pending.run_id,
                 lead_assignment=pending.lead_assignment,
                 lead_context_packet=pending.lead_context_packet,
-                output=required_mode_error,
+                output=error_message,
                 messages=messages,
                 child_results=child_results,
                 status="blocked",

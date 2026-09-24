@@ -25,8 +25,11 @@ a product claim or treat a tag as permission to rename a repository or remote.
    user explicitly requires an execution mode. For example, “Use planned execution” requires a
    matching planned decision before successful completion; an omitted or conflicting decision ends
    blocked. Runtime middleware requires a decision before operational tool calls, except for a scoped
-   user question needed to obtain intent or authority. Explicit mode requirements persist across
-   question interrupts and resume.
+   user question needed to obtain intent or authority. An explicit request to ask the user to choose
+   also requires an `ask_user` interrupt and accepted answer before decisions or operational tools
+   can proceed; final prose does not satisfy the question. Explicit mode and question requirements
+   persist across question interrupts and resume. A conditional edit limit is lifted only after the
+   accepted answer.
 2. Skail interprets a versioned `ExecutionPlan` with a fixed coordinator. Plans contain finite,
    typed nodes, dependencies, acceptance criteria, effect and resource scopes, and explicit decision
    checkpoints. Model-authored code and todo prose are never executable plans.

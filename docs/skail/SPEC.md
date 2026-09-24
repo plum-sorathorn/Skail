@@ -48,7 +48,7 @@ A developer who:
 ## 3. Product principles
 
 1. **Just prompt; Skail will orchestrate.** Ordinary use must not require the user to design a graph or choose agents.
-2. **Explicit intent wins.** “Do this yourself,” “use a reviewer,” “do not edit,” and similar user constraints override autonomous preferences. A child-scoped “do not delegate further” limits nested child work without changing the requested top-level execution mode.
+2. **Explicit intent wins.** “Do this yourself,” “use a reviewer,” “do not edit,” and similar user constraints override autonomous preferences. A child-scoped “do not delegate further” limits nested child work without changing the requested top-level execution mode. An explicit request to ask the user to choose requires a question interrupt and accepted answer before work proceeds.
 3. **One capable lead.** The lead agent can read, edit, execute, and answer; it is not a coordinator that is helpless without children.
 4. **Delegate for leverage.** Use subagents for parallel work, specialized judgment, or context isolation—not ritualistically.
 5. **Assign models to tasks, not calls.** A task attempt has one model owner. Silent per-call model switching is prohibited.
@@ -134,7 +134,9 @@ continue with compatible tools after the decision is accepted. A scoped user que
 first when intent or authority is genuinely missing. If the user explicitly requires an execution
 mode, such as “Use planned execution,” the run must admit a matching decision before it can complete;
 an omitted or conflicting decision ends blocked. This requirement remains attached to the run across
-question interrupts and resume. For each user instruction the lead may:
+question interrupts and resume. If the user explicitly requests a choice before work, Skail requires
+an `ask_user` interrupt and accepted answer before operational tools or decisions can proceed. A final
+prose question is not an interrupt. For each user instruction the lead may:
 
 - answer directly;
 - inspect and modify the workspace directly;

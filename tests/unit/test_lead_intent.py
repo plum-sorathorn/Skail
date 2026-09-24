@@ -34,6 +34,22 @@ def test_child_scoped_no_further_delegation_preserves_planned_mode() -> None:
     assert controls.delegation == "auto"
 
 
+def test_explicit_choice_question_is_a_run_scoped_requirement() -> None:
+    controls = resolve_lead_controls(
+        "Before editing, ask me to choose exactly one format. "
+        "Do not edit any files until I answer."
+    )
+
+    assert controls.requires_user_answer is True
+    assert controls.write_allowed is None
+
+
+def test_mentioning_ask_me_to_choose_does_not_require_a_question() -> None:
+    controls = resolve_lead_controls("What does 'ask me to choose' mean?")
+
+    assert controls.requires_user_answer is False
+
+
 def test_no_edit_instruction_disables_write_tools() -> None:
     controls = resolve_lead_controls("Review only. Do not edit files.")
 

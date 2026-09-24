@@ -176,6 +176,87 @@ async def test_explicit_planned_intent_cannot_complete_without_a_decision(
 
 
 @pytest.mark.asyncio
+async def test_explicit_question_request_cannot_complete_as_final_prose(
+    tmp_path: Path,
+) -> None:
+    workspace, journal, session_id = _session(tmp_path)
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            AIMessage(content="Please choose JSON or CSV before I create exporter.py.")
+        ],
+    )
+    controller = _controller(workspace, journal, session_id, lead_model, tmp_path)
+
+    result = await controller.run_instruction(
+        "Before creating exporter.py, ask me to choose JSON or CSV. "
+        "Do not create or edit exporter.py until I answer."
+    )
+
+    assert result.status == "blocked"
+    assert "requires a user question" in result.output
+    events = journal.events_after(run_id=str(result.run_id))
+    assert not any(event.type == "run.completed" for event in events)
+    assert not any(
+        event.type == "user.question"
+        for event in events
+    )
+    assert any(
+        event.type == "diagnostic.error"
+        and event.payload.code == "execution.question_required"
+        for event in events
+    )
+
+
+@pytest.mark.asyncio
+async def test_explicit_question_request_blocks_operations_until_ask_user(
+    tmp_path: Path,
+) -> None:
+    workspace, journal, session_id = _session(tmp_path)
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        _direct_decision("Read notes.txt"),
+                        "premature-decision",
+                    ),
+                    (
+                        "read_file",
+                        {"file_path": "notes.txt"},
+                        "premature-read",
+                    ),
+                ]
+            ),
+            AIMessage(content="I reviewed notes.txt."),
+        ],
+    )
+    controller = _controller(workspace, journal, session_id, lead_model, tmp_path)
+
+    result = await controller.run_instruction(
+        "Ask me to choose JSON or CSV before reading notes.txt. "
+        "Do not inspect the file until I answer."
+    )
+
+    events = journal.events_after(run_id=str(result.run_id))
+    assert result.status == "blocked"
+    assert "requires a user question" in result.output
+    assert any(
+        event.type == "diagnostic.error"
+        and event.payload.code == "execution.question_required"
+        for event in events
+    )
+    assert not any(
+        event.type == "tool.completed"
+        and getattr(event.payload, "tool", None) == "read_file"
+        for event in events
+    )
+    assert journal.get_execution_decision(str(result.run_id)) is None
+
+
+@pytest.mark.asyncio
 async def test_admitted_decision_with_completed_tool_still_completes(
     tmp_path: Path,
 ) -> None:

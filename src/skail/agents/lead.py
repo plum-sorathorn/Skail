@@ -71,6 +71,7 @@ class LeadControls:
     max_children: int = 3
     direct_only: bool = False
     required_mode: ExecutionMode | None = None
+    requires_user_answer: bool = False
     required_agent_count: int | None = None
     required_agent_profile: str | None = None
     routing_mode: RoutingMode = RoutingMode.AUTO
@@ -106,6 +107,13 @@ def resolve_lead_controls(
         re.search(r"(?:^|[.!?;]\s*)(?:please\s+)?use planned execution\b", normalized)
         is not None
     )
+    requires_user_answer = any(
+        re.search(pattern, normalized) is not None
+        for pattern in (
+            r"^\s*(?:please\s+)?ask me to choose\b",
+            r"^\s*before\b[^!?;]{1,240},\s*(?:please\s+)?ask me to choose\b",
+        )
+    )
     required_mode = resolved.required_mode
     if planned_execution:
         if (direct_only or resolved.direct_only) or (
@@ -133,6 +141,9 @@ def resolve_lead_controls(
             r"\bno file (?:edits?|writes?|modifications?)\b",
         )
     )
+    conditional_write = requires_user_answer and re.search(
+        r"\buntil i answer\b", normalized
+    ) is not None
     count_match = re.search(
         r"\bexactly\s+(?P<count>\d+|one|two|three|four|five)\s+"
         r"(?:(?P<profile>general[- ]purpose|implementer|tester|explorer|reviewer|researcher)\s+)?"
@@ -166,7 +177,9 @@ def resolve_lead_controls(
     return replace(
         resolved,
         delegation="off" if direct_only else resolved.delegation,
-        write_allowed=False if no_write else resolved.write_allowed,
+        write_allowed=(
+            False if no_write and not conditional_write else resolved.write_allowed
+        ),
         required_agent_count=(
             required_agent_count
             if required_agent_count is not None
@@ -182,6 +195,7 @@ def resolve_lead_controls(
         ),
         direct_only=direct_only or resolved.direct_only,
         required_mode=required_mode,
+        requires_user_answer=requires_user_answer or resolved.requires_user_answer,
     )
 
 

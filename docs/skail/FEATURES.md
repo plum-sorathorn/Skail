@@ -59,6 +59,11 @@ release downstream work.
 An explicit “use planned execution” instruction requires a matching `planned` decision before
 successful completion; an omitted or conflicting decision ends blocked with
 `execution.intent_not_satisfied`. The requirement survives question interrupts and resume.
+An explicit “ask me to choose” instruction before work requires an `ask_user` interrupt and an
+accepted answer before execution decisions or operational tool calls are allowed. A final prose
+question does not count as an interrupt; an omitted question ends blocked with
+`execution.question_required`. The requirement survives resume, and a conditional edit limit such
+as “do not edit until I answer” permits the requested writes after the answer.
 
 Its prompt defines delegation heuristics, but the runtime enforces user directives:
 
@@ -66,12 +71,14 @@ Its prompt defines delegation heuristics, but the runtime enforces user directiv
 - `delegation=ask`: proposed tasks require user confirmation before launch;
 - `delegation=auto`: valid tasks launch within concurrency, safety, and budget gates;
 - explicit “use planned execution” requires an admitted `planned` decision;
+- explicit “ask me to choose” requires a blocking question interrupt and an accepted answer before
+  the run can proceed;
 - explicit “do this yourself” and unscoped “do not delegate” apply to that instruction even when the configured default is `auto`; a conflicting execution decision is rejected before its plan is admitted;
 - child-scoped “do not delegate further” limits nested delegation without forcing a planned run into direct mode;
 - explicit “do not edit” removes write-capable lead tools and rejects write-capable plan nodes for that run;
 - explicit “use N agents” requires exactly N agent nodes with pairwise-disjoint resource scopes, within the configured and hard three-child limits; when the user names an agent profile, every node must use that profile; count, profile, or scope conflicts are reported before plan admission.
 
-These constraints belong to one run and do not carry into the next prompt. Stable rejection codes are `execution.intent_conflict`, `execution.intent_not_satisfied`, `execution.agent_count_conflict`, `execution.agent_profile_conflict`, and `execution.agent_scope_conflict`.
+These constraints belong to one run and do not carry into the next prompt. Stable rejection codes are `execution.intent_conflict`, `execution.intent_not_satisfied`, `execution.question_required`, `execution.agent_count_conflict`, `execution.agent_profile_conflict`, and `execution.agent_scope_conflict`.
 
 ### Direct-versus-delegate heuristic
 
