@@ -25,7 +25,7 @@ class DecisionAdmissionError(ValueError):
 
 
 class ExecutionDecisionGate:
-    """Accept one initial decision and gate every operational tool behind it."""
+    """Accept one decision and enforce required questions before operations."""
 
     def __init__(
         self,

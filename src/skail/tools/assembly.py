@@ -440,7 +440,7 @@ def _is_decision_gate_rejection(name: str, result: object) -> bool:
 
 
 def _is_decision_requirement_rejection(result: object) -> bool:
-    """True when an operational tool simply arrived before a decision."""
+    """True when a tool arrived before a decision or required user answer."""
 
     content = getattr(result, "content", None)
     if isinstance(content, list):
