@@ -21,9 +21,12 @@ a product claim or treat a tag as permission to rename a repository or remote.
 ## Decision
 
 1. The first necessary lead response may finish directly or record a typed `ExecutionDecision` for
-   direct, discovery, or planned execution. A final answer needs no execution decision. Runtime
-   middleware requires a decision before operational tool calls, except for a scoped user question
-   needed to obtain intent or authority.
+   direct, discovery, or planned execution. A final answer needs no execution decision unless the
+   user explicitly requires an execution mode. For example, “Use planned execution” requires a
+   matching planned decision before successful completion; an omitted or conflicting decision ends
+   blocked. Runtime middleware requires a decision before operational tool calls, except for a scoped
+   user question needed to obtain intent or authority. Explicit mode requirements persist across
+   question interrupts and resume.
 2. Skail interprets a versioned `ExecutionPlan` with a fixed coordinator. Plans contain finite,
    typed nodes, dependencies, acceptance criteria, effect and resource scopes, and explicit decision
    checkpoints. Model-authored code and todo prose are never executable plans.

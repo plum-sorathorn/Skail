@@ -11,6 +11,7 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import Runnable
 
+from skail.domain.decisions import ExecutionMode
 from skail.domain.routing import RoutingMode
 from skail.domain.usage import NormalizedUsage
 from skail.routing.requirements import TaskRisk
@@ -69,6 +70,7 @@ class LeadControls:
     write_allowed: bool | None = None
     max_children: int = 3
     direct_only: bool = False
+    required_mode: ExecutionMode | None = None
     required_agent_count: int | None = None
     required_agent_profile: str | None = None
     routing_mode: RoutingMode = RoutingMode.AUTO
@@ -100,6 +102,25 @@ def resolve_lead_controls(
             r"\bno subagents?\b",
         )
     )
+    planned_execution = (
+        re.search(r"(?:^|[.!?;]\s*)(?:please\s+)?use planned execution\b", normalized)
+        is not None
+    )
+    required_mode = resolved.required_mode
+    if planned_execution:
+        if (direct_only or resolved.direct_only) or (
+            required_mode is not None and required_mode is not ExecutionMode.PLANNED
+        ):
+            raise LeadIntentError(
+                "execution.intent_conflict: planned execution conflicts with the current "
+                "required execution mode"
+            )
+        required_mode = ExecutionMode.PLANNED
+    elif (direct_only or resolved.direct_only) and required_mode is ExecutionMode.PLANNED:
+        raise LeadIntentError(
+            "execution.intent_conflict: planned execution conflicts with the current "
+            "required execution mode"
+        )
     no_write = any(
         re.search(pattern, normalized)
         for pattern in (
@@ -160,6 +181,7 @@ def resolve_lead_controls(
             required_agent_count if required_agent_count is not None else resolved.max_children
         ),
         direct_only=direct_only or resolved.direct_only,
+        required_mode=required_mode,
     )
 
 

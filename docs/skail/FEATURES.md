@@ -56,17 +56,21 @@ At a ready discovery checkpoint, Skail wakes the same lead assignment with the c
 bounded prerequisite evidence. The lead uses `execution_decision` again with the complete revised
 plan and typed revision metadata; unavailable evidence or a failed revision compare-and-set cannot
 release downstream work.
+An explicit “use planned execution” instruction requires a matching `planned` decision before
+successful completion; an omitted or conflicting decision ends blocked with
+`execution.intent_not_satisfied`. The requirement survives question interrupts and resume.
 
 Its prompt defines delegation heuristics, but the runtime enforces user directives:
 
 - `delegation=off`: the `task` tool is hidden or rejects calls before scheduling;
 - `delegation=ask`: proposed tasks require user confirmation before launch;
 - `delegation=auto`: valid tasks launch within concurrency, safety, and budget gates;
+- explicit “use planned execution” requires an admitted `planned` decision;
 - explicit “do this yourself” and “do not delegate” apply to that instruction even when the configured default is `auto`; a conflicting execution decision is rejected before its plan is admitted;
 - explicit “do not edit” removes write-capable lead tools and rejects write-capable plan nodes for that run;
 - explicit “use N agents” requires exactly N agent nodes with pairwise-disjoint resource scopes, within the configured and hard three-child limits; when the user names an agent profile, every node must use that profile; count, profile, or scope conflicts are reported before plan admission.
 
-These constraints belong to one run and do not carry into the next prompt. Stable rejection codes are `execution.intent_conflict`, `execution.agent_count_conflict`, `execution.agent_profile_conflict`, and `execution.agent_scope_conflict`.
+These constraints belong to one run and do not carry into the next prompt. Stable rejection codes are `execution.intent_conflict`, `execution.intent_not_satisfied`, `execution.agent_count_conflict`, `execution.agent_profile_conflict`, and `execution.agent_scope_conflict`.
 
 ### Direct-versus-delegate heuristic
 

@@ -244,6 +244,79 @@ async def test_question_interrupt_resume_dispatches_plan_once(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
+async def test_explicit_planned_mode_survives_question_resume(tmp_path: Path) -> None:
+    journal, checkpoints, questions, approvals = _stores(tmp_path, "planned-mode-resume")
+    session_id = _session(journal)
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message(
+                "ask_user",
+                {"prompt": "Proceed?", "reason": "confirmation"},
+                call_id="ask-before-plan",
+            )
+        ],
+    )
+    controller = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {"lead-model": lead},
+    )
+    first = await controller.run_instruction(
+        "Use planned execution to inspect before reporting."
+    )
+    assert first.status == "blocked"
+    assert first.interrupted is True
+
+    resumed_lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "direct",
+                            "objective": "Inspect before reporting",
+                            "reason": "The work is small.",
+                        },
+                        "wrong-mode-decision",
+                    )
+                ]
+            ),
+            AIMessage(content="The planned execution completed successfully."),
+        ],
+    )
+    resumed = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {"lead-model": resumed_lead},
+    )
+    assert resumed.restore_interrupted() is True
+
+    result = await resumed.resume_interrupted("yes")
+
+    assert result.status == "blocked"
+    assert "explicitly requires mode=planned" in result.output
+    assert journal.get_execution_decision(str(result.run_id)) is None
+    events = journal.events_after(run_id=str(result.run_id))
+    assert not any(event.type == "run.completed" for event in events)
+    assert any(
+        event.type == "diagnostic.error"
+        and event.payload.code == "execution.intent_not_satisfied"
+        for event in events
+    )
+
+
+@pytest.mark.asyncio
 async def test_resume_preserves_required_agent_profile_constraint(tmp_path: Path) -> None:
     journal, checkpoints, questions, approvals = _stores(tmp_path, "profile-resume")
     session_id = _session(journal)

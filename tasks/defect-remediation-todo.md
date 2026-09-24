@@ -4,7 +4,7 @@
   - Evidence review completed across the original exports; the S5 plan belongs to run
     `46335ece-a442-4a0b-bb14-19f220c73846` and the later conflict question to S4 retry
     `ea102525-dc0f-412d-92f4-deddf12b6458`. The DevPass run now has a frozen-rate local ledger.
-    Its reconciled campaign stop total is USD 2.305266734 through four S5 attempts;
+    Its reconciled campaign stop total is USD 2.339476734 through six S5 runs;
     ten calls remain unresolved at call level but are conservatively settled. Provider billing is
     unverified.
   - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
@@ -12,6 +12,7 @@
     exports lack per-call tokens and remain historical estimates.
 - [x] 1. Enforce explicit direct, no-delegation, no-write, exact-count, and named-agent-profile constraints at admission.
   - Evidence: `tests/unit/test_lead_intent.py`, `tests/contract/test_execution_decisions.py`, and focused `tests/integration/test_lead.py` regressions pass. Live S3 run `8054131c-c6c2-488d-bb55-3d5cf71fddc3` rejected the conflicting direct-mode plan. S4 run `360dbf83-cb8e-48c6-b7af-2c85a194436d` confirmed exact-count rejection; run `bb4cf4ac-a959-4a18-8696-50a2272c36a8` exposed the missing role guard. Commit `6b93eaf` enforces named profiles before plan admission. The latest S4 plans were admitted with `implementer` task profiles, but no child assignment completed; dispatch confirmation remains pending.
+  - Follow-up evidence: S5 runs `464af106-673d-4246-9686-cb948d6c5c7c` and `cd1bcae5-4e25-42fe-8a50-f733ae9a0543` completed without matching planned decisions; the latter claimed child agents had launched although no plan or child tasks existed. Explicit planned mode is now enforced at initial completion and after resume; red regressions cover both paths and the parser's mention-only case.
 - [x] 2. Bound repeated decision/tool loops and preserve uncertain call accounting.
   - Evidence: 32-call run limit is shared across lead/child middleware; exhaustion is emitted as `run.failed` with `run.model_call_limit_exhausted` before another provider call. `rtk pytest` focused regression suite: 43 passed; Ruff and Graphify update passed.
 - [x] Checkpoint: invalid decisions and read-only loops terminate with one accurate outcome.
@@ -29,26 +30,28 @@
 - [x] 8. Clear the three full offline suite failures.
   - Evidence: the no-credentials subprocess uses the null keyring backend, the initialization replay pilot waits asynchronously for its worker barrier, and the README assertion matches the current image masthead.
 - [x] Checkpoint: Ruff, mypy, unit/contract, smoke, and full offline suite pass.
-  - Latest verification after lead plan-dispatch guidance and pinned-model error reporting: Ruff
-    passed; mypy found no issues in 126 source files; unit/contract passed (882 passed, 2 skipped);
-    smoke passed; full offline suite passed (1164 passed, 5 skipped).
+  - Latest verification after explicit planned-mode enforcement: Ruff passed; mypy found no issues
+    in 126 source files; unit/contract passed (886 passed, 2 skipped); smoke passed; full offline
+    suite passed (1169 passed, 5 skipped).
 - [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
   - The user waived a provider-side hard cap and set a best-effort USD 10 ceiling; the normal
     in-house stop remains USD 8.50. Three earlier ledger rows were corrected because they omitted
-    measured calls when charging estimates for separate calls. Four S5 attempts have since added
-    USD 0.291322454 (USD 0.113410454 measured plus USD 0.177912 conservatively estimated). The
-    current campaign stop is USD 2.305266734: USD 1.521482734 measured plus USD 0.783784 estimated.
+    measured calls when charging estimates for separate calls. Six S5 runs have since added
+    USD 0.325532454 (USD 0.147620454 measured plus USD 0.177912 conservatively estimated). The
+    current campaign stop is USD 2.339476734: USD 1.555692734 measured plus USD 0.783784 estimated.
     Ten calls lack reliable token usage and are conservatively settled; do not replay them. This
-    leaves USD 6.194733266 to the local stop and USD 7.694733266 to the campaign ceiling. S4 used
-    USD 1.512342744 of its USD 1.60 allocation, leaving USD 0.087657256. S5 used USD 0.291322454
+    leaves USD 6.160523266 to the local stop and USD 7.660523266 to the campaign ceiling. S4 used
+    USD 1.512342744 of its USD 1.60 allocation, leaving USD 0.087657256. S5 used USD 0.325532454
     of USD 2.25; it remains incomplete after two plan/checkpoint runs failed in explorer dispatch,
-    one ambiguous lead call, and one plan rejected for missing resource scopes. No implementation
-    was admitted.
+    one ambiguous lead call, one plan rejected for missing resource scopes, and two false-success
+    completions without an admitted plan. No implementation was admitted.
   - Offline child-result guidance is committed as 935ae49. The explorer prompt now includes profile
     guidance and the shared JSON TaskResult evidence contract. The lead's minimal plan example now
     includes read effect_scope, non-empty resource_scopes, and checkpoint dependencies; its
-    regression failed before the change and passes afterward. Final offline gates pass: Ruff, mypy,
-    unit/contract (882 passed, 2 skipped), smoke, and full suite (1164 passed, 5 skipped).
+    regression failed before the change and passes afterward. Explicit planned intent now survives
+    question resume and cannot finish successfully without a matching decision. Final offline gates
+    pass: Ruff, mypy, unit/contract (886 passed, 2 skipped), smoke, and full suite
+    (1169 passed, 5 skipped).
   - The idle TUI resume displayed route events already present in its prior export; it started no new
     run and added no cost. The user confirmed DevPass approves Skail. Retry S5 with the explicit
     scoped plan, fresh task IDs, and automatic explorer routing, then continue S6-S7; S8 remains

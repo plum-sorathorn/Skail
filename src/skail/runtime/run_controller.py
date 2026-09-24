@@ -965,7 +965,10 @@ class RunController:
                 run_id=str(run_id), decision=decision
             ),
             restored_decision=restored_decision,
-            required_mode=(ExecutionMode.DIRECT if controls.direct_only else None),
+            required_mode=(
+                controls.required_mode
+                or (ExecutionMode.DIRECT if controls.direct_only else None)
+            ),
             required_agent_count=controls.required_agent_count,
             required_agent_profile=controls.required_agent_profile,
         )
@@ -1293,6 +1296,53 @@ class RunController:
                 ):
                     saw_required_rejection = True
         return saw_required_rejection and not saw_completion
+
+    def _required_mode_error(
+        self, run_id: RunId, required_mode: ExecutionMode | None
+    ) -> str | None:
+        if required_mode is None:
+            return None
+        decision = self.journal.get_execution_decision(str(run_id))
+        if decision is not None and decision.mode is required_mode:
+            return None
+        return (
+            "Execution blocked: the request explicitly requires "
+            f"mode={required_mode.value}, but no matching execution decision was admitted; "
+            "no work was performed."
+        )
+
+    def _record_execution_gate_blocked(
+        self,
+        *,
+        run_id: RunId,
+        task_id: TaskId,
+        attempt_id: AttemptId,
+        code: str,
+        summary: str,
+    ) -> None:
+        with self.journal.transaction() as tx:
+            tx.update_attempt_status(attempt_id=str(attempt_id), status=AttemptStatus.BLOCKED)
+            tx.update_task_status(task_id=str(task_id), status=TaskStatus.BLOCKED)
+            tx.update_run_status(run_id=str(run_id), status="blocked")
+            tx.update_session_status(session_id=str(self.session_id), status="idle")
+            self._append_event(
+                tx,
+                run_id=run_id,
+                type="diagnostic.error",
+                payload=DiagnosticPayload(
+                    code=code,
+                    summary=summary,
+                    details={"run_id": str(run_id)},
+                ),
+                task_id=task_id,
+                attempt_id=attempt_id,
+            )
+            self._append_event(
+                tx,
+                run_id=run_id,
+                type="run.blocked",
+                payload=LifecyclePayload(status="blocked"),
+            )
 
     async def _dispatch_admitted_plan_agents(
         self,
@@ -2428,6 +2478,11 @@ class RunController:
                             "write_allowed": active_controls.write_allowed,
                             "max_children": active_controls.max_children,
                             "direct_only": active_controls.direct_only,
+                            "required_mode": (
+                                active_controls.required_mode.value
+                                if active_controls.required_mode is not None
+                                else None
+                            ),
                             "required_agent_count": active_controls.required_agent_count,
                             "required_agent_profile": active_controls.required_agent_profile,
                             "routing_mode": active_controls.routing_mode.value,
@@ -2547,6 +2602,11 @@ class RunController:
                                 "write_allowed": active_controls.write_allowed,
                                 "max_children": active_controls.max_children,
                                 "direct_only": active_controls.direct_only,
+                                "required_mode": (
+                                    active_controls.required_mode.value
+                                    if active_controls.required_mode is not None
+                                    else None
+                                ),
                                 "required_agent_count": active_controls.required_agent_count,
                                 "required_agent_profile": active_controls.required_agent_profile,
                                 "routing_mode": active_controls.routing_mode.value,
@@ -2595,39 +2655,27 @@ class RunController:
                 child_count=len(scheduler.gate.completed),
             )
 
-        if self._gated_noop_requires_blocked(
+        required_mode_error = self._required_mode_error(run_id, active_controls.required_mode)
+        if required_mode_error is not None or self._gated_noop_requires_blocked(
             run_id=run_id, recorded_child_results=recorded_child_results
         ):
-            output_text = (
+            output_text = required_mode_error or (
                 "Execution blocked: every operational tool call was rejected "
                 "because no execution decision was recorded "
                 "(execution.decision_required), and no work was performed."
             )
-            with self.journal.transaction() as tx:
-                tx.update_attempt_status(
-                    attempt_id=str(lead_attempt_id), status=AttemptStatus.BLOCKED
-                )
-                tx.update_task_status(task_id=str(lead_task_id), status=TaskStatus.BLOCKED)
-                tx.update_run_status(run_id=str(run_id), status="blocked")
-                tx.update_session_status(session_id=str(self.session_id), status="idle")
-                self._append_event(
-                    tx,
-                    run_id=run_id,
-                    type="diagnostic.error",
-                    payload=DiagnosticPayload(
-                        code="execution.decision_required",
-                        summary=output_text,
-                        details={"run_id": str(run_id)},
-                    ),
-                    task_id=lead_task_id,
-                    attempt_id=lead_attempt_id,
-                )
-                self._append_event(
-                    tx,
-                    run_id=run_id,
-                    type="run.blocked",
-                    payload=LifecyclePayload(status="blocked"),
-                )
+            diagnostic_code = (
+                "execution.intent_not_satisfied"
+                if required_mode_error is not None
+                else "execution.decision_required"
+            )
+            self._record_execution_gate_blocked(
+                run_id=run_id,
+                task_id=lead_task_id,
+                attempt_id=lead_attempt_id,
+                code=diagnostic_code,
+                summary=output_text,
+            )
             self._finalize_assignment_budget(lead_assignment)
             self._release_lead_allowances()
             await _save_checkpoint("terminal", status="committed")
@@ -2796,6 +2844,11 @@ class RunController:
                 write_allowed=cast(bool | None, control_data.get("write_allowed")),
                 max_children=int(control_data.get("max_children", 3)),
                 direct_only=bool(control_data.get("direct_only", False)),
+                required_mode=(
+                    ExecutionMode(str(control_data["required_mode"]))
+                    if control_data.get("required_mode") is not None
+                    else None
+                ),
                 required_agent_count=(
                     int(control_data["required_agent_count"])
                     if control_data.get("required_agent_count") is not None
@@ -3110,6 +3163,34 @@ class RunController:
                 lead_assignment=pending.lead_assignment,
                 lead_context_packet=pending.lead_context_packet,
                 output=output_text,
+                messages=messages,
+                child_results=child_results,
+                status="blocked",
+                child_wall_seconds=gate.child_wall_seconds,
+                child_peak_active=gate.peak_active,
+                child_count=len(gate.completed),
+            )
+
+        required_mode_error = self._required_mode_error(
+            pending.run_id, pending.controls.required_mode
+        )
+        if required_mode_error is not None:
+            self._record_execution_gate_blocked(
+                run_id=pending.run_id,
+                task_id=pending.lead_task_id,
+                attempt_id=pending.lead_attempt_id,
+                code="execution.intent_not_satisfied",
+                summary=required_mode_error,
+            )
+            self._finalize_assignment_budget(pending.lead_assignment)
+            self._release_lead_allowances()
+            self._pending_run = None
+            self._pending_interrupt_payload = None
+            return RunResult(
+                run_id=pending.run_id,
+                lead_assignment=pending.lead_assignment,
+                lead_context_packet=pending.lead_context_packet,
+                output=required_mode_error,
                 messages=messages,
                 child_results=child_results,
                 status="blocked",

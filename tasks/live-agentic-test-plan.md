@@ -24,25 +24,29 @@ the task was read-only and no fixture files changed. A later TUI probe succeeded
 S4 remains incomplete after two reservation-adjusted fixture runs: both admitted and launched GLM
 implementers concurrently, then each failed ambiguously and cancelled its sibling. No accepted child
 results or FIFO follow-up. Four final-run GLM calls without reliable usage were conservatively settled.
-The corrected local campaign stop total is USD 2.305266734; S4 used USD 1.512342744 of USD 1.60.
+The corrected local campaign stop total is USD 2.339476734; S4 used USD 1.512342744 of USD 1.60.
 Do not replay ambiguous assignments.
 
-S5 has four fresh attempts so far. Run d58218a1-ee25-48ab-888d-dbab789a5a1f admitted a plan but
+S5 has six fresh runs so far. Run d58218a1-ee25-48ab-888d-dbab789a5a1f admitted a plan but
 both Qwen3.8 Flash explorers failed before the checkpoint (USD 0.053850454). Run
 9175536d-c3f2-45f7-840d-9a9f4a33e3a8 failed on an ambiguous Qwen3.8 Max lead call, locally settled
 at USD 0.177912. Run ee06f5c4-ab20-41b5-8bd1-2e66c2d2f1dc admitted a plan but both GPT-4.1
 explorers failed before the checkpoint (USD 0.047752). Run 9761855e-759e-4428-8f76-1df5e7bedeeb
 was rejected before admission because the agent nodes omitted required resource_scopes (USD
-0.011808). S5 cost so far is USD 0.291322454, with no accepted discovery results, checkpoint
-completion, revision, or implementation.
+0.018650). Runs 464af106-673d-4246-9686-cb948d6c5c7c and
+cd1bcae5-4e25-42fe-8a50-f733ae9a0543 both completed without an admitted plan or child tasks
+(USD 0.018650 and USD 0.008718). The first said its plan was rejected; the second falsely claimed
+two explorers had launched. S5 cost so far is USD 0.325532454, with no accepted discovery results,
+checkpoint completion, revision, or implementation.
 
-Offline fixes include the child TaskResult response contract (commit 935ae49) and a lead plan
-skeleton with required effect and resource scopes plus checkpoint dependencies. The resource-scope
-guard regression failed before the guidance fix and passes afterward. Final offline gates pass: Ruff,
-mypy, unit/contract (882 passed, 2 skipped), smoke, and full suite (1164 passed, 5 skipped). Retry
-S5 with the explicit scoped plan, fresh run/task IDs, automatic explorer routing, and no verification
-tool node. The user confirmed DevPass approves Skail; use the USD 8.50 in-house stop under the
-best-effort USD 10 ceiling. Provider billing remains unknown. S6-S7 are unrun; S8 is conditional.
+Offline fixes include the child TaskResult response contract (commit 935ae49), lead plan guidance
+with required effect and resource scopes, and runtime enforcement for explicit planned execution,
+including after question resume. Regressions reproduced the false success before the fix. Final
+offline gates pass: Ruff, mypy, unit/contract (886 passed, 2 skipped), smoke, and full suite
+(1169 passed, 5 skipped). Retry S5 with the explicit scoped plan, fresh run/task IDs, automatic
+explorer routing, and no verification tool node. The user confirmed DevPass approves Skail and
+waived a provider-side hard cap. Use the USD 8.50 in-house stop under the best-effort USD 10
+ceiling. Provider billing remains unknown. S6-S7 are unrun; S8 is conditional.
 Retest repaired paths and close defects only from matching live evidence.
 
 The previous USD 0.4376813 is Skail-exported usage plus estimates, **not verified provider spend**.
@@ -67,12 +71,13 @@ Complete this gate before any paid model request:
    normal in-house stop point against the USD 10 campaign ceiling, with scenario allocations
    and the run-wide model-call boundary. This is a best-effort token-cost ceiling, not a guarantee
    about provider billing or DevPass allowance consumption.
-4. Before routing a DevPass request through Skail, confirm that Skail is covered by the current
-   approved-client terms. Check credentials without printing values. Read `GET /v1/key` only to
-   confirm DevPass status and available plan allowance; do not use its usage figure as the ledger.
-   DevPass requests must use canonical model IDs without an upstream provider prefix. If client
-   approval, pricing, token accounting, key access, or allowance is unavailable, stop before paid
-   calls and record the blocker.
+4. The user confirmed DevPass approves Skail as an interactive client. Check credentials without
+   printing values. If `GET /v1/key` is available, record DevPass status and plan allowance for
+   context only; do not use it as the spend ledger or require an independently verified billing
+   baseline or provider-side cap for this run. Use canonical model IDs without an upstream provider
+   prefix. Continue while frozen per-model prices and reliable token counts or conservative local
+   estimates are available. If the key is invalid or a call cannot be locally priced or settled,
+   stop before the next paid call. Missing provider billing evidence alone does not block the test.
 
 After **each** scenario, export schema version 2, independently recompute each call from
 `provider_calls` token counts and frozen prices, and compare the sum with `model_usage`, the

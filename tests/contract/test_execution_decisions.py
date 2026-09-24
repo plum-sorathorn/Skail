@@ -99,6 +99,18 @@ def test_nested_full_decision_plan_shape_is_normalized_before_validation() -> No
     assert len(admitted) == 1
 
 
+def test_required_planned_mode_rejects_direct_decisions() -> None:
+    gate = ExecutionDecisionGate(
+        admit_plan=lambda _: None,
+        required_mode=ExecutionMode.PLANNED,
+    )
+
+    with pytest.raises(DecisionAdmissionError, match="execution.intent_conflict"):
+        gate.admit(_direct_decision())
+
+    assert gate.decision is None
+
+
 @pytest.mark.parametrize(
     "field, inner_value",
     [("mode", "direct"), ("objective", "A conflicting objective")],

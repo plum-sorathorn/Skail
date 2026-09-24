@@ -141,6 +141,41 @@ async def test_zero_tool_final_answer_still_completes(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_explicit_planned_intent_cannot_complete_without_a_decision(
+    tmp_path: Path,
+) -> None:
+    workspace, journal, session_id = _session(tmp_path)
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            AIMessage(
+                content=(
+                    "The planned execution launched two explorer agents and completed "
+                    "the requested audit."
+                )
+            )
+        ],
+    )
+    controller = _controller(workspace, journal, session_id, lead_model, tmp_path)
+
+    result = await controller.run_instruction(
+        "Use planned execution to audit notes.txt."
+    )
+
+    assert journal.get_execution_decision(str(result.run_id)) is None
+    assert result.status == "blocked"
+    assert "explicitly requires mode=planned" in result.output
+    assert "launched two explorer agents" not in result.output
+    events = journal.events_after(run_id=str(result.run_id))
+    assert not any(event.type == "run.completed" for event in events)
+    assert any(
+        event.type == "diagnostic.error"
+        and event.payload.code == "execution.intent_not_satisfied"
+        for event in events
+    )
+
+
+@pytest.mark.asyncio
 async def test_admitted_decision_with_completed_tool_still_completes(
     tmp_path: Path,
 ) -> None:

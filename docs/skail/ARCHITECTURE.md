@@ -102,9 +102,11 @@ Skail owns these semantics and may not delegate them to prompts:
 - a LangGraph checkpoint thread keyed by session and run IDs;
 - event and usage middleware.
 
-The first necessary lead response ends with a final answer or records a typed execution decision.
-Runtime middleware admits that decision before operational tool calls from the same response. A
-scoped question interrupt is allowed before the decision when required. Direct mode retains the
+The first necessary lead response ends with a final answer or records a typed execution decision,
+unless the user explicitly requires a mode such as planned execution. In that case, the runtime
+requires a matching decision before the run can complete, including after a question interrupt and
+resume. Runtime middleware admits that decision before operational tool calls from the same response.
+A scoped question interrupt is allowed before the decision when required. Direct mode retains the
 normal tool loop; discovery records a bounded frontier and checkpoint; planned mode records a finite
 dependency graph. The standard `task` call admits one node through the same service.
 

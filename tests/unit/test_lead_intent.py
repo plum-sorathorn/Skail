@@ -12,6 +12,18 @@ def test_direct_instruction_is_a_run_scoped_no_delegation_constraint() -> None:
     assert controls.delegation == "off"
 
 
+def test_explicit_planned_execution_sets_a_required_run_mode() -> None:
+    controls = resolve_lead_controls("Use planned execution for this task.")
+
+    assert controls.required_mode.value == "planned"
+
+
+def test_mentioning_planned_execution_does_not_require_it() -> None:
+    controls = resolve_lead_controls("What does 'use planned execution' mean?")
+
+    assert controls.required_mode is None
+
+
 def test_no_edit_instruction_disables_write_tools() -> None:
     controls = resolve_lead_controls("Review only. Do not edit files.")
 

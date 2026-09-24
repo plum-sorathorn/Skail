@@ -131,7 +131,10 @@ These features must sit behind Skail-owned interfaces because DeepAgents async s
 The lead agent is a normal tool-using coding agent. Its first necessary response may provide a final
 answer or record a typed `direct`, `discover`, or `planned` execution decision. The same response may
 continue with compatible tools after the decision is accepted. A scoped user question may come
-first when intent or authority is genuinely missing. For each user instruction the lead may:
+first when intent or authority is genuinely missing. If the user explicitly requires an execution
+mode, such as “Use planned execution,” the run must admit a matching decision before it can complete;
+an omitted or conflicting decision ends blocked. This requirement remains attached to the run across
+question interrupts and resume. For each user instruction the lead may:
 
 - answer directly;
 - inspect and modify the workspace directly;
