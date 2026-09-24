@@ -21,16 +21,18 @@ The attempted relaunch used a non-TTY shell after PowerShell PTY creation failed
 with no prompt then executed an empty headless instruction; this is not evidence that the TUI queue
 survives restart. That command was issued from the Skail repository root, not the disposable fixture;
 the task was read-only and no fixture files changed. A later TUI probe succeeded through `cmd.exe`.
-The last four S4 fixture attempts admitted the requested plan but did not start children. One used
-the old conflicting lead guidance and exposed `task.admission_required`; lead guidance now says
-Skail dispatches admitted nodes automatically. Three low-budget attempts reported
-`manual_model_mismatch`; their lead reservations plus retained synthesis allowance left too little
-child headroom. The selector now reports the pinned candidate's specific blocking reason. About USD
-0.192613 remained before the final reservation retry. That run launched two GLM implementers with
-overlapping calls, but one call failed ambiguously and Skail cancelled the sibling. No files changed;
-the two unresolved calls are conservatively settled. The S4 queue-follow-up test remains incomplete.
-The local campaign stop total is USD 1.921514560, S4 has USD 0.158488976 remaining, and paid tests
-are paused pending provider-call reconciliation. Actual provider billing remains unknown.
+After four earlier S4 retries, two reservation-adjusted fixture runs admitted the requested plan,
+launched both GLM implementers with overlapping calls, then each failed on an ambiguous GLM call and
+cancelled its sibling. No child results were accepted. The second report child has scoped changes in
+its retained worktree and its focused test passes, but it was not integrated. A FIFO follow-up was
+visible as queued during that run but did not execute. Four provider calls without reliable usage are
+conservatively settled. Reconciliation corrected the local campaign stop total to USD 2.013944280;
+S4 has USD 0.087657256 remaining in its scenario allocation. Do not replay an ambiguous assignment.
+S5-S7 remain pending within the USD 8.50 in-house stop; S4 remains incomplete. Before another
+DevPass request, confirm that Skail is an approved interactive client: the homepage advertises any
+OpenAI-compatible tool, while the [supplemental terms](https://devpass.llmgateway.io/legal/terms)
+restrict use to whitelisted clients and prohibit other direct API integrations. Actual provider
+billing remains unknown.
 Retest repaired paths and close defects only from matching live evidence.
 
 The previous USD 0.4376813 is Skail-exported usage plus estimates, **not verified provider spend**.
@@ -55,10 +57,12 @@ Complete this gate before any paid model request:
    normal in-house stop point against the USD 10 campaign ceiling, with scenario allocations
    and the run-wide model-call boundary. This is a best-effort token-cost ceiling, not a guarantee
    about provider billing or DevPass allowance consumption.
-4. Check credentials without printing values. Read `GET /v1/key` only to confirm DevPass status
-   and available plan allowance; do not use its usage figure as the ledger. DevPass requests must
-   use canonical model IDs without an upstream provider prefix. If pricing, token accounting,
-   key access, or allowance is unavailable, stop before paid calls and record the blocker.
+4. Before routing a DevPass request through Skail, confirm that Skail is covered by the current
+   approved-client terms. Check credentials without printing values. Read `GET /v1/key` only to
+   confirm DevPass status and available plan allowance; do not use its usage figure as the ledger.
+   DevPass requests must use canonical model IDs without an upstream provider prefix. If client
+   approval, pricing, token accounting, key access, or allowance is unavailable, stop before paid
+   calls and record the blocker.
 
 After **each** scenario, export schema version 2, independently recompute each call from
 `provider_calls` token counts and frozen prices, and compare the sum with `model_usage`, the
@@ -257,12 +261,15 @@ Prompt:
 > Use planned execution. Create two independent read-only discovery agent nodes: one audits the
 > fixture CLI/API boundary and one audits test gaps. Add a checkpoint depending on both. At the
 > checkpoint, revise the plan from the evidence and add one implementation agent for a
-> `--strict` parser option followed by one verification tool node. Persist the plan and
-> revision; do not write before the checkpoint is accepted.
+> `--strict` parser option scoped to `src/live_fixture/parser.py` and its existing tests. Do not add
+> a verification tool node or run verification commands from the agent plan. Persist the plan and
+> revision; do not write before the checkpoint is accepted. After the agent run ends, the operator
+> independently runs `python -m pytest tests/test_parser.py -q`.
 
 Pass: two independent discovery nodes, one dependent checkpoint, then a recorded revision with
-implementation and verification nodes. Node transitions are legal and occur once; no writer
-starts before checkpoint acceptance. Compare `/plan` with exported plan/revision/node records.
+one scoped implementation node. Node transitions are legal and occur once; no writer starts before
+checkpoint acceptance. The operator-run focused test verifies the parser change after the run.
+Compare `/plan` with exported plan/revision/node records.
 After cancellation, start an unrelated run in the same session and confirm it does not inherit
 the cancelled plan's prompt or authority. If a question remains pending, first verify that Skail
 visibly blocks the new prompt; resolve or cancel the question before starting the unrelated run.

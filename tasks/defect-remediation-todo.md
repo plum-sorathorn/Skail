@@ -4,8 +4,9 @@
   - Evidence review completed across the original exports; the S5 plan belongs to run
     `46335ece-a442-4a0b-bb14-19f220c73846` and the later conflict question to S4 retry
     `ea102525-dc0f-412d-92f4-deddf12b6458`. The DevPass run now has a frozen-rate local ledger.
-    Its campaign stop total is USD 1.921514560 through the final S4 reservation retry; seven calls
-    remain unresolved at call level but are conservatively settled. Provider billing is unverified.
+    Its reconciled campaign stop total is USD 2.013944280 through the final S4 reservation retries;
+    nine calls remain unresolved at call level but are conservatively settled. Provider billing is
+    unverified.
   - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
     model rates, price measured tokens locally, and include child calls in the parent run. Prior
     exports lack per-call tokens and remain historical estimates.
@@ -32,35 +33,19 @@
     passed; mypy found no issues in 126 source files; unit/contract passed (882 passed, 2 skipped);
     smoke passed; full offline suite passed (1164 passed, 5 skipped).
 - [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
-  - In progress under the user's explicit best-effort waiver of a provider-side hard cap. The
-    local stop point is USD 8.50 with a USD 10 ceiling. Read-only `GET /v1/key` reports DevPass
-    Lite with USD 53.43 allowance remaining before the final S4 retry; this is plan allowance, not
-    a spend ledger. Current local campaign stop total is USD 1.887390588. S3 intent and UTF-8
-    rechecks pass; S4 count enforcement is confirmed live. Run `7aa2bdab-ffea-470f-b8bc-6ab5e1e5e342`
-    was interrupted before a decision or plan; its call is unresolved and conservatively settled at
-    USD 0.175416. A non-TTY `--resume` without a prompt then executed an empty headless instruction
-    in run `eb160497-59e7-44ae-b3d3-8c810a25d97c` from the Skail repository root, not the fixture;
-    its read-only survey made no file changes. Its measured calls cost USD 0.634726 and its one
-    started call is conservatively settled at USD 0.058232. The CLI guard is fixed offline. A fresh
-    fixture retry pinned `gpt-4.1-mini` and children were reported as `manual_model_mismatch`
-    (USD 0.067142). A configured `gpt-4.1-nano` retry admitted the plan but the old lead guidance
-    caused six `task()` attempts to fail with `task.admission_required`; no children ran and the lead
-    asked to waive the two-child constraint (USD 0.083928). After guidance was fixed, pinned nano
-    and GLM retries still reported `manual_model_mismatch` under USD 0.20 run caps (USD 0.019710
-    and USD 0.016774). The lead assignment reserved USD 0.183648 and the batch must retain lead
-    allowance, leaving too little child headroom. The selector now prefers the exact pinned
-    candidate's rejection reason over counts from unrelated models; an offline regression covers
-    this budget-diagnostic case. The queue was not proven to survive restart. S4 use is USD
-    1.407387052 against USD 1.60, with USD 0.192612948 left. The next attempt needs enough run
-    budget to reserve lead and child work, while its measured local S4 cost must stay within the
-    remaining USD 0.192612948. The final reservation retry admitted and launched both GLM
-    implementers concurrently, but one provider call failed ambiguously and the sibling was
-    cancelled. The in-house run charge is USD 0.034123972, including USD 0.009718 conservative
-    estimates for one call without usage and one ambiguous call. S4 use is USD 1.441511024 against
-    USD 1.60, with USD 0.158488976 left. Paid tests are paused until those calls are reconciled;
-    do not force escalation. S4 did not pass because results were not accepted and no FIFO follow-up
-    was queued. S5-S7 remain pending; S8 is conditional. Actual provider billing remains unknown;
-    there is no independent billing baseline or delta.
+  - The user waived a provider-side hard cap and set a best-effort USD 10 ceiling; the normal
+    in-house stop remains USD 8.50. Reconciliation found three rows where the campaign stop field
+    omitted measured call cost when also charging a conservative estimate for a separate call. The
+    corrected total is USD 2.013944280: USD 1.408072280 measured plus USD 0.605872 in estimates.
+    Nine calls lack reliable token usage but are conservatively settled; do not replay them. The
+    corrected total leaves USD 6.486055720 to the in-house stop and USD 7.986055720 to the ceiling.
+    S4 used USD 1.512342744 of its USD 1.60 allocation, leaving USD 0.087657256. The S4 plan and
+    FIFO follow-up remain incomplete; S5-S7 are pending and S8 is conditional. Actual provider
+    billing has no independent baseline or delta.
+  - Before another DevPass request, confirm that Skail is an approved interactive client. Its
+    homepage says any OpenAI-compatible tool is supported, while its [supplemental terms](https://devpass.llmgateway.io/legal/terms)
+    restrict use to whitelisted clients and prohibit other direct API integrations. Skail is not
+    explicitly named in the terms. Do not treat the API allowance as spend or billing evidence.
   - Future runs use export schema version 2 `provider_calls` and `model_usage`; compare local
     per-model calculations with the TUI's lead-plus-child run total after each scenario. The
     LLM Gateway CLI is removed from the procedure.
