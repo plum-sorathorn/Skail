@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from skail.agents.lead import LeadControls, resolve_lead_controls
+from skail.agents.lead import TASK_PACKET_GUIDANCE, LeadControls, resolve_lead_controls
 
 
 def test_direct_instruction_is_a_run_scoped_no_delegation_constraint() -> None:
@@ -40,6 +40,11 @@ def test_exact_child_agent_instruction_sets_a_run_scoped_count() -> None:
 
     assert controls.required_agent_count == 2
     assert controls.max_children == 2
+
+
+def test_lead_guidance_documents_exact_agent_resource_scopes() -> None:
+    assert "resource_scopes" in TASK_PACKET_GUIDANCE
+    assert "exactly N agent nodes" in TASK_PACKET_GUIDANCE
 
 
 def test_explicit_constraints_do_not_leak_into_the_next_run() -> None:

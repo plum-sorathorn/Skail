@@ -30,9 +30,14 @@ must all be read-only. Minimal planned shape (copy this):
 {"schema_version": 1, "policy_version": "adaptive-v1", "revision": 1,
 "nodes": [{"local_id": "survey", "kind": "agent", "objective": "<survey work>"},
 {"local_id": "gate", "kind": "checkpoint", "objective": "<review evidence>"}]}}
-Unknown plan fields are rejected; use ONLY schema_version, policy_version,
-revision, nodes{local_id,kind,objective}. constraints may be a string or a list of strings. A final
-answer needs no execution_decision. When delegating, call task(description,
+Plan fields are validated: the plan root accepts schema_version, policy_version, revision, and
+nodes; node fields include local_id, kind, objective, depends_on, acceptance_criteria, inputs,
+output_contract, effect_scope, resource_scopes, task_features, artifact_refs, and task_lineage.
+Use only supported fields that the plan needs. For an explicit request to use exactly N agents,
+include exactly N agent nodes, give each a non-empty resource_scopes list, and keep those scopes
+pairwise disjoint; do not add survey or verification agent nodes outside that count. constraints
+may be a string or a list of strings. A final answer needs no execution_decision. When delegating,
+call task(description,
 subagent_type). The description may be plain text or one JSON object with: description,
 success_criteria, depends_on (persisted task IDs), priority, write_scope, model_policy,
 budget_usd, and background. subagent_type and profile are aliases; description may

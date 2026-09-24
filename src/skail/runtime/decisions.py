@@ -178,7 +178,7 @@ class ExecutionDecisionGate:
             if not scopes:
                 self._reject_constraint(
                     "execution.agent_scope_conflict: every requested agent needs "
-                    "a non-overlapping resource scope",
+                    "a non-empty resource_scopes list with pairwise-disjoint paths",
                     consume_repair=consume_repair,
                 )
             for scope in scopes:
