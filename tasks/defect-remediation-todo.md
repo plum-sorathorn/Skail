@@ -4,7 +4,7 @@
   - Evidence review completed across the original exports; the S5 plan belongs to run
     `46335ece-a442-4a0b-bb14-19f220c73846` and the later conflict question to S4 retry
     `ea102525-dc0f-412d-92f4-deddf12b6458`. The DevPass run now has a frozen-rate local ledger.
-    Its reconciled campaign stop total is USD 2.376594734 through six earlier S5 runs and three follow-up runs/probes;
+    Its reconciled campaign stop total is USD 2.417534734 through six earlier S5 runs and four follow-up runs/probes;
     ten calls remain unresolved at call level but are conservatively settled. Provider billing is
     unverified.
   - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
@@ -37,22 +37,24 @@
   - The user waived a provider-side hard cap and set a best-effort USD 10 ceiling; the normal
     in-house stop remains USD 8.50. Three earlier ledger rows were corrected because they omitted
     measured calls when charging estimates for separate calls. Six original S5 runs plus a TUI
-    help probe, a quoted-prompt conflict, and a plan-schema retry have added USD 0.362650454
-    (USD 0.184738454 measured plus USD 0.177912 conservatively estimated). The campaign stop is
-    USD 2.376594734: USD 1.592810734 measured plus USD 0.783784 estimated.
+    help probe, a quoted-prompt conflict, a plan-schema retry, and an admitted-plan explorer retry
+    have added USD 0.403590454 (USD 0.225678454 measured plus USD 0.177912 conservatively
+    estimated). The campaign stop is USD 2.417534734: USD 1.633750734 measured plus USD 0.783784
+    estimated.
     Ten calls lack reliable token usage and are conservatively settled; do not replay them. This
-    leaves USD 6.123405266 to the local stop and USD 7.623405266 to the campaign ceiling. S4 used
-    USD 1.512342744 of its USD 1.60 allocation, leaving USD 0.087657256. S5 used USD 0.362650454
+    leaves USD 6.082465266 to the local stop and USD 7.582465266 to the campaign ceiling. S4 used
+    USD 1.512342744 of its USD 1.60 allocation, leaving USD 0.087657256. S5 used USD 0.403590454
     of USD 2.25; it remains incomplete after two plan/checkpoint runs failed in explorer dispatch,
     one ambiguous lead call, one plan rejected for missing resource scopes, two false-success
-    completions without an admitted plan, and one later plan-schema retry that failed after bounded
-    repair. No implementation was admitted.
+    completions without an admitted plan, one plan-schema retry that failed after bounded repair,
+    and one admitted plan whose explorer tasks failed before the checkpoint. No implementation was
+    admitted.
   - Offline child-result guidance is committed as 935ae49. The explorer prompt now includes profile
     guidance and the shared JSON TaskResult evidence contract. The lead's minimal plan example now
     includes read effect_scope, non-empty resource_scopes, and checkpoint dependencies; its
     regression failed before the change and passes afterward. Explicit planned intent now survives
     question resume and cannot finish successfully without a matching decision. Final offline gates
-    pass: Ruff, mypy, unit/contract (886 passed, 2 skipped), smoke, and full suite
+    pass: Ruff, mypy, unit/contract (887 passed, 2 skipped), smoke, and full suite
     (1170 passed, 5 skipped).
   - The idle TUI resume displayed route events already present in its prior export; it started no new
     run and added no cost. The user confirmed DevPass approves Skail. Retry S5 with the explicit

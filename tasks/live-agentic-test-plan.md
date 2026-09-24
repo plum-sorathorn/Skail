@@ -24,10 +24,10 @@ the task was read-only and no fixture files changed. A later TUI probe succeeded
 S4 remains incomplete after two reservation-adjusted fixture runs: both admitted and launched GLM
 implementers concurrently, then each failed ambiguously and cancelled its sibling. No accepted child
 results or FIFO follow-up. Four final-run GLM calls without reliable usage were conservatively settled.
-The corrected local campaign stop total is USD 2.376594734; S4 used USD 1.512342744 of USD 1.60.
+The corrected local campaign stop total is USD 2.417534734; S4 used USD 1.512342744 of USD 1.60.
 Do not replay ambiguous assignments.
 
-S5 has six fresh runs so far. Run d58218a1-ee25-48ab-888d-dbab789a5a1f admitted a plan but
+The first six S5 attempts were: run d58218a1-ee25-48ab-888d-dbab789a5a1f admitted a plan but
 both Qwen3.8 Flash explorers failed before the checkpoint (USD 0.053850454). Run
 9175536d-c3f2-45f7-840d-9a9f4a33e3a8 failed on an ambiguous Qwen3.8 Max lead call, locally settled
 at USD 0.177912. Run ee06f5c4-ab20-41b5-8bd1-2e66c2d2f1dc admitted a plan but both GPT-4.1
@@ -36,7 +36,7 @@ was rejected before admission because the agent nodes omitted required resource_
 0.018650). Runs 464af106-673d-4246-9686-cb948d6c5c7c and
 cd1bcae5-4e25-42fe-8a50-f733ae9a0543 both completed without an admitted plan or child tasks
 (USD 0.018650 and USD 0.008718). The first said its plan was rejected; the second falsely claimed
-two explorers had launched. S5 cost so far is USD 0.325532454, with no accepted discovery results,
+two explorers had launched. Those six runs cost USD 0.325532454, with no accepted discovery results,
 checkpoint completion, revision, or implementation.
 
 Separate S5 follow-up evidence: TUI startup run `9400f0ee-45f7-4a2f-98d0-142d25f525fc` sent
@@ -45,8 +45,10 @@ Run `b8d63cc7-2399-43c0-9337-44601eaf22b8` was launched with a literal leading q
 child-scoped phrase “Do not delegate further”; the resolver chose direct mode and rejected the
 planned decision (USD 0.012848). Run `9c251173-023c-4307-ae8e-1a7726adebc6` received unquoted
 planned intent, but two decision attempts failed `decision.plan_invalid`; no plan or child was
-admitted (USD 0.015254). S5 use including these follow-ups is USD 0.362650454 of USD 2.25. Actual
-provider spend is unknown.
+admitted (USD 0.015254). The latest run `f76cbd54-caf1-429d-be0e-19a71b54db2a` admitted the
+intended three-node plan, then both auto-routed GPT-4.1 explorers failed before accepted results;
+the checkpoint blocked without revision or implementation (USD 0.040940). S5 use including these
+follow-ups is USD 0.403590454 of USD 2.25. Actual provider spend is unknown.
 
 Offline fixes include the child TaskResult response contract (commit 935ae49), lead plan guidance
 with required effect and resource scopes, runtime enforcement for explicit planned execution
