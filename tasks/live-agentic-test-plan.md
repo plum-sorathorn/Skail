@@ -46,9 +46,11 @@ After **each** scenario, export schema version 2, independently recompute each c
 `provider_calls` token counts and frozen prices, and compare the sum with `model_usage`, the
 run ledger, and the TUI's cumulative session total. The budget panel remains current-run scoped.
 Record input/output/cached tokens, model rates, local cost, and cumulative
-local cost in `COSTS.csv`. A missing or ambiguous call stays unresolved: do not start another
-paid scenario until it can be safely accounted for in-house. Stop if a scenario exceeds its
-allocation or the next one cannot fit below the normal stop point. Do not use the LLM Gateway CLI.
+local cost in `COSTS.csv`. If a call completes without token counts, charge the frozen
+conservative attempt estimate to the in-house campaign total and retain the per-model call as
+unresolved. Do not start another paid scenario until every started call is either token-priced
+or conservatively settled. Stop if no conservative estimate is available, a scenario exceeds its
+allocation, or the next one cannot fit below the normal stop point. Do not use the LLM Gateway CLI.
 
 | Scenario | Maximum additional in-house token cost (USD) |
 |---|---:|

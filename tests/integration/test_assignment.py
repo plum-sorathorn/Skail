@@ -770,6 +770,34 @@ def test_missing_usage_in_one_response_keeps_cost_conservative(tmp_path: Path) -
     assert usage.authority == "conservative_estimate"
 
 
+def test_completed_unmeasured_call_keeps_attempt_estimate_in_settlement(
+    tmp_path: Path,
+) -> None:
+    service, journal = _service(tmp_path)
+    assignment = service.assign(_request(), lambda: _snapshot(_candidate()))
+    assert not isinstance(assignment, RouteFailure)
+    adapter = FakeProviderAdapter()
+    settler = AssignmentUsageSettler(journal, service.ledger, {"fake": adapter})
+
+    measured_call = settler.begin_call(str(assignment.assignment_id))
+    settler.record_call(
+        str(assignment.assignment_id),
+        AIMessage(
+            content="done",
+            usage_metadata={"input_tokens": 1000, "output_tokens": 500, "total_tokens": 1500},
+        ),
+        call_id=measured_call,
+    )
+    unmeasured_call = settler.begin_call(str(assignment.assignment_id))
+    assert settler.complete_unmeasured_calls(str(assignment.assignment_id)) == 1
+    assert unmeasured_call != measured_call
+    settler.settle_attempt(str(assignment.assignment_id))
+
+    usage = journal.get_session_snapshot(str(SESSION_ID)).usage_records[0]
+    assert usage.amount_usd == Decimal("0.20")
+    assert usage.authority == "conservative_estimate"
+
+
 def test_cached_input_uses_its_frozen_rate_only_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

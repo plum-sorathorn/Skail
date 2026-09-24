@@ -18,6 +18,16 @@ def test_no_edit_instruction_disables_write_tools() -> None:
     assert controls.write_allowed is False
 
 
+def test_do_not_edit_or_delegate_is_a_direct_no_write_constraint() -> None:
+    controls = resolve_lead_controls(
+        "Review this file. Do not edit or delegate.", LeadControls()
+    )
+
+    assert controls.direct_only is True
+    assert controls.delegation == "off"
+    assert controls.write_allowed is False
+
+
 def test_exact_agent_instruction_sets_a_run_scoped_count() -> None:
     controls = resolve_lead_controls("Use exactly two agents for independent reviews.")
 

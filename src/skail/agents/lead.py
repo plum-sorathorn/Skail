@@ -82,7 +82,9 @@ def resolve_lead_controls(
             r"\bhandle (?:this|it|the work) yourself\b",
             r"\bwithout delegating\b",
             r"\bdo not delegate\b",
+            r"\bdo not (?:edit|write|modify) (?:or|and) delegate\b",
             r"\bdon't delegate\b",
+            r"\bdon't (?:edit|write|modify) (?:or|and) delegate\b",
             r"\bno delegation\b",
             r"\bno subagents?\b",
         )

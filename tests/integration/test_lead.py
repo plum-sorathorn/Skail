@@ -740,7 +740,7 @@ async def test_direct_user_instruction_rejects_plan_and_task_admission(tmp_path:
     )
 
     result = await controller.run_instruction(
-        "Inspect the requested files and do this yourself without delegating."
+        "Review the requested files. Do not edit or delegate."
     )
 
     assert result.status == "completed"

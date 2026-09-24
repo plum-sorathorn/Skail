@@ -134,6 +134,42 @@ def test_authoritative_usage_may_replace_estimated_without_double_charge(tmp_pat
     assert snapshot.authoritative_actual_usd == Decimal("0.22")
 
 
+def test_conservative_estimate_may_reconcile_a_lower_token_estimate(tmp_path: Path) -> None:
+    ledger = _ledger(tmp_path)
+    held = ledger.reserve(_request())
+    measured = NormalizedUsage(
+        input_tokens=1000,
+        output_tokens=500,
+        cost_usd=Decimal("0.002"),
+        authority=UsageAuthority.TOKEN_DERIVED_ESTIMATE,
+    )
+    conservative = NormalizedUsage(
+        input_tokens=1000,
+        output_tokens=500,
+        cost_usd=Decimal("0.20"),
+        authority=UsageAuthority.CONSERVATIVE_ESTIMATE,
+    )
+    ledger.settle(
+        held.reservation_id, usage_id="usage", usage=measured, idempotency_key="attempt"
+    )
+    ledger.settle(
+        held.reservation_id,
+        usage_id="usage",
+        usage=conservative,
+        idempotency_key="attempt",
+    )
+    ledger.settle(
+        held.reservation_id,
+        usage_id="usage",
+        usage=conservative,
+        idempotency_key="attempt",
+    )
+
+    snapshot = ledger.snapshot(RUN_ID)
+    assert snapshot.authoritative_actual_usd == Decimal("0")
+    assert snapshot.estimated_actual_usd == Decimal("0.20")
+
+
 def test_warning_fires_once_until_balance_falls_below_then_crosses_again(tmp_path: Path) -> None:
     ledger = _ledger(tmp_path)
     first = ledger.reserve(_request("0.80"))
