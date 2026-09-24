@@ -390,6 +390,14 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
         result.child_results[0].verification[0].evidence_ref
     )
     assert result.child_results[0].status == "succeeded", result.child_results[0]
+    child_prompt = "\n".join(
+        str(message.content)
+        for call in child_model.calls
+        for message in call
+        if message.content
+    )
+    assert "Preserve user changes" in child_prompt
+    assert "Final TaskResult contract: return exactly one JSON object" in child_prompt
     child_assignment = next(
         assignment
         for assignment in journal.get_session_snapshot(str(session_id)).assignments

@@ -131,6 +131,12 @@ revision identifies its expected predecessor; completed nodes retain identity an
 
 The lead receives a compact result containing status, summary, artifacts, changed paths, verification, both attempt summaries when applicable, and a recommended follow-up. Full child transcripts stay outside the lead context unless requested.
 
+Each delegated child receives its selected profile prompt and a shared final-result contract. It must
+return one JSON TaskResult with status, summary, and verification for every success criterion. Read-only
+analysis cites inspected files with path and line references; write-capable results include validated
+file evidence references. Plain-text reports are rejected as invalid child results and use the bounded
+task retry policy.
+
 ## 5. Built-in agent profiles
 
 ### Shared profile mechanics
@@ -142,11 +148,13 @@ Every profile declares:
 - allowed built-in and extension tools;
 - read/write/execute posture;
 - role floor and hard minimum capability;
-- default success-result schema;
+- structured-output requirement used during route qualification;
 - whether child delegation is allowed;
 - optional expected-call-count used for cost estimation.
 
 Profiles never hardcode a commercial model. Routing assigns the model per task.
+The response-schema marker qualifies model capabilities; delegated children still return the shared
+TaskResult wrapper validated by Skail.
 
 ### Lead
 

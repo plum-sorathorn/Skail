@@ -3498,7 +3498,24 @@ class RunController:
                 state_dir=self.state_dir,
             )
 
-            formatted_prompt = _format_context_packet(packet)
+            prompt_sections = [_format_context_packet(packet)]
+            profile_guidance = profile.prompt.strip()
+            if profile_guidance:
+                prompt_sections.append(f"Profile guidance:\n{profile_guidance}")
+            criteria = "\n".join(
+                f"- {criterion}" for criterion in spec.request.success_criteria
+            )
+            prompt_sections.append(
+                "Final TaskResult contract: return exactly one JSON object with status, summary, "
+                "and verification fields. Do not wrap it in Markdown or invent task IDs. For "
+                "succeeded, include one verification item for every success criterion below, "
+                "with criterion, passed=true, and concrete evidence. Read-only analyses must cite "
+                "inspected source as path:line in evidence; write-capable work must include a "
+                "valid evidence_ref for each verification item. For failed or blocked work, set "
+                "that status and put the reason in summary or follow_up.\n"
+                f"Success criteria:\n{criteria}"
+            )
+            formatted_prompt = "\n\n".join(prompt_sections)
 
             invoke_state: dict[str, Any] = {
                 "messages": [HumanMessage(content=formatted_prompt)],
