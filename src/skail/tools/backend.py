@@ -9,6 +9,7 @@ from deepagents.backends import FilesystemBackend
 from deepagents.backends.protocol import (
     EditResult,
     GlobResult,
+    GrepMatch,
     GrepResult,
     LsResult,
     ReadResult,
@@ -89,30 +90,120 @@ class PolicyFilesystemBackend(FilesystemBackend):
         max_count: int | None = None,
         context_lines: int = 0,
     ) -> GrepResult:
-        result = super().grep(
-            pattern,
-            path,
-            glob,
-            max_count=max_count,
-            context_lines=context_lines,
-        )
+        try:
+            result = (
+                self._grep_utf8(pattern, path, glob, max_count, context_lines)
+                if not pattern.isascii()
+                else super().grep(
+                    pattern,
+                    path,
+                    glob,
+                    max_count=max_count,
+                    context_lines=context_lines,
+                )
+            )
+        except UnicodeDecodeError:
+            result = self._grep_utf8(pattern, path, glob, max_count, context_lines)
         if result.matches is None:
             return result
-        safe = []
+        safe: list[GrepMatch] = []
+        content_by_path: dict[Path, list[str]] = {}
         for match in result.matches:
             try:
                 candidate = self.boundary.resolve(self._relative(match["path"]))
                 self.boundary._assert_not_sensitive(candidate)
             except (PermissionError, OSError):
                 continue
-            match["text"] = self.boundary.redactor.scrub_text(match["text"])
+            try:
+                file_lines = content_by_path.get(candidate)
+                if file_lines is None:
+                    file_lines = self.boundary.read_text(candidate).splitlines()
+                    content_by_path[candidate] = file_lines
+            except (OSError, UnicodeDecodeError):
+                continue
+            line_number = int(match.get("line", 0))
+            if 1 <= line_number <= len(file_lines):
+                match["text"] = file_lines[line_number - 1]
+            else:
+                match["text"] = self.boundary.redactor.scrub_text(match["text"])
             for field in ("context_before", "context_after"):
-                lines = cast(list[dict[str, Any]], match.get(field, []))
-                for line in lines:
-                    line["text"] = self.boundary.redactor.scrub_text(line["text"])
+                context = cast(list[dict[str, Any]], match.get(field, []))
+                for line in context:
+                    context_number = int(line.get("line", 0))
+                    if 1 <= context_number <= len(file_lines):
+                        line["text"] = file_lines[context_number - 1]
+                    else:
+                        line["text"] = self.boundary.redactor.scrub_text(line["text"])
             safe.append(match)
         result.matches = safe
         return result
+
+    def _grep_utf8(
+        self,
+        pattern: str,
+        path: str | None,
+        glob: str | None,
+        max_count: int | None,
+        context_lines: int,
+    ) -> GrepResult:
+        try:
+            root = self.boundary.resolve(self._relative(path or "."))
+        except (OSError, PermissionError) as exc:
+            return GrepResult(error=str(exc), matches=[])
+        if not root.exists():
+            return GrepResult(matches=[])
+        candidates: list[dict[str, Any]]
+        if root.is_file():
+            candidates = [
+                {"path": f"/{root.relative_to(self.boundary.workspace).as_posix()}"}
+            ]
+        else:
+            glob_result = super().glob(glob or "*", path=path)
+            if glob_result.matches is None:
+                return GrepResult(error=glob_result.error, matches=[])
+            candidates = [
+                {"path": str(item["path"])}
+                for item in glob_result.matches
+                if not item.get("is_dir", False)
+            ]
+
+        matches: list[GrepMatch] = []
+        truncated = False
+        for item in candidates:
+            try:
+                relative = self._relative(str(item["path"]))
+                candidate = self.boundary.resolve(relative)
+                self.boundary._assert_not_sensitive(candidate)
+                content = self.boundary.read_text(candidate)
+            except (OSError, PermissionError, UnicodeDecodeError):
+                continue
+            for line_number, line in enumerate(content.splitlines(), start=1):
+                if pattern not in line:
+                    continue
+                if max_count is not None and len(matches) >= max_count:
+                    truncated = True
+                    break
+                matches.append(
+                    {
+                        "path": f"/{candidate.relative_to(self.boundary.workspace).as_posix()}",
+                        "line": line_number,
+                        "text": line,
+                    }
+                )
+            if truncated:
+                break
+
+        error: str | None = None
+        if context_lines:
+            unreadable = self._add_grep_context(
+                matches, context_lines, pattern, newline=None
+            )
+            if unreadable:
+                error = (
+                    f"Error: could not read context for {len(unreadable)} file(s): "
+                    + ", ".join(sorted(unreadable))
+                )
+        return GrepResult(error=error, matches=matches, truncated=truncated)
 
     def write(self, file_path: str, content: str) -> WriteResult:
         try:

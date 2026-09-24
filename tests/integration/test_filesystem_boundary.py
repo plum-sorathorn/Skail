@@ -99,6 +99,22 @@ def test_deepagents_backend_enforces_sensitive_reads_and_records_writes(tmp_path
     )
 
 
+def test_grep_reads_utf8_files_on_windows_locale(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "unicode.txt").write_text("Crème brûlée\n", encoding="utf-8")
+    backend = PolicyFilesystemBackend(
+        workspace, redactor=RedactionRegistry(), task_id="task-utf8"
+    )
+
+    result = backend.grep("brûlée", "/")
+
+    assert result.error is None
+    assert result.matches == [
+        {"path": "/unicode.txt", "line": 1, "text": "Crème brûlée"}
+    ]
+
+
 def test_isolated_backend_rejects_direct_canonical_workspace_paths(tmp_path: Path) -> None:
     canonical = tmp_path / "canonical"
     isolated = tmp_path / "isolated"
