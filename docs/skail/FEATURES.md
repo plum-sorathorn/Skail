@@ -310,7 +310,9 @@ Prefer capability fit and tool reliability within a hard budget. Quality mode do
 
 ### `manual`
 
-Validate and use the exact model. If it cannot satisfy a required capability, return a conflict. Do not silently substitute.
+Validate and use the exact model. If it cannot satisfy a required capability or budget, return a
+conflict that names the pinned candidate's blocking reason. Exclusions for unrelated models must not
+mask that reason. Do not silently substitute.
 
 ### Override scopes
 

@@ -28,29 +28,34 @@
 - [x] 8. Clear the three full offline suite failures.
   - Evidence: the no-credentials subprocess uses the null keyring backend, the initialization replay pilot waits asynchronously for its worker barrier, and the README assertion matches the current image masthead.
 - [x] Checkpoint: Ruff, mypy, unit/contract, smoke, and full offline suite pass.
-  - Latest verification after lead plan-dispatch guidance: Ruff passed; mypy found no issues in 126
-    source files; unit/contract passed (881 passed, 2 skipped); smoke passed; full offline suite
-    passed (1163 passed, 5 skipped).
+  - Latest verification after lead plan-dispatch guidance and pinned-model error reporting: Ruff
+    passed; mypy found no issues in 126 source files; unit/contract passed (882 passed, 2 skipped);
+    smoke passed; full offline suite passed (1164 passed, 5 skipped).
 - [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
   - In progress under the user's explicit best-effort waiver of a provider-side hard cap. The
     local stop point is USD 8.50 with a USD 10 ceiling. Read-only `GET /v1/key` reports DevPass
     Lite with USD 53.43 allowance remaining before the final S4 retry; this is plan allowance, not
-    a spend ledger. Current local campaign stop total is USD 1.850906588. S3 intent and UTF-8
+    a spend ledger. Current local campaign stop total is USD 1.887390588. S3 intent and UTF-8
     rechecks pass; S4 count enforcement is confirmed live. Run `7aa2bdab-ffea-470f-b8bc-6ab5e1e5e342`
     was interrupted before a decision or plan; its call is unresolved and conservatively settled at
     USD 0.175416. A non-TTY `--resume` without a prompt then executed an empty headless instruction
     in run `eb160497-59e7-44ae-b3d3-8c810a25d97c` from the Skail repository root, not the fixture;
     its read-only survey made no file changes. Its measured calls cost USD 0.634726 and its one
     started call is conservatively settled at USD 0.058232. The CLI guard is fixed offline. A fresh
-    fixture run using `gpt-4.1-mini` admitted the plan but blocked both child assignments because
-    that model was not configured (USD 0.067142). A corrected configured `gpt-4.1-nano` run admitted
-    the same plan, but contradictory lead guidance caused six `task()` attempts to fail with
-    `task.admission_required`; no children ran and the lead asked to waive the two-child constraint
-    (USD 0.083928). Guidance now directs the lead to let Skail dispatch planned nodes automatically.
-    The queue was not proven to survive restart. About USD 0.229097 remains in the S4 allocation;
-    the next attempt must use a fresh fixture session, the configured nano model, and no `task()`
-    call for admitted plan nodes. S4-S7 remain pending; S8 is conditional. Actual provider billing
-    remains unknown; there is no independent billing baseline or delta.
+    fixture retry pinned `gpt-4.1-mini` and children were reported as `manual_model_mismatch`
+    (USD 0.067142). A configured `gpt-4.1-nano` retry admitted the plan but the old lead guidance
+    caused six `task()` attempts to fail with `task.admission_required`; no children ran and the lead
+    asked to waive the two-child constraint (USD 0.083928). After guidance was fixed, pinned nano
+    and GLM retries still reported `manual_model_mismatch` under USD 0.20 run caps (USD 0.019710
+    and USD 0.016774). The lead assignment reserved USD 0.183648 and the batch must retain lead
+    allowance, leaving too little child headroom. The selector now prefers the exact pinned
+    candidate's rejection reason over counts from unrelated models; an offline regression covers
+    this budget-diagnostic case. The queue was not proven to survive restart. S4 use is USD
+    1.407387052 against USD 1.60, with USD 0.192612948 left. The next attempt needs enough run
+    budget to reserve lead and child work, while its measured local S4 cost must stay within the
+    remaining USD 0.192612948. Use a fresh fixture session and do not call `task()` for admitted
+    plan nodes. S4-S7 remain pending; S8 is conditional. Actual provider billing remains unknown;
+    there is no independent billing baseline or delta.
   - Future runs use export schema version 2 `provider_calls` and `model_usage`; compare local
     per-model calculations with the TUI's lead-plus-child run total after each scenario. The
     LLM Gateway CLI is removed from the procedure.

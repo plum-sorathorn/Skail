@@ -21,11 +21,14 @@ The attempted relaunch used a non-TTY shell after PowerShell PTY creation failed
 with no prompt then executed an empty headless instruction; this is not evidence that the TUI queue
 survives restart. That command was issued from the Skail repository root, not the disposable fixture;
 the task was read-only and no fixture files changed. A later TUI probe succeeded through `cmd.exe`.
-The last two S4 fixture attempts admitted the requested plan but did not start children: one used an
-unconfigured `gpt-4.1-mini` override, and one exposed contradictory lead guidance to call `task()`
-after plan admission. Lead guidance now says Skail dispatches admitted nodes automatically. Use the
-configured `gpt-4.1-nano` implementer model and do not call `task()` for planned nodes. About USD
-0.229097 remains in the S4 allocation. Actual provider billing remains unknown.
+The last four S4 fixture attempts admitted the requested plan but did not start children. One used
+the old conflicting lead guidance and exposed `task.admission_required`; lead guidance now says
+Skail dispatches admitted nodes automatically. Three low-budget attempts reported
+`manual_model_mismatch`; their lead reservations plus retained synthesis allowance left too little
+child headroom. The selector now reports the pinned candidate's specific blocking reason. About USD
+0.192613 remains in the S4 allocation. The final retry needs enough run budget for both lead and
+child reservations, while its measured local S4 cost must stay below USD 0.192613. Actual provider
+billing remains unknown.
 Retest repaired paths and close defects only from matching live evidence.
 
 The previous USD 0.4376813 is Skail-exported usage plus estimates, **not verified provider spend**.

@@ -140,6 +140,32 @@ def test_manual_uses_exact_pin_but_still_validates_hard_compatibility() -> None:
     assert result.capability_fit is not None
 
 
+def test_manual_failure_reports_the_pinned_candidates_blocking_reason() -> None:
+    candidates = (
+        _candidate("p", "pinned", cost="0.50"),
+        _candidate("other", "other-1"),
+        _candidate("other", "other-2"),
+        _candidate("other", "other-3"),
+    )
+    requirements = RequirementBuilder().build(
+        role="implementer", risk=TaskRisk.ROUTINE, mode=RoutingMode.MANUAL
+    )
+
+    result = select_model(
+        candidates,
+        requirements,
+        available_budget_usd=Decimal("0.20"),
+        manual_model=("p", "pinned"),
+    )
+
+    assert isinstance(result, RouteFailure)
+    assert result.excluded_counts == {
+        "budget_unaffordable": 1,
+        "manual_model_mismatch": 3,
+    }
+    assert result.binding_constraint == "budget_unaffordable"
+
+
 def test_manual_keeps_unknown_price_distinct_when_no_hard_budget_applies() -> None:
     candidate = _candidate("p", "manual", auto_eligible=False).model_copy(
         update={"estimated_cost_usd": None}
