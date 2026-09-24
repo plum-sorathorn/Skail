@@ -4,18 +4,18 @@
   - Evidence review completed across the original exports; the S5 plan belongs to run
     `46335ece-a442-4a0b-bb14-19f220c73846` and the later conflict question to S4 retry
     `ea102525-dc0f-412d-92f4-deddf12b6458`. The DevPass run now has a frozen-rate local ledger.
-    Its campaign stop total is USD 0.480003536 through S3 retest; one historical call remains
-    unresolved at call level but is conservatively settled. Provider billing is unverified.
+    Its campaign stop total is USD 0.656067536 through the first S4 cancellation; two calls remain
+    unresolved at call level but are conservatively settled. Provider billing is unverified.
   - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
     model rates, price measured tokens locally, and include child calls in the parent run. Prior
     exports lack per-call tokens and remain historical estimates.
 - [x] 1. Enforce explicit direct, no-delegation, no-write, and exact-child constraints at admission.
-  - Evidence: `tests/unit/test_lead_intent.py`, `tests/contract/test_execution_decisions.py`, and focused `tests/integration/test_lead.py` regressions pass. Live S3 run `8054131c-c6c2-488d-bb55-3d5cf71fddc3` rejected the conflicting direct-mode plan before plan or child admission; the earlier S2 scenario evidence remains in `BUGS.md`.
+  - Evidence: `tests/unit/test_lead_intent.py`, `tests/contract/test_execution_decisions.py`, and focused `tests/integration/test_lead.py` regressions pass. Live S3 run `8054131c-c6c2-488d-bb55-3d5cf71fddc3` rejected the conflicting direct-mode plan. Live S4 exposed that “exactly two child agents” did not set the exact count; commit `06ebbc9` fixes the parser and an integration regression rejects excess plan agents before admission. S4 live retry remains pending.
 - [x] 2. Bound repeated decision/tool loops and preserve uncertain call accounting.
   - Evidence: 32-call run limit is shared across lead/child middleware; exhaustion is emitted as `run.failed` with `run.model_call_limit_exhausted` before another provider call. `rtk pytest` focused regression suite: 43 passed; Ruff and Graphify update passed.
 - [x] Checkpoint: invalid decisions and read-only loops terminate with one accurate outcome.
 - [x] 3. Reproduce and fix cross-run plan/checkpoint/question ownership.
-  - Reproduction proved that the old session thread carried a cancelled run's prompt into the next model request. Run-scoped threads, checkpoint thread metadata, pending-question guards, and TUI run/plan ownership state are implemented; focused recovery/UI tests pass. Interrupt cards now show owner suffixes. Live S4 confirmation remains pending. Queue persistence across restart remains unproven.
+  - Reproduction proved that the old session thread carried a cancelled run's prompt into the next model request. Run-scoped threads, checkpoint thread metadata, pending-question guards, and TUI run/plan ownership state are implemented; focused recovery/UI tests pass. Interrupt cards now show owner suffixes. Commit `bf0513e` also terminalizes task/attempt rows when a blocked plan node was not launched. Live S4 ownership retry remains pending. Queue persistence across restart remains unproven.
 - [x] 4. Unify queue behavior across cancel, Ctrl+C, slash quit, and resume.
   - Evidence: 51 TUI interaction/command tests pass. Real Textual pilots cover `/cancel`, `/quit`, Ctrl+C, app exit, FIFO after success, and queue non-restoration; a warning-as-error exit subset passes (4 tests). Queue clearing is visible.
 - [x] Checkpoint: pending questions and queued prompts cannot silently cross run boundaries.
@@ -28,16 +28,19 @@
 - [x] 8. Clear the three full offline suite failures.
   - Evidence: the no-credentials subprocess uses the null keyring backend, the initialization replay pilot waits asynchronously for its worker barrier, and the README assertion matches the current image masthead.
 - [x] Checkpoint: Ruff, mypy, unit/contract, smoke, and full offline suite pass.
-  - Verification after the latest intent/accounting changes: Ruff passed; mypy found no issues in
-    126 source files; unit/contract passed (871 passed, 2 skipped); smoke passed; full offline
-    suite passed (1149 passed, 5 skipped). Commit `57de6a6` contains the latest runtime fix.
+  - Verification after the exact-child, evaluation-gate, and journal recovery fixes: Ruff passed;
+    mypy found no issues in 126 source files; unit/contract passed (873 passed, 2 skipped); smoke
+    passed; full offline suite passed (1153 passed, 5 skipped). Commits: `06ebbc9`, `5d991a1`,
+    `bf0513e`.
 - [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
   - In progress under the user's explicit best-effort waiver of a provider-side hard cap. The
     local stop point is USD 8.50 with a USD 10 ceiling. Read-only `GET /v1/key` reports DevPass
-    Lite with USD 53.64 allowance remaining after S3 retest; this is plan allowance, not a spend
-    ledger. Current local campaign total is USD 0.480003536. S3 intent and UTF-8 rechecks pass;
-    S4-S7 remain, and S8 remains conditional. Actual provider billing is unknown because no
-    independent billing baseline/delta is available.
+    Lite with USD 53.59 allowance remaining before the S4 retry; this is plan allowance, not a
+    spend ledger. Current local campaign total is USD 0.656067536. S3 intent and UTF-8 rechecks
+    pass; S4 first attempt was cancelled before child calls because an over-count plan was
+    admitted. Offline fixes now cover exact child counts and terminal plan task rows; retry S4,
+    then S5-S7. S8 remains conditional. Actual provider billing is unknown because no independent
+    billing baseline/delta is available.
   - Future runs use export schema version 2 `provider_calls` and `model_usage`; compare local
     per-model calculations with the TUI's lead-plus-child run total after each scenario. The
     LLM Gateway CLI is removed from the procedure.
