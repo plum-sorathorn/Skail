@@ -12,8 +12,12 @@ Verify the offline repairs through real, operator-entered prompts in Skail's TUI
 model switching, parallel children, plans and checkpoints, queued work, question/approval handling,
 durable resume, workspace boundaries, and clean final answers. The offline quality gates passed
 before this plan was restored. S1 passed in the earlier live run; S2-S5 were incomplete or blocked;
-S6-S7 were not run; S8 is conditional. Retest the repaired paths and close defects only from matching
-live evidence.
+S6-S7 were not run; S8 is conditional. The latest corrected S4 prompt started run
+`7aa2bdab-ffea-470f-b8bc-6ab5e1e5e342`, but the lead call was interrupted before an execution
+decision. No plan or child was admitted and the fixture stayed unchanged. The call has no token
+counts; its USD 0.175416 assignment estimate is included as a conservative local stop charge, while
+provider usage remains unresolved. Continue only with a new assignment; never replay that call.
+Retest repaired paths and close defects only from matching live evidence.
 
 The previous USD 0.4376813 is Skail-exported usage plus estimates, **not verified provider spend**.
 The S5 plan belonged to run `46335ece-a442-4a0b-bb14-19f220c73846`; the conflict question

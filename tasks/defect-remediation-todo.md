@@ -4,7 +4,7 @@
   - Evidence review completed across the original exports; the S5 plan belongs to run
     `46335ece-a442-4a0b-bb14-19f220c73846` and the later conflict question to S4 retry
     `ea102525-dc0f-412d-92f4-deddf12b6458`. The DevPass run now has a frozen-rate local ledger.
-    Its campaign stop total is USD 0.831462588 through the S4 role-mismatch cancellation; three calls remain
+    Its campaign stop total is USD 1.006878588 through the interrupted S4 retry; four calls remain
     unresolved at call level but are conservatively settled. Provider billing is unverified.
   - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
     model rates, price measured tokens locally, and include child calls in the parent run. Prior
@@ -30,17 +30,19 @@
 - [x] Checkpoint: Ruff, mypy, unit/contract, smoke, and full offline suite pass.
   - Verification after the exact-child, evaluation-gate, journal recovery, and plan-guidance fixes:
     Ruff passed; mypy found no issues in 126 source files; unit/contract passed (874 passed, 2
-    skipped); smoke passed; full offline suite passed (1154 passed, 5 skipped). Commits: `06ebbc9`,
-    `5d991a1`, `bf0513e`, `5eaadc4`.
+     skipped); smoke passed; full offline suite passed (1160 passed, 5 skipped). Commits: `06ebbc9`,
+     `5d991a1`, `bf0513e`, `5eaadc4`, `6b93eaf`, `3c5ab6e`.
 - [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
   - In progress under the user's explicit best-effort waiver of a provider-side hard cap. The
     local stop point is USD 8.50 with a USD 10 ceiling. Read-only `GET /v1/key` reports DevPass
     Lite with USD 53.43 allowance remaining before the final S4 retry; this is plan allowance, not
-    a spend ledger. Current local campaign total is USD 0.831462588. S3 intent and UTF-8 rechecks
-    pass; S4 count enforcement is confirmed live, while the final role-mismatch run exposed missing
-    profile enforcement and active-task cleanup at TUI exit. Offline fixes now cover profile,
-    resume, and shutdown paths. The plan specifies two scoped implementer nodes, a checkpoint, and
-    operator-run integration verification. One S4 retry remains, then S5-S7; S8 is conditional.
+     a spend ledger. Current local campaign stop total is USD 1.006878588. S3 intent and UTF-8
+     rechecks pass; S4 count enforcement is confirmed live. The latest corrected S4 retry started
+     run `7aa2bdab-ffea-470f-b8bc-6ab5e1e5e342` but was interrupted before a decision or plan; its
+     Qwen call is unresolved and conservatively settled at USD 0.175416. Profile enforcement and
+     child shutdown still need a successful live S4 completion; no plan or child was admitted in
+     the latest run. The next run must use a new assignment, then S5-S7; S8 is conditional. Actual
+     provider billing remains unknown.
     Actual provider billing is unknown because no independent billing baseline/delta is available.
   - Future runs use export schema version 2 `provider_calls` and `model_usage`; compare local
     per-model calculations with the TUI's lead-plus-child run total after each scenario. The
