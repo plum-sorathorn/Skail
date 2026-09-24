@@ -1,7 +1,7 @@
 # Live Agentic Test Plan: Skail Interactive Validation
 
 This plan reconstructs the S1-S8 interactive matrix formerly in `tasks/plan.md` (available in
-Git history at `c2190ff`). Use it with `tasks/defect-remediation-plan.md` and
+Git history at `c2190ff`). Use it with `tasks/remediation-2026-09-24-plan.md` and
 `tasks/defect-remediation-todo.md`. The September 22 run and its defects are recorded under
 `out/live-agentic/`; this document describes the remaining validation, not a fresh claim that
 those scenarios passed.
@@ -81,6 +81,13 @@ belonged to later S4 retry run `ea102525-dc0f-412d-92f4-deddf12b6458`. A queued 
 surviving a process restart has not been demonstrated.
 
 ## Gate 1: in-house ledger and model qualification
+
+For a new rerun, record a fresh subledger ID, baseline fixture commit, frozen price snapshot,
+and USD 0 new-call subtotal. Preserve the historical USD 2.594404734 campaign ledger separately;
+never reset or overwrite its evidence. Add each new charge to that historical total for the
+best-effort USD 10 ceiling and normal USD 8.50 local stop. Current local headroom is
+USD 7.405595266 to the ceiling and USD 5.905595266 to the normal stop. Reassign scenario
+allowances within that cumulative headroom before any new call.
 
 Complete this gate before any paid model request:
 
@@ -416,10 +423,12 @@ used 8,225 input, 202 output, and 5,376 cached tokens; local cost USD 0.010002 a
 
 Run only if sufficient in-house ledger headroom remains. Prompt:
 
-> Delegate one implementer task to fix the concurrency defect described by
-> `tests/test_integration.py`. Preserve the task identity, run the focused test, and if the
-> first attempt genuinely fails, use Skail's single escalation path with the recorded failure
-> evidence. Do not manufacture a failure and do not retry more than once.
+> Delegate one bounded implementer task for a real, independently verified failing fixture test.
+> Preserve the task identity. If the first attempt genuinely fails, use Skail's single escalation
+> path with recorded failure evidence. Do not manufacture a failure or retry more than once.
+
+Choose the task and focused test from the fixture's current baseline before prompting; record
+their paths, failure, and expected behavior. If no eligible task remains, mark S8 not exercised.
 
 If a genuine first implementer attempt fails, preserve its task ID, allow at most the documented
 second child attempt, and inspect the new assignment and failure handoff. If the first attempt

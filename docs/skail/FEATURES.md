@@ -873,7 +873,8 @@ paired live evaluation with preregistered completion, cost, latency, and safety 
 6. Unknown side effects are treated as writes for scheduling and as approval-worthy for safety.
 7. A child cannot enlarge its own tools, permissions, scope, depth, or budget.
 8. Todo state is not executable task state.
-9. Estimated cost and usage are labelled; authoritative provider usage is distinguishable.
+9. Measured token counts and in-house priced cost are distinguishable from conservative
+   estimates and unresolved usage; provider-reported dollars are not spending authority.
 10. Terminal state and cost survive resume without duplicate execution.
 11. User changes and partial child work are never discarded silently.
 12. Legacy Skail code is reference-only and cannot be imported by Skail.

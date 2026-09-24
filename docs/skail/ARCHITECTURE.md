@@ -618,7 +618,8 @@ Provider adapters receive resolved credentials out-of-band. Events store provide
 ### 13.1 Storage split
 
 - `~/.skail/checkpoints.sqlite`: LangGraph checkpointer state;
-- `~/.skail/skail.sqlite`: Skail-owned session, task, route, usage, approval, and event journal;
+- `~/.skail/journal.sqlite`: Skail-owned session, task, route, usage, and event journal;
+- `~/.skail/workspaces/<identity>/approvals.sqlite`: workspace-scoped command approvals;
 
 The only physical `.skail` directory Skail creates is the user root `~/.skail`. Workspace-scoped
 records use a canonical identity namespace below `~/.skail/workspaces/`; all path resolution is

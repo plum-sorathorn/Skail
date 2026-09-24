@@ -1,5 +1,9 @@
 # Defect Remediation Plan: Live Agentic Validation
 
+> Historical implementation record. The current comprehensive follow-up is
+> [the 2026-09-24 remediation plan](remediation-2026-09-24-plan.md). Keep the historical
+> evidence below for traceability; its earlier gates and test counts are superseded.
+
 The operator prompts, scenario acceptance checks, spend gates, and evidence procedure for the
 remaining interactive run are in `tasks/live-agentic-test-plan.md`.
 

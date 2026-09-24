@@ -286,8 +286,9 @@ Supported limits:
 
 Accounting rules:
 
-1. Actual reported provider usage is authoritative when available.
-2. Missing usage is estimated and visibly labelled.
+1. Measured provider token counts are priced in-house using the rates frozen for the assignment;
+   provider-supplied dollar cost is not the spending authority (see ADR 0008).
+2. Missing token usage is conservatively estimated or marked unresolved and visibly labelled.
 3. Before a model call, Skail reserves its estimated input plus configured output allowance.
 4. Before a parallel batch, Skail reserves every child attempt plus one lead continuation allowance.
 5. New tasks or calls that would exceed the remaining unreserved budget do not launch. The lead receives a structured budget-blocked result and can reduce fan-out, select a cheaper qualified model, or ask the user.
@@ -543,7 +544,7 @@ python -m pytest
 python -m pytest tests\unit -q
 python -m pytest tests\contract tests\integration -q
 python scripts\smoke.py
-python scripts\eval_routing.py --fixture evals\fixtures
+python scripts\eval_routing.py --fixtures evals\fixtures
 graphify update .
 ```
 
@@ -562,7 +563,7 @@ src/skail/                 Skail package
   sessions/                 checkpoints, metadata, export
   tools/                    tool assembly, execution policy, approvals
   tui/                      Textual application and projections
-  telemetry/                local usage and task event journal
+  sessions/                 local usage and task event journal
 tests/
   unit/                     pure policy and state tests
   contract/                 DeepAgents and provider adapter contracts
@@ -680,8 +681,10 @@ Neither engineering readiness nor a release tag proves a broad savings claim.
 3. Stable engineering evaluation uses at least 50 approved, oracle-backed offline fixtures balanced
    across risk, role, parallelism, platform, and failure behavior. Economic promotion uses the
    separate paired live qualification contract in ADR 0006 and the active implementation guide.
-4. The stable core resolves credentials from environment-variable references. OS keyring support may be added later as an optional extra.
-5. Target Python 3.12+. Pin the exact DeepAgents/LangGraph compatibility range only after Phase 1 contract spikes verify it.
+4. Resolve credentials from environment-variable references, the OS keyring, or interactive
+   setup as specified in ADR 0007; never persist raw credentials in Skail configuration.
+5. Target Python 3.12+ and use the exact framework integration versions recorded in
+   ADR 0002 and `pyproject.toml`.
 6. Use the adaptive execution and release boundaries accepted in
    [ADR 0006](../decisions/0006-adaptive-execution-and-release-boundaries.md).
 7. Use the global-state and instruction-precedence contract accepted in

@@ -1,5 +1,9 @@
 # Defect Remediation Checklist
 
+Current sequence and acceptance checks: [2026-09-24 remediation plan](remediation-2026-09-24-plan.md).
+The completed items below are historical offline milestones; unchecked live confirmations
+remain open until matching evidence is recorded.
+
 - [x] 0. Reconcile run IDs and plan ownership; establish new in-house token-cost evidence.
   - Evidence review completed across the original exports; the S5 plan belongs to run
     `46335ece-a442-4a0b-bb14-19f220c73846` and the later conflict question to S4 retry
@@ -66,3 +70,25 @@
   - Future runs compare locally recomputed per-call costs with schema-v2 provider_calls and
     model_usage; the LLM Gateway CLI remains removed from the procedure.
 - [ ] Update `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, and `COSTS.csv` with verified outcomes.
+
+## Next execution cycle
+
+- [ ] 10. Reconcile LIVE-001–032 and OUT-001–012 against the latest exports; correct stale
+  statuses, link each open item to a reproducer, and preserve uncertain call outcomes.
+- [ ] 11. Diagnose S5 explorer result failures (LIVE-024) with safe failure-category evidence,
+  then prove accepted child results, checkpoint, and revision in deterministic tests.
+- [ ] 12. Reproduce and repair same-run post-answer continuation (LIVE-030/OUT-012); inspect
+  the repeated S6 tool sequence before changing loop detection.
+- [ ] 13. Recheck prior intent, ownership, queue, cancellation, question, output, and UTF-8
+  fixes with focused regressions; close live-pending entries only on matching observations.
+- [ ] 14. Baseline the offline suite three times, map independent mechanisms, optimize measured
+  bottlenecks, and verify a repeatable speedup without dropping boundary coverage.
+- [ ] 15. Review overlapping CI gates and harmonize Ruff paths without reducing supported
+  Python/platform checks.
+- [ ] 16. Pass Ruff, mypy, unit/contract, smoke, and full offline suite in repository order;
+  record counts and before/after timings.
+- [ ] 17. Refresh the disposable fixture and live plan; freeze models/prices and a new
+  in-house subledger under the cumulative stop; rerun S1–S6 as eligible, S7 only if affected, S8 only on a
+  natural failed attempt; reconcile after every call and update all evidence.
+- [ ] 18. Audit README, specs, ADRs, and test procedures against verified behavior; check
+  local links and commands; commit coherent changes with Conventional Commit messages.

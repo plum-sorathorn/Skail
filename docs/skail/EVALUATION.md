@@ -9,8 +9,10 @@ the reported speedup is not supported by the preserved diagnostics. It must not 
 provider-quality result, provider-cost saving, safety guarantee, or release verification.
 
 Skail retains offline fixtures for contract testing. They exercise the runtime under deterministic
-scripted responses; they do not establish real-provider quality or savings. Live-provider validation
-is opt-in and has not been performed for v0.1.0.
+scripted responses; they do not establish real-provider quality or savings. Opt-in exploratory
+DevPass live runs are recorded in `out/live-agentic/` and the repository's live test plan. Several
+scenarios remain incomplete, provider billing is unverified, and these runs do not qualify
+v0.1.0 for live-provider quality or economic claims.
 
 ## Independent execution foundation
 
