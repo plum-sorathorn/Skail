@@ -1,16 +1,20 @@
 # Defect Remediation Checklist
 
-- [ ] 0. Reconcile run IDs and plan ownership; establish new in-house token-cost evidence.
-  - Evidence review completed across all ten session exports; run ownership correction recorded in `BUGS.md` and `RUN_LOG.md`. A read-only provider CLI status check found no dashboard session; account usage and key limits remain unavailable without it. No paid call was made.
+- [x] 0. Reconcile run IDs and plan ownership; establish new in-house token-cost evidence.
+  - Evidence review completed across the original exports; the S5 plan belongs to run
+    `46335ece-a442-4a0b-bb14-19f220c73846` and the later conflict question to S4 retry
+    `ea102525-dc0f-412d-92f4-deddf12b6458`. The DevPass run now has a frozen-rate local ledger.
+    Its campaign stop total is USD 0.480003536 through S3 retest; one historical call remains
+    unresolved at call level but is conservatively settled. Provider billing is unverified.
   - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
     model rates, price measured tokens locally, and include child calls in the parent run. Prior
     exports lack per-call tokens and remain historical estimates.
 - [x] 1. Enforce explicit direct, no-delegation, no-write, and exact-child constraints at admission.
-  - Evidence: `tests/unit/test_lead_intent.py`, `tests/contract/test_execution_decisions.py`, and focused `tests/integration/test_lead.py` regressions pass; live S2 confirmation remains pending.
+  - Evidence: `tests/unit/test_lead_intent.py`, `tests/contract/test_execution_decisions.py`, and focused `tests/integration/test_lead.py` regressions pass. Live S3 run `8054131c-c6c2-488d-bb55-3d5cf71fddc3` rejected the conflicting direct-mode plan before plan or child admission; the earlier S2 scenario evidence remains in `BUGS.md`.
 - [x] 2. Bound repeated decision/tool loops and preserve uncertain call accounting.
   - Evidence: 32-call run limit is shared across lead/child middleware; exhaustion is emitted as `run.failed` with `run.model_call_limit_exhausted` before another provider call. `rtk pytest` focused regression suite: 43 passed; Ruff and Graphify update passed.
 - [x] Checkpoint: invalid decisions and read-only loops terminate with one accurate outcome.
-- [ ] 3. Reproduce and fix cross-run plan/checkpoint/question ownership.
+- [x] 3. Reproduce and fix cross-run plan/checkpoint/question ownership.
   - Reproduction proved that the old session thread carried a cancelled run's prompt into the next model request. Run-scoped threads, checkpoint thread metadata, pending-question guards, and TUI run/plan ownership state are implemented; focused recovery/UI tests pass. Interrupt cards now show owner suffixes. Live S4 confirmation remains pending. Queue persistence across restart remains unproven.
 - [x] 4. Unify queue behavior across cancel, Ctrl+C, slash quit, and resume.
   - Evidence: 51 TUI interaction/command tests pass. Real Textual pilots cover `/cancel`, `/quit`, Ctrl+C, app exit, FIFO after success, and queue non-restoration; a warning-as-error exit subset passes (4 tests). Queue clearing is visible.
@@ -24,9 +28,16 @@
 - [x] 8. Clear the three full offline suite failures.
   - Evidence: the no-credentials subprocess uses the null keyring backend, the initialization replay pilot waits asynchronously for its worker barrier, and the README assertion matches the current image masthead.
 - [x] Checkpoint: Ruff, mypy, unit/contract, smoke, and full offline suite pass.
-  - Verification: Ruff passed; mypy found no issues in 126 source files; unit/contract passed (865 passed, 2 skipped); smoke passed; full offline suite passed (1136 passed, 5 skipped).
+  - Verification after the latest intent/accounting changes: Ruff passed; mypy found no issues in
+    126 source files; unit/contract passed (871 passed, 2 skipped); smoke passed; full offline
+    suite passed (1149 passed, 5 skipped). Commit `57de6a6` contains the latest runtime fix.
 - [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
-  - Not exercised: read-only provider CLI status found no dashboard session. Provider-side usage baseline and a capped key could not be obtained, so no paid call was made; S6/S7 remain unrun and S8 was not forced.
+  - In progress under the user's explicit best-effort waiver of a provider-side hard cap. The
+    local stop point is USD 8.50 with a USD 10 ceiling. Read-only `GET /v1/key` reports DevPass
+    Lite with USD 53.64 allowance remaining after S3 retest; this is plan allowance, not a spend
+    ledger. Current local campaign total is USD 0.480003536. S3 intent and UTF-8 rechecks pass;
+    S4-S7 remain, and S8 remains conditional. Actual provider billing is unknown because no
+    independent billing baseline/delta is available.
   - Future runs use export schema version 2 `provider_calls` and `model_usage`; compare local
     per-model calculations with the TUI's lead-plus-child run total after each scenario. The
     LLM Gateway CLI is removed from the procedure.
