@@ -28,7 +28,7 @@ the task was read-only and no fixture files changed. A later TUI probe succeeded
 S4 remains incomplete after two reservation-adjusted fixture runs: both admitted and launched GLM
 implementers concurrently, then each failed ambiguously and cancelled its sibling. No accepted child
 results or FIFO follow-up. Four final-run GLM calls without reliable usage were conservatively settled.
-The corrected local campaign stop total is USD 2.559144734; S4 used USD 1.512342744 of USD 1.60.
+The corrected local campaign stop total is USD 2.594404734; S4 used USD 1.512342744 of USD 1.60.
 Do not replay ambiguous assignments.
 
 The first six S5 attempts were: run d58218a1-ee25-48ab-888d-dbab789a5a1f admitted a plan but
@@ -51,8 +51,12 @@ planned decision (USD 0.012848). Run `9c251173-023c-4307-ae8e-1a7726adebc6` rece
 planned intent, but two decision attempts failed `decision.plan_invalid`; no plan or child was
 admitted (USD 0.015254). The latest run `f76cbd54-caf1-429d-be0e-19a71b54db2a` admitted the
 intended three-node plan, then both auto-routed GPT-4.1 explorers failed before accepted results;
-the checkpoint blocked without revision or implementation (USD 0.040940). S5 use including these
-follow-ups is USD 0.403590454 of USD 2.25. Actual provider spend is unknown.
+the checkpoint blocked without revision or implementation (USD 0.040940). Final retry
+`071ba5b0-5c91-479d-bb14-74db2e951997` admitted plan `04e5799a-0e2a-4b91-87e1-b95afa40c26c`,
+but both GPT-4.1 explorers failed before accepted results; retries were `auto_ineligible` and the
+checkpoint blocked. Twelve calls used 26,006 input, 1,266 output, and 17,920 cached tokens for
+USD 0.035260 locally. No files changed. S5 use including all follow-ups is USD 0.438850454 of
+USD 2.25, leaving USD 1.811149546. Actual provider spend is unknown; S5 remains incomplete.
 
 Offline fixes include the child TaskResult response contract (commit 935ae49), lead plan guidance
 with required effect and resource scopes, runtime enforcement for explicit planned execution
