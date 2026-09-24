@@ -2682,7 +2682,16 @@ class RunController:
         recoverable_runs = []
         for run in snapshot.runs:
             if run.status == "blocked":
-                if snapshot.status == "interrupted":
+                task_graph_ids = [
+                    f"{self.session_id}:{run.run_id}:{task.task_id}"
+                    for task in snapshot.tasks
+                    if task.run_id == run.run_id
+                ]
+                graph_ids = [f"{self.session_id}:{run.run_id}:lead", *task_graph_ids]
+                has_pending_question = self.question_store is not None and any(
+                    self.question_store.pending(graph_id) for graph_id in graph_ids
+                )
+                if snapshot.status == "interrupted" or has_pending_question:
                     recoverable_runs.append(run)
                 continue
             if run.status != "running":

@@ -21,6 +21,7 @@ from skail.runtime.errors import FrameworkContractError
 from skail.runtime.interrupts import QuestionStore
 from skail.runtime.run_controller import RunController
 from skail.sessions import CheckpointStore, Journal, RecoveryResult, recover_session
+from skail.sessions.service import SessionService
 from tests.fakes.models import ScriptedChatModel, tool_call_message
 
 NOW = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
@@ -728,6 +729,15 @@ async def test_controller_interrupt_checkpoint_preserves_live_attempt_on_recover
     resumed_model = ScriptedChatModel(
         responses=[AIMessage(content="Recovered execution completed.")]
     )
+    service = SessionService(
+        journal=journal,
+        checkpoints=checkpoints,
+        sessions_dir=tmp_path / "sessions",
+    )
+    resumed_session = service.resume_session(str(session_id))
+    assert resumed_session.ok
+    assert resumed_session.session is not None
+    assert resumed_session.session.status.value == "active"
     resumed_controller = RunController(
         session_id=session_id,
         workspace=tmp_path,
