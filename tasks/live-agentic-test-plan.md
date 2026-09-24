@@ -21,18 +21,22 @@ The attempted relaunch used a non-TTY shell after PowerShell PTY creation failed
 with no prompt then executed an empty headless instruction; this is not evidence that the TUI queue
 survives restart. That command was issued from the Skail repository root, not the disposable fixture;
 the task was read-only and no fixture files changed. A later TUI probe succeeded through `cmd.exe`.
-After four earlier S4 retries, two reservation-adjusted fixture runs admitted the requested plan,
-launched both GLM implementers with overlapping calls, then each failed on an ambiguous GLM call and
-cancelled its sibling. No child results were accepted. The second report child has scoped changes in
-its retained worktree and its focused test passes, but it was not integrated. A FIFO follow-up was
-visible as queued during that run but did not execute. Four provider calls without reliable usage are
-conservatively settled. Reconciliation corrected the local campaign stop total to USD 2.013944280;
-S4 has USD 0.087657256 remaining in its scenario allocation. Do not replay an ambiguous assignment.
-S5-S7 remain pending within the USD 8.50 in-house stop; S4 remains incomplete. Before another
-DevPass request, confirm that Skail is an approved interactive client: the homepage advertises any
-OpenAI-compatible tool, while the [supplemental terms](https://devpass.llmgateway.io/legal/terms)
-restrict use to whitelisted clients and prohibit other direct API integrations. Actual provider
-billing remains unknown.
+After four earlier S4 retries, two reservation-adjusted fixture runs launched both GLM
+implementers concurrently; each failed ambiguously and cancelled its sibling. No child results were
+accepted. The second report child has scoped changes in its retained worktree and its focused test
+passes, but it was not integrated. A FIFO follow-up was visible as queued but did not execute. The
+local ledger corrected three rows that had omitted measured calls alongside estimates; its current
+campaign stop total is USD 2.067794734, with S4 using USD 1.512342744 of USD 1.60. Do not replay
+ambiguous assignments.
+
+S5 run `d58218a1-ee25-48ab-888d-dbab789a5a1f` admitted plan
+`8b0a3ba3-f465-4544-9658-c2df60a914fd`, but both explorer tasks failed and their second attempts
+were blocked as `auto_ineligible`; no checkpoint revision or implementation node completed. Its 32
+calls are fully token-priced at USD 0.053850454. Retry with fresh run/task IDs and automatic explorer
+routing, leaving explorer assignments unpinned so a failed attempt can select another qualified
+model. The user confirmed DevPass approves Skail; use the USD 8.50 in-house stop under the user's
+best-effort USD 10 ceiling. Actual provider billing remains unknown. S6-S7 are pending; S8 is
+conditional.
 Retest repaired paths and close defects only from matching live evidence.
 
 The previous USD 0.4376813 is Skail-exported usage plus estimates, **not verified provider spend**.
@@ -255,6 +259,12 @@ assignment timestamps; do not infer overlap from the prompt. A count or scope co
 rejected before plan admission and repaired within the bounded decision allowance.
 
 ### S5 — Adaptive plan and checkpoint
+
+The first live S5 run admitted the plan but both Qwen3.8 Flash explorer tasks failed before the
+checkpoint. Their second attempts were blocked as auto_ineligible because no replacement route was
+selected. For the fresh retry, leave the explorer profile unpinned so automatic routing can choose
+another qualified model after a failed first attempt. Keep the implementer pin and verify all actual
+assignments from the export.
 
 Prompt:
 

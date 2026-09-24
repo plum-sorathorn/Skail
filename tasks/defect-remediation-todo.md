@@ -4,7 +4,7 @@
   - Evidence review completed across the original exports; the S5 plan belongs to run
     `46335ece-a442-4a0b-bb14-19f220c73846` and the later conflict question to S4 retry
     `ea102525-dc0f-412d-92f4-deddf12b6458`. The DevPass run now has a frozen-rate local ledger.
-    Its reconciled campaign stop total is USD 2.013944280 through the final S4 reservation retries;
+    Its reconciled campaign stop total is USD 2.067794734 through the first S5 run;
     nine calls remain unresolved at call level but are conservatively settled. Provider billing is
     unverified.
   - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
@@ -34,19 +34,21 @@
     smoke passed; full offline suite passed (1164 passed, 5 skipped).
 - [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
   - The user waived a provider-side hard cap and set a best-effort USD 10 ceiling; the normal
-    in-house stop remains USD 8.50. Reconciliation found three rows where the campaign stop field
-    omitted measured call cost when also charging a conservative estimate for a separate call. The
-    corrected total is USD 2.013944280: USD 1.408072280 measured plus USD 0.605872 in estimates.
-    Nine calls lack reliable token usage but are conservatively settled; do not replay them. The
-    corrected total leaves USD 6.486055720 to the in-house stop and USD 7.986055720 to the ceiling.
-    S4 used USD 1.512342744 of its USD 1.60 allocation, leaving USD 0.087657256. The S4 plan and
-    FIFO follow-up remain incomplete; S5-S7 are pending and S8 is conditional. Actual provider
-    billing has no independent baseline or delta.
-  - Before another DevPass request, confirm that Skail is an approved interactive client. Its
-    homepage says any OpenAI-compatible tool is supported, while its [supplemental terms](https://devpass.llmgateway.io/legal/terms)
-    restrict use to whitelisted clients and prohibit other direct API integrations. Skail is not
-    explicitly named in the terms. Do not treat the API allowance as spend or billing evidence.
-  - Future runs use export schema version 2 `provider_calls` and `model_usage`; compare local
-    per-model calculations with the TUI's lead-plus-child run total after each scenario. The
-    LLM Gateway CLI is removed from the procedure.
+    in-house stop remains USD 8.50. Three historical rows were corrected because their stop totals
+    omitted measured calls alongside estimates for separate calls. S5's first run added USD
+    0.053850454 measured. The current total is USD 2.067794734: USD 1.461922734 measured plus USD
+    0.605872 estimated. Nine calls lack reliable token usage but are conservatively settled; do not
+    replay them. This leaves USD 6.432205266 to the in-house stop and USD 7.932205266 to the ceiling.
+    S4 used USD 1.512342744 of its USD 1.60 allocation, leaving USD 0.087657256. S5 used USD
+    0.053850454 of its USD 2.25 allocation; its plan was admitted but both explorer tasks failed
+    before checkpoint completion or implementation. Retry S5 with fresh assignments and automatic
+    explorer routing, then continue S6-S7; S8 remains conditional. The user confirmed DevPass approves
+    Skail. Actual provider billing remains unverified.
+  - The resumed idle TUI replayed historical route events already present in the export; no new run
+    or provider call was created. The previous unlogged-call estimate was removed from COSTS.csv.
+    The S5 run's schema-v2 provider_calls include input, output, and cached-input tokens for all 32
+    completed calls; local costs were independently recomputed at the catalog rates.
+  - Future runs compare local per-call calculations with schema-v2 provider_calls, model_usage, the
+    TUI's lead-plus-child total, and the session total. The LLM Gateway CLI is removed from the
+    procedure.
 - [ ] Update `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, and `COSTS.csv` with verified outcomes.
