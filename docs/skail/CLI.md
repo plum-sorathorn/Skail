@@ -26,6 +26,10 @@ skail sessions ...
 skail config ...
 ```
 
+Without a prompt, `--continue` and `--resume` open the TUI only when stdin and stdout are terminals.
+A headless continuation or resume with no prompt returns the non-TTY usage error before activating
+the session. Print and JSONL modes always require an explicit prompt.
+
 ## 2. Exit Codes
 
 Skail uses standardized, deterministic process exit codes:

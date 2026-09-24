@@ -35,6 +35,7 @@ Let the user start productive work with `skail` and a prompt, without starting a
 
 - Non-interactive execution that needs user approval exits with a stable code and an approval-required event unless an explicit non-interactive policy was supplied.
 - An empty prompt in print mode is a usage error.
+- A no-prompt `--continue` or `--resume` invocation requires an interactive TTY; headless execution does not activate the session or create an empty run.
 - A second Skail process may read other sessions but must not concurrently mutate a session owned by a live process.
 
 ## 2. Capable lead agent
@@ -671,6 +672,10 @@ not inherit a cancelled run's plan or model transcript. Session history remains 
   and journal. The TUI's in-memory follow-up queue is not part of the checkpoint and is not restored.
   Orphaned in-flight provider calls become interrupted; Skail does not replay them
 without reconciliation evidence.
+
+A no-prompt `--continue` or `--resume` invocation opens the TUI only with an interactive terminal.
+Without a terminal, the CLI returns its non-TTY usage error before activating the session; it never
+submits an empty instruction.
 
 ### Planned dispatch and plan-node recovery
 

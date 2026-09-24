@@ -17,6 +17,12 @@ S6-S7 were not run; S8 is conditional. The latest corrected S4 prompt started ru
 decision. No plan or child was admitted and the fixture stayed unchanged. The call has no token
 counts; its USD 0.175416 assignment estimate is included as a conservative local stop charge, while
 provider usage remains unresolved. Continue only with a new assignment; never replay that call.
+The attempted relaunch used a non-TTY shell after PowerShell PTY creation failed. `skail --resume`
+with no prompt then executed an empty headless instruction; this is not evidence that the TUI queue
+survives restart. That command was issued from the Skail repository root, not the disposable fixture;
+the task was read-only and no fixture files changed. The CLI guard is fixed offline, and a harmless
+`skail --help` PTY probe succeeded through `cmd.exe`. Resume the live matrix only from the disposable
+fixture and within the remaining S4 allocation. Actual provider billing remains unknown.
 Retest repaired paths and close defects only from matching live evidence.
 
 The previous USD 0.4376813 is Skail-exported usage plus estimates, **not verified provider spend**.

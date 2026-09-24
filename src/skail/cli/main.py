@@ -529,8 +529,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.subcommand == "sessions":
         return handle_sessions(args, session_service, journal)
 
-    # 6. Resolve active session
+    # 6. Classify invocation mode before activating or creating a session.
     prompt_text = " ".join(args.prompt).strip()
+    headless_requested = bool(args.print_mode or args.json_mode)
+    interactive_tty = (
+        not headless_requested and sys.stdin.isatty() and sys.stdout.isatty()
+    )
+    if not prompt_text:
+        if headless_requested:
+            render_print_stderr("Error: prompt required in non-interactive print or JSONL mode.")
+            return EXIT_USAGE
+        if not interactive_tty:
+            from skail.tui.onboarding import NON_TTY_USAGE_ERROR
+
+            render_print_stderr(NON_TTY_USAGE_ERROR)
+            return EXIT_FAILURE
+
+    # 7. Resolve active session
     if args.resume_session is not None:
         target_sid = args.resume_session
         if not target_sid:
@@ -557,21 +572,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         session_record = session_service.create_session(
             title=prompt_text[:50] or "New Session",
         )
-
-    # 7. Classify interactive-TTY vs headless BEFORE runtime construction.
-    headless_requested = bool(args.print_mode or args.json_mode)
-    interactive_tty = (
-        not headless_requested and sys.stdin.isatty() and sys.stdout.isatty()
-    )
-    if not prompt_text and not args.continue_session and args.resume_session is None:
-        if args.print_mode or args.json_mode:
-            render_print_stderr("Error: prompt required in non-interactive print or JSONL mode.")
-            return EXIT_USAGE
-        if not headless_requested and not interactive_tty:
-            from skail.tui.onboarding import NON_TTY_USAGE_ERROR
-
-            render_print_stderr(NON_TTY_USAGE_ERROR)
-            return EXIT_FAILURE
 
     approvals = ApprovalStore(workspace_state_path(identity, "approvals.sqlite"))
     question_store = QuestionStore(workspace_state_path(identity, "questions.sqlite"))

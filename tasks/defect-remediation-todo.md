@@ -4,8 +4,8 @@
   - Evidence review completed across the original exports; the S5 plan belongs to run
     `46335ece-a442-4a0b-bb14-19f220c73846` and the later conflict question to S4 retry
     `ea102525-dc0f-412d-92f4-deddf12b6458`. The DevPass run now has a frozen-rate local ledger.
-    Its campaign stop total is USD 1.006878588 through the interrupted S4 retry; four calls remain
-    unresolved at call level but are conservatively settled. Provider billing is unverified.
+    Its campaign stop total is USD 1.699836588 through the non-TTY empty-prompt run; five calls
+    remain unresolved at call level but are conservatively settled. Provider billing is unverified.
   - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
     model rates, price measured tokens locally, and include child calls in the parent run. Prior
     exports lack per-call tokens and remain historical estimates.
@@ -24,26 +24,30 @@
 - [ ] 6. Render normal questions as waiting, with question-specific controls and no tool error.
   - Offline implementation adds typed question events, keeps expected graph interrupts out of `tool.failed`, separates question answer/cancel from permission Approve/Reject, and shows session/run/plan owner suffixes. Focused offline regressions: 213 passed; the final owner-label/recovery subset: 16 passed. Ruff, mypy, and Graphify update pass. Live S6 confirmation remains pending.
 - [x] 7. Audit earlier fixes with focused CLI and TUI checks.
-  - Evidence: five catalog/list/refresh tests and four warning-as-error queue/cancel pilots pass; controller and real TUI cancellation checks show no framework traceback. Live confirmation for LIVE-001/003/004 and OUT-001/003 remains pending.
+  - Evidence: five catalog/list/refresh tests and four warning-as-error queue/cancel pilots pass; controller and real TUI cancellation checks show no framework traceback. The new two-case non-TTY resume guard is covered by `test_non_tty_resume_without_prompt_is_rejected_before_execution`. Live confirmation for LIVE-001/003/004 and OUT-001/003 remains pending.
 - [x] 8. Clear the three full offline suite failures.
   - Evidence: the no-credentials subprocess uses the null keyring backend, the initialization replay pilot waits asynchronously for its worker barrier, and the README assertion matches the current image masthead.
 - [x] Checkpoint: Ruff, mypy, unit/contract, smoke, and full offline suite pass.
-  - Verification after the exact-child, evaluation-gate, journal recovery, and plan-guidance fixes:
-    Ruff passed; mypy found no issues in 126 source files; unit/contract passed (874 passed, 2
-     skipped); smoke passed; full offline suite passed (1160 passed, 5 skipped). Commits: `06ebbc9`,
-     `5d991a1`, `bf0513e`, `5eaadc4`, `6b93eaf`, `3c5ab6e`.
+  - Latest verification after the non-TTY resume guard: Ruff passed; mypy found no issues in 126
+    source files; unit/contract passed (880 passed, 2 skipped); smoke passed; full offline suite
+    passed (1162 passed, 5 skipped).
 - [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
   - In progress under the user's explicit best-effort waiver of a provider-side hard cap. The
     local stop point is USD 8.50 with a USD 10 ceiling. Read-only `GET /v1/key` reports DevPass
     Lite with USD 53.43 allowance remaining before the final S4 retry; this is plan allowance, not
-     a spend ledger. Current local campaign stop total is USD 1.006878588. S3 intent and UTF-8
-     rechecks pass; S4 count enforcement is confirmed live. The latest corrected S4 retry started
-     run `7aa2bdab-ffea-470f-b8bc-6ab5e1e5e342` but was interrupted before a decision or plan; its
-     Qwen call is unresolved and conservatively settled at USD 0.175416. Profile enforcement and
-     child shutdown still need a successful live S4 completion; no plan or child was admitted in
-     the latest run. The next run must use a new assignment, then S5-S7; S8 is conditional. Actual
-     provider billing remains unknown.
-    Actual provider billing is unknown because no independent billing baseline/delta is available.
+    a spend ledger. Current local campaign stop total is USD 1.699836588. S3 intent and UTF-8
+    rechecks pass; S4 count enforcement is confirmed live. Run `7aa2bdab-ffea-470f-b8bc-6ab5e1e5e342`
+    was interrupted before a decision or plan; its call is unresolved and conservatively settled at
+    USD 0.175416. A non-TTY `--resume` without a prompt then executed an empty headless instruction
+    in run `eb160497-59e7-44ae-b3d3-8c810a25d97c` after the PTY launch failed. That command was
+    issued from the Skail repository root rather than the disposable fixture; the child task was
+    read-only, with no fixture changes. The measured calls cost USD 0.634726; one started call is
+    conservatively settled at USD 0.058232. The CLI guard is fixed offline. TUI queue persistence
+    across restart remains unproven. S4 profile and child cleanup remain unconfirmed. About USD
+    0.380167 remains in the S4 allocation; the live test must run from the disposable fixture and
+    use a new assignment. S4-S7 remain pending; `cmd.exe` successfully opens a PTY for Skail in this
+    environment. S8 is conditional. Actual provider billing remains unknown; no independent
+    provider billing baseline or delta is available.
   - Future runs use export schema version 2 `provider_calls` and `model_usage`; compare local
     per-model calculations with the TUI's lead-plus-child run total after each scenario. The
     LLM Gateway CLI is removed from the procedure.
