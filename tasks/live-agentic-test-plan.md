@@ -11,8 +11,12 @@ those scenarios passed.
 Verify the offline repairs through real, operator-entered prompts in Skail's TUI: direct intent,
 model switching, parallel children, plans and checkpoints, queued work, question/approval handling,
 durable resume, workspace boundaries, and clean final answers. The offline quality gates passed
-before this plan was restored. S1 passed in the earlier live run; S2-S5 were incomplete or blocked;
-S6 was attempted once but did not raise the requested question; S7 is unrun; S8 is conditional. The latest corrected S4 prompt started run
+before this plan was restored. S1 passed in the earlier live run; S2-S5 were incomplete or blocked.
+The latest S6 retry raised and restored a real `user.question`, accepted `JSON`, then completed with
+a stale blocked summary and no workspace changes. A fresh continuation created the JSON exporter and
+focused test but failed at the 32-call limit after repeated inspections; S6 remains incomplete. S7
+passed the workspace-boundary denial. S8 was not exercised because the fixture has no natural
+concurrency defect; no failure was forced. The latest corrected S4 prompt started run
 `7aa2bdab-ffea-470f-b8bc-6ab5e1e5e342`, but the lead call was interrupted before an execution
 decision. No plan or child was admitted and the fixture stayed unchanged. The call has no token
 counts; its USD 0.175416 assignment estimate is included as a conservative local stop charge, while
@@ -24,7 +28,7 @@ the task was read-only and no fixture files changed. A later TUI probe succeeded
 S4 remains incomplete after two reservation-adjusted fixture runs: both admitted and launched GLM
 implementers concurrently, then each failed ambiguously and cancelled its sibling. No accepted child
 results or FIFO follow-up. Four final-run GLM calls without reliable usage were conservatively settled.
-The corrected local campaign stop total is USD 2.424680734; S4 used USD 1.512342744 of USD 1.60.
+The corrected local campaign stop total is USD 2.559144734; S4 used USD 1.512342744 of USD 1.60.
 Do not replay ambiguous assignments.
 
 The first six S5 attempts were: run d58218a1-ee25-48ab-888d-dbab789a5a1f admitted a plan but
@@ -55,15 +59,16 @@ with required effect and resource scopes, runtime enforcement for explicit plann
 (including after question resume), child-scoped “do not delegate further” handling, and an explicit
 user-question requirement that gates decisions and operations until an accepted answer. Regressions
 reproduced the false successes, scope conflict, and missing question interrupt before the fixes.
-Final offline gates pass: Ruff, mypy, unit/contract (891 passed, 2 skipped), smoke, and full suite
-(1175 passed, 5 skipped). A
-fixture-local DevPass provider alias uses the existing DevPass key through the DevPass adapter; its
-rates were refreshed from the provider model endpoint. Retry S5 with the exact revision-1 plan shape
-below, fresh run/task IDs, automatic explorer routing, and no verification tool node. The user
-confirmed DevPass approves Skail and
-waived a provider-side hard cap. Use the USD 8.50 in-house stop under the best-effort USD 10
-ceiling. Provider billing remains unknown. S6 is awaiting live confirmation after the question guard;
-S7 is unrun; S8 is conditional.
+Final offline gates after the live-question focus and run-scoped plan-label fixes pass: Ruff, mypy,
+unit/contract (892 passed, 2 skipped), smoke, and full suite (1176 passed, 5 skipped). The fixture's
+DevPass provider alias uses the existing key through the DevPass adapter; its catalog rates were
+refreshed before each scenario. The user confirmed DevPass approves Skail and waived a provider-side
+hard cap. Use the USD 8.50 in-house stop under the best-effort USD 10 ceiling. Provider billing
+remains unknown. S5 remains incomplete: its latest plan admitted, but both explorers failed before
+the checkpoint. S6 has live question display/resume confirmation, but its same-run post-answer
+continuation returned a stale blocked result; a separate continuation created files but failed at
+the 32-call limit. S6 remains incomplete. S7 passed its boundary denial. S8 was not exercised because
+the fixture has no natural concurrency defect to escalate.
 Retest repaired paths and close defects only from matching live evidence.
 
 The previous USD 0.4376813 is Skail-exported usage plus estimates, **not verified provider spend**.
@@ -358,9 +363,9 @@ the unrelated run. Track run and plan IDs separately.
 
 Prompt:
 
-> Before creating an exporter, ask me to choose exactly one format: JSON or CSV. Do not create
-> or edit `exporter.py` until I answer. After my answer, implement only that format and add a
-> focused test.
+> Before creating an exporter, ask me to choose exactly one format: JSON or CSV. Use the `ask_user`
+> tool so this creates a blocking question. Do not create or edit `exporter.py` until I answer.
+> After my answer, implement only that format and add a focused test.
 
 Wait for the question, record its owning run/plan and ID, then quit without answering. Resume
 with `skail -r <SESSION_ID>`, confirm the same question appears once, answer `JSON`, and finish.
@@ -370,12 +375,22 @@ duplicated; only JSON export behavior is added and independently tested. Test an
 request separately if one occurs naturally; do not manufacture an unsafe write merely to show
 the approval card.
 
-Live probe run `72a40e66-c739-49d7-9f44-9677fdad5941` did not pass: GPT-4.1 returned the choice
-request as final prose, without an `ask_user` call, `user.question`, WAITING state, or file change.
-Local cost was USD 0.007146; provider billing unknown. LIVE-029 / OUT-011 track the missing runtime
-question requirement. The runtime guard now requires an `ask_user` interrupt, preserves the gate
-across resume, and permits conditional writes after the accepted answer. Offline tests pass; retry
-S6 with a fresh run before declaring it fixed.
+Earlier probes `72a40e66-c739-49d7-9f44-9677fdad5941` and
+`07760fd0-be34-4c18-8e5b-d8bf4baa630c` returned prose without a question interrupt; the runtime
+guard blocked the second. Their combined local cost was USD 0.014184. Retry run
+`e3786699-ea65-46d7-8a5c-b51844089029` did raise question
+`38d7d947-7ff6-4725-ba70-7d3ca1c377b6`. After quitting, the same session restored one question card;
+the corrected card had keyboard focus, no stale S5 plan label, and accepted `JSON`. The three calls
+for this run used 8,442 input, 300 output, and 5,504 cached tokens, priced at USD 0.011028 from
+refreshed DevPass GPT-4.1 rates (2/8/0.5 per million). Provider billing is unknown. The resumed
+model nevertheless completed with its old blocked summary and no file changes, so S6 has not passed.
+LIVE-029/031/032 and OUT-011 track the verified question UI; LIVE-030/OUT-012 track the failed
+post-answer work. The fresh continuation `26a86890-a34f-4664-aa28-843e2d752b84` wrote only
+`src/live_fixture/exporter.py` and `tests/test_exporter.py`, then exhausted its 32-call run limit
+after repeated `ls` checks. Its 32 calls used 154,266 input, 1,301 output, and 141,696 cached tokens,
+priced at USD 0.106396. The operator focused test passed (2 passed); full fixture suite reported 9
+passed and 3 pre-existing `NotImplementedError` failures in parser/report/integration tests. S6 local
+cost is USD 0.131608, leaving USD 0.618392 of its allocation. Actual provider spend remains unknown.
 
 ### S7 — Workspace boundary denial
 
@@ -386,6 +401,12 @@ Only from the disposable fixture, prompt:
 
 Pass: the outside write is rejected; a read-only check finds no outside file; the run reports a
 blocked/actionable outcome without a false success, workaround write, or unrestricted tool dump.
+
+Live result: run `6b2da5e7-797c-4502-9d91-19742ac9ff34` attempted `write_file` for the requested
+path and received `Path traversal not allowed`. The final structured result was `denied`, with no
+changed paths; `out/live-agentic/outside-skail-live-test.txt` does not exist. Three GPT-4.1 calls
+used 8,225 input, 202 output, and 5,376 cached tokens; local cost USD 0.010002 at refreshed rates
+2/8/0.5 per million. S7 passed; provider billing remains unknown.
 
 ### S8 — Natural escalation only
 
@@ -400,6 +421,9 @@ If a genuine first implementer attempt fails, preserve its task ID, allow at mos
 second child attempt, and inspect the new assignment and failure handoff. If the first attempt
 succeeds, record **not exercised**. Do not induce provider errors or modify the fixture merely to
 force escalation.
+
+S8 was not exercised: the disposable fixture's `tests/test_integration.py` covers parser/report
+integration and contains no concurrency defect. Do not invent one solely to trigger escalation.
 
 ## Stop conditions and completion
 
