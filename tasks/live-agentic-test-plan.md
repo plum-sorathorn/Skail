@@ -136,24 +136,27 @@ Prompt:
 > Work directly without delegating. Fix `normalize_identifier` so repeated whitespace and
 > hyphens collapse to one hyphen, leading/trailing separators are removed, and existing Unicode
 > letters are preserved. Update only the focused tests and run them. Return changed paths and
-> exact verification.
+> exact verification. If direct mode does not expose an execute tool, report that verification is
+> unrun; do not claim a test passed.
 
 Pass: a direct decision with no admitted plan or child task; only the named module and focused
-test change; focused tests pass independently. A conflicting or malformed decision terminates
-within the repair boundary without admitting extra work. Cancellation, if needed, shows no
-framework traceback.
+test change; the operator then independently runs `rtk pytest tests/test_normalize.py -v` and
+records the result separately from the model's report. Direct/no-delegation mode currently omits
+the execute tool, so operator verification is expected when the model cannot run tests itself.
+A conflicting or malformed decision terminates within the repair boundary without admitting
+extra work. Cancellation, if needed, shows no framework traceback.
 
 ### S3 — In-session model switching and bounded review
 
 Select `ECONOMY_MODEL`, then prompt:
 
-> Review `parser.py` for correctness risks only. Do not edit or delegate. Return at most three
-> findings with file references.
+> Review `src/live_fixture/parser.py` for correctness risks only. Do not edit or delegate. Return
+> at most three findings with file references.
 
 Select `LEAD_MODEL`, then prompt:
 
-> Re-review the same parser risks, challenge the prior findings, and identify any missed edge
-> case. Do not edit or delegate.
+> Re-review `src/live_fixture/parser.py` and the prior findings, challenge them, and identify
+> any missed edge case. Do not edit or delegate.
 
 Pass: two assignments use the requested models and stay sticky within their attempts; no writes
 or children; each review terminates within the run-wide call limit. Compare `/route` and exports.
