@@ -26,7 +26,7 @@ from skail.domain.plans import (
     PlanNodeKind,
     PlanNodeState,
 )
-from skail.domain.tasks import TaskId, TaskResult
+from skail.domain.tasks import AttemptStatus, TaskId, TaskResult, TaskStatus
 from skail.runtime.decisions import DecisionAdmissionError, ExecutionDecisionGate
 from skail.runtime.errors import FrameworkContractError
 from skail.runtime.interrupts import QuestionStore
@@ -1315,6 +1315,13 @@ async def test_interrupt_between_admission_and_launch_blocks_unlaunched_node(
         attempts[0].node_ids["inspect"]
     )
     assert binding is not None
+    snapshot = journal.get_session_snapshot(str(session_id))
+    bound_task = next(task for task in snapshot.tasks if task.task_id == binding.task_id)
+    bound_attempt = next(
+        attempt for attempt in snapshot.attempts if attempt.attempt_id == binding.attempt_id
+    )
+    assert bound_task.status is TaskStatus.BLOCKED
+    assert bound_attempt.status is AttemptStatus.BLOCKED
 
     resumed_lead = ScriptedChatModel(
         model_name="lead-model",

@@ -1008,6 +1008,78 @@ async def test_cancelling_planned_work_marks_inflight_nodes_terminal(tmp_path: P
 
 
 @pytest.mark.asyncio
+async def test_cancelling_planned_work_terminalizes_unlaunched_task_rows(
+    tmp_path: Path,
+) -> None:
+    evidence_path = tmp_path / "planned-evidence.txt"
+    evidence_path.write_text("planned dispatch evidence\n", encoding="utf-8")
+    evidence_digest = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    barrier = AsyncStartBarrier()
+
+    async def block_child(_: ScriptedChatModel, messages) -> None:
+        prompt = str(messages[-1].content)
+        label = "first" if "Inspect the first file" in prompt else "second"
+        await barrier.worker(label)
+
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Cancel queued plan work", created_at=datetime.now(UTC)
+    )
+    child_model = ScriptedChatModel(
+        model_name="implementer-model",
+        responses=[
+            _child_success("first complete", evidence_digest),
+            _child_success("second complete", evidence_digest),
+        ],
+        async_call_hook=block_child,
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [("execution_decision", _planned_decision(), "decision-1")]
+            ),
+            AIMessage(content="The planned work has been dispatched."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": child_model},
+    )
+    run = asyncio.create_task(
+        controller.run_instruction(
+            "Cancel queued plan work", controls=LeadControls(max_children=1)
+        )
+    )
+    await barrier.wait_for_started(1)
+    assert len(barrier.started) == 1
+    run.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await run
+
+    snapshot = journal.get_session_snapshot(str(session_id))
+    run_id = snapshot.runs[0].run_id
+    child_tasks = {
+        task.description: task
+        for task in snapshot.tasks
+        if task.run_id == run_id and task.description.startswith("Inspect the ")
+    }
+    started_label = barrier.started[0]
+    started_description = f"Inspect the {started_label} file"
+    unstarted_label = ({"first", "second"} - {started_label}).pop()
+    unstarted_description = f"Inspect the {unstarted_label} file"
+    assert child_tasks[started_description].status is TaskStatus.CANCELLED
+    assert child_tasks[unstarted_description].status is TaskStatus.CANCELLED
+    attempts = {attempt.task_id: attempt for attempt in snapshot.attempts}
+    assert attempts[child_tasks[started_description].task_id].status is AttemptStatus.CANCELLED
+    assert attempts[child_tasks[unstarted_description].task_id].status is AttemptStatus.CANCELLED
+
+
+@pytest.mark.asyncio
 async def test_delegation_ask_blocks_when_unapproved(tmp_path: Path) -> None:
     journal = _journal(tmp_path)
     session_id = new_session_id()
