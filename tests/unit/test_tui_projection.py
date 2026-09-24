@@ -279,6 +279,64 @@ def test_collapsible_and_uncollapsible_invariants() -> None:
     assert q_item.collapsed is False
 
 
+def test_question_plan_owner_is_scoped_to_its_run() -> None:
+    projection = TuiProjection()
+    session_id = new_session_id()
+    previous_run_id = new_run_id()
+    question_run_id = new_run_id()
+    previous_plan_id = "11111111-1111-4111-8111-111111111111"
+    current_plan_id = "22222222-2222-4222-8222-222222222222"
+
+    projection.apply_event(
+        EventEnvelope(
+            event_id=new_event_id(),
+            session_id=session_id,
+            run_id=previous_run_id,
+            sequence=1,
+            type="plan.admitted",
+            payload=PlanPayload(action="admitted", plan_id=previous_plan_id, revision=1),
+        )
+    )
+    projection.apply_event(
+        EventEnvelope(
+            event_id=new_event_id(),
+            session_id=session_id,
+            run_id=question_run_id,
+            sequence=1,
+            type="user.question",
+            payload=UserPayload(action="question", content="Choose a format"),
+        )
+    )
+
+    assert projection.pending_interrupt is not None
+    assert projection.pending_interrupt.payload["run_id"] == str(question_run_id)
+    assert projection.pending_interrupt.payload["plan_id"] is None
+
+    projection.apply_event(
+        EventEnvelope(
+            event_id=new_event_id(),
+            session_id=session_id,
+            run_id=question_run_id,
+            sequence=2,
+            type="plan.admitted",
+            payload=PlanPayload(action="admitted", plan_id=current_plan_id, revision=1),
+        )
+    )
+    projection.apply_event(
+        EventEnvelope(
+            event_id=new_event_id(),
+            session_id=session_id,
+            run_id=question_run_id,
+            sequence=3,
+            type="user.question",
+            payload=UserPayload(action="question", content="Confirm the current plan"),
+        )
+    )
+
+    assert projection.pending_interrupt is not None
+    assert projection.pending_interrupt.payload["plan_id"] == current_plan_id
+
+
 def test_agent_rail_distinct_states() -> None:
     proj = TuiProjection()
     sid = new_session_id()

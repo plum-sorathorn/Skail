@@ -210,6 +210,10 @@ class InterruptWidget(Widget):
         self._focus_index = 0
         self._update_state_class()
 
+    def on_mount(self) -> None:
+        if self.interrupt.kind is InterruptKind.QUESTION and not self._submitted:
+            self.query_one("#interrupt-input", Input).focus()
+
     def _update_state_class(self) -> None:
         try:
             self.remove_class("approved")

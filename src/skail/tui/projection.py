@@ -341,6 +341,7 @@ class TuiProjection:
         self.route_items: dict[str, RouteViewItem] = {}  # keyed by task_id
         self.plan_items: dict[str, PlanNodeViewItem] = {}  # keyed by local_id
         self.current_plan_id: str | None = None
+        self._plan_ids_by_run: dict[str, str] = {}
         self.current_plan_revision: int = 1
         # keyed by changeset_id
         self.workspace_integrations: dict[str, WorkspaceIntegrationItem] = {}
@@ -584,6 +585,7 @@ class TuiProjection:
         self.route_items = {}
         self.plan_items = {}
         self.current_plan_id = None
+        self._plan_ids_by_run = {}
         self.current_plan_revision = 1
         self.workspace_integrations = {}
         self.budget_item = BudgetViewItem()
@@ -903,7 +905,7 @@ class TuiProjection:
                     "blocking_scope": getattr(event.payload, "blocking_scope", None),
                     "session_id": str(event.session_id),
                     "run_id": str(event.run_id),
-                    "plan_id": self.current_plan_id,
+                    "plan_id": self._plan_ids_by_run.get(str(event.run_id)),
                 },
                 kind=InterruptKind.QUESTION,
             )
@@ -973,6 +975,7 @@ class TuiProjection:
                 plan_id_val = getattr(event.payload, "plan_id", None)
                 if plan_id_val:
                     self.current_plan_id = str(plan_id_val)
+                    self._plan_ids_by_run[str(event.run_id)] = str(plan_id_val)
                 rev_val = getattr(event.payload, "revision", None)
                 if rev_val is not None:
                     self.current_plan_revision = int(rev_val)

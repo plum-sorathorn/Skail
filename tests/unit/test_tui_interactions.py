@@ -713,7 +713,12 @@ async def test_lazy_resume_mounts_restored_question_card(
         assert app.app_state == "ready"
         assert app.projection.pending_interrupt is not None
         assert app.projection.pending_interrupt.kind is InterruptKind.QUESTION
-        assert app.query_one(InterruptWidget).query_one("#interrupt-input", Input)
+        answer_input = app.query_one(InterruptWidget).query_one("#interrupt-input", Input)
+        assert app.focused is answer_input
+        for char in "JSON":
+            await pilot.press(char)
+        assert answer_input.value == "JSON"
+        assert app.query_one("#composer-input", ComposerTextArea).text == ""
 
 
 @pytest.mark.asyncio
