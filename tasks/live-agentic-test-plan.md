@@ -168,15 +168,16 @@ If the model loops, record the terminal code and confirm no provider call occurs
 
 Prompt:
 
-> Use planned execution. Call `execution_decision` before any operational tool. Use these
-> `execution_decision` arguments with exactly two agent nodes and one checkpoint node; do not add
+> Use planned execution. Call `execution_decision` before any operational tool. Use exactly two
+> implementer child agents in parallel. Use these `execution_decision` arguments with exactly two
+> agent nodes and one checkpoint node; do not add
 > any other agent or tool nodes:
 >
 > ```json
 > {
 >   "mode": "planned",
 >   "objective": "Implement the independent parser and report fixture TODOs",
->   "constraints": ["Use exactly two agents with disjoint resource scopes"],
+>   "constraints": ["Use exactly two implementer agents with disjoint resource scopes"],
 >   "reason": "The two modules have independent write ownership and focused tests.",
 >   "plan": {
 >     "schema_version": 1,
@@ -222,7 +223,7 @@ While both children are active, queue with `Ctrl+Enter`:
 > After the active run completes, summarize which model handled each child and whether their
 > wall times overlapped. Do not modify files.
 
-Pass: exactly two agent nodes, one checkpoint depending on both, disjoint `resource_scopes`, peak
+Pass: exactly two implementer agent nodes, one checkpoint depending on both, disjoint `resource_scopes`, peak
 concurrency two and never over three, accepted child results, operator-run integration test pass,
 and one visible FIFO
 follow-up after completion. No queued coroutine warning on cancel or quit. Record actual
