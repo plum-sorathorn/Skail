@@ -35,6 +35,13 @@ def test_exact_agent_instruction_sets_a_run_scoped_count() -> None:
     assert controls.max_children == 2
 
 
+def test_exact_child_agent_instruction_sets_a_run_scoped_count() -> None:
+    controls = resolve_lead_controls("Use exactly two child agents in parallel.")
+
+    assert controls.required_agent_count == 2
+    assert controls.max_children == 2
+
+
 def test_explicit_constraints_do_not_leak_into_the_next_run() -> None:
     constrained = resolve_lead_controls("Handle this yourself and do not edit files.")
     unconstrained = resolve_lead_controls("Continue with the next task.")

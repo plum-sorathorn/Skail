@@ -751,6 +751,76 @@ async def test_direct_user_instruction_rejects_plan_and_task_admission(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_exact_child_agent_instruction_rejects_extra_plan_agents(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Exact child count", created_at=datetime.now(UTC)
+    )
+    planned = {
+        "mode": "planned",
+        "objective": "Implement two independent fixture modules",
+        "constraints": [],
+        "reason": "Three agent nodes were incorrectly proposed for an exact-two request.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "parser",
+                    "kind": "agent",
+                    "objective": "Implement the parser fixture",
+                    "resource_scopes": ["src/live_fixture/parser.py", "tests/test_parser.py"],
+                },
+                {
+                    "local_id": "report",
+                    "kind": "agent",
+                    "objective": "Implement the report fixture",
+                    "resource_scopes": ["src/live_fixture/report.py", "tests/test_report.py"],
+                },
+                {
+                    "local_id": "extra",
+                    "kind": "agent",
+                    "objective": "Run integration verification",
+                    "resource_scopes": ["tests/test_integration.py"],
+                },
+            ],
+        },
+    }
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message("execution_decision", planned, call_id="too-many-agents"),
+            AIMessage(content="The conflicting plan was rejected before work started."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead},
+    )
+
+    result = await controller.run_instruction("Use exactly two child agents in parallel.")
+
+    assert result.status == "completed"
+    assert result.child_count == 0
+    assert journal.plans_for_run(str(result.run_id)) == ()
+    snapshot = journal.get_session_snapshot(str(session_id))
+    failures = [
+        event
+        for event in snapshot.events
+        if event.run_id == str(result.run_id) and event.type == "tool.failed"
+    ]
+    assert any(
+        "execution.agent_count_conflict" in str(getattr(event.payload, "reason", ""))
+        for event in failures
+    )
+    assert len([task for task in snapshot.tasks if task.run_id == str(result.run_id)]) == 1
+
+
+@pytest.mark.asyncio
 async def test_no_edit_user_instruction_blocks_write_tool(tmp_path: Path) -> None:
     journal = _journal(tmp_path)
     session_id = new_session_id()

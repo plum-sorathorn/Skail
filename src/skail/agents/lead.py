@@ -103,7 +103,7 @@ def resolve_lead_controls(
     )
     count_match = re.search(
         r"\bexactly\s+(\d+|one|two|three|four|five)\s+"
-        r"(?:agents?|subagents?|children)\b",
+        r"(?:child\s+)?(?:agents?|subagents?|children)\b",
         normalized,
     )
     required_agent_count: int | None = None
