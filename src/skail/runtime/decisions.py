@@ -17,7 +17,7 @@ from langchain_core.tools import BaseTool, tool
 from pydantic import ValidationError
 
 from skail.domain.decisions import ExecutionDecision, ExecutionMode
-from skail.domain.plans import ExecutionPlan, PlanRevision
+from skail.domain.plans import EffectScope, ExecutionPlan, PlanRevision
 
 
 class DecisionAdmissionError(ValueError):
@@ -36,12 +36,14 @@ class ExecutionDecisionGate:
         restored_decision: ExecutionDecision | None = None,
         required_mode: ExecutionMode | None = None,
         required_agent_count: int | None = None,
+        required_agent_profile: str | None = None,
     ) -> None:
         self._admit_plan = admit_plan
         self._revise_plan = revise_plan
         self._persist_decision = persist_decision
         self._required_mode = required_mode
         self._required_agent_count = required_agent_count
+        self._required_agent_profile = required_agent_profile
         self._repairs_remaining = 2
         self.decision: ExecutionDecision | None = None
         if restored_decision is not None:
@@ -156,18 +158,34 @@ class ExecutionDecisionGate:
                 f"mode={self._required_mode.value}",
                 consume_repair=consume_repair,
             )
-        if self._required_agent_count is None:
+        if self._required_agent_count is None and self._required_agent_profile is None:
             return
         plan = candidate.plan
         agents = [] if plan is None else [
             node for node in plan.nodes if node.kind.value == "agent"
         ]
-        if len(agents) != self._required_agent_count:
+        if (
+            self._required_agent_count is not None
+            and len(agents) != self._required_agent_count
+        ):
             self._reject_constraint(
                 "execution.agent_count_conflict: explicit user intent requires "
                 f"exactly {self._required_agent_count} agent plan nodes",
                 consume_repair=consume_repair,
             )
+        if self._required_agent_profile is not None:
+            for node in agents:
+                profile = node.task_features.get("profile")
+                if profile is None:
+                    profile = (
+                        "explorer" if node.effect_scope is EffectScope.READ else "implementer"
+                    )
+                if profile != self._required_agent_profile:
+                    self._reject_constraint(
+                        "execution.agent_profile_conflict: explicit user intent requires "
+                        f"profile={self._required_agent_profile} for every agent plan node",
+                        consume_repair=consume_repair,
+                    )
         owned_scopes: list[str] = []
         for node in agents:
             scopes = tuple(

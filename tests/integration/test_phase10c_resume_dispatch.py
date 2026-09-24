@@ -244,6 +244,87 @@ async def test_question_interrupt_resume_dispatches_plan_once(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
+async def test_resume_preserves_required_agent_profile_constraint(tmp_path: Path) -> None:
+    journal, checkpoints, questions, approvals = _stores(tmp_path, "profile-resume")
+    session_id = _session(journal)
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message(
+                "ask_user",
+                {"prompt": "Proceed?", "reason": "confirmation"},
+                call_id="ask-before-work",
+            )
+        ],
+    )
+    controller = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {"lead-model": lead},
+    )
+
+    first = await controller.run_instruction(
+        "Use exactly two implementer child agents in parallel. Ask before proceeding."
+    )
+
+    assert first.status == "blocked"
+    assert first.interrupted is True
+    parser = _agent_node("parser", "Inspect the parser implementation")
+    parser["resource_scopes"] = ["src/live_fixture/parser.py"]
+    report = _agent_node("report", "Inspect the report implementation")
+    report["resource_scopes"] = ["src/live_fixture/report.py"]
+    wrong_profile_plan = _planned_decision(
+        [
+            parser,
+            report,
+            {
+                "local_id": "checkpoint",
+                "kind": "checkpoint",
+                "objective": "Review both agent results",
+                "depends_on": ["parser", "report"],
+                "effect_scope": "read",
+            },
+        ]
+    )
+    resumed_lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message(
+                "execution_decision", wrong_profile_plan, call_id="wrong-profile-resume"
+            ),
+            AIMessage(content="The explorer plan conflicts with the requested implementer role."),
+        ],
+    )
+    resumed = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {"lead-model": resumed_lead},
+    )
+    assert resumed.restore_interrupted() is True
+
+    result = await resumed.resume_interrupted("yes")
+
+    assert result.status == "completed"
+    assert journal.plans_for_run(str(result.run_id)) == ()
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert len([task for task in snapshot.tasks if task.run_id == str(result.run_id)]) == 1
+    assert any(
+        event.type == "tool.failed"
+        and "execution.agent_profile_conflict" in str(getattr(event.payload, "reason", ""))
+        for event in snapshot.events
+        if event.run_id == str(result.run_id)
+    )
+
+
+@pytest.mark.asyncio
 async def test_new_instruction_cannot_consume_a_pending_question_as_context(
     tmp_path: Path,
 ) -> None:

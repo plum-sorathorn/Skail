@@ -967,6 +967,7 @@ class RunController:
             restored_decision=restored_decision,
             required_mode=(ExecutionMode.DIRECT if controls.direct_only else None),
             required_agent_count=controls.required_agent_count,
+            required_agent_profile=controls.required_agent_profile,
         )
 
         def observe_response(response: ModelResponse[Any]) -> None:
@@ -2428,6 +2429,7 @@ class RunController:
                             "max_children": active_controls.max_children,
                             "direct_only": active_controls.direct_only,
                             "required_agent_count": active_controls.required_agent_count,
+                            "required_agent_profile": active_controls.required_agent_profile,
                             "routing_mode": active_controls.routing_mode.value,
                             "risk": active_controls.risk.value,
                         },
@@ -2546,6 +2548,7 @@ class RunController:
                                 "max_children": active_controls.max_children,
                                 "direct_only": active_controls.direct_only,
                                 "required_agent_count": active_controls.required_agent_count,
+                                "required_agent_profile": active_controls.required_agent_profile,
                                 "routing_mode": active_controls.routing_mode.value,
                                 "risk": active_controls.risk.value,
                             },
@@ -2797,6 +2800,9 @@ class RunController:
                     int(control_data["required_agent_count"])
                     if control_data.get("required_agent_count") is not None
                     else None
+                ),
+                required_agent_profile=cast(
+                    str | None, control_data.get("required_agent_profile")
                 ),
                 routing_mode=RoutingMode(
                     str(control_data.get("routing_mode", persisted_assignment.routing_mode.value))

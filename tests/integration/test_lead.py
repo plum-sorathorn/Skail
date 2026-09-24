@@ -821,6 +821,81 @@ async def test_exact_child_agent_instruction_rejects_extra_plan_agents(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_exact_implementer_intent_rejects_explorer_plan_agents(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Exact implementer profile", created_at=datetime.now(UTC)
+    )
+    planned = {
+        "mode": "planned",
+        "objective": "Implement the parser and report fixtures",
+        "constraints": [],
+        "reason": "The requested implementer profile is required for both writers.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "parser",
+                    "kind": "agent",
+                    "objective": "Inspect parser fixture",
+                    "effect_scope": "read",
+                    "resource_scopes": ["src/live_fixture/parser.py"],
+                    "task_features": {"profile": "explorer"},
+                },
+                {
+                    "local_id": "report",
+                    "kind": "agent",
+                    "objective": "Inspect report fixture",
+                    "effect_scope": "read",
+                    "resource_scopes": ["src/live_fixture/report.py"],
+                    "task_features": {"profile": "explorer"},
+                },
+                {
+                    "local_id": "checkpoint",
+                    "kind": "checkpoint",
+                    "objective": "Review both agent results",
+                    "depends_on": ["parser", "report"],
+                    "effect_scope": "read",
+                },
+            ],
+        },
+    }
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message("execution_decision", planned, call_id="wrong-agent-profile"),
+            AIMessage(
+                content="The explorer plan conflicts with the requested implementer profile."
+            ),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead},
+    )
+
+    result = await controller.run_instruction(
+        "Use exactly two implementer child agents in parallel."
+    )
+
+    assert result.child_count == 0
+    assert journal.plans_for_run(str(result.run_id)) == ()
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert len([task for task in snapshot.tasks if task.run_id == str(result.run_id)]) == 1
+    assert any(
+        event.type == "tool.failed"
+        and "execution.agent_profile_conflict" in str(getattr(event.payload, "reason", ""))
+        for event in snapshot.events
+        if event.run_id == str(result.run_id)
+    )
+
+
+@pytest.mark.asyncio
 async def test_no_edit_user_instruction_blocks_write_tool(tmp_path: Path) -> None:
     journal = _journal(tmp_path)
     session_id = new_session_id()

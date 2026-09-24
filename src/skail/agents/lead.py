@@ -35,8 +35,9 @@ nodes; node fields include local_id, kind, objective, depends_on, acceptance_cri
 output_contract, effect_scope, resource_scopes, task_features, artifact_refs, and task_lineage.
 Use only supported fields that the plan needs. For an explicit request to use exactly N agents,
 include exactly N agent nodes, give each a non-empty resource_scopes list, and keep those scopes
-pairwise disjoint; do not add survey or verification agent nodes outside that count. constraints
-may be a string or a list of strings. A final answer needs no execution_decision. When delegating,
+pairwise disjoint; do not add survey or verification agent nodes outside that count. If the user
+names a profile, set task_features.profile to that profile for every agent node. constraints may
+be a string or a list of strings. A final answer needs no execution_decision. When delegating,
 call task(description,
 subagent_type). The description may be plain text or one JSON object with: description,
 success_criteria, depends_on (persisted task IDs), priority, write_scope, model_policy,
@@ -65,6 +66,7 @@ class LeadControls:
     max_children: int = 3
     direct_only: bool = False
     required_agent_count: int | None = None
+    required_agent_profile: str | None = None
     routing_mode: RoutingMode = RoutingMode.AUTO
     risk: TaskRisk = TaskRisk.ROUTINE
 
@@ -107,13 +109,18 @@ def resolve_lead_controls(
         )
     )
     count_match = re.search(
-        r"\bexactly\s+(\d+|one|two|three|four|five)\s+"
+        r"\bexactly\s+(?P<count>\d+|one|two|three|four|five)\s+"
+        r"(?:(?P<profile>general[- ]purpose|implementer|tester|explorer|reviewer|researcher)\s+)?"
         r"(?:child\s+)?(?:agents?|subagents?|children)\b",
         normalized,
     )
     required_agent_count: int | None = None
+    required_agent_profile: str | None = None
     if count_match is not None:
-        count = count_match.group(1)
+        count = count_match.group("count")
+        matched_profile = count_match.group("profile")
+        if matched_profile is not None:
+            required_agent_profile = matched_profile.replace(" ", "-")
         required_agent_count = (
             int(count)
             if count.isdigit()
@@ -139,6 +146,11 @@ def resolve_lead_controls(
             required_agent_count
             if required_agent_count is not None
             else resolved.required_agent_count
+        ),
+        required_agent_profile=(
+            required_agent_profile
+            if required_agent_profile is not None
+            else resolved.required_agent_profile
         ),
         max_children=(
             required_agent_count if required_agent_count is not None else resolved.max_children

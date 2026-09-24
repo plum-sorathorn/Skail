@@ -42,8 +42,16 @@ def test_exact_child_agent_instruction_sets_a_run_scoped_count() -> None:
     assert controls.max_children == 2
 
 
+def test_exact_implementer_agent_instruction_sets_a_run_scoped_profile() -> None:
+    controls = resolve_lead_controls("Use exactly two implementer child agents in parallel.")
+
+    assert controls.required_agent_count == 2
+    assert controls.required_agent_profile == "implementer"
+
+
 def test_lead_guidance_documents_exact_agent_resource_scopes() -> None:
     assert "resource_scopes" in TASK_PACKET_GUIDANCE
+    assert "task_features.profile" in TASK_PACKET_GUIDANCE
     assert "exactly N agent nodes" in TASK_PACKET_GUIDANCE
 
 

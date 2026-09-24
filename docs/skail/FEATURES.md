@@ -63,9 +63,9 @@ Its prompt defines delegation heuristics, but the runtime enforces user directiv
 - `delegation=auto`: valid tasks launch within concurrency, safety, and budget gates;
 - explicit “do this yourself” and “do not delegate” apply to that instruction even when the configured default is `auto`; a conflicting execution decision is rejected before its plan is admitted;
 - explicit “do not edit” removes write-capable lead tools and rejects write-capable plan nodes for that run;
-- explicit “use N agents” requires exactly N agent nodes with pairwise-disjoint resource scopes, within the configured and hard three-child limits; a count or scope conflict is reported before plan admission.
+- explicit “use N agents” requires exactly N agent nodes with pairwise-disjoint resource scopes, within the configured and hard three-child limits; when the user names an agent profile, every node must use that profile; count, profile, or scope conflicts are reported before plan admission.
 
-These constraints belong to one run and do not carry into the next prompt. Stable rejection codes are `execution.intent_conflict`, `execution.agent_count_conflict`, and `execution.agent_scope_conflict`.
+These constraints belong to one run and do not carry into the next prompt. Stable rejection codes are `execution.intent_conflict`, `execution.agent_count_conflict`, `execution.agent_profile_conflict`, and `execution.agent_scope_conflict`.
 
 ### Direct-versus-delegate heuristic
 
