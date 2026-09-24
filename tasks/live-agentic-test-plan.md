@@ -173,10 +173,10 @@ Prompt:
 > of `src/live_fixture/report.py` plus `tests/test_report.py`. Give each plan agent node an
 > explicit `resource_scopes` list containing exactly its two owned paths; create no other agent
 > nodes. Implement the TODO behavior in each module and run each focused test. After both child
-> results integrate, run the integration test through an authorized plan tool node. If worktree
-> policy prevents lead-side execution, the operator runs the integration test after the lead
-> returns; do not add a third child just for verification. Synthesize one final answer. The write
-> scopes must not overlap.
+> results integrate, return one final answer with changed paths and focused test results. Do not
+> add an integration agent or plan tool node. The operator runs `rtk pytest
+> tests/test_integration.py -v` after the active run completes and records that verification
+> separately. The write scopes must not overlap.
 
 While both children are active, queue with `Ctrl+Enter`:
 
@@ -184,7 +184,7 @@ While both children are active, queue with `Ctrl+Enter`:
 > wall times overlapped. Do not modify files.
 
 Pass: exactly two first-level children, disjoint `resource_scopes`, peak concurrency two and never
-over three, accepted child results, independent integration test pass, and one visible FIFO
+over three, accepted child results, operator-run integration test pass, and one visible FIFO
 follow-up after completion. No queued coroutine warning on cancel or quit. Record actual
 assignment timestamps; do not infer overlap from the prompt. A count or scope conflict must be
 rejected before plan admission and repaired within the bounded decision allowance.
