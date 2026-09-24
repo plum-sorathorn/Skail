@@ -168,23 +168,63 @@ If the model loops, record the terminal code and confirm no provider call occurs
 
 Prompt:
 
-> Use exactly two child agents in parallel. Give one implementer exclusive ownership of
-> `src/live_fixture/parser.py` plus `tests/test_parser.py`; give the other exclusive ownership
-> of `src/live_fixture/report.py` plus `tests/test_report.py`. Give each plan agent node an
-> explicit `resource_scopes` list containing exactly its two owned paths; create no other agent
-> nodes. Implement the TODO behavior in each module and run each focused test. After both child
-> results integrate, return one final answer with changed paths and focused test results. Do not
-> add an integration agent or plan tool node. The operator runs `rtk pytest
-> tests/test_integration.py -v` after the active run completes and records that verification
-> separately. The write scopes must not overlap.
+> Use planned execution. Call `execution_decision` before any operational tool. Use these
+> `execution_decision` arguments with exactly two agent nodes and one checkpoint node; do not add
+> any other agent or tool nodes:
+>
+> ```json
+> {
+>   "mode": "planned",
+>   "objective": "Implement the independent parser and report fixture TODOs",
+>   "constraints": ["Use exactly two agents with disjoint resource scopes"],
+>   "reason": "The two modules have independent write ownership and focused tests.",
+>   "plan": {
+>     "schema_version": 1,
+>     "policy_version": "adaptive-v1",
+>     "revision": 1,
+>     "nodes": [
+>       {
+>         "local_id": "parser",
+>         "kind": "agent",
+>         "objective": "Implement the parser TODO and focused test",
+>         "effect_scope": "workspace_write",
+>         "resource_scopes": ["src/live_fixture/parser.py", "tests/test_parser.py"],
+>         "task_features": {"profile": "implementer"}
+>       },
+>       {
+>         "local_id": "report",
+>         "kind": "agent",
+>         "objective": "Implement the report TODO and focused test",
+>         "effect_scope": "workspace_write",
+>         "resource_scopes": ["src/live_fixture/report.py", "tests/test_report.py"],
+>         "task_features": {"profile": "implementer"}
+>       },
+>       {
+>         "local_id": "integrate",
+>         "kind": "checkpoint",
+>         "objective": "Review the two completed child results",
+>         "depends_on": ["parser", "report"],
+>         "effect_scope": "read"
+>       }
+>     ]
+>   }
+> }
+> ```
+>
+> Delegate only those two independent writers. Each child runs its focused test. After the
+> checkpoint and integration, return one final answer with changed paths and focused test results.
+> Do not add an integration agent or plan tool node. The operator runs
+> `rtk pytest tests/test_integration.py -v` after the active run completes and records that
+> verification separately. The write scopes must not overlap.
 
 While both children are active, queue with `Ctrl+Enter`:
 
 > After the active run completes, summarize which model handled each child and whether their
 > wall times overlapped. Do not modify files.
 
-Pass: exactly two first-level children, disjoint `resource_scopes`, peak concurrency two and never
-over three, accepted child results, operator-run integration test pass, and one visible FIFO
+Pass: exactly two agent nodes, one checkpoint depending on both, disjoint `resource_scopes`, peak
+concurrency two and never over three, accepted child results, operator-run integration test pass,
+and one visible FIFO
 follow-up after completion. No queued coroutine warning on cancel or quit. Record actual
 assignment timestamps; do not infer overlap from the prompt. A count or scope conflict must be
 rejected before plan admission and repaired within the bounded decision allowance.

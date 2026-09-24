@@ -4,7 +4,7 @@
   - Evidence review completed across the original exports; the S5 plan belongs to run
     `46335ece-a442-4a0b-bb14-19f220c73846` and the later conflict question to S4 retry
     `ea102525-dc0f-412d-92f4-deddf12b6458`. The DevPass run now has a frozen-rate local ledger.
-    Its campaign stop total is USD 0.746677536 through the S4 tool-node refusal; two calls remain
+    Its campaign stop total is USD 0.768037536 through the S4 checkpoint-repair failure; two calls remain
     unresolved at call level but are conservatively settled. Provider billing is unverified.
   - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
     model rates, price measured tokens locally, and include child calls in the parent run. Prior
@@ -35,11 +35,12 @@
 - [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
   - In progress under the user's explicit best-effort waiver of a provider-side hard cap. The
     local stop point is USD 8.50 with a USD 10 ceiling. Read-only `GET /v1/key` reports DevPass
-    Lite with USD 53.49 allowance remaining before the next S4 retry; this is plan allowance, not
-    a spend ledger. Current local campaign total is USD 0.746677536. S3 intent and UTF-8 rechecks
-    pass; S4 count enforcement is confirmed live, but lead guidance previously omitted required
-    resource scopes and a worktree integration tool node was unauthorized. The plan now assigns
-    integration verification to the operator. One S4 retry remains, then S5-S7; S8 is conditional.
+    Lite with USD 53.48 allowance remaining before the final S4 retry; this is plan allowance, not
+    a spend ledger. Current local campaign total is USD 0.768037536. S3 intent and UTF-8 rechecks
+    pass; S4 count enforcement is confirmed live, while previous lead attempts omitted scopes or a
+    checkpoint, or proposed an unauthorized worktree tool node. Lead guidance and the test plan now
+    specify the full `execution_decision` envelope, two scoped implementer nodes, a checkpoint,
+    and operator-run integration verification. One S4 retry remains, then S5-S7; S8 is conditional.
     Actual provider billing is unknown because no independent billing baseline/delta is available.
   - Future runs use export schema version 2 `provider_calls` and `model_usage`; compare local
     per-model calculations with the TUI's lead-plus-child run total after each scenario. The
