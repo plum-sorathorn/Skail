@@ -4,7 +4,7 @@
   - Evidence review completed across the original exports; the S5 plan belongs to run
     `46335ece-a442-4a0b-bb14-19f220c73846` and the later conflict question to S4 retry
     `ea102525-dc0f-412d-92f4-deddf12b6458`. The DevPass run now has a frozen-rate local ledger.
-    Its campaign stop total is USD 1.850906588 through the third fresh S4 retry; five calls
+    Its campaign stop total is USD 1.921514560 through the final S4 reservation retry; seven calls
     remain unresolved at call level but are conservatively settled. Provider billing is unverified.
   - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
     model rates, price measured tokens locally, and include child calls in the parent run. Prior
@@ -53,8 +53,13 @@
     this budget-diagnostic case. The queue was not proven to survive restart. S4 use is USD
     1.407387052 against USD 1.60, with USD 0.192612948 left. The next attempt needs enough run
     budget to reserve lead and child work, while its measured local S4 cost must stay within the
-    remaining USD 0.192612948. Use a fresh fixture session and do not call `task()` for admitted
-    plan nodes. S4-S7 remain pending; S8 is conditional. Actual provider billing remains unknown;
+    remaining USD 0.192612948. The final reservation retry admitted and launched both GLM
+    implementers concurrently, but one provider call failed ambiguously and the sibling was
+    cancelled. The in-house run charge is USD 0.034123972, including USD 0.009718 conservative
+    estimates for one call without usage and one ambiguous call. S4 use is USD 1.441511024 against
+    USD 1.60, with USD 0.158488976 left. Paid tests are paused until those calls are reconciled;
+    do not force escalation. S4 did not pass because results were not accepted and no FIFO follow-up
+    was queued. S5-S7 remain pending; S8 is conditional. Actual provider billing remains unknown;
     there is no independent billing baseline or delta.
   - Future runs use export schema version 2 `provider_calls` and `model_usage`; compare local
     per-model calculations with the TUI's lead-plus-child run total after each scenario. The

@@ -26,9 +26,11 @@ the old conflicting lead guidance and exposed `task.admission_required`; lead gu
 Skail dispatches admitted nodes automatically. Three low-budget attempts reported
 `manual_model_mismatch`; their lead reservations plus retained synthesis allowance left too little
 child headroom. The selector now reports the pinned candidate's specific blocking reason. About USD
-0.192613 remains in the S4 allocation. The final retry needs enough run budget for both lead and
-child reservations, while its measured local S4 cost must stay below USD 0.192613. Actual provider
-billing remains unknown.
+0.192613 remained before the final reservation retry. That run launched two GLM implementers with
+overlapping calls, but one call failed ambiguously and Skail cancelled the sibling. No files changed;
+the two unresolved calls are conservatively settled. The S4 queue-follow-up test remains incomplete.
+The local campaign stop total is USD 1.921514560, S4 has USD 0.158488976 remaining, and paid tests
+are paused pending provider-call reconciliation. Actual provider billing remains unknown.
 Retest repaired paths and close defects only from matching live evidence.
 
 The previous USD 0.4376813 is Skail-exported usage plus estimates, **not verified provider spend**.
