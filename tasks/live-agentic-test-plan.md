@@ -21,22 +21,28 @@ The attempted relaunch used a non-TTY shell after PowerShell PTY creation failed
 with no prompt then executed an empty headless instruction; this is not evidence that the TUI queue
 survives restart. That command was issued from the Skail repository root, not the disposable fixture;
 the task was read-only and no fixture files changed. A later TUI probe succeeded through `cmd.exe`.
-After four earlier S4 retries, two reservation-adjusted fixture runs launched both GLM
-implementers concurrently; each failed ambiguously and cancelled its sibling. No child results were
-accepted. The second report child has scoped changes in its retained worktree and its focused test
-passes, but it was not integrated. A FIFO follow-up was visible as queued but did not execute. The
-local ledger corrected three rows that had omitted measured calls alongside estimates; its current
-campaign stop total is USD 2.067794734, with S4 using USD 1.512342744 of USD 1.60. Do not replay
-ambiguous assignments.
+S4 remains incomplete after two reservation-adjusted fixture runs: both admitted and launched GLM
+implementers concurrently, then each failed ambiguously and cancelled its sibling. No accepted child
+results or FIFO follow-up. Four final-run GLM calls without reliable usage were conservatively settled.
+The corrected local campaign stop total is USD 2.305266734; S4 used USD 1.512342744 of USD 1.60.
+Do not replay ambiguous assignments.
 
-S5 run `d58218a1-ee25-48ab-888d-dbab789a5a1f` admitted plan
-`8b0a3ba3-f465-4544-9658-c2df60a914fd`, but both explorer tasks failed and their second attempts
-were blocked as `auto_ineligible`; no checkpoint revision or implementation node completed. Its 32
-calls are fully token-priced at USD 0.053850454. Retry with fresh run/task IDs and automatic explorer
-routing, leaving explorer assignments unpinned so a failed attempt can select another qualified
-model. The user confirmed DevPass approves Skail; use the USD 8.50 in-house stop under the user's
-best-effort USD 10 ceiling. Actual provider billing remains unknown. S6-S7 are pending; S8 is
-conditional.
+S5 has four fresh attempts so far. Run d58218a1-ee25-48ab-888d-dbab789a5a1f admitted a plan but
+both Qwen3.8 Flash explorers failed before the checkpoint (USD 0.053850454). Run
+9175536d-c3f2-45f7-840d-9a9f4a33e3a8 failed on an ambiguous Qwen3.8 Max lead call, locally settled
+at USD 0.177912. Run ee06f5c4-ab20-41b5-8bd1-2e66c2d2f1dc admitted a plan but both GPT-4.1
+explorers failed before the checkpoint (USD 0.047752). Run 9761855e-759e-4428-8f76-1df5e7bedeeb
+was rejected before admission because the agent nodes omitted required resource_scopes (USD
+0.011808). S5 cost so far is USD 0.291322454, with no accepted discovery results, checkpoint
+completion, revision, or implementation.
+
+Offline fixes include the child TaskResult response contract (commit 935ae49) and a lead plan
+skeleton with required effect and resource scopes plus checkpoint dependencies. The resource-scope
+guard regression failed before the guidance fix and passes afterward. Final offline gates pass: Ruff,
+mypy, unit/contract (882 passed, 2 skipped), smoke, and full suite (1164 passed, 5 skipped). Retry
+S5 with the explicit scoped plan, fresh run/task IDs, automatic explorer routing, and no verification
+tool node. The user confirmed DevPass approves Skail; use the USD 8.50 in-house stop under the
+best-effort USD 10 ceiling. Provider billing remains unknown. S6-S7 are unrun; S8 is conditional.
 Retest repaired paths and close defects only from matching live evidence.
 
 The previous USD 0.4376813 is Skail-exported usage plus estimates, **not verified provider spend**.
@@ -260,30 +266,71 @@ rejected before plan admission and repaired within the bounded decision allowanc
 
 ### S5 — Adaptive plan and checkpoint
 
-The first live S5 run admitted the plan but both Qwen3.8 Flash explorer tasks failed before the
-checkpoint. Their second attempts were blocked as auto_ineligible because no replacement route was
-selected. For the fresh retry, leave the explorer profile unpinned so automatic routing can choose
-another qualified model after a failed first attempt. Keep the implementer pin and verify all actual
-assignments from the export.
+The first plan was rejected because the agent nodes omitted resource_scopes. Later plans admitted but
+explorers returned no accepted results. The next attempt must use fresh run/task IDs, include
+non-empty disjoint resource_scopes for the initial agents, and leave the explorer profile unpinned so
+a failed first attempt can select another qualified model.
 
 Prompt:
 
-> Use planned execution. Create two independent read-only discovery agent nodes: one audits the
-> fixture CLI/API boundary and one audits test gaps. Add a checkpoint depending on both. At the
-> checkpoint, revise the plan from the evidence and add one implementation agent for a
-> `--strict` parser option scoped to `src/live_fixture/parser.py` and its existing tests. Do not add
-> a verification tool node or run verification commands from the agent plan. Persist the plan and
-> revision; do not write before the checkpoint is accepted. After the agent run ends, the operator
-> independently runs `python -m pytest tests/test_parser.py -q`.
+> Use planned execution. Submit an initial plan with two independent read-only discovery agent nodes
+> and one dependent checkpoint. Do not add the implementation agent or a verification tool node until
+> the checkpoint is accepted. The agent nodes need distinct, non-empty resource_scopes and an explicit
+> read effect_scope; use profile explorer for both. One audits the fixture CLI/API boundary, the other
+> audits test gaps. Each returns at most five concise findings with path:line references and uses no
+> more than six read-only tool calls. Do not delegate further.
+>
+> At the checkpoint, revise the plan using only the two reports. Preserve the initial node IDs and
+> dependencies. Add one implementation agent with profile implementer, effect_scope workspace_write,
+> resource_scope src/live_fixture/parser.py, dependency on the checkpoint, and acceptance criteria for
+> implementing --strict while preserving permissive behavior. Use PlanRevision expected_revision=1,
+> added_nodes, justification, and evidence_refs fields. Do not add a verification tool node; after the
+> agent run ends, the operator runs python -m pytest tests/test_parser.py -q.
 
-Pass: two independent discovery nodes, one dependent checkpoint, then a recorded revision with
-one scoped implementation node. Node transitions are legal and occur once; no writer starts before
-checkpoint acceptance. The operator-run focused test verifies the parser change after the run.
-Compare `/plan` with exported plan/revision/node records.
-After cancellation, start an unrelated run in the same session and confirm it does not inherit
-the cancelled plan's prompt or authority. If a question remains pending, first verify that Skail
-visibly blocks the new prompt; resolve or cancel the question before starting the unrelated run.
-Track run and plan IDs separately.
+Initial revision-1 plan shape:
+
+```json
+{
+  "schema_version": 1,
+  "policy_version": "adaptive-v1",
+  "revision": 1,
+  "nodes": [
+    {
+      "local_id": "audit-cli-api",
+      "kind": "agent",
+      "objective": "Audit the fixture CLI/API boundary and identify strict-parser hook points",
+      "effect_scope": "read",
+      "resource_scopes": ["src/live_fixture/parser.py"],
+      "task_features": {"profile": "explorer"},
+      "acceptance_criteria": ["Return findings with path:line evidence"]
+    },
+    {
+      "local_id": "audit-test-gaps",
+      "kind": "agent",
+      "objective": "Audit parser test coverage and identify strict-option test gaps",
+      "effect_scope": "read",
+      "resource_scopes": ["tests/test_parser.py"],
+      "task_features": {"profile": "explorer"},
+      "acceptance_criteria": ["Return findings with path:line evidence"]
+    },
+    {
+      "local_id": "discovery-checkpoint",
+      "kind": "checkpoint",
+      "objective": "Review both discovery reports before adding implementation",
+      "depends_on": ["audit-cli-api", "audit-test-gaps"],
+      "effect_scope": "read"
+    }
+  ]
+}
+```
+
+Pass: the initial plan is admitted with two independent explorer nodes and the checkpoint; both child
+results are accepted; the checkpoint completes; revision 2 adds one scoped implementer; no writer
+starts before checkpoint acceptance; the operator-run focused parser test passes. Compare /plan with
+exported plan, revision, node, route, and task records. After cancellation, start an unrelated run in
+the same session and confirm it does not inherit the cancelled plan's prompt or authority. If a
+question remains pending, verify it visibly blocks the new prompt, then resolve or cancel it before
+the unrelated run. Track run and plan IDs separately.
 
 ### S6 — Question, quit, resume, and approval UI
 
