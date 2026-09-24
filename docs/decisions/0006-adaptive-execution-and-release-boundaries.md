@@ -29,7 +29,8 @@ a product claim or treat a tag as permission to rename a repository or remote.
    checkpoints. Model-authored code and todo prose are never executable plans.
 3. DeepAgents' standard `task` tool remains compatible. A `task` call becomes one validated plan
    task through the same admission, assignment, budget, execution, result, and event services. It is
-   not a second scheduler.
+   not a second scheduler. Once an `ExecutionPlan` is admitted, the fixed coordinator dispatches
+   its AGENT nodes; the lead must not recreate those nodes through `task` calls.
 4. The runtime persists plan identity, schema version, policy version, revision, node identity, legal
    transitions, and revision evidence before dispatch. Skail owns persistent opaque IDs; model
    output uses plan-local names. Completed node identities remain stable across revisions.

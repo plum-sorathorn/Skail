@@ -20,9 +20,12 @@ provider usage remains unresolved. Continue only with a new assignment; never re
 The attempted relaunch used a non-TTY shell after PowerShell PTY creation failed. `skail --resume`
 with no prompt then executed an empty headless instruction; this is not evidence that the TUI queue
 survives restart. That command was issued from the Skail repository root, not the disposable fixture;
-the task was read-only and no fixture files changed. The CLI guard is fixed offline, and a harmless
-`skail --help` PTY probe succeeded through `cmd.exe`. Resume the live matrix only from the disposable
-fixture and within the remaining S4 allocation. Actual provider billing remains unknown.
+the task was read-only and no fixture files changed. A later TUI probe succeeded through `cmd.exe`.
+The last two S4 fixture attempts admitted the requested plan but did not start children: one used an
+unconfigured `gpt-4.1-mini` override, and one exposed contradictory lead guidance to call `task()`
+after plan admission. Lead guidance now says Skail dispatches admitted nodes automatically. Use the
+configured `gpt-4.1-nano` implementer model and do not call `task()` for planned nodes. About USD
+0.229097 remains in the S4 allocation. Actual provider billing remains unknown.
 Retest repaired paths and close defects only from matching live evidence.
 
 The previous USD 0.4376813 is Skail-exported usage plus estimates, **not verified provider spend**.
@@ -226,7 +229,9 @@ Prompt:
 > checkpoint and integration, return one final answer with changed paths and focused test results.
 > Do not add an integration agent or plan tool node. The operator runs
 > `rtk pytest tests/test_integration.py -v` after the active run completes and records that
-> verification separately. The write scopes must not overlap.
+> verification separately. After `execution_decision` admits the plan, do not call `task()` to
+> recreate its agent nodes. Return control so Skail dispatches the admitted nodes. The write scopes
+> must not overlap.
 
 While both children are active, queue with `Ctrl+Enter`:
 

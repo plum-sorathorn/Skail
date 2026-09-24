@@ -4,13 +4,13 @@
   - Evidence review completed across the original exports; the S5 plan belongs to run
     `46335ece-a442-4a0b-bb14-19f220c73846` and the later conflict question to S4 retry
     `ea102525-dc0f-412d-92f4-deddf12b6458`. The DevPass run now has a frozen-rate local ledger.
-    Its campaign stop total is USD 1.699836588 through the non-TTY empty-prompt run; five calls
+    Its campaign stop total is USD 1.850906588 through the third fresh S4 retry; five calls
     remain unresolved at call level but are conservatively settled. Provider billing is unverified.
   - Current policy is [ADR 0008](../docs/decisions/0008-in-house-token-cost-ledger.md): freeze
     model rates, price measured tokens locally, and include child calls in the parent run. Prior
     exports lack per-call tokens and remain historical estimates.
 - [x] 1. Enforce explicit direct, no-delegation, no-write, exact-count, and named-agent-profile constraints at admission.
-  - Evidence: `tests/unit/test_lead_intent.py`, `tests/contract/test_execution_decisions.py`, and focused `tests/integration/test_lead.py` regressions pass. Live S3 run `8054131c-c6c2-488d-bb55-3d5cf71fddc3` rejected the conflicting direct-mode plan. S4 run `360dbf83-cb8e-48c6-b7af-2c85a194436d` confirmed exact-count rejection; run `bb4cf4ac-a959-4a18-8696-50a2272c36a8` exposed the missing role guard. Commit `6b93eaf` enforces named profiles before plan admission. Live confirmation is pending.
+  - Evidence: `tests/unit/test_lead_intent.py`, `tests/contract/test_execution_decisions.py`, and focused `tests/integration/test_lead.py` regressions pass. Live S3 run `8054131c-c6c2-488d-bb55-3d5cf71fddc3` rejected the conflicting direct-mode plan. S4 run `360dbf83-cb8e-48c6-b7af-2c85a194436d` confirmed exact-count rejection; run `bb4cf4ac-a959-4a18-8696-50a2272c36a8` exposed the missing role guard. Commit `6b93eaf` enforces named profiles before plan admission. The latest S4 plans were admitted with `implementer` task profiles, but no child assignment completed; dispatch confirmation remains pending.
 - [x] 2. Bound repeated decision/tool loops and preserve uncertain call accounting.
   - Evidence: 32-call run limit is shared across lead/child middleware; exhaustion is emitted as `run.failed` with `run.model_call_limit_exhausted` before another provider call. `rtk pytest` focused regression suite: 43 passed; Ruff and Graphify update passed.
 - [x] Checkpoint: invalid decisions and read-only loops terminate with one accurate outcome.
@@ -24,30 +24,33 @@
 - [ ] 6. Render normal questions as waiting, with question-specific controls and no tool error.
   - Offline implementation adds typed question events, keeps expected graph interrupts out of `tool.failed`, separates question answer/cancel from permission Approve/Reject, and shows session/run/plan owner suffixes. Focused offline regressions: 213 passed; the final owner-label/recovery subset: 16 passed. Ruff, mypy, and Graphify update pass. Live S6 confirmation remains pending.
 - [x] 7. Audit earlier fixes with focused CLI and TUI checks.
-  - Evidence: five catalog/list/refresh tests and four warning-as-error queue/cancel pilots pass; controller and real TUI cancellation checks show no framework traceback. The new two-case non-TTY resume guard is covered by `test_non_tty_resume_without_prompt_is_rejected_before_execution`. Live confirmation for LIVE-001/003/004 and OUT-001/003 remains pending.
+  - Evidence: five catalog/list/refresh tests and four warning-as-error queue/cancel pilots pass; controller and real TUI cancellation checks show no framework traceback. The two-case non-TTY resume guard is covered by `test_non_tty_resume_without_prompt_is_rejected_before_execution`. Lead guidance now says the coordinator launches admitted plan nodes and the lead must not call `task()` to recreate them. Live confirmation for LIVE-001/003/004 and OUT-001/003 remains pending.
 - [x] 8. Clear the three full offline suite failures.
   - Evidence: the no-credentials subprocess uses the null keyring backend, the initialization replay pilot waits asynchronously for its worker barrier, and the README assertion matches the current image masthead.
 - [x] Checkpoint: Ruff, mypy, unit/contract, smoke, and full offline suite pass.
-  - Latest verification after the non-TTY resume guard: Ruff passed; mypy found no issues in 126
-    source files; unit/contract passed (880 passed, 2 skipped); smoke passed; full offline suite
-    passed (1162 passed, 5 skipped).
+  - Latest verification after lead plan-dispatch guidance: Ruff passed; mypy found no issues in 126
+    source files; unit/contract passed (881 passed, 2 skipped); smoke passed; full offline suite
+    passed (1163 passed, 5 skipped).
 - [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
   - In progress under the user's explicit best-effort waiver of a provider-side hard cap. The
     local stop point is USD 8.50 with a USD 10 ceiling. Read-only `GET /v1/key` reports DevPass
     Lite with USD 53.43 allowance remaining before the final S4 retry; this is plan allowance, not
-    a spend ledger. Current local campaign stop total is USD 1.699836588. S3 intent and UTF-8
+    a spend ledger. Current local campaign stop total is USD 1.850906588. S3 intent and UTF-8
     rechecks pass; S4 count enforcement is confirmed live. Run `7aa2bdab-ffea-470f-b8bc-6ab5e1e5e342`
     was interrupted before a decision or plan; its call is unresolved and conservatively settled at
     USD 0.175416. A non-TTY `--resume` without a prompt then executed an empty headless instruction
-    in run `eb160497-59e7-44ae-b3d3-8c810a25d97c` after the PTY launch failed. That command was
-    issued from the Skail repository root rather than the disposable fixture; the child task was
-    read-only, with no fixture changes. The measured calls cost USD 0.634726; one started call is
-    conservatively settled at USD 0.058232. The CLI guard is fixed offline. TUI queue persistence
-    across restart remains unproven. S4 profile and child cleanup remain unconfirmed. About USD
-    0.380167 remains in the S4 allocation; the live test must run from the disposable fixture and
-    use a new assignment. S4-S7 remain pending; `cmd.exe` successfully opens a PTY for Skail in this
-    environment. S8 is conditional. Actual provider billing remains unknown; no independent
-    provider billing baseline or delta is available.
+    in run `eb160497-59e7-44ae-b3d3-8c810a25d97c` from the Skail repository root, not the fixture;
+    its read-only survey made no file changes. Its measured calls cost USD 0.634726 and its one
+    started call is conservatively settled at USD 0.058232. The CLI guard is fixed offline. A fresh
+    fixture run using `gpt-4.1-mini` admitted the plan but blocked both child assignments because
+    that model was not configured (USD 0.067142). A corrected configured `gpt-4.1-nano` run admitted
+    the same plan, but contradictory lead guidance caused six `task()` attempts to fail with
+    `task.admission_required`; no children ran and the lead asked to waive the two-child constraint
+    (USD 0.083928). Guidance now directs the lead to let Skail dispatch planned nodes automatically.
+    The queue was not proven to survive restart. About USD 0.229097 remains in the S4 allocation;
+    the next attempt must use a fresh fixture session, the configured nano model, and no `task()`
+    call for admitted plan nodes. S4-S7 remain pending; S8 is conditional. Actual provider billing
+    remains unknown; there is no independent billing baseline or delta.
   - Future runs use export schema version 2 `provider_calls` and `model_usage`; compare local
     per-model calculations with the TUI's lead-plus-child run total after each scenario. The
     LLM Gateway CLI is removed from the procedure.

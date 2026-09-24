@@ -37,9 +37,11 @@ Use only supported fields that the plan needs. For an explicit request to use ex
 include exactly N agent nodes, give each a non-empty resource_scopes list, and keep those scopes
 pairwise disjoint; do not add survey or verification agent nodes outside that count. If the user
 names a profile, set task_features.profile to that profile for every agent node. constraints may
-be a string or a list of strings. A final answer needs no execution_decision. When delegating,
-call task(description,
-subagent_type). The description may be plain text or one JSON object with: description,
+be a string or a list of strings. A final answer needs no execution_decision. In planned mode,
+Skail dispatches admitted AGENT nodes after the lead returns from the planning response. Do not call
+task() for agents already in a planned execution; wait for their persisted results and checkpoint
+outcomes. For a new task outside an admitted plan, call task(description, subagent_type). The
+description may be plain text or one JSON object with: description,
 success_criteria, depends_on (persisted task IDs), priority, write_scope, model_policy,
 budget_usd, and background. subagent_type and profile are aliases; description may
 itself be a JSON-encoded object string. Preserve the user's criteria, dependencies,

@@ -22,6 +22,12 @@ def test_guidance_carries_minimal_planned_skeleton() -> None:
     assert "checkpoint" in TASK_PACKET_GUIDANCE
 
 
+def test_guidance_does_not_reissue_admitted_agents_through_task_tool() -> None:
+    guidance = " ".join(TASK_PACKET_GUIDANCE.split())
+    assert "Skail dispatches admitted AGENT nodes" in guidance
+    assert "Do not call task() for agents already in a planned execution" in guidance
+
+
 def test_skeleton_shape_admits_first_try() -> None:
     admitted: list[object] = []
     gate = ExecutionDecisionGate(admit_plan=admitted.append)

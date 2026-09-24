@@ -682,6 +682,9 @@ submits an empty instruction.
 Admitted AGENT plan nodes launch exactly once. Admission binds the node to a
 fresh queued task and attempt and moves it READY→LAUNCHING; the dispatch pump
 later opens the persisted execution row (`plan_node_executions`) and runs it.
+The lead returns from its planning response so Skail can dispatch those nodes; it must not recreate
+plan-owned tasks through `task()`. Separate task requests still pass the ordinary task-admission
+checks.
 
 - Launch/reconcile: LAUNCHING/RUNNING/settled/retired/ambiguous provider work
   is never replayed. Ambiguous launches are reconciled to BLOCKED first, and
