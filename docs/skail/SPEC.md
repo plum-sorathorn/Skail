@@ -145,6 +145,9 @@ prose question is not an interrupt. For each user instruction the lead may:
 - synthesize subagent results and continue implementation;
 - ask the user when requirements or authority are missing.
 
+If the accepted answer is followed by a stale waiting summary, Skail ends the run blocked with
+`execution.answer_not_continued`; it does not report that run as completed.
+
 `direct` retains the full lead tool loop and may submit a plan later when evidence changes.
 `discover` submits only the next evidence-gathering frontier and a decision checkpoint. `planned`
 submits a finite dependency graph whose ready work can proceed without another lead call. The
@@ -327,6 +330,9 @@ Git operations initially use `execute`; Skail will not add a redundant Git tool 
 Tool visibility is profile-specific. Explorer and reviewer profiles do not receive write tools. Any profile with `execute` is treated as potentially write-capable for scheduling and approval because a shell can modify files even when `write_file` is hidden.
 
 `ask_user` produces a typed `question` wait with an answer field and a separate run-cancel action.
+When choices are supplied, the prompt asks the user to choose exactly one listed value; open-ended
+questions omit choices. Runtime validation continues to accept only listed values for fixed-choice
+questions.
 Permission approvals remain typed `approval` interrupts and use Approve/Reject controls. An expected
 graph interrupt is not a tool failure; only an actual tool or question-store error is reported as
 failed.
@@ -364,6 +370,9 @@ Project and user profiles use `.skail/agents/<name>/AGENTS.md` and `~/.skail/age
 ## 11. Failure and escalation
 
 A tool error is evidence, not automatically a failed task attempt.
+
+Task terminal events include a bounded failure category and a validation field path when available.
+Provider exception text and raw child output are not copied into these event fields.
 
 An attempt fails when any of these becomes true:
 

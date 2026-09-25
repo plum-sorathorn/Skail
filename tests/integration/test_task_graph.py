@@ -28,6 +28,7 @@ from skail.domain.ids import (
 from skail.domain.plans import PlanNode, PlanNodeKind
 from skail.domain.routing import RoutingMode, TaskAssignment
 from skail.domain.tasks import TaskRequest, TaskResult, VerificationResult
+from skail.providers.errors import ProviderError, ProviderErrorKind
 from skail.routing.selector import RouteFailure
 from skail.runtime.deepagents_adapter import ChildRunGate, build_lead_agent
 from skail.runtime.leases import WorkspaceLeaseManager
@@ -279,16 +280,19 @@ async def test_task_graph_blocked_events_carry_the_true_reason(tmp_path) -> None
 
     state = await graph_for("budget_unaffordable", {"budget": 1}).ainvoke({"spec": spec})
     assert state["result"].status == "budget_blocked"
+    assert state["result"].failure_category == "budget_blocked"
     assert ("budget_blocked", None, "budget_unaffordable") in events
 
     events.clear()
     state = await graph_for("model_excluded", {"model_excluded": 1}).ainvoke({"spec": spec})
     assert state["result"].status == "blocked"
+    assert state["result"].failure_category == "routing_ineligible"
     assert ("blocked", None, "model_excluded") in events
 
     events.clear()
     state = await graph_for(None, {}).ainvoke({"spec": spec})
     assert state["result"].status == "blocked"
+    assert state["result"].failure_category == "routing_ineligible"
     assert ("blocked", None, "no eligible route") in events
 
 
@@ -303,7 +307,12 @@ async def test_task_graph_converts_execution_error_to_bounded_escalation(tmp_pat
         return AttemptBinding(new_attempt_id(), assignments[number - 1])
 
     async def execute(*args):
-        raise RuntimeError("provider unavailable")
+        raise ProviderError(
+            kind=ProviderErrorKind.TRANSIENT,
+            summary="provider unavailable",
+            provider="fake",
+            retry_safe=True,
+        )
 
     graph = build_task_graph(
         profile=builtin_profiles()["implementer"],
@@ -316,7 +325,8 @@ async def test_task_graph_converts_execution_error_to_bounded_escalation(tmp_pat
     state = await graph.ainvoke({"spec": spec})
     assert assigned == [1, 2]
     assert state["result"].status == "returned_to_lead"
-    assert "provider unavailable" in state["result"].summary
+    assert state["result"].failure_category == "provider_error"
+    assert "provider unavailable" not in state["result"].summary
 
 
 @pytest.mark.asyncio

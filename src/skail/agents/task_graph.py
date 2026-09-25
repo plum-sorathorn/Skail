@@ -20,11 +20,13 @@ from skail.domain.routing import TaskAssignment
 from skail.domain.tasks import (
     AttemptStatus,
     AttemptSummary,
+    TaskFailureCategory,
     TaskRequest,
     TaskResult,
     TaskSpec,
     TaskStatus,
 )
+from skail.providers.errors import ProviderError
 from skail.routing.selector import RouteFailure
 from skail.runtime.deepagents_adapter import ChildRunGate
 from skail.runtime.escalation import bounded_handoff, escalation_floor
@@ -152,12 +154,14 @@ def build_task_graph(
                     task_id=spec.task_id,
                     status="budget_blocked",
                     summary=binding.binding_constraint,
+                    failure_category="budget_blocked",
                 )
             else:
                 result = TaskResult(
                     task_id=spec.task_id,
                     status="blocked",
                     summary=binding.binding_constraint or "no eligible route",
+                    failure_category="routing_ineligible",
                 )
             if task_registry is not None:
                 task_registry.transition(
@@ -301,11 +305,15 @@ def build_task_graph(
                         raise
             else:
                 result = await run_with_gate()
-        except Exception as exc:
+        except Exception as error:
+            failure_category: TaskFailureCategory = (
+                "provider_error" if isinstance(error, ProviderError) else "task_failure"
+            )
             result = TaskResult(
                 task_id=spec.task_id,
                 status="failed",
-                summary=f"attempt execution failed: {exc}",
+                summary="attempt execution failed",
+                failure_category=failure_category,
             )
             if scheduler is not None and str(spec.task_id) in scheduler._children and number == 2:
                 try:
@@ -321,6 +329,10 @@ def build_task_graph(
         result = state["result"]
         assert result is not None
         number = state["attempt_number"]
+        if result.status == "failed" and result.failure_category is None:
+            result = result.model_copy(update={"failure_category": "task_failure"})
+        elif result.status == "budget_blocked" and result.failure_category is None:
+            result = result.model_copy(update={"failure_category": "budget_blocked"})
         status = {
             "succeeded": AttemptStatus.SUCCEEDED,
             "failed": AttemptStatus.FAILED,

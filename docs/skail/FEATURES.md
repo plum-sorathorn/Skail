@@ -63,7 +63,9 @@ An explicit “ask me to choose” instruction before work requires an `ask_user
 accepted answer before execution decisions or operational tool calls are allowed. A final prose
 question does not count as an interrupt; an omitted question ends blocked with
 `execution.question_required`. The requirement survives resume, and a conditional edit limit such
-as “do not edit until I answer” permits the requested writes after the answer.
+as “do not edit until I answer” permits the requested writes after the answer. If a resumed lead
+still returns a waiting summary after the answer was accepted, the run ends blocked with
+`execution.answer_not_continued` instead of reporting successful completion.
 
 Its prompt defines delegation heuristics, but the runtime enforces user directives:
 
@@ -148,6 +150,12 @@ return one JSON TaskResult with status, summary, and verification for every succ
 analysis cites inspected files with path and line references; write-capable results include validated
 file evidence references. Plain-text reports are rejected as invalid child results and use the bounded
 task retry policy.
+
+Failed results include a runtime-owned `failure_category` and, when validation identifies a field,
+`validation_path`. These diagnostics distinguish provider errors, malformed result JSON, result
+validation failures, route ineligibility, budget blocks, and other task failures. Child-authored
+diagnostic fields are ignored. Task events carry the safe category and schema path without copying
+raw child output or provider exception text.
 
 ## 5. Built-in agent profiles
 
@@ -644,6 +652,9 @@ content in the first stable release.
 ### `ask_user`
 
 Any agent may create a structured question interrupt. It includes prompt, optional choices, reason, blocking scope, and task ID. The answer is recorded and delivered only to the waiting graph state.
+When choices are supplied, the prompt asks the user to select exactly one listed choice. Open-ended
+questions omit choices; the tool description does not ask for free-form text while fixed choices are
+active.
 
 A question interrupt carries `kind=question` and its stable question ID through the `user.question`
 event and TUI projection. Its card is labeled `QUESTION · Your answer is needed` and offers an

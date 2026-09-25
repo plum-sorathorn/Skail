@@ -316,9 +316,16 @@ class TaskResult(BaseModel):
     attempts: tuple[AttemptSummary, ...]
     changed_paths: tuple[str, ...]
     follow_up: str | None
+    failure_category: Literal[
+        "provider_error", "malformed_result", "result_validation",
+        "routing_ineligible", "budget_blocked", "task_failure"
+    ] | None
+    validation_path: str | None
 ```
 
-The result returned through `task` must be concise enough for the lead context. Full events and transcripts remain queryable by ID.
+Failure diagnostics are runtime-owned; the child cannot choose its category or validation path.
+Field paths contain only schema field names and array indexes. The result returned through `task`
+must be concise enough for the lead context. Full events and transcripts remain queryable by ID.
 
 ### 6.5 Task state machine
 
@@ -716,6 +723,11 @@ the answer; `user.cancellation` carries the interrupt kind and ID. Permission ap
 `kind=approval` in their pending runtime payload. A framework graph interrupt is control flow and
 must not be projected as `tool.failed`; actual tool exceptions remain failures.
 
+Terminal `task.failed` and `task.blocked` payloads may include the safe `failure_category` and
+`validation_path`. The category identifies provider errors, malformed result JSON, result validation,
+route ineligibility, budget blocks, or task failures. The path identifies only a schema location;
+raw model output and provider exception text are not copied into the event.
+
 ### 14.2 Projections
 
 The TUI, JSONL mode, local journal, and tests consume the same events. The TUI may retain local display state but must be reconstructible from a session snapshot plus subsequent events. Agent status must not be inferred from text messages.
@@ -795,6 +807,9 @@ Examples:
 - `session.recovery_conflict`.
 
 Errors are rendered for people in the TUI and remain structured in JSONL.
+
+If an accepted question answer is followed by a stale waiting summary, resume terminates blocked with
+`execution.answer_not_continued`; it does not emit `run.completed` for that result.
 
 ## 19. Observability
 

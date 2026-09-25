@@ -317,8 +317,10 @@ async def test_explicit_planned_mode_survives_question_resume(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
-async def test_answered_question_allows_conditional_write_after_resume(tmp_path: Path) -> None:
-    journal, checkpoints, questions, approvals = _stores(tmp_path, "conditional-question-write")
+async def test_answered_question_cannot_complete_with_a_stale_waiting_result(
+    tmp_path: Path,
+) -> None:
+    journal, checkpoints, questions, approvals = _stores(tmp_path, "stale-question-result")
     session_id = _session(journal)
     lead = ScriptedChatModel(
         model_name="lead-model",
@@ -339,39 +341,23 @@ async def test_answered_question_allows_conditional_write_after_resume(tmp_path:
         approvals,
         {"lead-model": lead},
     )
+
     first = await controller.run_instruction(
         "Before editing, ask me to choose exactly one format. "
         "Do not edit any files until I answer."
     )
     assert first.status == "blocked"
     assert first.interrupted is True
-    assert not (tmp_path / "exporter.py").exists()
 
     resumed_lead = ScriptedChatModel(
         model_name="lead-model",
         responses=[
-            parallel_tool_call_message(
-                [
-                    (
-                        "execution_decision",
-                        {
-                            "mode": "direct",
-                            "objective": "Create the JSON exporter",
-                            "reason": "The user selected JSON.",
-                        },
-                        "decision-after-answer",
-                    ),
-                    (
-                        "write_file",
-                        {
-                            "file_path": "exporter.py",
-                            "content": "def export(data):\n    return json.dumps(data)\n",
-                        },
-                        "write-after-answer",
-                    ),
-                ]
-            ),
-            AIMessage(content="Created the JSON exporter after your selection."),
+            AIMessage(
+                content=(
+                    "Waiting for your answer: Please choose exactly one export format: "
+                    "JSON or CSV. No code will be written until you select one."
+                )
+            )
         ],
     )
     resumed = _controller(
@@ -384,21 +370,18 @@ async def test_answered_question_allows_conditional_write_after_resume(tmp_path:
         {"lead-model": resumed_lead},
     )
     assert resumed.restore_interrupted() is True
-    assert resumed._pending_run is not None
-    assert resumed._pending_run.controls.requires_user_answer is True
 
     result = await resumed.resume_interrupted("JSON")
 
-    assert result.status == "completed"
-    assert (tmp_path / "exporter.py").read_text(encoding="utf-8") == (
-        "def export(data):\n    return json.dumps(data)\n"
-    )
+    assert result.status == "blocked"
+    assert "waiting for your answer" not in result.output.lower()
+    assert not (tmp_path / "exporter.py").exists()
     events = journal.events_after(run_id=str(result.run_id))
-    assert any(event.type == "user.question" for event in events)
     assert any(event.type == "user.answer" for event in events)
+    assert not any(event.type == "run.completed" for event in events)
     assert any(
-        event.type == "tool.completed"
-        and getattr(event.payload, "tool", None) == "write_file"
+        event.type == "diagnostic.error"
+        and getattr(event.payload, "code", None) == "execution.answer_not_continued"
         for event in events
     )
 

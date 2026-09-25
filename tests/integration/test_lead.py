@@ -410,6 +410,68 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+async def test_malformed_child_result_emits_safe_validation_diagnostic(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Malformed child result", created_at=datetime.now(UTC)
+    )
+    child_model = ScriptedChatModel(
+        model_name="implementer-model",
+        responses=[AIMessage(content="not-json: do-not-export-this-value")],
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "direct",
+                            "objective": "Delegate one bounded file write",
+                            "constraints": [],
+                            "reason": "A single specialist can perform the work.",
+                        },
+                        "task-decision-invalid-result",
+                    ),
+                    (
+                        "task",
+                        {
+                            "description": "Write child_output.txt file",
+                            "subagent_type": "implementer",
+                        },
+                        "task-call-invalid-result",
+                    ),
+                ]
+            ),
+            AIMessage(content="The child result was rejected."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": child_model},
+        default_lead_model="lead-model",
+        default_child_model="implementer-model",
+    )
+
+    result = await controller.run_instruction("Delegate writing to implementer")
+
+    events = journal.events_after(run_id=str(result.run_id))
+    failed_event = next(event for event in events if event.type == "task.failed")
+    assert getattr(failed_event.payload, "failure_category", None) == "malformed_result"
+    assert getattr(failed_event.payload, "validation_path", None) == "$"
+    assert "do-not-export-this-value" not in repr(failed_event.payload)
+    assert any(
+        event.type == "task.blocked"
+        and getattr(event.payload, "failure_category", None) == "routing_ineligible"
+        for event in events
+    )
+
+
+@pytest.mark.asyncio
 async def test_controller_rejects_child_candidate_that_lacks_profile_tool_requirement(
     tmp_path: Path,
 ) -> None:

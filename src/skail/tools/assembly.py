@@ -854,7 +854,11 @@ def build_default_agent(
         blocking_scope: str = "task",
         options: tuple[str, ...] = (),
     ) -> str:
-        """Pause the current graph for a durable structured user answer."""
+        """Pause the graph for a durable answer.
+
+        With non-empty options, ask the user to choose exactly one listed option. Omit options
+        for open-ended answers; do not request free-form content when choices are fixed.
+        """
 
         if question_store is None:
             return "ask_user is unavailable without a durable question store"

@@ -75,6 +75,7 @@ from skail.domain.tasks import (
     TERMINAL_TASK_STATUSES,
     ArtifactRef,
     AttemptStatus,
+    TaskFailureCategory,
     TaskRequest,
     TaskResult,
     TaskSpec,
@@ -1345,6 +1346,29 @@ class RunController:
             "Execution blocked: this request requires a user question to be answered before work, "
             "but no accepted answer was recorded."
         )
+
+    @staticmethod
+    def _stale_question_waiting_result(output: Any, output_text: str) -> bool:
+        def is_waiting(value: object) -> bool:
+            return isinstance(value, str) and value.lstrip().casefold().startswith(
+                "waiting for your answer"
+            )
+
+        payload = output
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                payload = None
+        if isinstance(payload, dict) and is_waiting(payload.get("summary")):
+            return True
+        if is_waiting(output_text):
+            return True
+        try:
+            payload = json.loads(output_text)
+        except json.JSONDecodeError:
+            return False
+        return isinstance(payload, dict) and is_waiting(payload.get("summary"))
 
     def _record_execution_gate_blocked(
         self,
@@ -3266,6 +3290,36 @@ class RunController:
                 output_content = self.redactor.scrub(message.content)
                 output_text = model_content_to_text(output_content)
                 break
+        if self._question_answered(pending.run_id) and self._stale_question_waiting_result(
+            output_content, output_text
+        ):
+            error_message = (
+                "Execution blocked: the accepted answer was recorded, but the resumed run returned "
+                "a stale waiting summary instead of a final result."
+            )
+            self._record_execution_gate_blocked(
+                run_id=pending.run_id,
+                task_id=pending.lead_task_id,
+                attempt_id=pending.lead_attempt_id,
+                code="execution.answer_not_continued",
+                summary=error_message,
+            )
+            self._finalize_assignment_budget(pending.lead_assignment)
+            self._release_lead_allowances()
+            self._pending_run = None
+            self._pending_interrupt_payload = None
+            return RunResult(
+                run_id=pending.run_id,
+                lead_assignment=pending.lead_assignment,
+                lead_context_packet=pending.lead_context_packet,
+                output=error_message,
+                messages=messages,
+                child_results=child_results,
+                status="blocked",
+                child_wall_seconds=gate.child_wall_seconds,
+                child_peak_active=gate.peak_active,
+                child_count=len(gate.completed),
+            )
         with self.journal.transaction() as tx:
             tx.update_attempt_status(
                 attempt_id=str(pending.lead_attempt_id), status=AttemptStatus.SUCCEEDED
@@ -3757,7 +3811,12 @@ class RunController:
                     tx,
                     run_id=run_id,
                     type=f"task.{result.status}",
-                    payload=TaskPayload(status=result.status, profile=profile.name),
+                    payload=TaskPayload(
+                        status=result.status,
+                        profile=profile.name,
+                        failure_category=result.failure_category,
+                        validation_path=result.validation_path,
+                    ),
                     task_id=result.task_id,
                     attempt_id=AttemptId(str(binding.attempt_id)),
                 )
@@ -3777,6 +3836,13 @@ class RunController:
             spec: TaskSpec, status: str, attempt_id: str | None, summary: str | None
         ) -> None:
             event_persisted = False
+            failure_category: TaskFailureCategory | None = (
+                "budget_blocked"
+                if status == "budget_blocked"
+                else "routing_ineligible"
+                if status == "blocked" and attempt_id is None
+                else None
+            )
             plan_node = self._plan_nodes_by_task.get(str(spec.task_id))
             if plan_node is not None:
                 plan_id, node_id = plan_node
@@ -3836,6 +3902,7 @@ class RunController:
                             else "task blocked before execution"
                         )
                     ),
+                    failure_category=failure_category,
                 )
                 with self.journal.transaction() as tx:
                     tx.record_task_result(
@@ -3856,7 +3923,12 @@ class RunController:
                         tx,
                         run_id=run_id,
                         type=f"task.{status}",
-                        payload=TaskPayload(status=status, profile=profile.name, reason=summary),
+                        payload=TaskPayload(
+                            status=status,
+                            profile=profile.name,
+                            reason=summary,
+                            failure_category=failure_category,
+                        ),
                         task_id=spec.task_id,
                         attempt_id=AttemptId(persisted_attempt_id),
                     )
@@ -3870,7 +3942,12 @@ class RunController:
                 self._emit_event(
                     run_id=run_id,
                     type=f"task.{status}",
-                    payload=TaskPayload(status=status, profile=profile.name, reason=summary),
+                    payload=TaskPayload(
+                        status=status,
+                        profile=profile.name,
+                        reason=summary,
+                        failure_category=failure_category,
+                    ),
                     task_id=spec.task_id,
                     attempt_id=AttemptId(attempt_id) if attempt_id else None,
                 )
