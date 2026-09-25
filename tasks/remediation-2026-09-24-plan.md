@@ -1,8 +1,9 @@
 # Defect remediation, offline suite, and live validation plan
 
-Status: planned follow-up, 2026-09-24. The completed work and remaining checks are tracked in
+Status: offline implementation complete; remaining live retests are tracked in
 [the checklist](defect-remediation-todo.md). The executable prompts, limits, and evidence fields
-are in [the live test plan](live-agentic-test-plan.md). This plan makes no paid calls.
+are in [the live test plan](live-agentic-test-plan.md). No new paid calls have been made in this
+remediation cycle.
 
 ## Evidence baseline and rules
 
@@ -15,13 +16,20 @@ usage plus estimates, not verified provider spend. The S5 plan in run
 `ea102525-dc0f-412d-92f4-deddf12b6458` are separate events. Queue persistence over restart
 has not been demonstrated; do not attribute the question to it.
 
-The last recorded campaign local stop total is **USD 2.594404734**: USD 1.810620734 priced
-from measured tokens and USD 0.783784 in conservative estimates. Ten calls remain unresolved
-at call level but locally settled. Actual provider charges are unknown. Do not use the in-house
-ledger as provider billing evidence or replay an ambiguous assignment. The latest full offline
-suite passed **1176 tests, 5 skipped** in **158.88 seconds** on this Windows host; unit/contract
-passed 892 with 2 skipped, and Ruff, mypy, and smoke passed. All future speed claims compare
-the same suite, Python environment, and host with `pytest --durations` and wall time.
+The user-authorized historical campaign stop remains **USD 2.594404734**. Independent per-call
+recalculation priced 296 current-campaign calls at USD 1.803778734; ten calls lack token usage and
+are conservatively settled at USD 0.783784. A USD 0.006842 carry-forward buffer preserves the
+previously stated cumulative stop after correcting one duplicated scenario row in `COSTS.csv`.
+Actual provider charges are unknown. `out/live-agentic/CALL_COST_AUDIT.csv` records the local
+recalculation for every call in seven latest schema-v2 session exports. Sixteen older measured calls
+reprice to USD 0.173399080 in-house; six older calls have no token counts. Those earlier exported
+amounts remain outside the current campaign ledger and are not provider billing evidence. Do not
+use the in-house ledger as provider billing evidence or replay an ambiguous assignment. The final
+three full-suite runs passed **1,185 tests, 5 skipped** in a median **166.71 seconds wall time**
+(163.01 seconds pytest time) on Windows 11 with Python 3.14.6. Unit/contract passed 900 with 2
+skipped; Ruff, mypy, and smoke passed. Compared with the measured 164.17-second baseline median,
+the full suite is 1.5% slower while adding nine passing regressions. Bottleneck-specific gains and
+the measured slices are recorded in the checklist and `docs/skail/PERFORMANCE.md`.
 
 Preserve the existing worktree, including the user's uncommitted README edits. For each behavior
 change: write a failing deterministic regression, implement the smallest fix, run focused tests,
@@ -63,28 +71,25 @@ and child ownership.
 
 ### 2.2 Child results and adaptive checkpoint
 
-LIVE-024 is the main S5 blocker. Inspect redacted child events, route decisions, tool results,
-and structured TaskResult validation for the four admitted GPT-4.1/Qwen explorer runs. Add
-diagnostic event fields for a safe failure category and validation field path if the exports do
-not distinguish provider error, malformed child result, routing ineligibility, and task failure.
-Avoid raw model output or secrets. Reproduce the actual category with scripted child responses;
-then repair the parser/guidance, route fallback, or failure handoff as evidence requires.
-Test two accepted explorer reports, checkpoint completion, revision 2 adding one scoped writer,
-and no writer before the checkpoint. Keep the two-attempt limit. Do not spend another S5 retry
-until this category is diagnosable offline or a different eligible route is established.
+LIVE-024 is the main S5 blocker. The latest export confirms both admitted GPT-4.1 explorer tasks
+failed before accepted results; it contains no child result, failure category, or validation path,
+so the cause remains unknown. New events now record a safe failure category and schema field path
+for provider errors, malformed results, result validation, route ineligibility, budget blocks, and
+task failures. Scripted child regressions verify those diagnostics without raw output or secrets.
+The historical cause cannot be reconstructed from the export. Do not pay for an S5 retry until an
+eligible route or other offline evidence establishes a cause and corrective action.
 
 ### 2.3 Answer/resume and bounded loops
 
-LIVE-030 and OUT-012 are open. Reproduce `user.answer=JSON` followed by a stale
-“Waiting for your answer” final result using the same run-scoped checkpoint. Record the exact
-resume input, model response, restored controls, and final-result source without exposing
-secrets. If the model returned stale text, enforce that accepted answer and completed work
-cannot finish as waiting; if checkpoint state replayed stale output, fix resume state/turn
-ordering. Add a contract test proving the same run writes only the chosen format and a focused
-test, then returns one truthful result. Investigate the S6 continuation's 32-call `ls`/read
-sequence with normalized tool names/arguments; improve the existing repeated-call guard only
-if the actual sequence evades it. Keep the run-wide 32-call ceiling and no paid call after it.
-Do not declare S6 complete from a separate follow-up run.
+LIVE-030 and OUT-012 are fixed offline. After an accepted answer, a resumed final result beginning
+“Waiting for your answer” now ends blocked with `execution.answer_not_continued`; it cannot emit a
+successful `run.completed`. A failing regression reproduces the stale result, and a contract test
+proves the same run can write only the selected JSON output and its focused test. The historical
+model response was not exported, so model output versus checkpoint replay remains unknown. The S6
+continuation's 32-call sequence was inspected: the export records tool names but not arguments and
+the fixture has no local journal. Leave the existing repeated-call detector unchanged because the
+evidence cannot establish whether calls evaded its normalized-signature check. Keep the 32-call
+ceiling and require a same-run live retest before declaring S6 complete.
 
 ### 2.4 Run ownership, queue, cancellation, and UI
 
@@ -114,26 +119,22 @@ the issue crosswalk records confirmed, unresolved external, and newly discovered
 
 ## Phase 3 — Condense the offline suite without weakening it
 
-1. Measure a baseline three times with `python -m pytest -q --durations=40`; record median
-   wall time, test count, skips, and each slow test's purpose. The current one-run baseline is
-   1176 passed, 5 skipped, 158.88 seconds. Measure unit/contract, integration, e2e, security,
-   packaging, and mounted TUI slices separately. Do not use test count alone as coverage.
+1. Baseline and after measurements are complete. The baseline median is 164.17s wall / 160.82s
+   pytest time for 1,176 passed and 5 skipped; the after median is 166.71s wall / 163.01s pytest
+   time for 1,185 passed and 5 skipped. Baseline and after slices and slow-test purposes are in
+   the checklist. Do not use test count alone as coverage.
 2. Write a coverage map for every distinct mechanism: provider normalization and accounting,
    budget reservation, task/plan ownership, concurrency/leases, trust/path/secret boundaries,
    checkpoints/resume, CLI subprocess behavior, Textual mounted behavior, wheel contents,
    deterministic evaluations, and release scripts. Mark the test level that gives independent
    evidence for each. Keep actual wheel, subprocess, mounted TUI, cross-platform, and end-to-end
    checks where their boundary is the subject of the test.
-3. Optimize measured bottlenecks one at a time. The four direct/module `--help` subprocesses
-   in `test_release_check.py` took 19.94s; inspect import startup and defer heavy eval/release
-   imports on help, keeping all invocation contracts. The nine alias subprocesses in
-   `test_cli_e2e.py` took 6.50s; test all aliases through the parser and retain representative
-   external CLI invocation. The wheel integrity test took 5.41s; share a build artifact within
-   the same gate where safe, while keeping real built-wheel inspection. Retain the isolated
-   no-credential subprocess (4.98s). The parallel eval fixture took 4.56s; preserve observed
-   overlap and output equivalence while reducing redundant policy setup only if identical work
-   is still compared. Profile mounted TUI tests before moving purely static formatting checks
-   to unit level; keep representative real keyboard, focus, queue, and resume pilots.
+3. Measured bottlenecks were optimized one at a time. Direct/module help fell from 15.84s to
+   0.62s; removed-alias subprocesses fell from 8.96s to 0.87s plus in-process parser checks; the
+   parallel evaluation fixture fell from 5.09s to 3.50s; real-wheel inspection fell from 6.02s to
+   5.19s. The isolated no-credential subprocess and mounted keyboard, focus, queue, and resume
+   pilots remain. The 20% total-suite reduction target was not met: additional independent-boundary
+   coverage cost more time than the targeted savings.
 4. Review CI duplication: both `ci.yml` and `release.yml` run on PRs to `main`/`skail`, repeating
    Python 3.12 Windows/Linux unit/contract and smoke work. Propose a single required fast PR
    gate plus a full release gate using documented branch/tag policy, without removing Python
@@ -152,7 +153,9 @@ the measured time improvement has a reproducible before/after record.
 
 Before a paid call, refresh the disposable fixture from a clean committed baseline, verify its
 known failing tests, authenticate DevPass without printing credentials, freeze exact canonical
-model IDs and prices, and independently price every completed call. Use a **new subledger**
+model IDs and prices, and independently price every completed call. The offline gates passed in
+repository order after the relative-artifact package path fix. The package tests also reused the
+real wheel produced by `scripts/package_check.py`. Use a **new subledger**
 for the rerun while retaining the USD 2.594404734 historical local total in the cumulative
 stop calculation. Thus USD 5.905595266 remains to the USD 8.50 normal stop and USD
 7.405595266 to the USD 10 best-effort ceiling. The user waived an
@@ -164,9 +167,11 @@ Run S1/S2/S3 first to confirm answer presentation, direct intent, model switchin
 and bounded cancellation. Run S4 only with a fresh plan and disjoint writer scopes, exactly two
 children, accepted results, FIFO follow-up, and operator-run integration test. The prior S4
 allocation has only USD 0.087657256 left; a rerun may assign a fresh scenario allocation
-before starting, but must record it against the cumulative headroom. Run S5 only after Phase
-2.2, using a fresh
-plan and route; require accepted explorers, checkpoint, revision, and implementation. Run S6
+before starting, but must record it against the cumulative headroom. Do not spend on another S5
+attempt while the historical explorer cause remains unknown. The offline event diagnostics make a
+future failure observable but cannot reconstruct the old cause; proceed only if offline evidence
+establishes a corrective action or a distinct eligible route. If S5 later becomes eligible, use a
+fresh plan and route and require accepted explorers, checkpoint, revision, and implementation. Run S6
 from a clean no-exporter fixture, answer JSON in the **same run** after quit/resume, and verify
 the focused test independently. S7 already passed; repeat only if its boundary changed.
 S8 is conditional on a genuine failed implementer attempt for an eligible fixture task; the
