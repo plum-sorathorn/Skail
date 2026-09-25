@@ -515,8 +515,21 @@ def test_evaluation_and_release_scripts_support_direct_and_module_help(
     tmp_path: Path,
 ) -> None:
     root = Path(__file__).resolve().parents[2]
+    (tmp_path / "sitecustomize.py").write_text(
+        "import importlib.abc, sys\n"
+        "class BlockEvaluationImports(importlib.abc.MetaPathFinder):\n"
+        "    def find_spec(self, fullname, path=None, target=None):\n"
+        "        if (fullname == 'evals' or fullname.startswith('evals.')\n"
+        "                or fullname == 'scripts.package_check'):\n"
+        "            raise ImportError('heavy release imports must be deferred for --help')\n"
+        "        return None\n"
+        "sys.meta_path.insert(0, BlockEvaluationImports())\n",
+        encoding="utf-8",
+    )
     environment = os.environ.copy()
-    environment["PYTHONPATH"] = os.pathsep.join((str(root), str(root / "src")))
+    environment["PYTHONPATH"] = os.pathsep.join(
+        (str(tmp_path), str(root), str(root / "src"))
+    )
     commands = (
         (sys.executable, str(root / "scripts" / "eval_routing.py"), "--help"),
         (sys.executable, "-m", "scripts.eval_routing", "--help"),
@@ -550,6 +563,44 @@ def test_integrated_release_wheel_check_accepts_canonical_skail_package(
     monkeypatch.setattr(subprocess, "run", build_wheel)
 
     check_wheel_contents()
+
+
+def test_release_wheel_check_reuses_a_built_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with zipfile.ZipFile(tmp_path / "skail_harness-0.1.0-py3-none-any.whl", "w") as archive:
+        archive.writestr("skail/__init__.py", "")
+
+    def fail_if_rebuilt(*_: object, **__: object) -> None:
+        pytest.fail("release check rebuilt the wheel")
+
+    monkeypatch.setattr(subprocess, "run", fail_if_rebuilt)
+
+    check_wheel_contents(tmp_path)
+
+
+def test_release_check_passes_the_shared_artifact_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[Path | None] = []
+    for name in (
+        "check_clean_worktree",
+        "check_quality",
+        "check_docs",
+        "check_smoke",
+        "check_evals",
+    ):
+        monkeypatch.setattr(release_check, name, lambda: None)
+    monkeypatch.setattr(
+        release_check,
+        "check_wheel_contents",
+        lambda artifact_dir=None: observed.append(artifact_dir),
+    )
+
+    assert release_check.main(["--artifact-dir", str(tmp_path)]) == 0
+    assert observed == [tmp_path]
 
 
 def test_release_smoke_uses_an_isolated_runtime_workspace(

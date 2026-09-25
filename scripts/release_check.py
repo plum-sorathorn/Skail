@@ -17,6 +17,21 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Verify a Skail release candidate")
+    parser.add_argument(
+        "--artifact-dir",
+        type=Path,
+        help="inspect the wheel already built by package_check.py",
+    )
+    return parser
+
+
+if __name__ == "__main__" and {"-h", "--help"}.intersection(sys.argv[1:]):
+    _build_parser().parse_args()
+
+
 from evals.evidence import (  # noqa: E402
     catalog_digest,
     evaluate_recorded_oracle,
@@ -297,28 +312,37 @@ def check_docs() -> None:
     print("  -> All 10 core documentation files and manifests present.")
 
 
-def check_wheel_contents() -> None:
-    print("[6/8] Building and verifying a fresh wheel...")
-    with tempfile.TemporaryDirectory(prefix="skail-release-build-") as directory:
-        dist_dir = Path(directory)
-        subprocess.run(
-            [sys.executable, "-m", "build", "--outdir", str(dist_dir)],
-            cwd=str(ROOT),
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        wheels = list(dist_dir.glob("*.whl"))
-        if len(wheels) != 1:
-            raise AssertionError("fresh build must produce exactly one wheel")
-        wheel_path = wheels[0]
-        print(f"  -> Inspecting fresh wheel: {wheel_path.name}")
+def check_wheel_contents(artifact_dir: Path | None = None) -> None:
+    if artifact_dir is None:
+        print("[6/8] Building and verifying a fresh wheel...")
+        with tempfile.TemporaryDirectory(prefix="skail-release-build-") as directory:
+            dist_dir = Path(directory)
+            subprocess.run(
+                [sys.executable, "-m", "build", "--outdir", str(dist_dir)],
+                cwd=str(ROOT),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            wheels = list(dist_dir.glob("*.whl"))
+            if len(wheels) != 1:
+                raise AssertionError("fresh build must produce exactly one wheel")
+            wheel_path = wheels[0]
+            _inspect_release_wheel(wheel_path)
+        return
 
-        inspect_wheel(wheel_path)
-        with zipfile.ZipFile(wheel_path) as zf:
-            namelist = zf.namelist()
-            skail_files = [n for n in namelist if n.startswith("skail/")]
-            print(f"  -> Verified {len(skail_files)} package files; 0 legacy files.")
+    wheels = list(artifact_dir.glob("*.whl"))
+    if len(wheels) != 1:
+        raise AssertionError("package artifact directory must contain exactly one wheel")
+    print(f"[6/8] Inspecting package_check.py wheel: {wheels[0].name}")
+    _inspect_release_wheel(wheels[0])
+
+
+def _inspect_release_wheel(wheel_path: Path) -> None:
+    inspect_wheel(wheel_path)
+    with zipfile.ZipFile(wheel_path) as archive:
+        skail_files = [name for name in archive.namelist() if name.startswith("skail/")]
+    print(f"  -> Verified {len(skail_files)} package files; 0 legacy files.")
 
 
 def check_smoke() -> None:
@@ -412,14 +436,13 @@ def check_evals() -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Verify a Skail release candidate")
-    parser.parse_args(argv)
+    args = _build_parser().parse_args(argv)
     print("=== Skail Release Candidate Verification ===")
     try:
         check_clean_worktree()
         check_quality()
         check_docs()
-        check_wheel_contents()
+        check_wheel_contents(args.artifact_dir)
         check_smoke()
         check_evals()
         print("\n=== Release candidate verification PASSED cleanly! ===")

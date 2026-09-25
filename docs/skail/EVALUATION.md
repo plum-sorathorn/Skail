@@ -46,6 +46,8 @@ historical reports remain historical rather than being relabelled as current rel
   platform and dependency versions, timestamp, and the exact invoking command. Policy summaries
   report failed-work spend separately and divide all measured spend by independently completed
   tasks; a policy with zero successful tasks reports cost per success as unavailable.
+- Git output used for the working-tree digest is decoded as UTF-8 so non-ASCII source or
+  documentation changes remain in provenance on Windows.
 - Phase 15's final Windows offline verification completed all 270 cells across the 54-fixture,
   five-policy workload. Its frozen six-fixture parallel matrix completed all 300 cells and all 12
   fixture/seed pairs, measuring 24.38% and 23.79% seed speedups with a 0.59-point spread. The

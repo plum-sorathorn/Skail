@@ -577,10 +577,18 @@ async def test_model_command_with_argument_sets_future_model() -> None:
 
 
 @pytest.mark.asyncio
-async def test_view_slash_commands_switch_tabs() -> None:
-    app = SkailApp()
+async def test_keyboard_navigation_and_slash_commands_switch_tabs() -> None:
+    app = SkailApp(projection=TuiProjection())
     async with app.run_test() as pilot:
         tabs = app.query_one("#tabs", TabbedContent)
+        composer = app.query_one("#composer-input", ComposerTextArea)
+        composer.focus()
+        expected = ["tab-plan", "tab-route", "tab-budget", "tab-agents", "tab-plan"]
+        for target in expected:
+            await pilot.press("shift+tab")
+            await pilot.pause()
+            assert tabs.active == target
+            assert app.focused is composer
 
         await pilot.click("#composer-input")
         for ch in "/plan":
@@ -599,21 +607,6 @@ async def test_view_slash_commands_switch_tabs() -> None:
             await pilot.press(ch)
         await pilot.press("enter")
         assert tabs.active == "tab-agents"
-
-
-@pytest.mark.asyncio
-async def test_shift_tab_keybinding_cycles_panels() -> None:
-    app = SkailApp()
-    async with app.run_test(size=(120, 40)) as pilot:
-        tabs = app.query_one("#tabs", TabbedContent)
-        composer = app.query_one("#composer-input", ComposerTextArea)
-        composer.focus()
-        await pilot.press("shift+tab")
-        assert tabs.active == "tab-plan"
-        assert app.focused is composer
-        await pilot.press("shift+tab")
-        assert tabs.active == "tab-route"
-        assert app.focused is composer
 
 
 @pytest.mark.asyncio
@@ -990,21 +983,6 @@ async def test_passive_panels_do_not_take_focus_or_switch_tabs() -> None:
         await pilot.pause()
         assert app.focused is composer
         assert app.query_one("#tabs", TabbedContent).active == active
-
-
-@pytest.mark.asyncio
-async def test_shift_tab_cycles_panels_without_leaving_composer() -> None:
-    app = SkailApp(projection=TuiProjection())
-    async with app.run_test(size=(120, 40)) as pilot:
-        composer = app.query_one("#composer-input", ComposerTextArea)
-        composer.focus()
-        tabs = app.query_one("#tabs", TabbedContent)
-        expected = ["tab-plan", "tab-route", "tab-budget", "tab-agents", "tab-plan"]
-        for target in expected:
-            await pilot.press("shift+tab")
-            await pilot.pause()
-            assert tabs.active == target
-            assert app.focused is composer
 
 
 @pytest.mark.asyncio

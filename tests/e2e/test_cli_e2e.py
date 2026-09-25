@@ -72,21 +72,10 @@ def test_cli_usage_error_on_conflicting_trust_flags() -> None:
     )
 
 
-def test_cli_rejects_old_skail_aliases() -> None:
-    for alias in ("proxy", "serve", "oma", "daemon", "plugin", "slm"):
-        result = run_cli(alias)
-        assert result.returncode == EXIT_USAGE
-        assert (
-            "not supported" in result.stderr.lower()
-            or "removed" in result.stderr.lower()
-            or "unrecognized" in result.stderr.lower()
-            or "invalid" in result.stderr.lower()
-        )
-
-    # Old options
-    for opt in ("--proxy", "--port", "--host"):
-        result = run_cli(opt)
-        assert result.returncode == EXIT_USAGE
+def test_cli_rejects_removed_alias_in_subprocess() -> None:
+    result = run_cli("proxy")
+    assert result.returncode == EXIT_USAGE
+    assert "removed" in result.stderr.lower()
 
 
 def test_cli_subcommand_config(tmp_path: Path) -> None:

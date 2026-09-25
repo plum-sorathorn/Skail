@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: ["**"]
   pull_request:
 
 permissions:
@@ -31,10 +32,25 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
       - name: Lint
-        run: python -m ruff check src tests scripts
+        run: python -m ruff check src tests scripts evals
       - name: Type check
         run: python -m mypy src/skail
       - name: Offline tests
         run: python -m pytest tests/unit tests/contract -m "not provider_live" -q
       - name: Fake-provider smoke
         run: python scripts/smoke.py --fake-provider
+
+  required-fast-gate:
+    name: Required fast gate
+    if: always()
+    needs: [offline]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the full platform and Python matrix
+        env:
+          OFFLINE_RESULT: ${{ needs.offline.result }}
+        run: |
+          if [ "$OFFLINE_RESULT" != "success" ]; then
+            echo "The offline CI matrix did not complete successfully: $OFFLINE_RESULT" >&2
+            exit 1
+          fi

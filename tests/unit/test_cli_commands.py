@@ -4,7 +4,10 @@ from argparse import Namespace
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from skail.cli import commands
+from skail.cli.main import _parse_cli_args, _RemovedCLIAliasError
 from skail.config.loader import ResolvedConfig
 from skail.config.models import ProviderConfig, RoutingConfig, SkailConfig
 from skail.providers.catalog_sources import (
@@ -13,6 +16,25 @@ from skail.providers.catalog_sources import (
     load_catalog_snapshot,
     save_catalog_cache,
 )
+
+
+def test_cli_parser_rejects_all_removed_aliases() -> None:
+    removed = (
+        "proxy",
+        "serve",
+        "oma",
+        "daemon",
+        "plugin",
+        "slm",
+        "--proxy",
+        "--port",
+        "--host",
+    )
+
+    for token in removed:
+        with pytest.raises(_RemovedCLIAliasError) as caught:
+            _parse_cli_args([token])
+        assert caught.value.token == token
 
 
 def test_models_list_reports_local_llmgateway_catalog(

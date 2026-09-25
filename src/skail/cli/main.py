@@ -347,6 +347,27 @@ def build_run_parser() -> argparse.ArgumentParser:
     return parser
 
 
+class _RemovedCLIAliasError(ValueError):
+    def __init__(self, token: str) -> None:
+        self.token = token
+        super().__init__(token)
+
+
+def _parse_cli_args(raw_args: Sequence[str]) -> argparse.Namespace:
+    """Validate removed aliases and parse a CLI invocation without executing it."""
+    for token in raw_args:
+        if token.lower() in REMOVED_ALIASES:
+            raise _RemovedCLIAliasError(token)
+
+    subcmd = find_subcommand(raw_args)
+    parser = (
+        build_parser()
+        if subcmd is not None or "-h" in raw_args or "--help" in raw_args
+        else build_run_parser()
+    )
+    return parser.parse_args(raw_args)
+
+
 def _build_storage(
     *,
     no_session: bool,
@@ -407,23 +428,14 @@ def _apply_run_config(args: argparse.Namespace, config: SkailConfig) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
 
-    # 1. Reject removed Skail aliases and options immediately
-    for token in raw_args:
-        if token.lower() in REMOVED_ALIASES:
-            render_print_stderr(
-                f"Error: '{token}' is removed and not supported in Skail. "
-                "Skail launches the harness directly without proxies or daemons."
-            )
-            return EXIT_USAGE
-
-    subcmd = find_subcommand(raw_args)
-    if subcmd is not None or "-h" in raw_args or "--help" in raw_args:
-        parser = build_parser()
-    else:
-        parser = build_run_parser()
-
     try:
-        args = parser.parse_args(raw_args)
+        args = _parse_cli_args(raw_args)
+    except _RemovedCLIAliasError as exc:
+        render_print_stderr(
+            f"Error: '{exc.token}' is removed and not supported in Skail. "
+            "Skail launches the harness directly without proxies or daemons."
+        )
+        return EXIT_USAGE
     except SystemExit as exc:
         code = exc.code if isinstance(exc.code, int) else EXIT_USAGE
         return EXIT_USAGE if code != 0 else EXIT_OK

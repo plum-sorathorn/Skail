@@ -62,7 +62,7 @@ def verify_installation(wheel: Path, workspace: Path) -> None:
     environment = workspace / "venv"
     venv.EnvBuilder(with_pip=True, clear=True, system_site_packages=True).create(environment)
     python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    _run([str(python), "-m", "pip", "install", "--no-deps", str(wheel)], cwd=workspace)
+    _run([str(python), "-m", "pip", "install", "--no-deps", str(wheel.resolve())], cwd=workspace)
     clean_env = os.environ.copy()
     clean_env.pop("PYTHONPATH", None)
     commands = (
@@ -74,10 +74,16 @@ def verify_installation(wheel: Path, workspace: Path) -> None:
         _run([str(executable_dir / command[0]), *command[1:]], cwd=workspace, env=clean_env)
 
 
-def verify(output: Path | None = None) -> dict[str, object]:
+def verify(
+    output: Path | None = None,
+    *,
+    artifact_dir: Path | None = None,
+) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="skail-package-check-") as directory:
-        artifacts = Path(directory) / "artifacts"
-        artifacts.mkdir()
+        artifacts = artifact_dir or Path(directory) / "artifacts"
+        artifacts.mkdir(parents=True, exist_ok=True)
+        if artifact_dir is not None and any(artifacts.iterdir()):
+            raise FileExistsError("package artifact directory must be empty")
         _run(
             [sys.executable, "-m", "build", "--wheel", "--sdist", "--outdir", str(artifacts)],
             cwd=ROOT,
@@ -88,7 +94,7 @@ def verify(output: Path | None = None) -> dict[str, object]:
             raise AssertionError("primary build must produce exactly one wheel and sdist")
         inspect_wheel(wheels[0])
         inspect_sdist(sdists[0])
-        verify_installation(wheels[0], Path(directory))
+        verify_installation(wheels[0], Path(directory) / "installation")
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
         evidence: dict[str, object] = {
             "source_commit": commit,
@@ -106,8 +112,9 @@ def verify(output: Path | None = None) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build and verify isolated Skail artifacts")
     parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--artifact-dir", type=Path)
     args = parser.parse_args(argv)
-    evidence = verify(args.evidence)
+    evidence = verify(args.evidence, artifact_dir=args.artifact_dir)
     print(json.dumps(evidence, indent=2))
     return 0
 

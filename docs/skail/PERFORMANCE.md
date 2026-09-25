@@ -65,3 +65,33 @@ over as evidence for this commit.
   and the eval-journal-close fix do not weaken commit or rollback semantics.
 - Linux CI raw evidence is still required; Linux green is not claimed. Exact-final-commit
   Windows/Linux verification remains pending in Phase 24.
+
+## 5. Offline verification runtime (developer gate)
+
+These timings describe the repository's offline test suite, not Skail runtime latency or provider
+performance. They were measured serially on Windows 11 / Python 3.14.6 with
+`python -m pytest -q --durations=40`.
+
+| Measurement | Wall times | Median | Result |
+|---|---:|---:|---|
+| Before this remediation cycle | 164.17s, 159.42s, 173.13s | 164.17s | 1,176 passed, 5 skipped |
+| After final offline fixes | 169.45s, 166.24s, 166.71s | 166.71s | 1,185 passed, 5 skipped |
+
+The final wall median is 1.5% longer than the baseline, so the planned 20% reduction was not met.
+The suite now has nine more passing regression cases. Pytest times were 165.70s, 161.75s, and
+163.01s (163.01s median). The measured subprocess, evaluation, and artifact checks became faster,
+while the mounted TUI slice remained effectively unchanged. The remaining no-credential subprocess
+and real wheel build stay because they test isolated process and artifact boundaries.
+
+Before optimization, unit/contract, integration, E2E, security, packaging, and mounted TUI slices
+took 108.29s, 67.43s, 37.68s, 9.97s, 8.41s, and 64.11s respectively. The direct/module help
+subprocess test fell from 15.84s to 0.62s; removed-alias checks fell from nine E2E subprocesses at
+8.96s to one subprocess at 0.87s plus in-process parser coverage; the parallel evaluation fixture
+fell from 5.09s to 3.50s. Wheel inspection fell from 6.02s to 5.19s in the full suite and now shares
+the built release artifact with package and release checks. The mounted TUI slice measured 64.31s
+after the pilot consolidation versus 64.11s before; keyboard, focus, queue, and resume pilots remain.
+
+An after-run Windows warning revealed that Git diff output was decoded with CP1252 in evaluation
+provenance. `evals.evidence.git_value` now reads that output as UTF-8. A regression with a U+201D
+working-tree edit verifies the digest changes; the three final full-suite runs no longer show the
+reader-thread warning.
