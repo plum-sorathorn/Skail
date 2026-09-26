@@ -13,6 +13,12 @@ direct live denial remains unobserved. S5 is withheld pending diagnosis. S6 need
 retest after the repair; S8 is eligible after a natural parser test failure. The 20% offline suite
 speed target remains unmet. See [the checklist](defect-remediation-todo.md) for individual defects.
 
+The 2026-09-26 offline S4 diagnosis found that the preserved export records the expected rejection
+categories and contains no raw child output; the attempt-two handoff now includes a safe
+`validation_path`, and its focused regression passes. This does not establish a runtime acceptance
+bug or justify another paid S4 attempt; S4 remains failed live. S5's cause remains unknown, and S5
+remains withheld with no paid retry.
+
 The latest complete retest export exposed 16 previously unlogged S4 calls (USD 0.019030400) and
 one S6 continuation call (USD 0.002510000). All 213 retest call IDs now occur once in
 `CALL_COST_AUDIT.csv`; its USD 0.354409976 sum matches exported model usage. Adding the historical
@@ -96,6 +102,48 @@ for provider errors, malformed results, result validation, route ineligibility, 
 task failures. Scripted child regressions verify those diagnostics without raw output or secrets.
 The historical cause cannot be reconstructed from the export. Do not pay for an S5 retry until an
 eligible route or other offline evidence establishes a cause and corrective action.
+
+#### 2026-09-26 diagnosis
+
+**Observed — S4:** Preserved export `session-S4-qwen-final.json` for run
+`9652cfc8-bd46-4195-81e8-1419efd41ef1` records parser task
+`19f3f5d0-fe75-48e6-a0f7-4063ab40a832` failed with `failure_category` `result_validation` and
+`validation_path` `$.artifacts.0.kind`; report task
+`9aecab0e-3e19-430d-8823-cc91834e59f8` failed with `malformed_result` at `$`. Raw child output
+is absent. These categories match `parse_child_result` rejecting invalid model output; they do not
+prove that the runtime rejected a schema-valid `TaskResult`. Child-worktree focused tests passed
+(parser 1 passed, report 1 passed), but their results were not accepted: `run_controller` integrates
+a changeset only when `result.status == succeeded`.
+
+Existing contract tests already accept a valid schema `TaskResult` with artifact `kind`/`path` and
+verification evidence for the fields those tests cover. The live export contains no valid result
+that was dropped, so a new regression was not needed to establish that valid results are accepted.
+The runtime child contract (the `run_controller` Final TaskResult contract and context-packet
+suffix) names `status`, `summary`, `artifacts`, and `verification`, and requires a valid
+`evidence_ref` for write-capable work, but does not specify the artifact object shape
+`{kind, path, digest}`. `response_schema="task_result"` is a routing label, not a JSON schema bound
+to the provider call. The S4 operator prompt did specify `{kind, path}` and `evidence_ref` objects;
+operator text is not the runtime child contract. This is a guidance gap consistent with the observed
+validation path, not a demonstrated cause of the model output; raw output is absent.
+
+The attempt-two handoff previously omitted `failure_category` and `validation_path`, despite
+Architecture §10.3 requiring a concise failure code. A failing
+`test_second_attempt_handoff_includes_safe_validation_path` regression was added; `bounded_handoff`
+and `task_graph` now pass allowlisted categories and schema-shaped validation paths. Unknown
+categories and unsafe paths are dropped, and raw output is not copied. Focused tests passed (9
+passed across `tests/unit/test_escalation.py` and `tests/integration/test_task_escalation.py`);
+Ruff and mypy passed on this revision. This handoff fix does not make S4 live-eligible by itself.
+S4 remains failed live, and direct post-fix denied-write observation remains pending; scope fix
+`d92b4b9` remains the offline denied-write repair. Do not pay for another S4 attempt until a fresh
+fixture run is separately justified: the acceptance bug was not reproduced offline, and the handoff
+fix is necessary but not sufficient for S4 pass criteria (two accepted implementer results,
+checkpoint, disjoint scopes, and FIFO follow-up).
+
+**Observed — S5:** Export `session-S5-final-retry-final.json` for run
+`071ba5b0-5c91-479d-bb14-74db2e951997` records `task.failed` with `reason` null, no
+`failure_category`, no `validation_path`, and no raw child result. The cause remains unknown. The new
+handoff change does not reconstruct or fix the historical S5 failure. S5 stays withheld; no paid
+S5 retry.
 
 ### 2.3 Answer/resume and bounded loops
 
@@ -221,8 +269,10 @@ outcomes, local cost, unknown provider billing, and remaining defects.
    children to separate invalid model JSON, `TaskResult` validation, route ineligibility, and
    runtime acceptance. For S4, prove a valid scoped child result reaches the checkpoint and
    identify why the observed invalid outputs persisted after guidance changes. For S5, the old
-   exports cannot reveal the precise explorer cause; require a specific corrective action or a
-   distinct qualified route before a paid retry. Record cause as unknown until proved.
+    exports cannot reveal the precise explorer cause; require a specific corrective action or a
+    distinct qualified route before a paid retry. Record cause as unknown until proved. The
+    2026-09-26 pass completed the S4 export diagnosis and handoff regression; S4 and S5 paid retries
+    remain gated.
 2. **Offline speed pass:** Re-profile the current suite by mechanism and slow fixture. Change
    one measured setup at a time, retaining an independent subprocess, real wheel, evaluation,
    security boundary, and mounted TUI check where each tests the boundary itself. Record three

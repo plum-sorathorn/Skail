@@ -163,6 +163,61 @@ async def test_escalation_recovers_on_second_attempt(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_second_attempt_handoff_includes_safe_validation_path(tmp_path) -> None:
+    spec = _spec(tmp_path)
+    packets = []
+    raw_payload_sentinel = '{"secret":"must not be copied"}'
+
+    def assign(s, number, excluded):
+        model = "weak-model" if number == 1 else "strong-model"
+        floor = 0.50 if number == 1 else 0.65
+        return AttemptBinding(
+            new_attempt_id(), _assignment(s, number, model, floor=floor)
+        )
+
+    async def execute(s, a, packet):
+        packets.append(packet)
+        if a.attempt_number == 1:
+            return TaskResult(
+                task_id=s.task_id,
+                status="failed",
+                summary="child returned an invalid result",
+                failure_category="result_validation",
+                validation_path="$.artifacts.0.kind",
+                follow_up="child must return a structured TaskResult",
+            )
+        return TaskResult(
+            task_id=s.task_id,
+            status="succeeded",
+            summary="Fixed on strong model",
+            verification=(
+                VerificationResult(
+                    criterion="Must pass tests", passed=True, evidence="passed on retry"
+                ),
+            ),
+        )
+
+    graph = build_task_graph(
+        profile=builtin_profiles()["implementer"],
+        assign=assign,
+        execute=execute,
+        gate=ChildRunGate(3),
+        leases=WorkspaceLeaseManager(),
+    )
+    state = await graph.ainvoke({"spec": spec})
+
+    assert state["result"].status == "succeeded"
+    failure_handoff = next(
+        component
+        for component in packets[1].components
+        if "failure-handoff" in component.label
+    )
+    assert "result_validation" in failure_handoff.content
+    assert "$.artifacts.0.kind" in failure_handoff.content
+    assert raw_payload_sentinel not in failure_handoff.content
+
+
+@pytest.mark.asyncio
 async def test_escalation_fail_twice_returns_to_lead_and_exhausts_fingerprint(tmp_path) -> None:
     spec = _spec(tmp_path)
     exhausted_specs = []

@@ -198,6 +198,8 @@ def build_task_graph(
                 verification=tuple(
                     f"{item.criterion}={item.passed}" for item in previous.verification
                 ),
+                failure_category=previous.failure_category,
+                validation_path=previous.validation_path,
             )
             references = (
                 ContextComponent(

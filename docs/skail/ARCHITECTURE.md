@@ -525,7 +525,8 @@ No file-count or ordinary turn-count heuristic escalates a healthy run.
 Attempt two receives:
 
 - original task and success criteria;
-- failed assignment and concise failure code;
+- failed assignment and concise failure code, including `failure_category` and `validation_path` when
+  recorded by the runtime; raw child output is not copied;
 - last relevant tool/error evidence;
 - changed paths and current diff/worktree reference;
 - completed verification and remaining criteria;

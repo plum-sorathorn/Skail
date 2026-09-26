@@ -205,7 +205,7 @@ withheld because its historical cause is unknown.
 | LIVE-021 | Provider call outcome unknown; locally settled; do not replay. |
 | LIVE-022 | Provider call outcome unknown; locally settled; do not replay. |
 | LIVE-023 | Closed as expected session-history projection. |
-| LIVE-024 | Open: three S5 explorer runs produced no accepted results; old events lack category/path; offline diagnostics added, fresh S5 pending. |
+| LIVE-024 | Open: three S5 explorer runs produced no accepted results; offline handoff diagnostics now include `validation_path` for future failures; historical S5 cause remains unknown; no additional attempt. |
 | LIVE-025 | Ambiguous provider call locally settled; outcome unknown; do not replay. |
 | LIVE-026 | Resource-scope guidance fixed offline; S4 exposed that `PlanNode.resource_scopes` were not reaching the filesystem backend. Commit `d92b4b9` maps the declared scopes into child write permissions; live recheck pending. The invalid field in run 9c251 remains unknown. |
 | LIVE-027 | Fixed offline; a later planned run admitted and blocked truthfully, but rejected/no-decision live edge remains pending. |
@@ -243,6 +243,11 @@ withheld because its historical cause is unknown.
   then prove accepted child results, checkpoint, and revision in deterministic tests. Historical
   exports lack child results and failure categories, so their exact cause remains unknown; S5 is
   withheld and no additional attempt has been made.
+  - The 2026-09-26 review of `session-S5-final-retry-final.json` (run
+    `071ba5b0-5c91-479d-bb14-74db2e951997`) found `task.failed` with null reason, no
+    `failure_category`, no `validation_path`, and no raw child result. Offline evidence still cannot
+    establish the cause; S5 stays withheld, with no paid retry. The accepted-result, checkpoint, and
+    revision criteria remain incomplete.
 - [x] 12. Reproduce and repair same-run post-answer continuation (LIVE-030/OUT-012); inspect
   the repeated S6 tool sequence before changing loop detection. The schema-v2 export for run
   `5a216e69-9126-49b0-849f-9811d5ba0a35` records one failed `execution_decision`, one `ask_user`,
@@ -280,7 +285,24 @@ withheld because its historical cause is unknown.
   three-run after median is 166.71s versus the 164.17s baseline, so the faster-suite objective
   is still open. Keep the mechanism map and independent process, wheel, evaluation, security,
   and mounted TUI boundaries; record three comparable runs after each retained optimization.
-- [ ] 20. Diagnose S4 child-result acceptance from preserved exports and deterministic valid and
-  invalid child-result cases before another paid S4 attempt. Record the formerly omitted run
-  `be73b1cc-6df8-43a0-8d38-3e8d8da76bc6` under LIVE-036/OUT-013. Maintain S5's separate
-  eligibility gate because its historical failure category remains unknown.
+- [x] 20a. Complete the offline S4 export diagnosis and attempt-two handoff regression. The
+  2026-09-26 review of `session-S4-qwen-final.json` (run
+  `9652cfc8-bd46-4195-81e8-1419efd41ef1`) records parser task
+  `19f3f5d0-fe75-48e6-a0f7-4063ab40a832` rejected with `result_validation` at
+  `$.artifacts.0.kind`, and report task `9aecab0e-3e19-430d-8823-cc91834e59f8` rejected as
+  `malformed_result` at `$`; raw child output is absent. These observations match invalid-output
+  rejection, not proof of schema-valid TaskResult rejection. Existing contract tests accept valid
+  artifact `kind`/`path` and verification evidence for the fields they cover; the live export has
+  no valid result that was dropped. The operator prompt named artifact shapes, but the runtime
+  child contract does not specify `{kind, path, digest}`; this is a guidance gap consistent with
+  the validation path, not an established cause of model output. Attempt-two handoff now carries
+  allowlisted `failure_category` and schema-shaped `validation_path`, dropping unknown categories
+  and unsafe paths without raw output. Its regression and focused tests pass (9 passed); Ruff and
+  mypy passed on this revision.
+- [ ] 20b. Before another paid S4 attempt, separately justify a fresh fixture run and establish
+  the acceptance repair or eligible route. The acceptance bug was not reproduced offline, and the
+  handoff change does not make S4 live-eligible. S4 remains failed live; direct post-fix denied-write
+  observation is pending (`d92b4b9` remains the offline denied-write repair). Two accepted
+  implementer results, checkpoint, disjoint scopes, and FIFO follow-up are still required. Record
+  the formerly omitted run `be73b1cc-6df8-43a0-8d38-3e8d8da76bc6` under LIVE-036/OUT-013. Maintain
+  S5's separate eligibility gate because its historical cause remains unknown.

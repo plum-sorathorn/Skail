@@ -156,6 +156,7 @@ Failed results include a runtime-owned `failure_category` and, when validation i
 validation failures, route ineligibility, budget blocks, and other task failures. Child-authored
 diagnostic fields are ignored. Task events carry the safe category and schema path without copying
 raw child output or provider exception text.
+Attempt two's failure handoff includes these safe fields when present.
 
 ## 5. Built-in agent profiles
 
