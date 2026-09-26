@@ -154,13 +154,15 @@ unmet rather than weakening those checks.
 
 Reconciled every registry entry against the latest applicable export in seven schema-v2 sessions
 (the main campaign export was updated at 2026-09-24 22:34:47 UTC). Detailed run/task/attempt/call
-evidence remains in `out/live-agentic/BUGS.md` and `OUTPUT_MISFORMATS.md`. These are the statuses
-before the planned post-gate S1–S6 retests; update them as each new export arrives.
+evidence remains in `out/live-agentic/BUGS.md` and `OUTPUT_MISFORMATS.md`. The DevPass catalog,
+S1 retest, and S2 initial failure plus correction are reconciled. S3, S4, and S6 are blocked pending
+genuine bidirectional TTY; no S3 call/export was made. S5 is withheld because its historical cause
+remains unknown.
 
 | Entry | Latest evidence classification |
 |---|---|
-| LIVE-001 | Open: current DevPass catalog/price refresh still required before live gate. |
-| LIVE-002 | Fixed offline; direct S2 live confirmation pending. |
+| LIVE-001 | Current catalog availability confirmed through Skail: 142/142 priced, with DevPass entries and frozen selected-model rates; paid assignment confirmation pending S1. |
+| LIVE-002 | Direct S2 admitted no plan or child; normalization implementation failure is tracked under LIVE-033. |
 | LIVE-003 | Fixed offline; provider-call cancellation rendering pending. |
 | LIVE-004 | Fixed offline; live queue-shutdown warning check pending. |
 | LIVE-005 | 32-call ceiling confirmed live in S6; repeated-call arguments are absent, so identical-call cause is unknown. |
@@ -191,8 +193,9 @@ before the planned post-gate S1–S6 retests; update them as each new export arr
 | LIVE-030 | Fixed offline to block stale waiting output; same-run live recheck pending. |
 | LIVE-031 | Fixed and rechecked live. |
 | LIVE-032 | Fixed and rechecked live. |
+| LIVE-033 | Initial S2 implementation dropped existing lowercasing; operator test failed 2/4. Same-session correction restored lowercasing and scoped the test; operator focused test passed 4/4. Six-call local ledger reconciled; TUI/export match not observed. |
 | OUT-001 | Fixed offline; live provider-cancellation rendering pending. |
-| OUT-002 | Fixed offline; S1 raw-versus-rendered output still lacks matching evidence. |
+| OUT-002 | Answer-only presentation confirmed live in S1; historical raw model response remains unavailable. |
 | OUT-003 | Fixed offline; live unawaited-coroutine check pending. |
 | OUT-004 | Expected question interrupt confirmed in S6; S4 card display pending. |
 | OUT-005 | Question Answer/Cancel card confirmed live; separate permission card remains unobserved. |
@@ -210,8 +213,8 @@ before the planned post-gate S1–S6 retests; update them as each new export arr
   statuses, link each open item to a reproducer, and preserve uncertain call outcomes.
 - [ ] 11. Diagnose S5 explorer result failures (LIVE-024) with safe failure-category evidence,
   then prove accepted child results, checkpoint, and revision in deterministic tests. Historical
-  exports lack child results and failure categories, so their exact cause remains unknown; no
-  additional S5 attempt has been made.
+  exports lack child results and failure categories, so their exact cause remains unknown; S5 is
+  withheld and no additional attempt has been made.
 - [ ] 12. Reproduce and repair same-run post-answer continuation (LIVE-030/OUT-012); inspect
   the repeated S6 tool sequence before changing loop detection. Offline behavior is fixed and the
   historical sequence was inspected; a same-run live retest remains pending.
