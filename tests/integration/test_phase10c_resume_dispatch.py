@@ -316,9 +316,17 @@ async def test_explicit_planned_mode_survives_question_resume(tmp_path: Path) ->
     )
 
 
+@pytest.mark.parametrize(
+    "stale_summary",
+    [
+        "Waiting for your answer: Please choose exactly one export format: ",
+        "Awaiting your selection: Please choose exactly one export format: ",
+    ],
+)
 @pytest.mark.asyncio
 async def test_answered_question_cannot_complete_with_a_stale_waiting_result(
     tmp_path: Path,
+    stale_summary: str,
 ) -> None:
     journal, checkpoints, questions, approvals = _stores(tmp_path, "stale-question-result")
     session_id = _session(journal)
@@ -354,8 +362,8 @@ async def test_answered_question_cannot_complete_with_a_stale_waiting_result(
         responses=[
             AIMessage(
                 content=(
-                    "Waiting for your answer: Please choose exactly one export format: "
-                    "JSON or CSV. No code will be written until you select one."
+                    stale_summary
+                    + "JSON or CSV. No code will be written until you select one."
                 )
             )
         ],

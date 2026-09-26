@@ -233,9 +233,14 @@ withheld because its historical cause is unknown.
   then prove accepted child results, checkpoint, and revision in deterministic tests. Historical
   exports lack child results and failure categories, so their exact cause remains unknown; S5 is
   withheld and no additional attempt has been made.
-- [ ] 12. Reproduce and repair same-run post-answer continuation (LIVE-030/OUT-012); inspect
-  the repeated S6 tool sequence before changing loop detection. Offline behavior is fixed and the
-  historical sequence was inspected; a same-run live retest remains pending.
+- [x] 12. Reproduce and repair same-run post-answer continuation (LIVE-030/OUT-012); inspect
+  the repeated S6 tool sequence before changing loop detection. The schema-v2 export for run
+  `5a216e69-9126-49b0-849f-9811d5ba0a35` records one failed `execution_decision`, one `ask_user`,
+  an accepted `user.answer` (`JSON`), then `run.completed` with the stale “Awaiting your
+  selection...” blocked summary. The existing guard recognized only “Waiting for your answer”.
+  A regression for this exact alternate prefix failed before the fix and passes after extending
+  the guard. Tool-name evidence has no repeated identical-call sequence; no loop-detector change.
+  A same-run live retest remains pending.
 - [x] 13. Recheck prior intent, ownership, queue, cancellation, question, output, and UTF-8
   fixes with focused regressions. Live-pending closures remain tied to matching live observations.
 - [x] 14. Baseline the offline suite three times, map independent mechanisms, optimize measured
@@ -247,6 +252,10 @@ withheld because its historical cause is unknown.
 - [ ] 17. Refresh the disposable fixture and live plan; freeze models/prices and a new
   in-house subledger under the cumulative stop; S1–S3 are rechecked, S4 remains failed after
   bounded plans, S6 remains eligible, S5 is withheld, S7 is unchanged, and S8 is eligible after the
-  natural parser test failure. Reconcile after every call and update all evidence.
+    natural parser test failure. Reconcile after every call and update all evidence.
+- [ ] Live continuation gate: current actual stdin/stdout are not TTYs, and the refreshed
+  `COSTS.csv` totals USD 2.927274310 versus the previously reported USD 2.929784310 (USD
+  0.002510000 unresolved). No paid live scenario may proceed until a verified TTY is available
+  and the ledger discrepancy is reconciled. Existing DevPass credentials are not printed or used.
 - [ ] 18. Audit README, specs, ADRs, and test procedures against verified behavior; check
   local links and commands; commit coherent changes with Conventional Commit messages.

@@ -1,6 +1,8 @@
 # Defect remediation, offline suite, and live validation plan
 
-Status: offline implementation and gates passed through commit `d92b4b9`. S3 completed its two
+Status: offline implementation and gates passed through commit `d92b4b9`; the S6 stale-summary
+guard now also covers the observed "Awaiting your selection" wording and ordered offline gates
+passed at `7a91316` plus the current fix. S3 completed its two
 model reviews after an initial zero-call config-revision failure. That historical parent run still
 shows `running` in the final export; new pre-assignment failures now record terminal state. S4
 remains failed after bounded live attempts: child TaskResult outputs were not accepted, and no
@@ -8,8 +10,10 @@ checkpoint/FIFO follow-up completed. The scope fix is offline-verified; no out-o
 in later child worktrees, though no direct denied-write event was captured. S6 remains eligible; S5
 is withheld, and S8 is eligible after a natural parser test failure. Scenario evidence and costs are
 in [the checklist](defect-remediation-todo.md) and ignored live-agentic evidence files. The
-cumulative in-house token-cost ledger is USD 2.919110310, with USD 5.580889690 headroom to the USD
-8.50 normal stop. Actual provider billing remains unknown.
+latest `COSTS.csv` sum is USD 2.927274310 while the handoff reported USD 2.929784310; the USD
+0.002510000 discrepancy is unresolved, so no additional paid call is eligible until every call
+and frozen-rate row is reconciled. Even using the higher handoff amount, local headroom is USD
+5.570215690 to the USD 8.50 normal stop. Actual provider billing remains unknown.
 
 ## Evidence baseline and rules
 
@@ -88,9 +92,10 @@ eligible route or other offline evidence establishes a cause and corrective acti
 ### 2.3 Answer/resume and bounded loops
 
 LIVE-030 and OUT-012 are fixed offline. After an accepted answer, a resumed final result beginning
-“Waiting for your answer” now ends blocked with `execution.answer_not_continued`; it cannot emit a
-successful `run.completed`. A failing regression reproduces the stale result, and a contract test
-proves the same run can write only the selected JSON output and its focused test. The historical
+"Waiting for your answer" or "Awaiting your selection" now ends blocked with
+`execution.answer_not_continued`; it cannot emit a successful `run.completed`. Regressions reproduce
+both stale-result variants, and a contract test proves the same run can write only the selected JSON
+output and its focused test. The historical
 model response was not exported, so model output versus checkpoint replay remains unknown. The S6
 continuation's 32-call sequence was inspected: the export records tool names but not arguments and
 the fixture has no local journal. Leave the existing repeated-call detector unchanged because the
@@ -179,11 +184,15 @@ future failure observable but cannot reconstruct the old cause; proceed only if 
 establishes a corrective action or a distinct eligible route. If S5 later becomes eligible, use a
 fresh plan and route and require accepted explorers, checkpoint, revision, and implementation. Run S6
 from a clean no-exporter fixture, answer JSON in the **same run** after quit/resume, and verify
-the focused test independently. S7 already passed; repeat only if its boundary changed.
-S8 is conditional on a genuine failed implementer attempt for an eligible fixture task; the
-existing integration test has no concurrency defect, so remove that invalid prompt and never
-manufacture a failure solely to exercise escalation. If no natural failure occurs, record
-“not exercised.”
+the focused test independently. Schema-v2 export `session-S6-question.json` confirms the same-run
+defect: run `5a216e69-9126-49b0-849f-9811d5ba0a35` persisted accepted `JSON` before completing
+with an “Awaiting your selection” stale summary. Its alternate wording now has a failing then
+passing offline regression. Live confirmation remains pending. S7 already passed; repeat only if its
+boundary changed.
+S8 is eligible because S4 parser task `be009401-0e9f-4356-846e-5b8f7d366159` naturally failed
+`test_parse_records_with_spaces` (2 passed, 1 failed). Use a fresh task for a baseline parser test,
+preserve task identity, and permit at most the documented second attempt. Do not induce a failure.
+Live S8 is pending actual TTY availability and ledger reconciliation.
 
 After each scenario, export schema-v2 evidence, compare TUI, events, fixture diff, and
 independent test result, then reconcile measured tokens and conservative estimates before the

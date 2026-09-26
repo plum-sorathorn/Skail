@@ -1354,10 +1354,10 @@ class RunController:
 
     @staticmethod
     def _stale_question_waiting_result(output: Any, output_text: str) -> bool:
+        waiting_prefixes = ("waiting for your answer", "awaiting your selection")
+
         def is_waiting(value: object) -> bool:
-            return isinstance(value, str) and value.lstrip().casefold().startswith(
-                "waiting for your answer"
-            )
+            return isinstance(value, str) and value.lstrip().casefold().startswith(waiting_prefixes)
 
         payload = output
         if isinstance(payload, str):
