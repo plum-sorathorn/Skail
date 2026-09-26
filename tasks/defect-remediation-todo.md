@@ -209,8 +209,8 @@ withheld because its historical cause is unknown.
 | LIVE-033 | Initial S2 implementation dropped existing lowercasing; operator test failed 2/4. Same-session correction restored lowercasing and scoped the test; operator focused test passed 4/4. Six-call local ledger reconciled; TUI/export match not observed. |
 | LIVE-034 | S3 zero-call config-revision failure reproduced offline and fixed in `b278324`; the live Economy-mode retry routed both pinned models successfully. Final answer TUI/export text comparison was not captured. |
 | LIVE-035 | The first S3 run has no assignment or provider call; its task/attempt are interrupted, but the parent run remains `running` in the final export. Future pre-assignment exceptions now terminalize through `84f798d`; historical state is preserved. |
-| LIVE-036 | S4 child TaskResult responses failed validation across three attempts; parser and report outputs did not reach the checkpoint. Focused child-worktree tests reported parser 2/1 and report 4/0; S4 remains incomplete. |
-| LIVE-037 | The S4 report child worktree contained `src/live_fixture/report_test.py` outside its declared scopes. Root fixture stayed clean; `d92b4b9` now carries plan resource scopes into child filesystem permissions; live recheck pending. |
+| LIVE-036 | S4 child TaskResult responses failed validation across repeated plans; the latest Qwen run still had parser `$.artifacts.0.kind` and report `$` failures. No child result reached the checkpoint; S4 remains failed. |
+| LIVE-037 | An earlier S4 report child wrote `src/live_fixture/report_test.py` outside its declared scopes. The red/green filesystem boundary fix is in `d92b4b9`; later report worktrees contain no such file, but no direct post-fix denied-write event was observed. |
 | OUT-001 | Fixed offline; live provider-cancellation rendering pending. |
 | OUT-002 | Answer-only presentation confirmed live in S1; historical raw model response remains unavailable. |
 | OUT-003 | Fixed offline; live unawaited-coroutine check pending. |
@@ -223,7 +223,7 @@ withheld because its historical cause is unknown.
 | OUT-010 | False successes fixed offline; latest planned run blocked truthfully, invalid/no-plan live path pending. |
 | OUT-011 | Question interrupt and restored card confirmed live. |
 | OUT-012 | Fixed offline to block stale waiting completion; same-run live recheck pending. |
-| OUT-013 | S4 child TaskResult outputs failed at `$.status`, `$.artifacts.0`, and `$.verification.0.evidence_ref`; accepted results remain pending. |
+| OUT-013 | S4 child TaskResult outputs failed at `$.status`, `$.artifacts.0`, `$.verification.0.evidence_ref`, and finally `$.artifacts.0.kind` / `$`; no accepted results. |
 
 ## Next execution cycle
 
@@ -245,8 +245,8 @@ withheld because its historical cause is unknown.
 - [x] 16. Pass Ruff, mypy, unit/contract, smoke, and full offline suite in repository order;
   record final counts and before/after timings after the package path fix.
 - [ ] 17. Refresh the disposable fixture and live plan; freeze models/prices and a new
-  in-house subledger under the cumulative stop; S1–S3 are rechecked, S4 remains blocked pending a
-  fresh result-contract/scope run, S6 remains eligible, S5 is withheld, S7 is unchanged, and S8 is
-  eligible after the natural parser test failure. Reconcile after every call and update all evidence.
+  in-house subledger under the cumulative stop; S1–S3 are rechecked, S4 remains failed after
+  bounded plans, S6 remains eligible, S5 is withheld, S7 is unchanged, and S8 is eligible after the
+  natural parser test failure. Reconcile after every call and update all evidence.
 - [ ] 18. Audit README, specs, ADRs, and test procedures against verified behavior; check
   local links and commands; commit coherent changes with Conventional Commit messages.

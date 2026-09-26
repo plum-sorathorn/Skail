@@ -2,13 +2,14 @@
 
 Status: offline implementation and gates passed through commit `d92b4b9`. S3 completed its two
 model reviews after an initial zero-call config-revision failure. That historical parent run still
-shows `running` in the final export; new pre-assignment failures now record terminal state. S4 has
-not passed: child TaskResult outputs failed validation, and a report child wrote an out-of-scope
-file in its isolated worktree. Commit `d92b4b9` carries planned resource scopes into filesystem
-permissions; a fresh S4 live recheck is pending. S6 remains eligible and S5 remains withheld pending
-diagnosis. Scenario evidence and token costs are in [the checklist](defect-remediation-todo.md) and
-ignored live-agentic evidence files. The cumulative in-house token-cost ledger is USD 2.787648222,
-with USD 5.712351778 headroom to the USD 8.50 normal stop. Actual provider billing remains unknown.
+shows `running` in the final export; new pre-assignment failures now record terminal state. S4
+remains failed after bounded live attempts: child TaskResult outputs were not accepted, and no
+checkpoint/FIFO follow-up completed. The scope fix is offline-verified; no out-of-scope file appeared
+in later child worktrees, though no direct denied-write event was captured. S6 remains eligible; S5
+is withheld, and S8 is eligible after a natural parser test failure. Scenario evidence and costs are
+in [the checklist](defect-remediation-todo.md) and ignored live-agentic evidence files. The
+cumulative in-house token-cost ledger is USD 2.919110310, with USD 5.580889690 headroom to the USD
+8.50 normal stop. Actual provider billing remains unknown.
 
 ## Evidence baseline and rules
 
@@ -171,8 +172,8 @@ allocation or unsettled-call rule requires it. A local token ledger is an estima
 Run S1/S2/S3 first to confirm answer presentation, direct intent, model switching, UTF-8,
 and bounded cancellation. Run S4 only with a fresh plan and disjoint writer scopes, exactly two
 children, accepted results, FIFO follow-up, and operator-run integration test. The historical S4
-allocation had USD 0.087657256 remaining. In the current retest, S4 has used USD 0.113478800 of its
-USD 1.60 allocation, leaving USD 1.486521200. Do not spend on another S5
+allocation had USD 0.087657256 remaining. In the current retest, S4 has used USD 0.244940888 of its
+USD 1.60 allocation, leaving USD 1.355059112. Do not spend on another S5
 attempt while the historical explorer cause remains unknown. The offline event diagnostics make a
 future failure observable but cannot reconstruct the old cause; proceed only if offline evidence
 establishes a corrective action or a distinct eligible route. If S5 later becomes eligible, use a

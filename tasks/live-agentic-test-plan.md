@@ -302,9 +302,11 @@ Prompt:
 >
 > Each child must return one JSON `TaskResult` using its assigned task ID, an allowed status,
 > summary, changed paths, artifacts as objects with `kind` and `path`, and a verification entry for
-> its acceptance criterion. A write-capable result must include `evidence_ref` as an artifact object
-> with `kind` and `path`; do not use strings or null for that field, and do not return prose outside
-> the JSON object. Write only within the node's `resource_scopes`.
+> its acceptance criterion. For a passing result, use `status: "succeeded"`. A write-capable
+> verification must include `evidence_ref` as `{"kind":"file","path":"<scoped file>","digest":"<sha256>"}`;
+> compute the digest from the exact file bytes with Python and use the actual task ID. Do not use
+> strings or null for `evidence_ref`, and do not return prose outside the JSON object. Write only
+> within the node's `resource_scopes`.
 >
 > Delegate only those two independent writers. Each child runs its focused test. After the
 > checkpoint and integration, return one final answer with changed paths and focused test results.
