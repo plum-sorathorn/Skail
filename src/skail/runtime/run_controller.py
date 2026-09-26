@@ -582,7 +582,12 @@ class RunController:
 
     def _routing_config_snapshot(self, mode: RoutingMode) -> dict[str, Any]:
         snapshot = deepcopy(self.config_snapshot)
-        snapshot.setdefault("routing", {})["mode"] = mode.value
+        if self.candidates_fn is None or not snapshot:
+            snapshot.setdefault("routing", {})["mode"] = mode.value
+        else:
+            # The candidate revision covers the loaded config. Per-run mode is recorded in
+            # assignment requirements, so overriding it here would make that revision stale.
+            snapshot.setdefault("routing", {}).setdefault("mode", RoutingMode.AUTO.value)
         return snapshot
 
     def subscribe_events(self, listener: Callable[[EventEnvelope], None]) -> None:

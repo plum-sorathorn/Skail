@@ -14,6 +14,7 @@ from langchain_core.messages import AIMessage
 from skail.agents.lead import LeadControls
 from skail.domain.events import SecretRedactor
 from skail.domain.ids import new_session_id
+from skail.domain.routing import RoutingMode
 from skail.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
 from skail.routing.assignment import (
     AccountingReconciliationRequired,
@@ -84,6 +85,66 @@ async def test_lead_completes_direct_coding_flow_without_delegation(tmp_path: Pa
     assert result.lead_assignment.model == "lead-model"
     assert result.lead_assignment.attempt_number == 1
     assert result.lead_context_packet.task_id == str(result.run_id)
+
+
+@pytest.mark.asyncio
+async def test_per_run_routing_mode_keeps_the_startup_config_revision(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Per-run routing mode", created_at=datetime.now(UTC)
+    )
+    config_snapshot = {
+        "budget": {"run_usd": "1.00"},
+        "routing": {"mode": "auto"},
+    }
+    profile = ModelProfile(
+        provider="injected",
+        model="lead-model",
+        support_level=ProviderSupportLevel.NATIVE,
+        input_usd_per_million=Decimal("1"),
+        output_usd_per_million=Decimal("2"),
+        context_tokens=32_000,
+        max_output_tokens=4_000,
+        supports_tools=True,
+        supports_structured_output=True,
+        capability=CapabilityVector(
+            coding=0.9, reasoning=0.9, tool_reliability=0.9, latency=0.2
+        ),
+        auto_eligible=True,
+    )
+    snapshot = RoutingSnapshot(
+        catalog_revision="catalog-v1",
+        config_revision=config_revision(config_snapshot),
+        health_revision="health-v1",
+        candidates=(
+            RouteCandidate(
+                profile=profile,
+                estimated_cost_usd=Decimal("0.10"),
+                estimate_assumptions=("expected_calls=2",),
+            ),
+        ),
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": ScriptedChatModel(responses=[AIMessage(content="Direct answer.")])},
+        default_lead_model="lead-model",
+        candidates_fn=lambda: snapshot,
+        catalog_revision="catalog-v1",
+        config_snapshot=config_snapshot,
+    )
+
+    result = await controller.run_instruction(
+        "Answer directly",
+        controls=LeadControls(delegation="off", routing_mode=RoutingMode.ECONOMY),
+    )
+
+    assert result.output == "Direct answer."
+    assignment = journal.get_session_snapshot(str(session_id)).assignments[0]
+    assert assignment.payload["config"] == config_snapshot
+    assert assignment.payload["routing_mode"] == "economy"
 
 
 @pytest.mark.asyncio
