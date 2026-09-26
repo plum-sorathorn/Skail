@@ -6,7 +6,7 @@ Git history at `c2190ff`). Use it with `tasks/remediation-2026-09-24-plan.md` an
 `out/live-agentic/`; this document describes the remaining validation, not a fresh claim that
 those scenarios passed.
 
-## Objective and present state
+## Objective and campaign history
 
 Verify the offline repairs through real, operator-entered prompts in Skail's TUI: direct intent,
 model switching, parallel children, plans and checkpoints, queued work, question/approval handling,
@@ -16,7 +16,8 @@ The latest S6 retry raised and restored a real `user.question`, accepted `JSON`,
 a stale blocked summary and no workspace changes. A fresh continuation created the JSON exporter and
 focused test but failed at the 32-call limit after repeated inspections; S6 remains incomplete. S7
 passed the workspace-boundary denial. S8 was not exercised because the fixture has no natural
-concurrency defect; no failure was forced. The latest corrected S4 prompt started run
+concurrency defect; no failure was forced. In that earlier campaign, the last corrected S4
+prompt started run
 `7aa2bdab-ffea-470f-b8bc-6ab5e1e5e342`, but the lead call was interrupted before an execution
 decision. No plan or child was admitted and the fixture stayed unchanged. The call has no token
 counts; its USD 0.175416 assignment estimate is included as a conservative local stop charge, while
@@ -94,14 +95,30 @@ The S5 plan belonged to run `46335ece-a442-4a0b-bb14-19f220c73846`; the conflict
 belonged to later S4 retry run `ea102525-dc0f-412d-92f4-deddf12b6458`. A queued prompt
 surviving a process restart has not been demonstrated.
 
+## Current retest status (2026-09-26)
+
+S1 and S3 passed their applicable read-only checks; S2's
+correction passed its focused operator test but final TUI text was not captured. S4 remains
+failed after bounded two-child attempts because no child `TaskResult` was accepted and no
+checkpoint or FIFO follow-up completed. A previously omitted S4 run
+`be73b1cc-6df8-43a0-8d38-3e8d8da76bc6` added 16 completed calls at USD 0.019030400.
+S6 run `5a216e69-9126-49b0-849f-9811d5ba0a35` accepted `JSON` and then completed with a
+stale “Awaiting your selection” summary; `7b54772` blocks this offline, with a live retest
+pending. Its previously omitted third call cost USD 0.002510000. The latest complete retest
+export contains 213 calls, all uniquely audited at USD 0.354409976; cumulative local cost is
+USD 2.948814710. S5 is withheld pending diagnosis, S7 remains passed, and S8 is eligible after
+the natural S4 parser child test failure. A `cmd.exe /k` PTY in this environment reports both
+stdin and stdout as TTYs; the earlier non-TTY result describes a different launch path. No
+new paid call was made during this audit. Provider billing remains unknown.
+
 ## Gate 1: in-house ledger and model qualification
 
-For a new rerun, record a fresh subledger ID, baseline fixture commit, frozen price snapshot,
-and USD 0 new-call subtotal. Preserve the historical USD 2.594404734 campaign ledger separately;
-never reset or overwrite its evidence. Add each new charge to that historical total for the
-best-effort USD 10 ceiling and normal USD 8.50 local stop. Current local headroom is
-USD 7.405595266 to the ceiling and USD 5.905595266 to the normal stop. Reassign scenario
-allowances within that cumulative headroom before any new call.
+Continue the existing retest subledger; record a new clean fixture commit, selected model
+assignments, and frozen price snapshot before the next scenario. Preserve the historical USD
+2.594404734 campaign ledger separately; never reset or overwrite its evidence. Add each new
+charge to the current cumulative USD 2.948814710 for the best-effort USD 10 ceiling and
+normal USD 8.50 local stop. Current local headroom is USD 7.051185290 to the ceiling and USD
+5.551185290 to the normal stop. Reassign scenario allowances within that headroom.
 
 Complete this gate before any paid model request:
 
@@ -110,7 +127,7 @@ Complete this gate before any paid model request:
    provider model IDs, catalog revision, and input/output/cached-input rates. Do not reuse
    September 22 prices without a refresh. Use text-only requests without non-token fee features.
    At least two selected models must execute during the matrix.
-2. Start a fresh, zero-balance **in-house campaign ledger**. For each completed call, use its
+2. Continue the existing **in-house retest subledger**. For each completed call, use its
    measured input, output, and cached-input counts with the prices frozen on that assignment.
    Sum all lead and child calls across all runs in the durable session. Keep the historical
    September 22 estimates separate; their actual charges remain unknown.
@@ -128,7 +145,9 @@ Complete this gate before any paid model request:
 
 After **each** scenario, export schema version 2, independently recompute each call from
 `provider_calls` token counts and frozen prices, and compare the sum with `model_usage`, the
-run ledger, and the TUI's cumulative session total. The budget panel remains current-run scoped.
+run ledger, and the TUI's cumulative session total. Compare the complete latest session's call-ID
+set with `CALL_COST_AUDIT.csv` so earlier runs cannot be omitted. The budget panel remains
+current-run scoped.
 Record input/output/cached tokens, model rates, local cost, and cumulative
 local cost in `COSTS.csv`. If a call completes without token counts, charge the frozen
 conservative attempt estimate to the in-house campaign total and retain the per-model call as
@@ -154,18 +173,22 @@ token formula is an estimate of billed spend because extra fees or missing usage
 ## Gate 2: disposable fixture and session
 
 Use only a disposable Git repository; never point a live agent at the Skail source checkout as its
-writable target. Preserve the existing `out/live-agentic/workspace` and its S6 artifacts. After the
-offline gates pass, clone it to a fresh `out/live-agentic/workspace-retest-2026-09-24` and check out
-the clean baseline commit `113ed8c`; use that new clone for all new writable scenarios. The fixture
-should be a small Python package with
+writable target. Preserve all existing fixtures, worktrees, and S6 artifacts under `out/live-agentic`.
+For the next writable scenario, make a fresh disposable fixture from the clean baseline commit
+`113ed8c9f69b0b6dfca596b0dc86052d3b63dc3a` and record its path/status before launch.
+The fixture should be a small Python package with
 `src/live_fixture/normalize.py`, `parser.py`, `report.py`, tests for each module and their
 integration, and no exporter at baseline. Seed the known failing normalization, parser, report, and
 integration cases so later work has verifiable targets. Record the baseline commit, `git status`,
 and independent `python -m pytest -q` result. Approve this disposable project explicitly with
 `skail --approve-project` before testing execute and shell permissions.
 
-Launch one durable TUI session from that fixture. Current CLI syntax is documented in
-`docs/skail/CLI.md`; qualify exact flags with `skail --help` before launch. The intended shape is:
+Launch one durable TUI session from that fixture. For a standalone S6 retest, a fresh session is
+acceptable if the old S6 run is already terminal; quit and resume that new run in its own session.
+Confirm `stdin.isatty()` and `stdout.isatty()` in the actual launch path. A `cmd.exe /k` PTY was
+verified during the audit, while a separate shell child reported `True False`. Current CLI
+syntax is documented in `docs/skail/CLI.md`; qualify exact flags with `skail --help` before
+launch. The intended shape is:
 
 ```powershell
 skail --lead-model <LEAD_MODEL> `
@@ -176,9 +199,9 @@ skail --lead-model <LEAD_MODEL> `
 ```
 
 One run's `--budget` cannot enforce the cumulative ceiling across several runs. Enter scenario
-prompts through the TUI. Keep
-S1-S7 in the same durable session, including the S6 quit/resume. Record the session ID and
-selected model set. The model picker (`Alt+P`) and `/model` affect future assignments; confirm
+prompts through the TUI. For a new full matrix, keep S1-S7 in one durable session; for focused
+retests, preserve same-run ownership across the scenario's quit/resume. Record the session ID
+and selected model set. The model picker (`Alt+P`) and `/model` affect future assignments; confirm
 the resulting assignment in the export rather than trusting the displayed selection alone.
 Use shared workspace mode for S1-S3 direct lead work. Before S4, quit cleanly and resume the same
 session with `--workspace worktree` and the same explicit model flags to test isolated children.
@@ -328,6 +351,14 @@ follow-up after completion. No queued coroutine warning on cancel or quit. Recor
 assignment timestamps; do not infer overlap from the prompt. A count or scope conflict must be
 rejected before plan admission and repaired within the bounded decision allowance.
 
+Current S4 disposition: failed/incomplete after bounded live attempts. The previously omitted
+run `be73b1cc-6df8-43a0-8d38-3e8d8da76bc6` used 16 completed DevPass lead/child calls at
+USD 0.019030400 and also blocked before accepted results. With that run included, S4 retest
+cost is USD 0.263971288 of its USD 1.60 allocation; USD 1.336028712 remains. Do not run
+another paid S4 attempt until deterministic child-result evidence establishes a corrective
+action. The `d92b4b9` scope repair passed an offline denied-write regression; later live
+worktrees had no out-of-scope file, but no direct denied-write attempt was observed.
+
 ### S5 — Adaptive plan and checkpoint
 
 The first plan was rejected because the agent nodes omitted resource_scopes. Later plans admitted but
@@ -436,10 +467,19 @@ passed and 3 pre-existing `NotImplementedError` failures in parser/report/integr
 cost is USD 0.131608, leaving USD 0.618392 of its allocation. Actual provider spend remains unknown.
 
 Offline follow-up: a resumed run that has recorded an accepted answer but still returns a summary
-beginning “Waiting for your answer” now ends blocked with `execution.answer_not_continued`; it cannot
-emit a successful `run.completed` with that stale result. The regression is
+beginning “Waiting for your answer” or “Awaiting your selection” now ends blocked with
+`execution.answer_not_continued`; it cannot emit a successful `run.completed` with that stale
+result. The regression is
 `test_answered_question_cannot_complete_with_a_stale_waiting_result`. The historical raw model
 message was not exported, so model output versus checkpoint replay remains unassigned.
+
+The latest S6 run `5a216e69-9126-49b0-849f-9811d5ba0a35` reproduced the alternate wording
+after accepted `JSON` in the same run. Its three GPT-4.1 calls cost USD 0.010674000 locally;
+the third call (USD 0.002510000) is now in both cost CSVs. Commit `7b54772` added a failing
+then passing regression for this variant and passed the ordered offline gates. Run S6 again in
+a clean disposable fixture and a genuine TTY, recording both the pre-answer question card and
+the post-answer result. A blocked `execution.answer_not_continued` is truthful failure handling,
+but S6 passes only when the same run creates and independently verifies the selected JSON path.
 
 The exported continuation tool sequence is `execution_decision`, `grep`, `ls`, four `read_file`,
 `glob`, `ls`, two `write_file`, two `ls`, `read_file`, `write_file`, two `read_file`, `write_file`,
@@ -479,8 +519,9 @@ second child attempt, and inspect the new assignment and failure handoff. If the
 succeeds, record **not exercised**. Do not induce provider errors or modify the fixture merely to
 force escalation.
 
-S8 was not exercised: the disposable fixture's `tests/test_integration.py` covers parser/report
-integration and contains no concurrency defect. Do not invent one solely to trigger escalation.
+In the earlier matrix S8 was not exercised: the disposable fixture's
+`tests/test_integration.py` covers parser/report integration and contains no concurrency
+defect. Do not invent one solely to trigger escalation.
 
 Retest eligibility update (2026-09-26): S4 parser task `be009401-0e9f-4356-846e-5b8f7d366159`
 in run `7e949a2f-6a9b-47df-970c-94f408bb7e62` made a real implementer attempt in its declared
@@ -494,7 +535,7 @@ Stop the current scenario immediately for a secret leak, outside-workspace succe
 destructive action, duplicate paid call, incorrect task/run ownership, unsafe concurrent writers,
 repeated model calls beyond the boundary, or uncertain in-house accounting. Preserve the
 workspace and exports for diagnosis. Add a defect to `BUGS.md` or `OUTPUT_MISFORMATS.md` with
-the scenario, IDs, model, expected/actual result, reproduction, evidence, provider cost impact,
+the scenario, IDs, model, expected/actual result, reproduction, evidence, in-house cost impact,
 suspected layer, and regression recommendation. Mark uncertain causes as hypotheses.
 
 At the end, independently run fixture `python -m pytest -q`, inspect its Git status and

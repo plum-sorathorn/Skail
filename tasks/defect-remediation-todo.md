@@ -50,6 +50,12 @@ remain open until matching evidence is recorded.
     `scripts/package_check.py` built, inspected, and installed a real wheel and sdist; packaging tests
     reused that wheel and passed (9 passed). The regression first failed when `verify_installation`
     received a relative wheel path, then passed after the path was resolved before changing cwd.
+    After the S4 scope repair in `d92b4b9`, ordered gates passed again (full suite 1188 passed,
+    5 skipped). After the S6 stale-selection repair in `7b54772`, ordered gates passed again:
+    Ruff, mypy (126 files), unit/contract (900 passed, 2 skipped), smoke, and full suite
+    (1184 passed, 5 skipped in the recorded gate). A fresh `rtk pytest -q` audit passed
+    1189 with 5 skipped. The count difference is unresolved; compare collected cases before
+    treating the earlier 166.71s median as a current-revision measurement.
 - [ ] 9. Re-run the remaining live scenarios with cumulative in-house token cost under USD 10.
   - The user waived a provider-side hard cap and set a best-effort USD 10 ceiling; the normal
     in-house stop remains USD 8.50. Three earlier ledger rows were corrected because they omitted
@@ -60,7 +66,8 @@ remain open until matching evidence is recorded.
     1.803778734 measured, USD 0.783784 estimated, and USD 0.006842 retained as a reconciliation
     buffer.
     Ten calls lack reliable token usage and are conservatively settled; do not replay them. This
-    leaves USD 5.905595266 to the local stop and USD 7.405595266 to the campaign ceiling. S4 used
+    left USD 5.905595266 to the local stop and USD 7.405595266 to the campaign ceiling at that
+    historical checkpoint. S4 used
     USD 1.512342744 of its USD 1.60 allocation, leaving USD 0.087657256. S5 used USD 0.432008454
     of USD 2.25, leaving USD 1.817991546 after per-call recalculation. S5 remains incomplete: four admitted plans ended with
     explorer failures before the checkpoint, one lead call was ambiguous, one plan was rejected for
@@ -169,7 +176,8 @@ sessions and the DevPass retest session (the main campaign export was updated at
 `OUTPUT_MISFORMATS.md`. The DevPass catalog and S1/S2 retests are reconciled. S3 first hit a
 zero-call config-revision failure, then passed with Qwen and GPT-4.1 after commit `b278324`. The
 final export still shows that historical parent run as `running`; future pre-assignment failures
-now terminalize in `84f798d`. S4 and S6 still need a genuine bidirectional TTY retest. S5 remains
+now terminalize in `84f798d`. S4 later ran through a TTY but failed child-result acceptance;
+S6 later reproduced the stale-selection completion and needs a post-fix TTY retest. S5 remains
 withheld because its historical cause is unknown.
 
 | Entry | Latest evidence classification |
@@ -189,7 +197,7 @@ withheld because its historical cause is unknown.
 | LIVE-013 | Exact-count rejection confirmed live; successful two-writer result remains incomplete. |
 | LIVE-014 | Fixed offline; a matching live blocked-plan transition remains pending. |
 | LIVE-015 | Closed as a test-plan mismatch; operator integration test remains pending. |
-| LIVE-016 | Named implementer plans were admitted live, but S4 child results failed validation and the checkpoint did not complete; a scope enforcement fix is in `d92b4b9`, with one live recheck pending. |
+| LIVE-016 | Named implementer plans were admitted live, but S4 child results failed validation and the checkpoint did not complete; a scope enforcement fix is in `d92b4b9`, with direct denied-write live evidence pending. |
 | LIVE-017 | Fixed offline; live cancellation had no child, so active-child cleanup remains unconfirmed. |
 | LIVE-018 | Fixed offline; the old empty headless invocation remains evidence, fresh live CLI recheck pending. |
 | LIVE-019 | Plan dispatch without duplicate `task()` confirmed live; FIFO completion remains pending. |
@@ -203,14 +211,15 @@ withheld because its historical cause is unknown.
 | LIVE-027 | Fixed offline; a later planned run admitted and blocked truthfully, but rejected/no-decision live edge remains pending. |
 | LIVE-028 | Top-level planned mode with “do not delegate further” admitted live; nested child delegation was not exercised. |
 | LIVE-029 | Question display, restoration, and accepted `JSON` answer confirmed live; work continuation is LIVE-030. |
-| LIVE-030 | Fixed offline to block stale waiting output; same-run live recheck pending. |
+| LIVE-030 | The same-run S6 retest confirmed another stale waiting prefix; `7b54772` blocks it offline, and a new same-run live check is pending. |
 | LIVE-031 | Fixed and rechecked live. |
 | LIVE-032 | Fixed and rechecked live. |
 | LIVE-033 | Initial S2 implementation dropped existing lowercasing; operator test failed 2/4. Same-session correction restored lowercasing and scoped the test; operator focused test passed 4/4. Six-call local ledger reconciled; TUI/export match not observed. |
 | LIVE-034 | S3 zero-call config-revision failure reproduced offline and fixed in `b278324`; the live Economy-mode retry routed both pinned models successfully. Final answer TUI/export text comparison was not captured. |
 | LIVE-035 | The first S3 run has no assignment or provider call; its task/attempt are interrupted, but the parent run remains `running` in the final export. Future pre-assignment exceptions now terminalize through `84f798d`; historical state is preserved. |
-| LIVE-036 | S4 child TaskResult responses failed validation across repeated plans; the latest Qwen run still had parser `$.artifacts.0.kind` and report `$` failures. No child result reached the checkpoint; S4 remains failed. |
+| LIVE-036 | S4 child TaskResult responses failed across repeated plans, including the previously unlogged run `be73b1cc-6df8-43a0-8d38-3e8d8da76bc6` (16 calls, USD 0.019030400). The latest Qwen run had parser `$.artifacts.0.kind` and report `$` failures. No child result reached the checkpoint; S4 remains failed. |
 | LIVE-037 | An earlier S4 report child wrote `src/live_fixture/report_test.py` outside its declared scopes. The red/green filesystem boundary fix is in `d92b4b9`; later report worktrees contain no such file, but no direct post-fix denied-write event was observed. |
+| LIVE-038 | S6 accepted `JSON` in run `5a216e69-9126-49b0-849f-9811d5ba0a35` and then completed with a stale “Awaiting your selection” result. `7b54772` blocks that variant offline; same-run live recheck pending. |
 | OUT-001 | Fixed offline; live provider-cancellation rendering pending. |
 | OUT-002 | Answer-only presentation confirmed live in S1; historical raw model response remains unavailable. |
 | OUT-003 | Fixed offline; live unawaited-coroutine check pending. |
@@ -224,6 +233,7 @@ withheld because its historical cause is unknown.
 | OUT-011 | Question interrupt and restored card confirmed live. |
 | OUT-012 | Fixed offline to block stale waiting completion; same-run live recheck pending. |
 | OUT-013 | S4 child TaskResult outputs failed at `$.status`, `$.artifacts.0`, `$.verification.0.evidence_ref`, and finally `$.artifacts.0.kind` / `$`; no accepted results. |
+| OUT-014 | S6 stale “Awaiting your selection” completion is fixed offline in `7b54772`; same-run live recheck pending. |
 
 ## Next execution cycle
 
@@ -253,9 +263,24 @@ withheld because its historical cause is unknown.
   in-house subledger under the cumulative stop; S1–S3 are rechecked, S4 remains failed after
   bounded plans, S6 remains eligible, S5 is withheld, S7 is unchanged, and S8 is eligible after the
     natural parser test failure. Reconcile after every call and update all evidence.
-- [ ] Live continuation gate: recorded stdout is not a TTY; stdin TTY status depends on invocation.
-  The refreshed `COSTS.csv` totals USD 2.927274310 versus the previously reported USD 2.929784310 (USD
-  0.002510000 unresolved). No paid live scenario may proceed until a verified TTY is available
-  and the ledger discrepancy is reconciled. Existing DevPass credentials are not printed or used.
+- [x] Reconcile the latest complete retest export before more paid calls. The earlier USD
+  0.002510000 gap was the third S6 call. A second audit found 16 omitted S4 calls costing USD
+  0.019030400. All 213 retest call IDs are now audited once; token costs total USD 0.354409976
+  and match exported model usage. `COSTS.csv` cumulative local cost is USD 2.948814710;
+  headroom is USD 5.551185290 to the USD 8.50 normal stop and USD 7.051185290 to the USD 10
+  ceiling. Provider billing remains unknown. The two malformed zero-cost CSV placeholders were
+  corrected without removing any paid-call evidence.
+- [x] Verify a bidirectional terminal path. A `cmd.exe /k` PTY in this environment reported
+  Python `stdin.isatty() == True` and `stdout.isatty() == True`. The earlier `True False` result
+  remains evidence for its separate shell invocation. No Skail TUI or provider call was launched
+  during this verification; recheck from the isolated fixture before S6.
 - [ ] 18. Audit README, specs, ADRs, and test procedures against verified behavior; check
   local links and commands; commit coherent changes with Conventional Commit messages.
+- [ ] 19. Re-profile and safely condense the current full offline suite. The only comparable
+  three-run after median is 166.71s versus the 164.17s baseline, so the faster-suite objective
+  is still open. Keep the mechanism map and independent process, wheel, evaluation, security,
+  and mounted TUI boundaries; record three comparable runs after each retained optimization.
+- [ ] 20. Diagnose S4 child-result acceptance from preserved exports and deterministic valid and
+  invalid child-result cases before another paid S4 attempt. Record the formerly omitted run
+  `be73b1cc-6df8-43a0-8d38-3e8d8da76bc6` under LIVE-036/OUT-013. Maintain S5's separate
+  eligibility gate because its historical failure category remains unknown.

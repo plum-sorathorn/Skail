@@ -10,6 +10,10 @@ The S6 session export recorded an accepted `JSON` answer followed by `run.comple
 previous “Waiting for your answer” summary, with no workspace changes. The export preserves the
 terminal result and model-call order, but not the raw final model message, so it does not establish
 whether the model repeated the text or checkpoint state replayed it.
+The later live run `5a216e69-9126-49b0-849f-9811d5ba0a35` reproduced the same failure with
+“Awaiting your selection of exporter format” after the accepted answer. Commit `7b54772`
+extended the deterministic regression and guard to that observed wording; a same-run live
+confirmation of the repair is still pending.
 
 The S5 exports record explorer tasks as failed and retry routing as `auto_ineligible`, but their
 `task.failed` payloads have no safe failure category or validation field path. They therefore do not
@@ -19,9 +23,10 @@ ineligibility, and ordinary task failures.
 ## Decision
 
 1. An accepted question answer belongs to its waiting run. If the resumed final result still says
-   “Waiting for your answer,” Skail ends that run as blocked with
-   `execution.answer_not_continued`. It records a concise diagnostic result and does not emit
-   `run.completed` for a final result that still says it is waiting. Skail does not start a hidden
+   it is waiting, including “Waiting for your answer” or “Awaiting your selection,” Skail ends
+   that run as blocked with `execution.answer_not_continued`. It records a concise diagnostic
+   result and does not emit `run.completed` for a final result that still says it is waiting.
+   Skail does not start a hidden
    provider retry.
 2. Child `TaskResult` values may carry optional `failure_category` and `validation_path` fields. These
    fields are runtime-owned; values supplied in model-authored JSON are discarded.
@@ -44,8 +49,8 @@ ineligibility, and ordinary task failures.
 
 ## Verification
 
-- `tests/integration/test_phase10c_resume_dispatch.py` reproduces the accepted-answer/stale-waiting
-  sequence and requires one blocked result.
+- `tests/integration/test_phase10c_resume_dispatch.py` reproduces both observed
+  accepted-answer/stale-waiting prefixes and requires one blocked result for each.
 - `tests/contract/test_question_resume_contract.py` proves the accepted same-run JSON path writes
   only the exporter and its focused test, then returns one completed result.
 - `tests/contract/test_task_result.py` covers malformed JSON, schema field errors, explicit task

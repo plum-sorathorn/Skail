@@ -1,19 +1,26 @@
 # Defect remediation, offline suite, and live validation plan
 
-Status: offline implementation and gates passed through commit `d92b4b9`; the S6 stale-summary
-guard now also covers the observed "Awaiting your selection" wording and ordered offline gates
-passed at `7a91316` plus the current fix. S3 completed its two
-model reviews after an initial zero-call config-revision failure. That historical parent run still
-shows `running` in the final export; new pre-assignment failures now record terminal state. S4
-remains failed after bounded live attempts: child TaskResult outputs were not accepted, and no
-checkpoint/FIFO follow-up completed. The scope fix is offline-verified; no out-of-scope file appeared
-in later child worktrees, though no direct denied-write event was captured. S6 remains eligible; S5
-is withheld, and S8 is eligible after a natural parser test failure. Scenario evidence and costs are
-in [the checklist](defect-remediation-todo.md) and ignored live-agentic evidence files. The
-latest `COSTS.csv` sum is USD 2.927274310 while the handoff reported USD 2.929784310; the USD
-0.002510000 discrepancy is unresolved, so no additional paid call is eligible until every call
-and frozen-rate row is reconciled. Even using the higher handoff amount, local headroom is USD
-5.570215690 to the USD 8.50 normal stop. Actual provider billing remains unknown.
+Status as of 2026-09-26: the latest behavioral repair is `7b54772`, which blocks the observed S6
+"Awaiting your selection" stale summary after an accepted answer. Its recorded ordered offline
+gates passed (Ruff, mypy, unit/contract 900 passed and 2 skipped, smoke). The recorded full-suite
+count was 1,184 passed and 5 skipped; a fresh audit run of `rtk pytest -q` passed 1,189 with
+5 skipped. The count difference is unresolved and needs a collection comparison in the next
+timing pass.
+S1 and S3 passed their applicable retests; S2's corrected focused test passed, but its final TUI
+text was not captured. S4 remains failed after bounded live attempts: no child TaskResult was
+accepted and no checkpoint or FIFO follow-up completed. Its scope fix is verified offline, while
+direct live denial remains unobserved. S5 is withheld pending diagnosis. S6 needs a same-run live
+retest after the repair; S8 is eligible after a natural parser test failure. The 20% offline suite
+speed target remains unmet. See [the checklist](defect-remediation-todo.md) for individual defects.
+
+The latest complete retest export exposed 16 previously unlogged S4 calls (USD 0.019030400) and
+one S6 continuation call (USD 0.002510000). All 213 retest call IDs now occur once in
+`CALL_COST_AUDIT.csv`; its USD 0.354409976 sum matches exported model usage. Adding the historical
+USD 2.594404734 gives a USD 2.948814710 cumulative in-house stop total, with USD 5.551185290
+to the USD 8.50 normal stop and USD 7.051185290 to the USD 10 ceiling. Actual provider billing
+remains unknown. A `cmd.exe /k` PTY in this environment returned `stdin=True, stdout=True` from
+Python; the earlier non-TTY observation applied to a different shell invocation. No new paid run
+was made during this audit.
 
 ## Evidence baseline and rules
 
@@ -49,13 +56,14 @@ error. A live outcome closes a defect only when the TUI, export, and workspace a
 
 ## Phase 1 — Reconcile and triage every issue
 
-1. Build a crosswalk from all LIVE-001–032 and OUT-001–012 entries to exact exports and current
-   source tests. Label each **open**, **fixed offline/live unconfirmed**, **confirmed live**,
+1. Keep the crosswalk current for LIVE-001–038 and OUT-001–014 using exact exports and
+   current source tests. Label each **open**, **fixed offline/live unconfirmed**, **confirmed live**,
    **test-plan mismatch**, or **provider outcome unknown**. Check missing and stale statuses
    against the latest runs; retain original observations.
 2. Independently recalculate each schema-v2 provider call using frozen model rates and input,
    cached-input, and output tokens. Sum children into the owning run/session, compare with
-   `COSTS.csv` and exported `model_usage`, and keep measured and estimated charges separate.
+   `COSTS.csv` and exported `model_usage`. Compare the latest complete session's call-ID set
+   with `CALL_COST_AUDIT.csv` before another paid call. Keep measured and estimated charges separate.
    Reconcile interrupted calls conservatively before any new paid call. Provider spend remains
    unknown unless independently observed; the user authorized proceeding without that evidence.
 3. For each open issue, save the smallest redacted reproducer, expected event sequence, actual
@@ -63,8 +71,8 @@ error. A live outcome closes a defect only when the TUI, export, and workspace a
    runtime acceptance, presentation, or provider transport defects. Update the registries as
    evidence changes, not simply because a focused test passes.
 
-**Exit:** no entry is dropped, all cost rows reconcile locally, and uncertain causes are marked
-as hypotheses.
+**Exit:** no entry is dropped, all cost rows and call IDs reconcile locally, and uncertain causes
+are marked as hypotheses. The current 213-call retest export meets the cost reconciliation check.
 
 ## Phase 2 — Repair runtime defects in dependency order
 
@@ -146,41 +154,44 @@ the issue crosswalk records confirmed, unresolved external, and newly discovered
    5.19s. The isolated no-credential subprocess and mounted keyboard, focus, queue, and resume
    pilots remain. The 20% total-suite reduction target was not met: additional independent-boundary
    coverage cost more time than the targeted savings.
-4. Review CI duplication: both `ci.yml` and `release.yml` run on PRs to `main`/`skail`, repeating
-   Python 3.12 Windows/Linux unit/contract and smoke work. Propose a single required fast PR
-   gate plus a full release gate using documented branch/tag policy, without removing Python
-   3.12–3.14 or Windows/Linux coverage. Align Ruff's path set (`evals` differs today). Change
-   workflows only with a coverage matrix and an explicit required-check migration.
+4. CI duplication was removed: `ci.yml` retains the Windows/Linux Python 3.12–3.14 fast matrix
+   and stable aggregate check, while `release.yml` runs on tags or manual dispatch. Ruff covers
+   `evals` in both. [ADR 0010](../docs/decisions/0010-separate-fast-pr-and-release-gates.md)
+   records the required-check migration; hosting branch protection remains an external check.
 5. After every optimization, run affected focused tests and compare duration. At the end run
    Ruff, strict mypy, unit/contract, smoke, and full offline suite in repository order on
    the same environment; retain or restore tests if a mechanism or failure detection is lost.
-   Target a repeatable ≥20% median wall-time reduction; report actual result if the target
-   cannot be met safely. Keep tests deterministic, isolated, and provider-free.
+   The first pass missed the ≥20% median wall-time target. Re-profile the current suite after the
+   added regressions, identify setup that can be shared without hiding process, artifact, or
+   mounted-TUI boundaries, and measure a second serial before/after comparison. Keep tests
+   deterministic, isolated, and provider-free; report a smaller gain or no gain honestly if
+   no safe consolidation meets the target.
 
-**Exit:** all mapped mechanisms remain exercised, gate counts/statuses are understood, and
-the measured time improvement has a reproducible before/after record.
+**Exit:** all mapped mechanisms remain exercised, gate counts/statuses are understood, and a
+repeatable before/after comparison shows a faster suite or documents why measured safe candidates
+cannot achieve it. This exit is still open after the first pass.
 
 ## Phase 4 — Live plan repair and controlled rerun
 
 Before a paid call, refresh the disposable fixture from a clean committed baseline, verify its
 known failing tests, authenticate DevPass without printing credentials, freeze exact canonical
-model IDs and prices, and independently price every completed call. The offline gates passed in
-repository order after the relative-artifact package path fix. The package tests also reused the
-real wheel produced by `scripts/package_check.py`. Use a **new subledger**
-for the rerun while retaining the USD 2.594404734 historical local total in the cumulative
-stop calculation. Thus USD 5.905595266 remains to the USD 8.50 normal stop and USD
-7.405595266 to the USD 10 best-effort ceiling. The user waived an
+model IDs and prices, and independently price every completed call. Reconfirm both TTY streams
+in the operator-controlled launch. Continue the existing retest subledger of USD 0.354409976;
+retain the USD 2.594404734 historical local total in the cumulative stop calculation. Current
+headroom is USD 5.551185290 to the USD 8.50 normal stop and USD 7.051185290 to the USD 10
+best-effort ceiling. The user waived an
 independent provider billing baseline and hard cap for this exercise; actual charges remain
 unknown. Aim below USD 10 in-house, normally stop at USD 8.50, and stop sooner when a scenario's
 allocation or unsettled-call rule requires it. A local token ledger is an estimate of spend.
 
-Run S1/S2/S3 first to confirm answer presentation, direct intent, model switching, UTF-8,
-and bounded cancellation. Run S4 only with a fresh plan and disjoint writer scopes, exactly two
-children, accepted results, FIFO follow-up, and operator-run integration test. The historical S4
-allocation had USD 0.087657256 remaining. In the current retest, S4 has used USD 0.244940888 of its
-USD 1.60 allocation, leaving USD 1.355059112. Do not spend on another S5
-attempt while the historical explorer cause remains unknown. The offline event diagnostics make a
-future failure observable but cannot reconstruct the old cause; proceed only if offline evidence
+S1/S2/S3 have been exercised. Capture the missing S2 final TUI/export comparison only if a
+bounded scenario repeat is justified; do not infer it from the export alone. S4 has used USD
+0.263971288 of its USD 1.60 allocation, leaving USD 1.336028712, and is marked failed after
+bounded attempts. Repair or prove the child-result acceptance cause offline before any new S4
+paid attempt; keep exact two-child, disjoint-scope, checkpoint, FIFO, and independent integration
+acceptance criteria. Do not spend on another S5 attempt while the historical explorer cause
+remains unknown. The offline event diagnostics make a future failure observable but cannot
+reconstruct the old cause; proceed only if offline evidence
 establishes a corrective action or a distinct eligible route. If S5 later becomes eligible, use a
 fresh plan and route and require accepted explorers, checkpoint, revision, and implementation. Run S6
 from a clean no-exporter fixture, answer JSON in the **same run** after quit/resume, and verify
@@ -192,7 +203,10 @@ boundary changed.
 S8 is eligible because S4 parser task `be009401-0e9f-4356-846e-5b8f7d366159` naturally failed
 `test_parse_records_with_spaces` (2 passed, 1 failed). Use a fresh task for a baseline parser test,
 preserve task identity, and permit at most the documented second attempt. Do not induce a failure.
-Live S8 is pending actual TTY availability and ledger reconciliation.
+Live S8 remains unrun. The ledger reconciliation is complete and a bidirectional `cmd.exe /k`
+PTY was verified in this environment. A new live run still requires a clean disposable fixture,
+isolated home, current DevPass qualification, and the scenario's offline gates. The earlier TTY
+failure remains historical evidence for that launch path.
 
 After each scenario, export schema-v2 evidence, compare TUI, events, fixture diff, and
 independent test result, then reconcile measured tokens and conservative estimates before the
@@ -200,6 +214,34 @@ next call. Stop immediately for unsafe write, secret leak, duplicate paid call, 
 or unpriceable/unsettled call. Record new defect IDs and output malformats promptly. Finish with
 fixture tests, Git status/diff check, issue-status update, and a report of exact models, scenario
 outcomes, local cost, unknown provider billing, and remaining defects.
+
+## Remaining execution order and acceptance
+
+1. **Child-result diagnosis (S4/S5):** Use preserved exports and deterministic fake-provider
+   children to separate invalid model JSON, `TaskResult` validation, route ineligibility, and
+   runtime acceptance. For S4, prove a valid scoped child result reaches the checkpoint and
+   identify why the observed invalid outputs persisted after guidance changes. For S5, the old
+   exports cannot reveal the precise explorer cause; require a specific corrective action or a
+   distinct qualified route before a paid retry. Record cause as unknown until proved.
+2. **Offline speed pass:** Re-profile the current suite by mechanism and slow fixture. Change
+   one measured setup at a time, retaining an independent subprocess, real wheel, evaluation,
+   security boundary, and mounted TUI check where each tests the boundary itself. Record three
+   comparable serial full-suite wall times and test counts before/after. The task remains open
+   until the suite is faster than the 164.17s baseline or measured safe candidates are exhausted
+   and the shortfall is explicitly reported.
+3. **Ordered gates:** After any behavior or test change, write a red/green regression, run focused
+   tests, then Ruff, mypy, unit/contract, smoke, and full offline suite in that order. Update
+   specs/ADRs and Graphify for source changes. Older gate results do not prove a newer revision.
+4. **Live continuation:** Verify TTY and isolated fixture again, refresh DevPass catalog and
+   freeze assigned model IDs/prices, then run S6 in one durable run across quit/resume. Require
+   accepted JSON, no stale waiting completion, only scoped exporter/test files, and independent
+   focused test success. Compare TUI, export, workspace diff, test result, and every call ID before
+   proceeding. Exercise S8 only under its natural-failure rule; revisit S4/S5 only after item 1
+   establishes a repair or eligible route. S7 needs no repeat unless its boundary changes.
+5. **Closure:** Update the issue crosswalk and ignored evidence after each observation. Audit
+   README, specs, feature contracts, architecture, CLI, evaluation/performance docs, ADRs, CI,
+   and links for verified behavior. Commit coherent tracked changes with Conventional Commit
+   messages; report remaining defects and unknown provider billing separately.
 
 ## Documentation and delivery gate
 

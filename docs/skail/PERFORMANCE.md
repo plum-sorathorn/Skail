@@ -75,13 +75,20 @@ performance. They were measured serially on Windows 11 / Python 3.14.6 with
 | Measurement | Wall times | Median | Result |
 |---|---:|---:|---|
 | Before this remediation cycle | 164.17s, 159.42s, 173.13s | 164.17s | 1,176 passed, 5 skipped |
-| After final offline fixes | 169.45s, 166.24s, 166.71s | 166.71s | 1,185 passed, 5 skipped |
+| After measured optimization pass | 169.45s, 166.24s, 166.71s | 166.71s | 1,185 passed, 5 skipped |
 
-The final wall median is 1.5% longer than the baseline, so the planned 20% reduction was not met.
-The suite now has nine more passing regression cases. Pytest times were 165.70s, 161.75s, and
-163.01s (163.01s median). The measured subprocess, evaluation, and artifact checks became faster,
-while the mounted TUI slice remained effectively unchanged. The remaining no-credential subprocess
+The measured after median is 1.5% longer than the baseline, so the planned 20% reduction was not
+met. At that measurement, the suite had nine more passing regression cases. Pytest times were
+165.70s, 161.75s, and 163.01s (163.01s median). The measured subprocess, evaluation, and artifact
+checks became faster, while the mounted TUI slice remained effectively unchanged. The remaining no-credential subprocess
 and real wheel build stay because they test isolated process and artifact boundaries.
+
+Later behavioral repairs changed the test count. The latest ordered full-suite gate after
+`7b54772` reported 1,184 passed and 5 skipped in 164.11s for one run. A fresh audit run of
+`rtk pytest -q` passed 1,189 with 5 skipped. The five-case difference has not been assigned a
+cause; the next timing pass must compare the collected cases. Neither single run is a comparable
+three-run performance median. A second measurement and safe consolidation pass remains open in
+the remediation checklist.
 
 Before optimization, unit/contract, integration, E2E, security, packaging, and mounted TUI slices
 took 108.29s, 67.43s, 37.68s, 9.97s, 8.41s, and 64.11s respectively. The direct/module help
