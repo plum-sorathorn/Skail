@@ -19,6 +19,7 @@ from skail.providers.models import CapabilityVector, ModelProfile, ProviderSuppo
 from skail.routing.assignment import (
     AccountingReconciliationRequired,
     RoutingSnapshot,
+    StaleRoutingSnapshot,
     config_revision,
 )
 from skail.routing.selector import RouteCandidate
@@ -145,6 +146,46 @@ async def test_per_run_routing_mode_keeps_the_startup_config_revision(tmp_path: 
     assignment = journal.get_session_snapshot(str(session_id)).assignments[0]
     assert assignment.payload["config"] == config_snapshot
     assert assignment.payload["routing_mode"] == "economy"
+
+
+@pytest.mark.asyncio
+async def test_assignment_snapshot_failure_terminalizes_unassigned_run(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Stale assignment snapshot", created_at=datetime.now(UTC)
+    )
+    config_snapshot = {"routing": {"mode": "auto"}}
+    model = ScriptedChatModel(responses=[AIMessage(content="must not run")])
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": model},
+        default_lead_model="lead-model",
+        candidates_fn=lambda: RoutingSnapshot(
+            catalog_revision="catalog-v1",
+            config_revision=config_revision({"routing": {"mode": "manual"}}),
+            health_revision="health-v1",
+            candidates=(),
+        ),
+        catalog_revision="catalog-v1",
+        config_snapshot=config_snapshot,
+    )
+
+    with pytest.raises(StaleRoutingSnapshot):
+        await controller.run_instruction("Answer directly")
+
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert len(snapshot.runs) == 1
+    assert snapshot.runs[0].status == "failed"
+    assert len(snapshot.tasks) == 1
+    assert snapshot.tasks[0].status == "failed"
+    assert len(snapshot.attempts) == 1
+    assert snapshot.attempts[0].status == "failed"
+    assert [event.type for event in snapshot.events][-1] == "run.failed"
+    assert snapshot.assignments == ()
+    assert model.calls == ()
 
 
 @pytest.mark.asyncio

@@ -2312,19 +2312,53 @@ class RunController:
             state=f"run_id={run_id}; assignment=pending",
             references=self._compaction_references(),
         )
-        assigned_lead = self.assignment_service.assign(
-            lead_request,
-            lambda: self._estimate_snapshot(
-                self._get_candidates(
-                    for_lead=True,
-                    target_lead_model=active_controls.model,
-                    routing_mode=active_controls.routing_mode,
+        try:
+            assigned_lead = self.assignment_service.assign(
+                lead_request,
+                lambda: self._estimate_snapshot(
+                    self._get_candidates(
+                        for_lead=True,
+                        target_lead_model=active_controls.model,
+                        routing_mode=active_controls.routing_mode,
+                    ),
+                    packet=lead_preflight_packet,
+                    profile=lead_profile,
+                    minimum_output_tokens=lead_reqs.minimum_output_tokens,
                 ),
-                packet=lead_preflight_packet,
-                profile=lead_profile,
-                minimum_output_tokens=lead_reqs.minimum_output_tokens,
-            ),
-        )
+            )
+        except BaseException as exc:
+            is_cancelled = isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError))
+            assignment_error_type = f"{type(exc).__module__}.{type(exc).__name__}"
+            assignment_error_message = str(self.redactor.scrub(str(exc)))
+            if is_cancelled:
+                _LOGGER.info("run cancelled before lead assignment: %s", run_id)
+            else:
+                _LOGGER.error(
+                    "run failed before lead assignment: %s: %s\n%s",
+                    assignment_error_type,
+                    assignment_error_message,
+                    self.redactor.scrub(traceback.format_exc()),
+                )
+            run_status = "cancelled" if is_cancelled else "failed"
+            attempt_status = AttemptStatus.INTERRUPTED if is_cancelled else AttemptStatus.FAILED
+            task_status = TaskStatus.RETURNED_TO_LEAD if is_cancelled else TaskStatus.FAILED
+            terminal_type = "run.cancelled" if is_cancelled else "run.failed"
+            with self.journal.transaction() as tx:
+                tx.update_attempt_status(attempt_id=str(lead_attempt_id), status=attempt_status)
+                tx.update_task_status(task_id=str(lead_task_id), status=task_status)
+                tx.update_run_status(run_id=str(run_id), status=run_status)
+                tx.update_session_status(session_id=str(self.session_id), status="idle")
+                self._append_event(
+                    tx,
+                    run_id=run_id,
+                    type=terminal_type,
+                    payload=LifecyclePayload(
+                        status=run_status,
+                        error_type=assignment_error_type,
+                        error_message=assignment_error_message,
+                    ),
+                )
+            raise
         if isinstance(assigned_lead, RouteFailure):
             budget_blocked = assigned_lead.binding_constraint == "budget_unaffordable"
             lead_context_packet = self.assembler.assemble(
