@@ -487,6 +487,21 @@ The exported continuation tool sequence is `execution_decision`, `grep`, `ls`, f
 has no local `.skail` journal. The existing canonical identical-call detector remains unchanged; no
 claim is made that the 17 calls had identical normalized arguments.
 
+2026-09-26 retest attempt: blocked before launch because the agent command runner was not a
+bidirectional PTY (`stdout.isatty() == False`). No provider call was made. The disposable fixture
+`workspace-s6-2026-09-26` remains at baseline `113ed8c9` and was not used for a paid run. The
+catalog was refreshed in isolated home `skail-live-home-s6-2026-09-26`; GPT-4.1 rates matched the
+prior snapshot (2 / 0.5 / 8 per million). The earlier `cmd.exe /k` `True/True` PTY result remains
+valid for that different PTY.
+Do not authorize a headless substitute.
+
+The verified handoff revision `e7f2ba535cc6d62271c13db2914c385e332176af` passed Ruff, mypy,
+unit/contract (901 passed, 2 skipped), smoke, and full suite (1,191 passed, 4 skipped,
+1 deselected); collection comparison was 1,195/1,196 collected, 1 deselected. Its one full-suite
+gate took 109.38s wall / 106.58s pytest time and is not a replacement three-run median. Suite
+speed remains open: profiling on 2026-09-26 retained no safe candidate and claims no speed win;
+comparable median remains 166.71s versus 164.17s baseline.
+
 ### S7 — Workspace boundary denial
 
 Only from the disposable fixture, prompt:

@@ -281,6 +281,9 @@ withheld because its historical cause is unknown.
   during this verification; recheck from the isolated fixture before S6.
 - [ ] 18. Audit README, specs, ADRs, and test procedures against verified behavior; check
   local links and commands; commit coherent changes with Conventional Commit messages.
+  - Checked architecture, features, the plan, checklist, live plan, and local links in docs/skail,
+    docs/decisions, and tasks as part of this pass. README was intentionally not edited and its audit remains not done;
+    this item stays unchecked because the README audit is required.
 - [ ] 19. Re-profile and safely condense the current full offline suite. The only comparable
   three-run after median is 166.71s versus the 164.17s baseline, so the faster-suite objective
   is still open. Keep the mechanism map and independent process, wheel, evaluation, security,
@@ -305,4 +308,21 @@ withheld because its historical cause is unknown.
   observation is pending (`d92b4b9` remains the offline denied-write repair). Two accepted
   implementer results, checkpoint, disjoint scopes, and FIFO follow-up are still required. Record
   the formerly omitted run `be73b1cc-6df8-43a0-8d38-3e8d8da76bc6` under LIVE-036/OUT-013. Maintain
-  S5's separate eligibility gate because its historical cause remains unknown.
+   S5's separate eligibility gate because its historical cause remains unknown.
+
+## 2026-09-26 handoff revision and audit update
+
+- Handoff commit `e7f2ba535cc6d62271c13db2914c385e332176af` passed Ruff, mypy, unit/contract
+  (901 passed, 2 skipped), smoke, and full suite (1,191 passed, 4 skipped, 1 deselected).
+  Collection comparison reported 1,195/1,196 collected, 1 deselected. Its single full-suite gate
+  took 109.38s wall / 106.58s pytest time; this does not replace the three-run median.
+- Suite speed was profiled 2026-09-26. No safe candidate was retained; objective remains open,
+  with no speed win claimed. Comparable median remains 166.71s vs baseline 164.17s. Preserve wheel,
+  subprocess, evaluation, security, and mounted TUI boundaries. Slowest test was
+  `tests/unit/test_packaging.py::test_wheel_contains_only_the_skail_runtime` (4.54s).
+- S6 retest was blocked before launch because the agent command runner is not a bidirectional PTY
+  (`stdout.isatty() == False`). Earlier `cmd.exe /k` `True/True` result remains valid for a
+  different PTY. No paid call; item 17 stays unchecked. Do not authorize a headless substitute.
+- S4 paid retry remains unjustified; S5 remains withheld. Item 9 stays unchecked.
+- Item 18 remains unchecked: specs/architecture/features/plan were checked and README was
+  intentionally not edited; README audit remains not done.

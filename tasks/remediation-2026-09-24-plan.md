@@ -1,11 +1,13 @@
 # Defect remediation, offline suite, and live validation plan
 
-Status as of 2026-09-26: the latest behavioral repair is `7b54772`, which blocks the observed S6
-"Awaiting your selection" stale summary after an accepted answer. Its recorded ordered offline
-gates passed (Ruff, mypy, unit/contract 900 passed and 2 skipped, smoke). The recorded full-suite
-count was 1,184 passed and 5 skipped; a fresh audit run of `rtk pytest -q` passed 1,189 with
-5 skipped. The count difference is unresolved and needs a collection comparison in the next
-timing pass.
+Status as of 2026-09-26: verified handoff change `e7f2ba535cc6d62271c13db2914c385e332176af`
+adds allowlisted `failure_category` and schema-shaped `validation_path` to attempt-two failure
+handoff when recorded; raw child output is not copied. Its offline gates passed: Ruff, mypy,
+unit/contract 901 passed and 2 skipped, smoke passed, and full suite 1,191 passed, 4 skipped,
+1 deselected. The full-suite run took 109.38s wall / 106.58s pytest time. The collection comparison
+reported 1,195/1,196 collected and 1 deselected. This is one gate run, not a three-run median; do
+not infer a cause for historical count differences (earlier notes of 1,184/1,185/1,189 are from
+prior revisions).
 S1 and S3 passed their applicable retests; S2's corrected focused test passed, but its final TUI
 text was not captured. S4 remains failed after bounded live attempts: no child TaskResult was
 accepted and no checkpoint or FIFO follow-up completed. Its scope fix is verified offline, while
@@ -24,9 +26,10 @@ one S6 continuation call (USD 0.002510000). All 213 retest call IDs now occur on
 `CALL_COST_AUDIT.csv`; its USD 0.354409976 sum matches exported model usage. Adding the historical
 USD 2.594404734 gives a USD 2.948814710 cumulative in-house stop total, with USD 5.551185290
 to the USD 8.50 normal stop and USD 7.051185290 to the USD 10 ceiling. Actual provider billing
-remains unknown. A `cmd.exe /k` PTY in this environment returned `stdin=True, stdout=True` from
-Python; the earlier non-TTY observation applied to a different shell invocation. No new paid run
-was made during this audit.
+remains unknown. S6's 2026-09-26 retest attempt was blocked before launch because this agent command
+runner is not a bidirectional PTY (`stdin=True`, `stdout=False`); the earlier `cmd.exe /k`
+`True/True` result remains valid for its different PTY. No new paid run was made and cumulative
+local cost remains USD 2.948814710; provider billing is unknown.
 
 ## Evidence baseline and rules
 
@@ -251,10 +254,12 @@ boundary changed.
 S8 is eligible because S4 parser task `be009401-0e9f-4356-846e-5b8f7d366159` naturally failed
 `test_parse_records_with_spaces` (2 passed, 1 failed). Use a fresh task for a baseline parser test,
 preserve task identity, and permit at most the documented second attempt. Do not induce a failure.
-Live S8 remains unrun. The ledger reconciliation is complete and a bidirectional `cmd.exe /k`
-PTY was verified in this environment. A new live run still requires a clean disposable fixture,
-isolated home, current DevPass qualification, and the scenario's offline gates. The earlier TTY
-failure remains historical evidence for that launch path.
+Live S8 remains unrun. A bidirectional `cmd.exe /k` PTY was verified in an earlier invocation, but
+the 2026-09-26 S6 retest was blocked before launch because this session's command runner was not a
+bidirectional PTY (`stdout.isatty() == False`). The earlier `True/True` result remains valid for
+its different terminal. No paid call was made; do not authorize a headless substitute. A new live
+run still requires a clean disposable fixture, isolated home, current DevPass qualification, and
+the scenario's offline gates.
 
 After each scenario, export schema-v2 evidence, compare TUI, events, fixture diff, and
 independent test result, then reconcile measured tokens and conservative estimates before the
@@ -292,6 +297,28 @@ outcomes, local cost, unknown provider billing, and remaining defects.
    README, specs, feature contracts, architecture, CLI, evaluation/performance docs, ADRs, CI,
    and links for verified behavior. Commit coherent tracked changes with Conventional Commit
    messages; report remaining defects and unknown provider billing separately.
+
+## 2026-09-26 handoff revision and audit update
+
+Handoff commit `e7f2ba535cc6d62271c13db2914c385e332176af` passed Ruff, mypy, unit/contract
+(901 passed, 2 skipped), smoke, and full suite (1,191 passed, 4 skipped, 1 deselected). The
+collection comparison reported 1,195/1,196 collected, 1 deselected. This single full-suite gate
+took 109.38s wall / 106.58s pytest time; it is not a replacement three-run median. Do not infer a
+cause for historical counts from earlier revisions.
+
+Suite speed was profiled on 2026-09-26. No safe candidate was retained without weakening wheel,
+subprocess, evaluation, security, and mounted-TUI boundaries. The objective remains open and no
+speed win is claimed. Comparable median remains 166.71s versus baseline 164.17s. Slowest test was
+`tests/unit/test_packaging.py::test_wheel_contains_only_the_skail_runtime` at 4.54s.
+
+The S6 live retest attempt was blocked before launch because this session's command runner is not a
+bidirectional PTY (`stdout.isatty() == False`). The earlier `cmd.exe /k` `True/True` result remains
+valid for its different PTY. No paid call was made and cumulative local cost remains USD
+2.948814710; provider billing is unknown. Do not authorize a headless substitute. S4 paid retry is
+still not justified; S5 remains withheld because its historical cause is unknown.
+
+For item 18, specs/architecture/features/this plan were checked; README was intentionally not
+edited, and its audit remains not done. Item 18 stays unchecked while README audit is required.
 
 ## Documentation and delivery gate
 
