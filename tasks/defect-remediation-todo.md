@@ -42,6 +42,11 @@ remain open until matching evidence is recorded.
   - Final required verification after the relative package-artifact path regression:
     Ruff passed; mypy found no issues in 126 source files; unit/contract passed (900 passed, 2 skipped);
     `python scripts/smoke.py` passed; full suite passed three times (1185 passed, 5 skipped each).
+    After the S3 config-revision regression and fix in `b278324`, the required gates passed again in
+    order; the full suite reported 1186 passed, 5 skipped.
+    After the pre-assignment terminalization regression and fix in `84f798d`, the same ordered gates
+    passed again; unit/contract reported 900 passed, 2 skipped and the full suite 1187 passed,
+    5 skipped.
     `scripts/package_check.py` built, inspected, and installed a real wheel and sdist; packaging tests
     reused that wheel and passed (9 passed). The regression first failed when `verify_installation`
     received a relative wheel path, then passed after the path was resolved before changing cwd.
@@ -65,10 +70,14 @@ remain open until matching evidence is recorded.
     guidance and the shared JSON TaskResult evidence contract. The lead's minimal plan example now
     includes read effect_scope, non-empty resource_scopes, and checkpoint dependencies; its
     regression failed before the change and passes afterward. Explicit planned intent now survives
-    question resume and cannot finish successfully without a matching decision. Latest gates after
-    the remediation fixes pass: Ruff, mypy, unit/contract (900 passed, 2 skipped), smoke, and full
-    suite (1185 passed, 5 skipped). The same-run stale-answer guard is fixed offline; its matching
-    live recheck remains open.
+    question resume and cannot finish successfully without a matching decision. Prior gates after
+    the remediation fixes passed: Ruff, mypy, unit/contract (900 passed, 2 skipped), smoke, and three
+    full suites (1185 passed, 5 skipped each). After S3 exposed a config-revision mismatch, the new
+    red/green regression and fix in `b278324` passed Ruff, mypy (126 files), unit/contract (900 passed,
+    2 skipped), smoke, and full suite (1186 passed, 5 skipped) in order. The pre-assignment failure
+    terminalization regression and fix in `84f798d` then passed the same gates; full suite reported
+    1187 passed, 5 skipped. The same-run stale-answer guard is fixed offline; its matching live
+    recheck remains open.
   - The idle TUI resume displayed route events already present in its prior export; it started no new
     run and added no cost. The user confirmed DevPass approves Skail. S6 remains incomplete after the
     accepted answer produced a stale waiting summary and no workspace changes; an offline regression
@@ -152,16 +161,18 @@ unmet rather than weakening those checks.
 
 ## Defect crosswalk against latest exports
 
-Reconciled every registry entry against the latest applicable export in seven schema-v2 sessions
-(the main campaign export was updated at 2026-09-24 22:34:47 UTC). Detailed run/task/attempt/call
-evidence remains in `out/live-agentic/BUGS.md` and `OUTPUT_MISFORMATS.md`. The DevPass catalog,
-S1 retest, and S2 initial failure plus correction are reconciled. S3, S4, and S6 are blocked pending
-genuine bidirectional TTY; no S3 call/export was made. S5 is withheld because its historical cause
-remains unknown.
+Reconciled every registry entry against the latest applicable export across the historical schema-v2
+sessions and the DevPass retest session (the main campaign export was updated at 2026-09-24
+22:34:47 UTC). Detailed run/task/attempt/call evidence remains in `out/live-agentic/BUGS.md` and
+`OUTPUT_MISFORMATS.md`. The DevPass catalog and S1/S2 retests are reconciled. S3 first hit a
+zero-call config-revision failure, then passed with Qwen and GPT-4.1 after commit `b278324`. The
+final export still shows that historical parent run as `running`; future pre-assignment failures
+now terminalize in `84f798d`. S4 and S6 still need a genuine bidirectional TTY retest. S5 remains
+withheld because its historical cause is unknown.
 
 | Entry | Latest evidence classification |
 |---|---|
-| LIVE-001 | Current catalog availability confirmed through Skail: 142/142 priced, with DevPass entries and frozen selected-model rates; paid assignment confirmation pending S1. |
+| LIVE-001 | Current catalog availability confirmed through Skail: 142/142 priced; paid S1 GPT-4.1 assignment and S3 Qwen/GPT-4.1 assignments confirmed against the frozen selected-model rates. |
 | LIVE-002 | Direct S2 admitted no plan or child; normalization implementation failure is tracked under LIVE-033. |
 | LIVE-003 | Fixed offline; provider-call cancellation rendering pending. |
 | LIVE-004 | Fixed offline; live queue-shutdown warning check pending. |
@@ -194,6 +205,8 @@ remains unknown.
 | LIVE-031 | Fixed and rechecked live. |
 | LIVE-032 | Fixed and rechecked live. |
 | LIVE-033 | Initial S2 implementation dropped existing lowercasing; operator test failed 2/4. Same-session correction restored lowercasing and scoped the test; operator focused test passed 4/4. Six-call local ledger reconciled; TUI/export match not observed. |
+| LIVE-034 | S3 zero-call config-revision failure reproduced offline and fixed in `b278324`; the live Economy-mode retry routed both pinned models successfully. Final answer TUI/export text comparison was not captured. |
+| LIVE-035 | The first S3 run has no assignment or provider call; its task/attempt are interrupted, but the parent run remains `running` in the final export. Future pre-assignment exceptions now terminalize through `84f798d`; historical state is preserved. |
 | OUT-001 | Fixed offline; live provider-cancellation rendering pending. |
 | OUT-002 | Answer-only presentation confirmed live in S1; historical raw model response remains unavailable. |
 | OUT-003 | Fixed offline; live unawaited-coroutine check pending. |
@@ -227,7 +240,8 @@ remains unknown.
 - [x] 16. Pass Ruff, mypy, unit/contract, smoke, and full offline suite in repository order;
   record final counts and before/after timings after the package path fix.
 - [ ] 17. Refresh the disposable fixture and live plan; freeze models/prices and a new
-  in-house subledger under the cumulative stop; rerun S1–S6 as eligible, S7 only if affected, S8 only on a
-  natural failed attempt; reconcile after every call and update all evidence.
+  in-house subledger under the cumulative stop; S1–S3 are rechecked, S4/S6 remain eligible,
+  S5 is withheld, S7 is unchanged, and S8 remains natural-failure-only. Reconcile after every call
+  and update all evidence.
 - [ ] 18. Audit README, specs, ADRs, and test procedures against verified behavior; check
   local links and commands; commit coherent changes with Conventional Commit messages.

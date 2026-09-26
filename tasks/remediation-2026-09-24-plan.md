@@ -1,9 +1,13 @@
 # Defect remediation, offline suite, and live validation plan
 
-Status: offline implementation complete; remaining live retests are tracked in
-[the checklist](defect-remediation-todo.md). The executable prompts, limits, and evidence fields
-are in [the live test plan](live-agentic-test-plan.md). No new paid calls have been made in this
-remediation cycle.
+Status: offline implementation and gates passed through commit `84f798d`. S3 completed its two
+model reviews after an initial zero-call config-revision failure. That historical parent run still
+shows `running` in the final export; new pre-assignment failures now record terminal state. S4 and
+S6 remain eligible live retests, and S5 remains withheld pending diagnosis. The executable prompts, limits, and evidence
+fields are in [the live test plan](live-agentic-test-plan.md); scenario evidence and token costs are
+in [the checklist](defect-remediation-todo.md) and ignored live-agentic evidence files. The
+cumulative in-house token-cost ledger is USD 2.674169422, with USD 5.825830578 headroom to the USD
+8.50 normal stop. Actual provider billing remains unknown.
 
 ## Evidence baseline and rules
 
