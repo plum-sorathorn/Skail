@@ -253,8 +253,8 @@ withheld because its historical cause is unknown.
   in-house subledger under the cumulative stop; S1–S3 are rechecked, S4 remains failed after
   bounded plans, S6 remains eligible, S5 is withheld, S7 is unchanged, and S8 is eligible after the
     natural parser test failure. Reconcile after every call and update all evidence.
-- [ ] Live continuation gate: current actual stdin/stdout are not TTYs, and the refreshed
-  `COSTS.csv` totals USD 2.927274310 versus the previously reported USD 2.929784310 (USD
+- [ ] Live continuation gate: recorded stdout is not a TTY; stdin TTY status depends on invocation.
+  The refreshed `COSTS.csv` totals USD 2.927274310 versus the previously reported USD 2.929784310 (USD
   0.002510000 unresolved). No paid live scenario may proceed until a verified TTY is available
   and the ledger discrepancy is reconciled. Existing DevPass credentials are not printed or used.
 - [ ] 18. Audit README, specs, ADRs, and test procedures against verified behavior; check
