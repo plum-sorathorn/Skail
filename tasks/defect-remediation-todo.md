@@ -84,8 +84,10 @@ remain open until matching evidence is recorded.
     now blocks that false completion. The fresh continuation created the files but exhausted its
     32-call limit. Its exported tool names were inspected in order, but arguments are absent; no
     identical-call cause is assigned and the detector remains unchanged. S7 passed: Skail denied the outside write and no outside file exists
-    (USD 0.010002 locally). S8 was not exercised because the fixture integration test has no natural
-    concurrency defect; no failure was forced. Actual provider billing remains unknown.
+    (USD 0.010002 locally). The historical S8 campaign was not exercised because the fixture had
+    no natural concurrency defect; no failure was forced. In the current retest, an S4 parser child
+    attempt naturally failed its focused test, so the S8 eligibility gate is now met; S8 remains
+    unrun. Actual provider billing remains unknown.
   - Future runs compare locally recomputed per-call costs with schema-v2 provider_calls and
     model_usage; the LLM Gateway CLI remains removed from the procedure.
 - [ ] Update `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, and `COSTS.csv` with verified outcomes.
@@ -187,7 +189,7 @@ withheld because its historical cause is unknown.
 | LIVE-013 | Exact-count rejection confirmed live; successful two-writer result remains incomplete. |
 | LIVE-014 | Fixed offline; a matching live blocked-plan transition remains pending. |
 | LIVE-015 | Closed as a test-plan mismatch; operator integration test remains pending. |
-| LIVE-016 | Named implementer plan admission confirmed live; S4 task results remain incomplete. |
+| LIVE-016 | Named implementer plans were admitted live, but S4 child results failed validation and the checkpoint did not complete; a scope enforcement fix is in `d92b4b9`, with one live recheck pending. |
 | LIVE-017 | Fixed offline; live cancellation had no child, so active-child cleanup remains unconfirmed. |
 | LIVE-018 | Fixed offline; the old empty headless invocation remains evidence, fresh live CLI recheck pending. |
 | LIVE-019 | Plan dispatch without duplicate `task()` confirmed live; FIFO completion remains pending. |
@@ -197,7 +199,7 @@ withheld because its historical cause is unknown.
 | LIVE-023 | Closed as expected session-history projection. |
 | LIVE-024 | Open: three S5 explorer runs produced no accepted results; old events lack category/path; offline diagnostics added, fresh S5 pending. |
 | LIVE-025 | Ambiguous provider call locally settled; outcome unknown; do not replay. |
-| LIVE-026 | Resource-scope guidance fixed offline and a later live plan admitted; the separate invalid field in run 9c251 remains unknown. |
+| LIVE-026 | Resource-scope guidance fixed offline; S4 exposed that `PlanNode.resource_scopes` were not reaching the filesystem backend. Commit `d92b4b9` maps the declared scopes into child write permissions; live recheck pending. The invalid field in run 9c251 remains unknown. |
 | LIVE-027 | Fixed offline; a later planned run admitted and blocked truthfully, but rejected/no-decision live edge remains pending. |
 | LIVE-028 | Top-level planned mode with “do not delegate further” admitted live; nested child delegation was not exercised. |
 | LIVE-029 | Question display, restoration, and accepted `JSON` answer confirmed live; work continuation is LIVE-030. |
@@ -207,6 +209,8 @@ withheld because its historical cause is unknown.
 | LIVE-033 | Initial S2 implementation dropped existing lowercasing; operator test failed 2/4. Same-session correction restored lowercasing and scoped the test; operator focused test passed 4/4. Six-call local ledger reconciled; TUI/export match not observed. |
 | LIVE-034 | S3 zero-call config-revision failure reproduced offline and fixed in `b278324`; the live Economy-mode retry routed both pinned models successfully. Final answer TUI/export text comparison was not captured. |
 | LIVE-035 | The first S3 run has no assignment or provider call; its task/attempt are interrupted, but the parent run remains `running` in the final export. Future pre-assignment exceptions now terminalize through `84f798d`; historical state is preserved. |
+| LIVE-036 | S4 child TaskResult responses failed validation across three attempts; parser and report outputs did not reach the checkpoint. Focused child-worktree tests reported parser 2/1 and report 4/0; S4 remains incomplete. |
+| LIVE-037 | The S4 report child worktree contained `src/live_fixture/report_test.py` outside its declared scopes. Root fixture stayed clean; `d92b4b9` now carries plan resource scopes into child filesystem permissions; live recheck pending. |
 | OUT-001 | Fixed offline; live provider-cancellation rendering pending. |
 | OUT-002 | Answer-only presentation confirmed live in S1; historical raw model response remains unavailable. |
 | OUT-003 | Fixed offline; live unawaited-coroutine check pending. |
@@ -215,10 +219,11 @@ withheld because its historical cause is unknown.
 | OUT-006 | Original model-authored options mismatch confirmed; tool guidance fixed offline, matching live question pending. |
 | OUT-007 | Fixed and confirmed live at 80×24. |
 | OUT-008 | UTF-8 handling confirmed live in S3. |
-| OUT-009 | Resource-scope guidance fixed offline and a subsequent live plan admitted; one earlier invalid-plan field remains unknown. |
+| OUT-009 | Resource-scope guidance fixed offline and plans were admitted, but S4 exposed an out-of-scope child write in its isolated worktree; `d92b4b9` carries scopes to the filesystem boundary, live recheck pending. |
 | OUT-010 | False successes fixed offline; latest planned run blocked truthfully, invalid/no-plan live path pending. |
 | OUT-011 | Question interrupt and restored card confirmed live. |
 | OUT-012 | Fixed offline to block stale waiting completion; same-run live recheck pending. |
+| OUT-013 | S4 child TaskResult outputs failed at `$.status`, `$.artifacts.0`, and `$.verification.0.evidence_ref`; accepted results remain pending. |
 
 ## Next execution cycle
 
@@ -240,8 +245,8 @@ withheld because its historical cause is unknown.
 - [x] 16. Pass Ruff, mypy, unit/contract, smoke, and full offline suite in repository order;
   record final counts and before/after timings after the package path fix.
 - [ ] 17. Refresh the disposable fixture and live plan; freeze models/prices and a new
-  in-house subledger under the cumulative stop; S1–S3 are rechecked, S4/S6 remain eligible,
-  S5 is withheld, S7 is unchanged, and S8 remains natural-failure-only. Reconcile after every call
-  and update all evidence.
+  in-house subledger under the cumulative stop; S1–S3 are rechecked, S4 remains blocked pending a
+  fresh result-contract/scope run, S6 remains eligible, S5 is withheld, S7 is unchanged, and S8 is
+  eligible after the natural parser test failure. Reconcile after every call and update all evidence.
 - [ ] 18. Audit README, specs, ADRs, and test procedures against verified behavior; check
   local links and commands; commit coherent changes with Conventional Commit messages.

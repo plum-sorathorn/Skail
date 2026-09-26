@@ -276,6 +276,7 @@ Prompt:
 >         "objective": "Implement the parser TODO and focused test",
 >         "effect_scope": "workspace_write",
 >         "resource_scopes": ["src/live_fixture/parser.py", "tests/test_parser.py"],
+>         "acceptance_criteria": ["rtk pytest tests/test_parser.py -q passes"],
 >         "task_features": {"profile": "implementer"}
 >       },
 >       {
@@ -284,6 +285,7 @@ Prompt:
 >         "objective": "Implement the report TODO and focused test",
 >         "effect_scope": "workspace_write",
 >         "resource_scopes": ["src/live_fixture/report.py", "tests/test_report.py"],
+>         "acceptance_criteria": ["rtk pytest tests/test_report.py -q passes"],
 >         "task_features": {"profile": "implementer"}
 >       },
 >       {
@@ -297,6 +299,12 @@ Prompt:
 >   }
 > }
 > ```
+>
+> Each child must return one JSON `TaskResult` using its assigned task ID, an allowed status,
+> summary, changed paths, artifacts as objects with `kind` and `path`, and a verification entry for
+> its acceptance criterion. A write-capable result must include `evidence_ref` as an artifact object
+> with `kind` and `path`; do not use strings or null for that field, and do not return prose outside
+> the JSON object. Write only within the node's `resource_scopes`.
 >
 > Delegate only those two independent writers. Each child runs its focused test. After the
 > checkpoint and integration, return one final answer with changed paths and focused test results.
@@ -312,8 +320,8 @@ While both children are active, queue with `Ctrl+Enter`:
 > wall times overlapped. Do not modify files.
 
 Pass: exactly two implementer agent nodes, one checkpoint depending on both, disjoint `resource_scopes`, peak
-concurrency two and never over three, accepted child results, operator-run integration test pass,
-and one visible FIFO
+concurrency two and never over three, accepted child results, no writes outside declared scopes,
+operator-run integration test pass, and one visible FIFO
 follow-up after completion. No queued coroutine warning on cancel or quit. Record actual
 assignment timestamps; do not infer overlap from the prompt. A count or scope conflict must be
 rejected before plan admission and repaired within the bounded decision allowance.
@@ -471,6 +479,12 @@ force escalation.
 
 S8 was not exercised: the disposable fixture's `tests/test_integration.py` covers parser/report
 integration and contains no concurrency defect. Do not invent one solely to trigger escalation.
+
+Retest eligibility update (2026-09-26): S4 parser task `be009401-0e9f-4356-846e-5b8f7d366159`
+in run `7e949a2f-6a9b-47df-970c-94f408bb7e62` made a real implementer attempt in its declared
+worktree. The operator's focused check reported 2 passed, 1 failed at `test_parse_records_with_spaces`.
+This satisfies the natural-failure gate; S8 has not yet run. If exercised, use a fresh task for a
+baseline parser test, preserve that task ID, and allow at most its documented second attempt.
 
 ## Stop conditions and completion
 
