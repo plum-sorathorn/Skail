@@ -4036,6 +4036,8 @@ def _route_failure_for_task(result: BatchAssignmentResult, task_id: str) -> Rout
 
 def _task_request_for_plan_node(node: PlanNode) -> TaskRequest:
     features = dict(node.task_features)
+    if node.effect_scope is EffectScope.WORKSPACE_WRITE and node.resource_scopes:
+        features["write_scope"] = node.resource_scopes
     allowed = {
         "profile",
         "write_scope",

@@ -17,6 +17,7 @@ from skail.agents.task_graph import (
     build_task_graph,
     decode_task_request,
 )
+from skail.domain.events import SecretRedactor
 from skail.domain.ids import (
     AssignmentId,
     ReservationId,
@@ -25,7 +26,7 @@ from skail.domain.ids import (
     new_run_id,
     new_task_id,
 )
-from skail.domain.plans import PlanNode, PlanNodeKind
+from skail.domain.plans import EffectScope, PlanNode, PlanNodeKind
 from skail.domain.routing import RoutingMode, TaskAssignment
 from skail.domain.tasks import TaskRequest, TaskResult, VerificationResult
 from skail.providers.errors import ProviderError, ProviderErrorKind
@@ -35,6 +36,7 @@ from skail.runtime.leases import WorkspaceLeaseManager
 from skail.runtime.run_controller import _task_request_for_plan_node
 from skail.runtime.scheduler import ChildScheduler
 from skail.runtime.task_validation import TaskValidationError, TaskValidator
+from skail.tools.backend import PolicyFilesystemBackend
 
 
 def _spec(tmp_path, *, profile: str = "implementer"):
@@ -110,6 +112,43 @@ def test_plan_node_request_carries_declared_artifact_and_source_references() -> 
         "file:docs/parser.md",
     )
     assert request.source_revisions == ("workspace:abc123",)
+
+
+def test_plan_node_resource_scopes_confine_child_filesystem_writes(tmp_path) -> None:
+    node = PlanNode(
+        local_id="report",
+        kind=PlanNodeKind.AGENT,
+        objective="Implement the report module",
+        effect_scope=EffectScope.WORKSPACE_WRITE,
+        resource_scopes=("src/live_fixture/report.py", "tests/test_report.py"),
+        task_features={"profile": "implementer"},
+    )
+    request = _task_request_for_plan_node(node)
+    spec = TaskValidator(
+        profiles=builtin_profiles(),
+        workspace_root=tmp_path,
+        max_depth=1,
+        background_enabled=False,
+    ).create_spec(
+        request,
+        run_id=new_run_id(),
+        parent_task_id=None,
+        parent_depth=0,
+        workspace_revision="git:abc",
+    )
+    backend = PolicyFilesystemBackend(
+        tmp_path,
+        redactor=SecretRedactor(),
+        task_id=str(spec.task_id),
+        allowed_write_paths=spec.permission_set.allowed_paths,
+    )
+
+    allowed = backend.write("tests/test_report.py", "owned")
+    denied = backend.write("src/live_fixture/report_test.py", "outside scope")
+
+    assert allowed.error is None
+    assert denied.error == "write is outside the delegated task scope"
+    assert not (tmp_path / "src/live_fixture/report_test.py").exists()
 
 
 def test_task_validator_rejects_unsafe_context_file_references(tmp_path) -> None:
