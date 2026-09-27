@@ -873,6 +873,170 @@ async def test_first_runtime_catalog_opens_unticked_model_picker(tmp_path: Any) 
 
 
 @pytest.mark.asyncio
+async def test_failed_explicit_lead_pin_still_requires_model_picker(tmp_path: Any) -> None:
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="booted")
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+    runtime = _runtime_set(model)
+    object.__setattr__(runtime, "explicit_lead_model", True)
+    object.__setattr__(runtime, "selection_required", True)
+    app = SkailApp(
+        runtime_factory=lambda: runtime,
+        bootstrap={"workspace": str(tmp_path), "session_id": session_id, "project_trusted": True},
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    app.app_state = "initializing"
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        for _ in range(30):
+            await pilot.pause()
+            if isinstance(app.screen_stack[-1], ModelPickerOverlay):
+                break
+        assert app.app_state == "selection_required"
+        assert isinstance(app.screen_stack[-1], ModelPickerOverlay)
+
+
+@pytest.mark.asyncio
+async def test_explicit_lead_pin_does_not_bypass_project_trust(tmp_path: Any) -> None:
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="booted")
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+    runtime = _runtime_set(model)
+    object.__setattr__(runtime, "explicit_lead_model", True)
+    app = SkailApp(
+        runtime_factory=lambda: runtime,
+        bootstrap={"workspace": str(tmp_path), "session_id": session_id},
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    app.app_state = "initializing"
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        for _ in range(30):
+            await pilot.pause()
+            if isinstance(app.screen_stack[-1], ModelPickerOverlay):
+                break
+        assert app.app_state == "selection_required"
+        assert isinstance(app.screen_stack[-1], ModelPickerOverlay)
+
+
+@pytest.mark.asyncio
+async def test_explicit_validated_lead_pin_skips_picker_without_onboarding_receipt(
+    tmp_path: Any,
+) -> None:
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="booted")
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+    runtime = _runtime_set(model)
+    object.__setattr__(runtime, "explicit_lead_model", True)
+    app = SkailApp(
+        runtime_factory=lambda: runtime,
+        bootstrap={
+            "workspace": str(tmp_path),
+            "session_id": session_id,
+            "project_trusted": True,
+        },
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    app.app_state = "initializing"
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        for _ in range(30):
+            await pilot.pause()
+            if app.app_state == "ready":
+                break
+        assert app.app_state == "ready"
+        assert not isinstance(app.screen_stack[-1], ModelPickerOverlay)
+
+        await pilot.click("#composer-input")
+        for char in "run explicit pin":
+            await pilot.press(char)
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause()
+            if app._active_worker is not None:
+                break
+        assert app._active_worker is not None
+        await asyncio.wait_for(app._active_worker.wait(), timeout=5)
+        assert any(item.content == "booted" for item in app.projection.transcript_items)
+
+
+@pytest.mark.asyncio
+async def test_model_picker_return_to_composer_submits_prompt_once(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+    model = DeterministicFakeChatModel(
+        model_name="gpt-4.1-mini",
+        response_text="offline picker reply",
+    )
+    runtime = RuntimeModelSet(
+        models={"gpt-4.1-mini": model},
+        lead_model="gpt-4.1-mini",
+        child_model="gpt-4.1-mini",
+        providers={"injected": FakeProviderAdapter(model)},
+    )
+    object.__setattr__(runtime, "selection_required", True)
+    app = SkailApp(
+        runtime_factory=lambda: runtime,
+        bootstrap={"workspace": str(tmp_path), "session_id": session_id},
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    app._enabled_models = set()
+    app.app_state = "initializing"
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        for _ in range(30):
+            await pilot.pause()
+            if isinstance(app.screen_stack[-1], ModelPickerOverlay):
+                break
+        assert isinstance(app.screen_stack[-1], ModelPickerOverlay)
+
+        # Select the only listed (manual-only) model and commit the picker.
+        await pilot.press("ctrl+space", "enter")
+        await pilot.pause()
+        assert app.app_state == "ready"
+        assert app.projection.model_for_future() == "gpt-4.1-mini"
+
+        controller = app.controller
+        assert isinstance(controller, RunController)
+        original_run_instruction = controller.run_instruction
+        submitted: list[str] = []
+
+        async def record_submission(text: str, **kwargs: Any) -> Any:
+            submitted.append(text)
+            return await original_run_instruction(text, **kwargs)
+
+        monkeypatch.setattr(controller, "run_instruction", record_submission)
+        await pilot.click("#composer-input")
+        for char in "Check the offline picker path":
+            await pilot.press(char)
+        await pilot.press("enter")
+
+        assert app._active_worker is not None
+        await asyncio.wait_for(app._active_worker.wait(), timeout=5)
+        await pilot.pause()
+
+        assert submitted == ["Check the offline picker path"]
+        assert (
+            sum(item.content == "offline picker reply" for item in app.projection.transcript_items)
+            == 1
+        )
+
+
+@pytest.mark.asyncio
 async def test_composer_enter_and_send_button_drive_real_controller(tmp_path: Any) -> None:
     from skail.domain.ids import SessionId
     from skail.runtime.run_controller import RunController

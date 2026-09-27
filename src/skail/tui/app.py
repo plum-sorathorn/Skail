@@ -795,7 +795,13 @@ class SkailApp(App[int]):
         self.onboarding_credentials.clear()
         selection_required = bool(
             getattr(runtime_models, "selection_required", False)
-            or not self._enabled_models
+            or (
+                not self._enabled_models
+                and not (
+                    bool(getattr(runtime_models, "explicit_lead_model", False))
+                    and bool(self.bootstrap.get("project_trusted", False))
+                )
+            )
         )
         self.app_state = "selection_required" if selection_required else "ready"
         self.startup_error = None

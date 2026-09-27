@@ -24,6 +24,12 @@ Let the user start productive work with `skail` and a prompt, without starting a
 5. Model, tool, task, approval, and budget events stream through one event channel.
 6. The final answer and run outcome are checkpointed before control returns to the prompt.
 
+An explicit `--lead-model provider:model` pin that passes lead-model routing qualification is
+already a user model selection. In interactive startup, after project trust is established, it skips
+only the model picker, even without an onboarding receipt. This does not complete or persist
+onboarding, grant project trust, or bypass runtime selection failures, approvals, permissions, or
+budget gates. Default/automatic selection continues to require onboarding model selection.
+
 ### Invariants
 
 - No local server or background daemon is required.

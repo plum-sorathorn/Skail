@@ -74,6 +74,7 @@ class RuntimeModelSet:
     redaction: RedactionRegistry | None = None
     candidates: tuple[RouteCandidate, ...] = ()
     selection_required: bool = False
+    explicit_lead_model: bool = False
     lead_failure: RouteFailure | None = None
     catalog_degraded: bool = False
 
@@ -365,7 +366,9 @@ def _parse_cli_args(raw_args: Sequence[str]) -> argparse.Namespace:
         if subcmd is not None or "-h" in raw_args or "--help" in raw_args
         else build_run_parser()
     )
-    return parser.parse_args(raw_args)
+    args = parser.parse_args(raw_args)
+    args.lead_model_cli_supplied = args.lead_model is not None
+    return args
 
 
 def _build_storage(
@@ -1000,6 +1003,11 @@ def _build_runtime_models(
         redaction=redaction,
         candidates=candidate_tuple,
         selection_required=selection_required,
+        explicit_lead_model=(
+            getattr(args, "lead_model_cli_supplied", False)
+            and manual_model is not None
+            and lead_failure is None
+        ),
         lead_failure=lead_failure,
         catalog_degraded=degraded_catalog,
     )
