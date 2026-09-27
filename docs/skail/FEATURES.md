@@ -64,8 +64,8 @@ accepted answer before execution decisions or operational tool calls are allowed
 question does not count as an interrupt; an omitted question ends blocked with
 `execution.question_required`. The requirement survives resume, and a conditional edit limit such
 as “do not edit until I answer” permits the requested writes after the answer. If a resumed lead
-still returns a waiting summary after the answer was accepted, the run ends blocked with
-`execution.answer_not_continued` instead of reporting successful completion.
+returns status `waiting_for_user` or a waiting summary after the answer was accepted, the run ends
+blocked with `execution.answer_not_continued` instead of reporting successful completion.
 
 Its prompt defines delegation heuristics, but the runtime enforces user directives:
 

@@ -1357,7 +1357,18 @@ class RunController:
         waiting_prefixes = ("waiting for your answer", "awaiting your selection")
 
         def is_waiting(value: object) -> bool:
-            return isinstance(value, str) and value.lstrip().casefold().startswith(waiting_prefixes)
+            if not isinstance(value, str):
+                return False
+            normalized = value.lstrip().casefold()
+            return normalized.startswith(waiting_prefixes) or (
+                normalized.startswith("blocked for user input:")
+                and any(prefix in normalized for prefix in waiting_prefixes)
+            )
+
+        def is_waiting_result(value: object) -> bool:
+            return isinstance(value, dict) and (
+                value.get("status") == "waiting_for_user" or is_waiting(value.get("summary"))
+            )
 
         payload = output
         if isinstance(payload, str):
@@ -1365,7 +1376,7 @@ class RunController:
                 payload = json.loads(payload)
             except json.JSONDecodeError:
                 payload = None
-        if isinstance(payload, dict) and is_waiting(payload.get("summary")):
+        if is_waiting_result(payload):
             return True
         if is_waiting(output_text):
             return True
@@ -1373,7 +1384,7 @@ class RunController:
             payload = json.loads(output_text)
         except json.JSONDecodeError:
             return False
-        return isinstance(payload, dict) and is_waiting(payload.get("summary"))
+        return is_waiting_result(payload)
 
     def _record_execution_gate_blocked(
         self,

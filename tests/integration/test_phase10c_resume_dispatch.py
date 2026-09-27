@@ -317,16 +317,25 @@ async def test_explicit_planned_mode_survives_question_resume(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize(
-    "stale_summary",
+    "stale_response",
     [
-        "Waiting for your answer: Please choose exactly one export format: ",
-        "Awaiting your selection: Please choose exactly one export format: ",
+        "Waiting for your answer: Please choose exactly one export format: JSON or CSV. "
+        "No code will be written until you select one.",
+        "Awaiting your selection: Please choose exactly one export format: JSON or CSV. "
+        "No code will be written until you select one.",
+        '{"status":"waiting_for_user","summary":"A blocking question was asked for you to '
+        'choose the exporter format (JSON or CSV). No changes will be made to exporter.py '
+        'until you answer.","changed_paths":[],"verification":[{"passed":true,"evidence":'
+        '"ask_user tool was called to prompt the user to select between JSON and CSV formats, '
+        'as requested."}]}',
+        '{"status":"blocked","summary":"Blocked for user input: Awaiting your selection of '
+        'export format (JSON or CSV). No code changes will occur until you choose.",'
+        '"changed_paths":[],"verification":[{"passed":true,"evidence":"Waiting for user input."}]}',
     ],
 )
-@pytest.mark.asyncio
 async def test_answered_question_cannot_complete_with_a_stale_waiting_result(
     tmp_path: Path,
-    stale_summary: str,
+    stale_response: str,
 ) -> None:
     journal, checkpoints, questions, approvals = _stores(tmp_path, "stale-question-result")
     session_id = _session(journal)
@@ -360,12 +369,7 @@ async def test_answered_question_cannot_complete_with_a_stale_waiting_result(
     resumed_lead = ScriptedChatModel(
         model_name="lead-model",
         responses=[
-            AIMessage(
-                content=(
-                    stale_summary
-                    + "JSON or CSV. No code will be written until you select one."
-                )
-            )
+            AIMessage(content=stale_response)
         ],
     )
     resumed = _controller(

@@ -809,8 +809,9 @@ Examples:
 
 Errors are rendered for people in the TUI and remain structured in JSONL.
 
-If an accepted question answer is followed by a stale waiting summary, resume terminates blocked with
-`execution.answer_not_continued`; it does not emit `run.completed` for that result.
+If an accepted question answer is followed by a result with status `waiting_for_user` or a stale
+waiting summary, resume terminates blocked with `execution.answer_not_continued`; it does not emit
+`run.completed` for that result.
 
 ## 19. Observability
 

@@ -15,6 +15,17 @@ The later live run `5a216e69-9126-49b0-849f-9811d5ba0a35` reproduced the same fa
 extended the deterministic regression and guard to that observed wording; a same-run live
 confirmation of the repair is still pending.
 
+The 2026-09-26 same-run retest accepted `JSON` in run
+`e12b7b3e-e2a9-402a-a0bb-8e9e34c14c96`, then emitted `run.completed` with output status
+`waiting_for_user` and a stale “A blocking question was asked...” summary. No exporter or test
+file was written. A red/green regression now covers this structured status variant; the live run
+remains failed and needs a new post-fix confirmation.
+
+The next same-run retry `b4235f5b-0c92-419b-9803-adbc4f00c8ff` accepted `JSON`, then emitted
+`run.completed` with output status `blocked` but a stale summary beginning “Blocked for user input:
+Awaiting your selection”. It still wrote no exporter or test. The guard now recognizes that
+blocked-prefixed waiting summary so it cannot be recorded as a completed run.
+
 The S5 exports record explorer tasks as failed and retry routing as `auto_ineligible`, but their
 `task.failed` payloads have no safe failure category or validation field path. They therefore do not
 distinguish provider errors, malformed child results, result-validation failures, routing
@@ -22,12 +33,12 @@ ineligibility, and ordinary task failures.
 
 ## Decision
 
-1. An accepted question answer belongs to its waiting run. If the resumed final result still says
-   it is waiting, including “Waiting for your answer” or “Awaiting your selection,” Skail ends
-   that run as blocked with `execution.answer_not_continued`. It records a concise diagnostic
-   result and does not emit `run.completed` for a final result that still says it is waiting.
-   Skail does not start a hidden
-   provider retry.
+1. An accepted question answer belongs to its waiting run. If the resumed final result has status
+   `waiting_for_user` or its summary still says that an answer is pending, including “Waiting for
+   your answer” or “Awaiting your selection,” Skail ends that run as blocked with
+   `execution.answer_not_continued`. It records a concise diagnostic result and does not emit
+   `run.completed` for a final result that is still waiting. Skail does not start a hidden provider
+   retry.
 2. Child `TaskResult` values may carry optional `failure_category` and `validation_path` fields. These
    fields are runtime-owned; values supplied in model-authored JSON are discarded.
 3. Task terminal events may carry the same safe fields. Categories are limited to
@@ -49,8 +60,9 @@ ineligibility, and ordinary task failures.
 
 ## Verification
 
-- `tests/integration/test_phase10c_resume_dispatch.py` reproduces both observed
-  accepted-answer/stale-waiting prefixes and requires one blocked result for each.
+- `tests/integration/test_phase10c_resume_dispatch.py` reproduces the two accepted-answer/stale-
+  waiting prefixes, the structured `waiting_for_user` status, and the observed blocked-prefixed
+  stale summary; each must end blocked without `run.completed`.
 - `tests/contract/test_question_resume_contract.py` proves the accepted same-run JSON path writes
   only the exporter and its focused test, then returns one completed result.
 - `tests/contract/test_task_result.py` covers malformed JSON, schema field errors, explicit task

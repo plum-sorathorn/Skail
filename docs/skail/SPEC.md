@@ -145,7 +145,8 @@ prose question is not an interrupt. For each user instruction the lead may:
 - synthesize subagent results and continue implementation;
 - ask the user when requirements or authority are missing.
 
-If the accepted answer is followed by a stale waiting summary, Skail ends the run blocked with
+If the accepted answer is followed by a result whose status is `waiting_for_user` or whose summary
+still indicates that an answer is pending, Skail ends the run blocked with
 `execution.answer_not_continued`; it does not report that run as completed.
 
 `direct` retains the full lead tool loop and may submit a plan later when evidence changes.
