@@ -853,6 +853,37 @@ historical unknown costs. S6's nominal remaining allocation is USD 0.577416 (pre
 billing. Actual provider billing remains unknown. Prior captures and fixture/worktrees were preserved.
 
 
+## 2026-09-27 single authorized post-remediation S6 retest — launch exited before prompt
+
+Commit `e4454af` added bounded feedback for invalid execution plans. That offline change is not
+evidence of a live fix; this was the one authorized live retest. A fresh disposable clone was made
+from `out/live-agentic/workspace-s6-2026-09-26` at baseline
+`113ed8c9f69b0b6dfca596b0dc86052d3b63dc3a`, with a separate HOME and a copied Skail config whose
+LLMGateway credential is referenced only through `api_key_env`. The fixture baseline suite produced
+the four expected seeded failures (parser, normalization, report, and integration). Skail refreshed
+its catalog successfully at 2026-09-27 12:09:31 UTC (142 priced models) and `models show` confirmed
+`gpt-4.1-mini` metadata and frozen manual rates of USD 0.40 / 0.10 cached / 1.60 per million input /
+cached-input / output tokens. The configured in-house run budget was USD 0.50; it was not a
+provider-side hard cap. The user-reported historical USD 0.0018 provider-hour observation remains
+unallocated and is not added to local token cost.
+
+The single PTY-driver launch exited 0 after printing only the fixture project-trust approval. Its
+prompt marker was never observed (`steps_sent_count=0`), so it sent neither the specified task nor
+the Ctrl+C key. No blocking question/card was shown, no answer or resume was attempted, and no
+schema-v2 session export exists. A read-only check of the isolated journal found zero sessions,
+runs, events, and provider calls; there are no new inference-call IDs to append to
+`CALL_COST_AUDIT.csv`. No exporter or focused test was produced. The PTY launch did not verify
+child TTY flags or source import origin, and this run is not an S6 behavioral result. This observed
+pre-prompt launcher exit is the exact failure for the one authorized retest; do not retry or claim
+same-run quit/resume acceptance. The four baseline fixture failures remain seeded fixture state.
+
+The campaign's prior reconciled local estimate stays USD `3.015910684`; the attempt added USD `0`
+in token-derived inference cost, and S6's nominal remaining allocation stays USD `0.574678`.
+Provider billing, including any non-inference catalog metadata request charges, is not asserted.
+Actual provider billing and prior unknown costs remain unknown. The isolated attempt evidence is in
+`out/live-agentic/s6-retest-20260927T140000Z/`; S6 remains failed/incomplete. Further paid work is
+not authorized by this one-retest instruction.
+
 ## 2026-09-27 corrected isolated S6 outcome and full call reconciliation
 
 Schema-v2 exports were read from the isolated HOME with `skail sessions export` (no provider
