@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 
 import pytest
 
 from skail.agents.profiles import builtin_profiles
+from skail.agents.result_evaluator import parse_child_result
 from skail.agents.task_graph import (
     AttemptBinding,
     build_task_graph,
@@ -162,7 +164,6 @@ async def test_escalation_recovers_on_second_attempt(tmp_path) -> None:
     assert any("failure-handoff" in c.label for c in packets[1].components)
 
 
-@pytest.mark.asyncio
 async def test_second_attempt_handoff_includes_safe_validation_path(tmp_path) -> None:
     spec = _spec(tmp_path)
     packets = []
@@ -178,13 +179,18 @@ async def test_second_attempt_handoff_includes_safe_validation_path(tmp_path) ->
     async def execute(s, a, packet):
         packets.append(packet)
         if a.attempt_number == 1:
-            return TaskResult(
+            raw_child_output = json.dumps(
+                {
+                    "task_id": str(s.task_id),
+                    "status": "failed",
+                    "summary": raw_payload_sentinel,
+                    "artifacts": [{"kind": None, "path": "src/live_fixture/parser.py"}],
+                }
+            )
+            return parse_child_result(
+                raw_child_output,
                 task_id=s.task_id,
-                status="failed",
-                summary="child returned an invalid result",
-                failure_category="result_validation",
-                validation_path="$.artifacts.0.kind",
-                follow_up="child must return a structured TaskResult",
+                required_criteria=("Must pass tests",),
             )
         return TaskResult(
             task_id=s.task_id,
