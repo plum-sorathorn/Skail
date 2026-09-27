@@ -425,6 +425,35 @@ def test_invalid_plan_allows_one_repair_but_never_admits_the_invalid_record() ->
         gate.admit(invalid)
 
 
+def test_plan_type_error_identifies_safe_schema_path_without_echoing_value() -> None:
+    gate = ExecutionDecisionGate(admit_plan=lambda _: None)
+    secret_value = "UNTRUSTED-PLAN-VALUE-DO-NOT-ECHO"
+    invalid = {
+        "mode": "planned",
+        "objective": "Change code",
+        "reason": "Needs a plan.",
+        "plan": {
+            "schema_version": secret_value,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "inspect",
+                    "kind": "agent",
+                    "objective": "Inspect the workspace",
+                }
+            ],
+        },
+    }
+
+    with pytest.raises(DecisionAdmissionError) as failure:
+        gate.admit(invalid)
+
+    message = str(failure.value)
+    assert "plan.schema_version:invalid_type" in message
+    assert secret_value not in message
+
+
 def test_invalid_decision_tool_call_consumes_only_one_repair(tmp_path) -> None:
     gate = ExecutionDecisionGate(admit_plan=lambda _: None)
     model = ScriptedChatModel(

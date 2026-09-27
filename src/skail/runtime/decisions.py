@@ -470,22 +470,32 @@ def _comparable_decision_field(name: str, value: Any) -> Any:
 
 
 def _actionable_plan_invalid(exc: ValidationError) -> str:
-    """Render missing/unexpected fields plus a minimal valid skeleton."""
+    """Render safe schema diagnostics plus a minimal valid skeleton."""
 
     missing: list[str] = []
     unexpected: list[str] = []
+    invalid: list[str] = []
     for error in exc.errors():
         kind = str(error.get("type", ""))
-        loc = ".".join(str(part) for part in error.get("loc", ()))
+        loc = _safe_validation_path(error.get("loc", ()))
         if kind == "missing":
             missing.append(loc or "<unknown>")
         elif kind in {"extra_forbidden", "unexpected_keyword_argument"}:
             unexpected.append(loc or "<unknown>")
+        else:
+            category = (
+                "invalid_type"
+                if kind.endswith(("_type", "_parsing")) or kind == "enum"
+                else "invalid_value"
+            )
+            invalid.append(f"{loc or '<unknown>'}:{category}")
     details: list[str] = []
     if missing:
-        details.append(f"missing={sorted(set(missing))}")
+        details.append(f"missing={sorted(set(missing))[:3]}")
     if unexpected:
-        details.append(f"unexpected={sorted(set(unexpected))}")
+        details.append(f"unexpected={sorted(set(unexpected))[:3]}")
+    if invalid:
+        details.append(f"invalid={sorted(set(invalid))[:3]}")
     detail = f" ({'; '.join(details)})" if details else ""
     return (
         "decision.plan_invalid: resend mode=planned with objective, reason, "
@@ -495,6 +505,49 @@ def _actionable_plan_invalid(exc: ValidationError) -> str:
         "'objective': '<what>', 'effect_scope': 'read'}]}"
         f"{detail}"
     )
+
+
+def _safe_validation_path(location: Any) -> str:
+    """Keep only schema field names and indexes from validation locations."""
+
+    fields = {
+        "mode",
+        "objective",
+        "reason",
+        "constraints",
+        "plan",
+        "revision",
+        "schema_version",
+        "policy_version",
+        "nodes",
+        "local_id",
+        "kind",
+        "depends_on",
+        "acceptance_criteria",
+        "inputs",
+        "output_contract",
+        "effect_scope",
+        "resource_scopes",
+        "task_features",
+        "artifact_refs",
+        "task_lineage",
+        "expected_revision",
+        "added_nodes",
+        "replaced_local_ids",
+        "cancelled_local_ids",
+        "justification",
+        "evidence_refs",
+    }
+    parts = location if isinstance(location, (tuple, list)) else ()
+    safe_parts = [
+        str(part)
+        if isinstance(part, int)
+        else str(part)
+        if isinstance(part, str) and part in fields
+        else "<field>"
+        for part in parts[:8]
+    ]
+    return ".".join(safe_parts)[:120]
 
 
 def _actionable_plan_refused(exc: Exception) -> str:

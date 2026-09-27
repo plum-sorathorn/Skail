@@ -164,6 +164,10 @@ diagnostic fields are ignored. Task events carry the safe category and schema pa
 raw child output or provider exception text.
 Attempt two's failure handoff includes these safe fields when present.
 
+Invalid execution-decision plans return a bounded repair diagnostic: missing and unexpected schema
+paths, plus up to three invalid paths with stable type/value categories. Paths contain only known
+schema field names or array indexes; submitted values and Pydantic error messages are never echoed.
+
 ## 5. Built-in agent profiles
 
 ### Shared profile mechanics
