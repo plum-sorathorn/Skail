@@ -12,10 +12,10 @@ Verify the offline repairs through real, operator-entered prompts in Skail's TUI
 model switching, parallel children, plans and checkpoints, queued work, question/approval handling,
 durable resume, workspace boundaries, and clean final answers. The offline quality gates passed
 before this plan was restored. S1 passed in the earlier live run; S2-S5 were incomplete or blocked.
-The latest S6 retry raised and restored a real `user.question`, accepted `JSON`, then completed with
-a stale blocked summary and no workspace changes. A fresh continuation created the JSON exporter and
-focused test but failed at the 32-call limit after repeated inspections; S6 remains incomplete. S7
-passed the workspace-boundary denial. S8 was not exercised because the fixture has no natural
+The latest isolated S6 run raised a real `user.question`, accepted `JSON`, then failed after two
+invalid `execution_decision` calls with `failure.repeated_error`; no implementation or focused test
+was produced and the fixture stayed unchanged. S6 remains failed. The distinct paid `model show` run
+is separately reconciled below. S7 passed the workspace-boundary denial. S8 was not exercised because the fixture has no natural
 concurrency defect; no failure was forced. In that earlier campaign, the last corrected S4
 prompt started run
 `7aa2bdab-ffea-470f-b8bc-6ab5e1e5e342`, but the lead call was interrupted before an execution
@@ -851,3 +851,42 @@ the prior USD 2.997053084 local estimate, for USD 3.003761084 cumulative local e
 historical unknown costs. S6's nominal remaining allocation is USD 0.577416 (previously USD
 0.584124). A separate historical hourly USD 0.0018 figure is not a token-derived amount or provider
 billing. Actual provider billing remains unknown. Prior captures and fixture/worktrees were preserved.
+
+
+## 2026-09-27 corrected isolated S6 outcome and full call reconciliation
+
+Schema-v2 exports were read from the isolated HOME with `skail sessions export` (no provider
+requests made during export):
+
+- S6 session `329825a9-ee9f-44fd-b69e-231e608774e3`, run `d31c4a6c-cfe0-42e5-aeca-e0dd9acacabc` (`failed`), task
+  `00d04fd4-0f09-438e-b3f4-0aa9e46d8dd1`. The user question was displayed: “Please choose exactly one export format to implement: JSON or CSV.”
+  with options JSON/CSV; the persisted answer was `JSON`.
+  After the answer, two `execution_decision` tool calls failed with `decision.plan_invalid` and the
+  same requirement to resend `mode=planned` with objective, reason, and a validated plan. The run
+  ended `failure.repeated_error`. The question/answer interaction worked, but implementation and
+  focused test did not happen: S6 failed. The immediate recorded failure is invalid execution
+  decisions repeated twice; why the model repeated them cannot be determined from the journal because
+  raw model response content is not present. The fixture was left unchanged.
+- Separate session `6f84aa9f-3b63-4d3b-bbfc-ac7131c9e009`, run `5490cfac-cd33-4a95-b7f4-69771e282868`
+  (`blocked`), title `model show`: 12 paid calls, USD `0.0094116` token-derived local
+  cost. This distinct task began with `decision.plan_required`; it later had a `grep` timeout. It is
+  included in this reconciliation and must not be omitted or attributed to the S6 run.
+
+All 15 provider-call IDs from both exports were checked against the prior 581 unique central audit
+IDs; none overlapped. Exactly 15 rows were appended once, giving 596 unique audited call IDs.
+The S6 run has 3 calls / USD `0.0027380` (9,809 input / 6,400 cached-input / 459 output tokens);
+the separate model-show run has 12 calls / USD `0.0094116` (55,845 input / 47,872
+cached-input / 897 output tokens). Both use frozen journal rates USD 0.40/0.10/1.60 per million
+(input/cached-input/output); pricing revisions are recorded per call in the audit. Combined new local
+token-derived cost is USD `0.0121496`. Starting from the prior reconciled USD `3.003761084`, the
+new local cumulative estimate is USD `3.015910684`. These are local token calculations,
+not provider billing; actual provider billing and any historical unknown charges remain unknown.
+
+Exact new call IDs, divided by session:
+
+- S6 `329825a9-ee9f-44fd-b69e-231e608774e3`: `35719648-6273-439c-847b-f99da921c43d`, `48898dcb-ebda-4901-b9d5-9ca838501263`, `e49c1ec2-6c42-4751-88f1-9b1fbfd076a1`.
+- Separate model show `6f84aa9f-3b63-4d3b-bbfc-ac7131c9e009`: `29bd9ec8-a398-4502-8158-e9014adf8d8d`, `4a0c21da-474c-4703-ab2a-959f07b411c9`, `b5a515c0-5072-4fc2-b669-9861768bc6f5`, `672b19bf-d206-40a8-ad7e-561c1e662446`, `3ff407be-87b4-48f1-9d66-a3910e213139`, `9f7fa204-a988-4e71-8262-dff547d60e80`, `19b2d977-52b3-40a1-a390-8a5e07f70f9e`, `137144d3-6318-49f4-8767-a7955fe877db`, `e1ffc531-4696-4df5-8fe4-2342b4fa1f0b`, `7f112568-e299-4a1f-8eff-01934ff7fc10`, `a8418556-3a47-4600-8ce9-83bb050f8333`, `78034bb0-f7fa-49d9-af3e-14bcea479afe`.
+
+Schema-v2 exports and detailed per-call rates/tokens are retained in
+`out/live-agentic/s6-corrected-20260927T111624Z/`. S6 remains failed; do not infer provider billing
+or claim the question-answer sequence delivered the feature.
