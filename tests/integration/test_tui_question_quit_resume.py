@@ -72,8 +72,34 @@ async def test_ctrl_c_quits_with_pending_question_and_fresh_tui_resumes_it(
                 break
         pending = app.projection.pending_interrupt
         assert pending is not None
-    question_id = pending.approval_id
-    assert pending.kind.value == "question"
+        question_id = pending.approval_id
+        assert pending.kind.value == "question"
+        question_graph_id = app._question_graph_id(pending.payload)
+        assert question_graph_id is not None
+        durable_question_found = False
+        durable_checkpoint_found = False
+        for _ in range(100):
+            await pilot.pause(0.1)
+            durable_question_found = any(
+                question.question_id == question_id
+                for question in questions.pending(question_graph_id)
+            )
+            current_snapshot = journal.get_session_snapshot(str(session_id))
+            current_run_id = (
+                current_snapshot.runs[-1].run_id if current_snapshot.runs else None
+            )
+            checkpoint = checkpoints.latest_valid(str(session_id))
+            durable_checkpoint_found = (
+                checkpoint is not None
+                and checkpoint.session_id == str(session_id)
+                and checkpoint.status == "interrupted"
+                and checkpoint.payload.get("run_id") == current_run_id
+            )
+            if durable_question_found and durable_checkpoint_found:
+                break
+        assert durable_question_found
+        assert durable_checkpoint_found
+
     first_snapshot = journal.get_session_snapshot(str(session_id))
     assert first_snapshot.runs
     initial_run = first_snapshot.runs[-1]
