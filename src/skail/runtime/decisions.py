@@ -485,7 +485,8 @@ def _actionable_plan_invalid(exc: ValidationError) -> str:
         else:
             category = (
                 "invalid_type"
-                if kind.endswith(("_type", "_parsing")) or kind == "enum"
+                if kind.endswith(("_type", "_parsing"))
+                or (kind == "enum" and not isinstance(error.get("input"), str))
                 else "invalid_value"
             )
             invalid.append(f"{loc or '<unknown>'}:{category}")
@@ -508,7 +509,7 @@ def _actionable_plan_invalid(exc: ValidationError) -> str:
 
 
 def _safe_validation_path(location: Any) -> str:
-    """Keep only schema field names and indexes from validation locations."""
+    """Keep schema fields and bounded nonnegative indexes from validation locations."""
 
     fields = {
         "mode",
@@ -541,6 +542,8 @@ def _safe_validation_path(location: Any) -> str:
     parts = location if isinstance(location, (tuple, list)) else ()
     safe_parts = [
         str(part)
+        if type(part) is int and 0 <= part <= 99
+        else "<index>"
         if isinstance(part, int)
         else str(part)
         if isinstance(part, str) and part in fields

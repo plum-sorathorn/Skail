@@ -12,9 +12,23 @@ from skail.runtime.decisions import (
     DecisionAdmissionError,
     ExecutionDecisionGate,
     ExecutionDecisionMiddleware,
+    _safe_validation_path,
     execution_decision_tool,
 )
 from skail.tools.assembly import build_default_agent
+
+
+@pytest.mark.parametrize("index", [-7, 10**200])
+def test_validation_paths_hide_negative_and_unbounded_indices(index: int) -> None:
+    path = _safe_validation_path(("nodes", index, "objective"))
+
+    assert path == "nodes.<index>.objective"
+    assert str(index) not in path
+
+
+def test_validation_paths_preserve_small_indices_and_hide_unknown_fields() -> None:
+    assert _safe_validation_path(("nodes", 0, "objective")) == "nodes.0.objective"
+    assert _safe_validation_path(("nodes", 0, "attacker_secret")) == "nodes.0.<field>"
 
 
 def _direct_decision() -> dict[str, Any]:
@@ -97,6 +111,77 @@ def test_nested_full_decision_plan_shape_is_normalized_before_validation() -> No
     assert decision.plan is not None
     assert decision.plan.revision == 1
     assert len(admitted) == 1
+
+
+def test_explicit_read_effect_scope_is_admitted_by_decision_gate() -> None:
+    admitted: list[ExecutionPlan] = []
+    gate = ExecutionDecisionGate(admit_plan=admitted.append)
+
+    decision = gate.admit(
+        {
+            "mode": "planned",
+            "objective": "Inspect before implementation",
+            "reason": "The work needs a gated discovery pass.",
+            "plan": {
+                "schema_version": 1,
+                "policy_version": "adaptive-v1",
+                "revision": 1,
+                "nodes": [
+                    {
+                        "local_id": "checkpoint",
+                        "kind": "checkpoint",
+                        "objective": "Review discovery evidence",
+                        "effect_scope": "read",
+                    }
+                ],
+            },
+        }
+    )
+
+    assert decision.plan is not None
+    assert decision.plan.nodes[0].effect_scope.value == "read"
+    assert admitted == [decision.plan]
+
+
+@pytest.mark.parametrize(
+    ("effect_scope", "category", "forbidden_text"),
+    [
+        ("not-a-scope-secret", "invalid_value", "not-a-scope-secret"),
+        (17, "invalid_type", "17"),
+    ],
+)
+def test_effect_scope_rejections_report_only_safe_category_and_path(
+    effect_scope: Any, category: str, forbidden_text: str
+) -> None:
+    gate = ExecutionDecisionGate(admit_plan=lambda _: None)
+
+    with pytest.raises(DecisionAdmissionError) as caught:
+        gate.admit(
+            {
+                "mode": "planned",
+                "objective": "Inspect before implementation",
+                "reason": "The work needs a gated discovery pass.",
+                "plan": {
+                    "schema_version": 1,
+                    "policy_version": "adaptive-v1",
+                    "revision": 1,
+                    "nodes": [
+                        {
+                            "local_id": "checkpoint",
+                            "kind": "checkpoint",
+                            "objective": "Review discovery evidence",
+                            "effect_scope": effect_scope,
+                        }
+                    ],
+                },
+            }
+        )
+
+    message = str(caught.value)
+    assert f"plan.nodes.0.effect_scope:{category}" in message
+    assert forbidden_text not in message
+    assert "Input should be" not in message
+    assert "enum" not in message
 
 
 def test_required_planned_mode_rejects_direct_decisions() -> None:

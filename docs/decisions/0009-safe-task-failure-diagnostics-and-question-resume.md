@@ -48,6 +48,11 @@ ineligibility, and ordinary task failures.
 4. The existing repeated-call detector continues to compare canonicalized tool name and arguments.
    The S6 export does not include tool arguments, so the 21 `ls` calls cannot be classified as
    identical from preserved evidence. No detector threshold or signature behavior changes here.
+5. Execution-plan schema rejections report safe field paths and distinguish invalid scalar values
+   from invalid JSON types without echoing submitted values or validator messages. A string outside
+   an enum is `invalid_value`; a value of the wrong JSON type is `invalid_type`. Validation paths
+   retain only allowlisted field names and nonnegative indexes through 99; all other indexes are
+   rendered as `<index>`.
 
 ## Consequences
 
