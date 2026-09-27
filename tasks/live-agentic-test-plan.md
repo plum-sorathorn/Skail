@@ -141,6 +141,15 @@ They are different boundaries and do not demonstrate a controlled performance im
 three-run record has medians of 166.938s external wall and 163.330s pytest-reported time (1,196
 passed, 5 skipped per run); raw evidence is `out/live-agentic/timing-20260927T055212Z/`.
 
+### Offline S6 regression coverage (2026-09-27)
+
+The mounted, scripted TUI integration regression verifies that Ctrl+C leaves the pending-question
+run non-completed, a fresh TUI restores and answers that question on the same durable `run_id`, and
+the final journal snapshot reports `completed` with both the answer and completion events for that
+run. Its generated exporter test also passes. This is offline harness evidence only; it does not
+change S6's live status or establish provider behavior. S6 remains incomplete until a qualified
+live same-run retest passes its operator-facing acceptance criteria.
+
 ## S6 launch remediation outcome (2026-09-27)
 
 Fixed the launcher only: `pty_preflight.py` and `session.py` call pywinpty with an argv list,

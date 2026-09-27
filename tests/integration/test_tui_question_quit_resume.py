@@ -1,0 +1,186 @@
+"""Mounted TUI coverage for quitting and resuming a durable question interrupt."""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+from langchain_core.messages import AIMessage
+
+from skail.domain.ids import new_session_id
+from skail.runtime.interrupts import QuestionStore
+from skail.runtime.run_controller import RunController
+from skail.sessions import CheckpointStore, Journal
+from skail.tools.approvals import ApprovalStore
+from skail.tui.app import SkailApp
+from skail.tui.widgets.interrupts import InterruptWidget
+from tests.fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_call_message
+
+
+@pytest.mark.asyncio
+async def test_ctrl_c_quits_with_pending_question_and_fresh_tui_resumes_it(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    journal = Journal(tmp_path / "journal.sqlite")
+    journal.migrate()
+    checkpoints = CheckpointStore(tmp_path / "checkpoints.sqlite")
+    questions = QuestionStore(tmp_path / "questions.sqlite")
+    approvals = ApprovalStore(tmp_path / "approvals.sqlite")
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="TUI question resume", created_at=datetime.now(UTC)
+    )
+
+    first_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message(
+                "ask_user",
+                {
+                    "prompt": "Choose JSON or CSV.",
+                    "reason": "The exporter format is required.",
+                    "options": ["JSON", "CSV"],
+                },
+                call_id="ask-format",
+            )
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=workspace,
+        journal=journal,
+        checkpoints=checkpoints,
+        question_store=questions,
+        approvals=approvals,
+        models={"lead-model": first_model},
+    )
+    app = SkailApp(controller=controller, session_id=session_id)
+
+    async with app.run_test() as pilot:
+        await pilot.click("#composer-input")
+        for char in "Ask me to choose JSON or CSV before editing. Do not write until I answer.":
+            await pilot.press(char)
+        await pilot.press("enter")
+        for _ in range(100):
+            await pilot.pause(0.1)
+            if app.projection.pending_interrupt is not None and not app._run_active:
+                break
+        pending = app.projection.pending_interrupt
+        assert pending is not None
+    question_id = pending.approval_id
+    assert pending.kind.value == "question"
+    first_snapshot = journal.get_session_snapshot(str(session_id))
+    assert first_snapshot.runs
+    initial_run = first_snapshot.runs[-1]
+    assert initial_run.status != "completed"
+    assert not (workspace / "exporter.py").exists()
+    await pilot.press("ctrl+c")
+
+    quit_snapshot = journal.get_session_snapshot(str(session_id))
+    quit_run = next(run for run in quit_snapshot.runs if run.run_id == initial_run.run_id)
+    assert quit_run.status != "completed"
+    assert not any(
+        event.type == "run.completed" and str(event.run_id) == initial_run.run_id
+        for event in quit_snapshot.events
+    )
+
+    resumed_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "direct",
+                            "objective": "Create the JSON exporter and focused test",
+                            "reason": "The accepted answer selected JSON.",
+                        },
+                        "decision-after-answer",
+                    ),
+                    (
+                        "write_file",
+                        {
+                            "file_path": "exporter.py",
+                            "content": (
+                                "import json\n\ndef export_json(data):\n"
+                                "    return json.dumps(data)\n"
+                            ),
+                        },
+                        "write-exporter-after-answer",
+                    ),
+                    (
+                        "write_file",
+                        {
+                            "file_path": "test_exporter.py",
+                            "content": (
+                                "from exporter import export_json\n\n"
+                                "def test_export_json():\n"
+                                "    assert export_json({'format': 'json'}) "
+                                "== '{\"format\": \"json\"}'\n"
+                            ),
+                        },
+                        "write-test-after-answer",
+                    ),
+                ]
+            ),
+            AIMessage(content="Created and verified the JSON exporter and focused test."),
+        ],
+    )
+    resumed_controller = RunController(
+        session_id=session_id,
+        workspace=workspace,
+        journal=journal,
+        checkpoints=checkpoints,
+        question_store=questions,
+        approvals=approvals,
+        models={"lead-model": resumed_model},
+    )
+    assert resumed_controller.restore_interrupted() is True
+    assert resumed_controller.pending_interrupt is not None
+    assert resumed_controller.pending_interrupt["question_id"] == question_id
+    resumed_app = SkailApp(
+        controller=resumed_controller,
+        session_id=session_id,
+        initial_snapshot=journal.get_session_snapshot(str(session_id)),
+    )
+
+    async with resumed_app.run_test() as pilot:
+        restored = resumed_app.projection.pending_interrupt
+        assert restored is not None
+        assert restored.approval_id == question_id
+        answer_input = resumed_app.query_one(InterruptWidget).query_one("#interrupt-input")
+        await pilot.click(answer_input)
+        for char in "JSON":
+            await pilot.press(char)
+        await pilot.press("enter")
+        for _ in range(100):
+            await pilot.pause(0.1)
+            if not resumed_app._run_active:
+                break
+
+    assert (workspace / "exporter.py").exists()
+    assert (workspace / "test_exporter.py").exists()
+    assert {path.name for path in workspace.glob("*.py")} == {"exporter.py", "test_exporter.py"}
+    focused = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "test_exporter.py"],
+        cwd=workspace,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert focused.returncode == 0, focused.stdout + focused.stderr
+    assert "1 passed" in focused.stdout
+    final_snapshot = journal.get_session_snapshot(str(session_id))
+    assert final_snapshot.runs
+    final_run = final_snapshot.runs[-1]
+    assert final_run.run_id == initial_run.run_id
+    assert final_run.status == "completed"
+    run_events = journal.events_after(run_id=initial_run.run_id)
+    assert any(event.type == "user.answer" for event in run_events)
+    assert any(event.type == "run.completed" for event in run_events)
