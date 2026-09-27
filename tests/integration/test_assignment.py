@@ -10,9 +10,11 @@ from fakes.provider import FakeProviderAdapter
 from langchain.agents.middleware import ModelResponse
 from langchain_core.messages import AIMessage
 
+from skail.agents.result_evaluator import evaluate_result
 from skail.domain.events import EventEnvelope
 from skail.domain.ids import AttemptId, RunId, SessionId, TaskId
 from skail.domain.routing import RoutingMode
+from skail.domain.tasks import TaskResult
 from skail.domain.usage import NormalizedUsage, UsageAuthority
 from skail.providers.models import CapabilityVector, ModelProfile
 from skail.routing.assignment import (
@@ -174,6 +176,147 @@ def test_assignment_retries_from_a_fresh_versioned_snapshot(tmp_path: Path) -> N
     assert not isinstance(result, RouteFailure)
     stored = journal.get_session_snapshot(str(SESSION_ID)).assignments[0]
     assert stored.payload["health_revision"] == "current"
+
+
+def test_result_validation_retry_routes_to_stronger_eligible_model(tmp_path: Path) -> None:
+    """Synthetic malformed results exercise retry routing; no live failure is implied."""
+    service, journal = _service(tmp_path)
+    first_candidate = _candidate("model-a").model_copy(
+        update={
+            "profile": _candidate("model-a").profile.model_copy(
+                update={"capability": CapabilityVector(
+                    coding=0.6, reasoning=0.6, tool_reliability=0.8, latency=0.5
+                )}
+            )
+        }
+    )
+    stronger_candidate = _candidate("model-b", cost="0.30").model_copy(
+        update={
+            "profile": _candidate("model-b").profile.model_copy(
+                update={"capability": CapabilityVector(
+                    coding=0.8, reasoning=0.8, tool_reliability=0.8, latency=0.5
+                )}
+            )
+        }
+    )
+
+    first = service.assign(_request(), lambda: _snapshot(first_candidate, stronger_candidate))
+    assert not isinstance(first, RouteFailure)
+    assert first.model == "model-a"
+    failed_result = evaluate_result(
+        TaskResult(task_id=TASK_ID, status="succeeded", summary="Synthetic invalid result"),
+        required_criteria=("complete the task",),
+    )
+    assert failed_result.status == "failed"
+    assert failed_result.failure_category == "result_validation"
+
+    second_attempt = AttemptId("77777777-7777-4777-8777-777777777777")
+    journal.create_attempt(
+        attempt_id=second_attempt,
+        task_id=TASK_ID,
+        number=2,
+        status="assigned",
+        idempotency_key="attempt-2",
+        created_at=NOW,
+    )
+    retry_request = _request().model_copy(
+        update={
+            "attempt_id": second_attempt,
+            "attempt_number": 2,
+            "requirements": RequirementBuilder().build(
+                role="implementer",
+                risk=TaskRisk.ROUTINE,
+                escalated=True,
+                failed_model=("fake", first.model),
+            ),
+        }
+    )
+    assert ("fake", first.model) in retry_request.requirements.excluded_models
+    retry = service.assign(
+        retry_request, lambda: _snapshot(first_candidate, stronger_candidate)
+    )
+
+    assert not isinstance(retry, RouteFailure)
+    assert retry.model == "model-b"
+    assert retry.capability_floor is not None and retry.capability_floor > first.capability_floor
+    assert "excluded.model_excluded=1" in retry.explanation
+    assert journal.get_session_snapshot(str(SESSION_ID)).assignments[-1].model == "model-b"
+
+
+@pytest.mark.parametrize(
+    ("enabled", "auto_eligible", "expected_exclusion"),
+    [(False, True, "model_disabled"), (True, False, "auto_ineligible")],
+)
+def test_result_validation_retry_blocks_when_no_alternative_is_auto_eligible(
+    tmp_path: Path, enabled: bool, auto_eligible: bool, expected_exclusion: str
+) -> None:
+    """Disabled/ineligible synthetic candidates block retry before model construction."""
+    service, journal = _service(tmp_path)
+    first_candidate = _candidate("model-a")
+    first = service.assign(_request(), lambda: _snapshot(first_candidate))
+    assert not isinstance(first, RouteFailure)
+    assert first.model == "model-a"
+    failed_result = evaluate_result(
+        TaskResult(task_id=TASK_ID, status="succeeded", summary="Synthetic invalid result"),
+        required_criteria=("complete the task",),
+    )
+    assert failed_result.status == "failed"
+    assert failed_result.failure_category == "result_validation"
+
+    second_attempt = AttemptId("77777777-7777-4777-8777-777777777777")
+    journal.create_attempt(
+        attempt_id=second_attempt,
+        task_id=TASK_ID,
+        number=2,
+        status="assigned",
+        idempotency_key="attempt-2",
+        created_at=NOW,
+    )
+    retry_request = _request().model_copy(
+        update={
+            "attempt_id": second_attempt,
+            "attempt_number": 2,
+            "requirements": RequirementBuilder().build(
+                role="implementer",
+                risk=TaskRisk.ROUTINE,
+                escalated=True,
+                failed_model=("fake", first.model),
+            ),
+        }
+    )
+    assert ("fake", first.model) in retry_request.requirements.excluded_models
+    alternative = _candidate("model-b").model_copy(
+        update={
+            "enabled": enabled,
+            "profile": _candidate("model-b").profile.model_copy(
+                update={
+                    "auto_eligible": auto_eligible,
+                    "capability": CapabilityVector(
+                        coding=0.8, reasoning=0.8, tool_reliability=0.8, latency=0.5
+                    ),
+                }
+            ),
+        }
+    )
+
+    constructed: list[str] = []
+
+    def construct(assignment: object) -> object:
+        constructed.append("provider model constructed")
+        return assignment
+
+    retry, model = service.assign_and_construct(
+        retry_request,
+        lambda: _snapshot(first_candidate, alternative),
+        construct,
+    )
+
+    assert isinstance(retry, RouteFailure)
+    assert model is None
+    assert constructed == []
+    assert retry.binding_constraint == expected_exclusion
+    assert retry.excluded_counts == {expected_exclusion: 1, "model_excluded": 1}
+    assert len(journal.get_session_snapshot(str(SESSION_ID)).assignments) == 1
 
 
 def test_unfundable_route_persists_nothing_and_constructs_nothing(tmp_path: Path) -> None:
