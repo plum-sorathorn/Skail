@@ -68,7 +68,7 @@ async def test_ctrl_c_quits_with_pending_question_and_fresh_tui_resumes_it(
         await pilot.press("enter")
         for _ in range(100):
             await pilot.pause(0.1)
-            if app.projection.pending_interrupt is not None and not app._run_active:
+            if app.projection.pending_interrupt is not None:
                 break
         pending = app.projection.pending_interrupt
         assert pending is not None
