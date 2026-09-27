@@ -921,3 +921,24 @@ Exact new call IDs, divided by session:
 Schema-v2 exports and detailed per-call rates/tokens are retained in
 `out/live-agentic/s6-corrected-20260927T111624Z/`. S6 remains failed; do not infer provider billing
 or claim the question-answer sequence delivered the feature.
+
+
+## 2026-09-27 S6 live retest — invalid plan; operator-contaminated fixture
+
+The schema-v2 export `out/live-agentic/s6-retest-20260927T140000Z/session-export-schema-v2.json`
+records session `12b4460d-e40d-4d4d-b753-db696e551658`, run `470f56c5-9828-48ae-a961-71d759246958`, and task `bd0a9e69-0b4f-49db-b949-3d480fa9b5e9`. The model asked the
+user which format to implement; the operator answered `JSON`. Two subsequent `execution_decision`
+attempts failed with `decision.plan_invalid` because `effect_scope` had type `invalid_type`. The
+export reports `run.completed` and a succeeded task, but it contains no model-written exporter or
+focused test. The operator later added fixture files manually; those edits are not model work and
+make the fixture contaminated. It has been preserved, not treated as a successful implementation,
+and quarantined at `out/live-agentic/s6-retest-20260927T140000Z/fixture-quarantined-operator-edits/`.
+
+The four provider-call IDs were reconciled exactly once: `6d04b6bf-29e8-46bb-9ee3-0c4ca4fe5381, 366c95e2-3d90-4679-afe9-948e3920df3a, 14eb0247-0b4d-422f-bc49-278dde4a06e4, 2493e7b0-d96b-4493-94fa-469b47e9d0a0`. Token totals are
+13,473 input / 9,856 cached input / 634 output; frozen rates are USD 0.40 / 0.10 / 1.60 per
+million input / cached-input / output, catalog revision
+`e6bfc92ec49c48710ac776faf73ddbe4a1d31725b6b08e05dff0e03d7240d6ef`. They add USD
+`0.0034468` local token-derived cost; the in-house cumulative estimate is USD `3.019357484`
+(prior USD `3.015910684`). This is not provider billing; actual provider spend remains unknown.
+There is no S6 pass: the run is a failed live outcome despite its completed lifecycle marker.
+Export SHA-256: `7e3a2d8361a7eb2b7194a613c82d1a64c5ec12baa23a201f94132e5c60e66b94`.
