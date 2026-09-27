@@ -707,7 +707,17 @@ class SkailApp(App[int]):
             except Exception:
                 pass
         self._focus_before_overlay = None
-        self._restore_composer_focus()
+        pending = getattr(getattr(self, "projection", None), "pending_interrupt", None)
+        if pending is not None and pending.kind is InterruptKind.QUESTION:
+            def focus_question_answer() -> None:
+                try:
+                    self.query_one("#interrupt-input").focus()
+                except Exception:
+                    self._restore_composer_focus()
+
+            self.call_after_refresh(focus_question_answer)
+        else:
+            self._restore_composer_focus()
 
     def _restore_composer_focus(self) -> None:
         try:

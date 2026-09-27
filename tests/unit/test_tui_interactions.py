@@ -714,6 +714,58 @@ async def test_lazy_resume_mounts_restored_question_card(
         assert app.query_one("#composer-input", ComposerTextArea).text == ""
 
 
+async def test_lazy_resume_keeps_question_card_through_model_selection(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="booted")
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+
+    def restore(controller: RunController) -> bool:
+        controller._pending_interrupt_payload = {
+            "kind": "question",
+            "question_id": "restored-question",
+            "prompt": "Choose JSON or CSV",
+            "options": ("JSON", "CSV"),
+        }
+        return True
+
+    monkeypatch.setattr(RunController, "restore_interrupted", restore)
+    runtime = _runtime_set(model)
+    object.__setattr__(runtime, "selection_required", True)
+    app = SkailApp(
+        runtime_factory=lambda: runtime,
+        bootstrap={
+            "workspace": str(tmp_path),
+            "session_id": session_id,
+            "resume_session": session_id,
+        },
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    app._enabled_models = set()
+    app.app_state = "initializing"
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        for _ in range(30):
+            await pilot.pause()
+            if isinstance(app.screen_stack[-1], ModelPickerOverlay):
+                break
+        assert isinstance(app.screen_stack[-1], ModelPickerOverlay)
+        assert app.projection.pending_interrupt is not None
+
+        await pilot.press("ctrl+space", "enter")
+        await pilot.pause()
+
+        assert app.app_state == "ready"
+        assert app.projection.pending_interrupt is not None
+        assert app.projection.pending_interrupt.kind is InterruptKind.QUESTION
+        answer_input = app.query_one(InterruptWidget).query_one("#interrupt-input", Input)
+        assert app.focused is answer_input
+
+
 @pytest.mark.asyncio
 async def test_composer_submission_during_initialization_is_replayed(tmp_path: Any) -> None:
     started = threading.Event()
@@ -954,6 +1006,22 @@ async def test_model_picker_chords_navigate_toggle_and_select_without_scrollbars
         await overlay.on_key(Key("escape", None))
         await pilot.pause()
         assert getattr(app.focused, "id", None) == "composer-input"
+
+
+async def test_model_picker_ctrl_space_from_filter_toggles_once() -> None:
+    app = SkailApp(projection=TuiProjection())
+    async with app.run_test(size=(80, 24)) as pilot:
+        model = "llmgateway:gpt-4.1"
+        overlay = ModelPickerOverlay([model], current="auto")
+        app.open_overlay("model_picker")
+        app.push_screen(overlay)
+        await pilot.pause()
+        assert getattr(app.focused, "id", None) == "model-search"
+
+        await pilot.press("ctrl+space")
+        await pilot.pause()
+
+        assert overlay.enabled == {model}
 
 
 @pytest.mark.asyncio
