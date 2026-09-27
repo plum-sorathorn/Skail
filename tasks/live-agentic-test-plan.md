@@ -135,9 +135,11 @@ conservative attempt estimate in the local stop total, not observed usage. The o
 completed `legacy_export` calls with unknown usage and no token-derived local costs in the audit;
 their treatment in the historical base is not itemized, so whether the USD 2.997053084 cumulative
 local estimate includes any cost for them is unknown. That cumulative total is not observed provider
-usage. Provider billing remains unknown. Earlier and later full-suite timing medians of 161.27s and
-109.25s have
-no established cause; they do not alone demonstrate a controlled performance improvement.
+usage. Provider billing remains unknown. The earlier 161.27s full-suite timing is an external-wall
+median; the later 109.25s timing is a pytest-reported median without an external-wall measurement.
+They are different boundaries and do not demonstrate a controlled performance improvement. A fresh
+three-run record has medians of 166.938s external wall and 163.330s pytest-reported time (1,196
+passed, 5 skipped per run); raw evidence is `out/live-agentic/timing-20260927T055212Z/`.
 
 ## Gate 1: in-house ledger and model qualification
 
@@ -641,8 +643,11 @@ quit/resume, but neither implemented the selected JSON path; the latest offline 
 been exercised live. S8 was exercised after a natural parser-test failure and did not produce an
 accepted child result or checkpoint. The final ordered offline gates passed: Ruff, mypy (126
 files), unit/contract (903 passed, 2 skipped), smoke, and full suite (1,195 passed, 5 skipped).
-The latest three-run suite median was 109.25s, but its unexplained 52.02s difference from the prior
-161.27s median keeps the speed objective open. S4/S5 retries remain gated; S7 remains passed.
+The 109.25s later suite median is pytest-reported, while the prior 161.27s median is external wall;
+the records have different metric boundaries and do not establish a speedup. A fresh three-run
+measurement has 166.938s external-wall and 163.330s pytest-reported medians. No repeatable gain or
+variance cause is established, so the 20% speed objective remains open. Raw evidence is
+`out/live-agentic/timing-20260927T055212Z/`. S4/S5 retries remain gated; S7 remains passed.
 
 ## 2026-09-27 S6 preflight outcome
 

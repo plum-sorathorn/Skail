@@ -88,13 +88,17 @@ Later behavioral repairs changed the test count. A three-run measurement on Wind
 5 skipped). Wall times were 162.76s, 146.77s, and 161.27s (median 161.27s); pytest-reported times
 were 159.22s, 143.24s, and 157.70s (median 157.70s).
 
-After the final stale-result regression was added, three further serial runs collected 1,200 cases
-each (1,195 passed, 5 skipped). Pytest-reported times were 109.25s, 109.15s, and 111.52s (median
-109.25s). This is 33.5% below the 164.17s original baseline median, but it is also 52.02s below
-the immediately preceding 161.27s median on the same platform and command, despite only one
-additional test and no suite-performance change. The timing discrepancy is unexplained, so it does
-not establish a causal or repeatable speed gain. Keep the speed objective open and investigate the
-measurement variance before treating the 20% target as met.
+After the final stale-result regression, three serial runs collected 1,200 cases each (1,195
+passed, 5 skipped); pytest-reported times were 109.25s, 109.15s, and 111.52s (median 109.25s).
+That record has no external wall measurement. The preceding three-run record was 1,199 cases
+(1,194 passed, 5 skipped), with 161.27s external-wall median and 157.70s pytest-reported median.
+These are separate metric boundaries: comparing 109.25s pytest time with 161.27s wall time does
+not establish a 33.5% speedup. Fresh three-run baseline (2026-09-27), on Windows 11 / Python
+3.14.6 with the same command, collected 1,201 tests per run (1,196 passed, 5 skipped, 5 warnings):
+external wall times were 159.466s, 173.378s, and 166.938s (median 166.938s); pytest-reported times
+were 156.010s, 169.850s, and 163.330s (median 163.330s). Neither the unexplained difference
+between timing records nor a repeatable performance gain has been established. Keep the 20% speed
+objective open; do not infer a cause. Raw logs and summary: `out/live-agentic/timing-20260927T055212Z/`.
 
 The current repeated-duration leaders are real-wheel inspection (4.90s median), the isolated
 no-credential CLI subprocess (3.88s), mounted TUI keyboard navigation (3.62s), and the parallel

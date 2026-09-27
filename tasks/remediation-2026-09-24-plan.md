@@ -177,9 +177,9 @@ so its cause remains unknown and no route/cause is inferred from S8.
 The latest offline call-ID audit lists 572 unique IDs. All audited S4 (210), S6 (3), and S8 (25)
 IDs are accounted; seven of the 142 S5 IDs are marked `missing_usage`. The cumulative in-house
 estimate is USD 2.997053084; provider billing remains unknown. These reconciliations do not alter
-the live outcomes or authorize another provider call. Recorded full-suite timing medians were
-161.27 seconds earlier and 109.25 seconds later; the reason for the difference is unknown, and it
-must not be presented as an established performance cause or comparable controlled measurement.
+the live outcomes or authorize another provider call. The earlier full-suite 161.27-second median
+is external wall; the later 109.25-second median is pytest-reported and has no wall measurement.
+They are not comparable metric boundaries and do not establish a performance cause or speedup.
 
 ### 2.3 Answer/resume and bounded loops
 
@@ -429,12 +429,15 @@ USD 8.50 stop and USD 7.002946916 to the USD 10 ceiling. S8 has USD 1.475355626 
 
 ## Final offline timing review
 
-Three additional serial runs after the final blocked-result regression collected 1,200 cases each
-(1,195 passed, 5 skipped). Pytest-reported times were 109.25s, 109.15s, and 111.52s (median
-109.25s). Although that median is 33.5% below the original 164.17s baseline, it is 52.02s below
-the prior 161.27s median on the same platform and command, with one more test and no performance
-change. The discrepancy is unexplained; no repeatable gain is claimed and the speed objective
-remains open. Both series are retained under `out/live-agentic/`.
+Three serial runs after the final blocked-result regression collected 1,200 cases each (1,195
+passed, 5 skipped); pytest-reported times were 109.25s, 109.15s, and 111.52s (median 109.25s),
+with no external-wall measurement. A fresh three-run serial measurement collected 1,201 tests each
+(1,196 passed, 5 skipped, 5 warnings): external wall 159.466s, 173.378s, and 166.938s (median
+166.938s); pytest-reported 156.010s, 169.850s, and 163.330s (median 163.330s). The earlier
+161.27s median was external wall (its pytest median was 157.70s); comparing the later 109.25s
+pytest median to the wall median was misleading. These records establish neither repeatable gain
+nor a variance cause. Keep the 20% speed objective open. Raw fresh evidence:
+`out/live-agentic/timing-20260927T055212Z/`; prior series remain under `out/live-agentic/`.
 
 The final ordered offline gates on the working tree passed: Ruff, strict mypy (126 source files),
 unit/contract (903 passed, 2 skipped), smoke, and full suite (1,195 passed, 5 skipped). The

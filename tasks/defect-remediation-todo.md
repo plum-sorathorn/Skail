@@ -103,8 +103,10 @@ remain open until matching evidence is recorded.
     before another live attempt is considered. Actual provider billing remains unknown.
     The latest audit lists 572 unique call IDs: all S4 (210), S6 (3), and S8 (25) IDs are accounted;
     seven of 142 S5 IDs are `missing_usage`. Cumulative in-house cost is USD 2.997053084, not
-    provider billing. Full-suite timing medians of 161.27s earlier and 109.25s later have no
-    established cause and are not proof of a controlled speedup.
+    provider billing. The earlier 161.27s value is an external-wall median; the later 109.25s value
+    is a pytest-reported median with no wall measurement, so they do not establish a controlled
+    speedup. A fresh three-run record is 166.938s external-wall median and 163.330s pytest median
+    (1,196 passed, 5 skipped per run); raw evidence is `out/live-agentic/timing-20260927T055212Z/`.
   - Future runs compare locally recomputed per-call costs with schema-v2 provider_calls and
     model_usage; the LLM Gateway CLI remains removed from the procedure.
 - [ ] Update `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, and `COSTS.csv` with verified outcomes.
@@ -310,14 +312,17 @@ withheld because its historical cause is unknown.
     checked. No verified README inaccuracy was found, so README remains unchanged. The public
     v0.1.0 release endpoint returned 404, consistent with the Unreleased badge. The verified
     behavior and documentation changes are committed with Conventional Commit messages.
-- [ ] 19. Re-profile and safely condense the current full offline suite. The latest three serial
-  runs collected 1,200 cases each (1,195 passed, 5 skipped), with pytest-reported times 109.25s,
-  109.15s, and 111.52s (109.25s median). This is 33.5% below the 164.17s original baseline
-  median, but 52.02s below the preceding 161.27s median on the same platform and command despite
-  one additional test and no suite-performance change. That unexplained variance prevents a
-  repeatable gain claim; keep the objective open and investigate it before closing the 20% target.
-  Preserve both series at `offline-final-e9fdf6b-s6guard-durations-{1,2,3}-python-pytest.txt`
-  and `offline-final-e9fdf6b-s6guard2-durations-{1,2,3}-python-pytest.txt`.
+- [ ] 19. Re-profile and safely condense the current full offline suite. The final stale-result
+  regression's three runs collected 1,200 cases each (1,195 passed, 5 skipped); pytest-reported
+  times were 109.25s, 109.15s, and 111.52s (median 109.25s), with no external wall measurement.
+  The preceding record's 161.27s median was external wall (its pytest median was 157.70s), so the
+  earlier comparison to 109.25s was across different metric boundaries and did not establish a
+  33.5% speedup. A fresh three-run measurement collected 1,201 tests each (1,196 passed, 5 skipped,
+  5 warnings): external wall 159.466s, 173.378s, 166.938s (median 166.938s); pytest 156.010s,
+  169.850s, 163.330s (median 163.330s). No repeatable gain or variance cause is established; leave
+  the 20% objective open. Raw evidence: `out/live-agentic/timing-20260927T055212Z/`. Preserve the
+  earlier run series at `offline-final-e9fdf6b-s6guard-durations-{1,2,3}-python-pytest.txt` and
+  `offline-final-e9fdf6b-s6guard2-durations-{1,2,3}-python-pytest.txt`.
   Final ordered gates passed: Ruff, mypy (126 files), unit/contract (903 passed, 2 skipped),
   smoke, and full suite (1,195 passed, 5 skipped); the focused stale-result regression passed 4.
 - [x] 20a. Complete the offline S4 export diagnosis and attempt-two handoff regression. The
