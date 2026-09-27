@@ -83,12 +83,25 @@ met. At that measurement, the suite had nine more passing regression cases. Pyte
 checks became faster, while the mounted TUI slice remained effectively unchanged. The remaining no-credential subprocess
 and real wheel build stay because they test isolated process and artifact boundaries.
 
-Later behavioral repairs changed the test count. The latest ordered full-suite gate after
-`7b54772` reported 1,184 passed and 5 skipped in 164.11s for one run. A fresh audit run of
-`rtk pytest -q` passed 1,189 with 5 skipped. The five-case difference has not been assigned a
-cause; the next timing pass must compare the collected cases. Neither single run is a comparable
-three-run performance median. A second measurement and safe consolidation pass remains open in
-the remediation checklist.
+Later behavioral repairs changed the test count. A three-run measurement on Windows 11 / Python
+3.14.6 used `python -m pytest -q --durations=40` and collected 1,199 cases each run (1,194 passed,
+5 skipped). Wall times were 162.76s, 146.77s, and 161.27s (median 161.27s); pytest-reported times
+were 159.22s, 143.24s, and 157.70s (median 157.70s).
+
+After the final stale-result regression was added, three further serial runs collected 1,200 cases
+each (1,195 passed, 5 skipped). Pytest-reported times were 109.25s, 109.15s, and 111.52s (median
+109.25s). This is 33.5% below the 164.17s original baseline median, but it is also 52.02s below
+the immediately preceding 161.27s median on the same platform and command, despite only one
+additional test and no suite-performance change. The timing discrepancy is unexplained, so it does
+not establish a causal or repeatable speed gain. Keep the speed objective open and investigate the
+measurement variance before treating the 20% target as met.
+
+The current repeated-duration leaders are real-wheel inspection (4.90s median), the isolated
+no-credential CLI subprocess (3.88s), mounted TUI keyboard navigation (3.62s), and the parallel
+evaluation fixture (3.13s). The wheel, subprocess, evaluation, security, and mounted-TUI tests keep
+their independent boundaries. No additional setup-sharing change was retained because it would
+remove one of those boundaries or duplicate work; this pass reports the measured result without
+claiming a performance optimization.
 
 Before optimization, unit/contract, integration, E2E, security, packaging, and mounted TUI slices
 took 108.29s, 67.43s, 37.68s, 9.97s, 8.41s, and 64.11s respectively. The direct/module help

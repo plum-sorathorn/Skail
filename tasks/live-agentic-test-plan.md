@@ -103,22 +103,31 @@ failed after bounded two-child attempts because no child `TaskResult` was accept
 checkpoint or FIFO follow-up completed. A previously omitted S4 run
 `be73b1cc-6df8-43a0-8d38-3e8d8da76bc6` added 16 completed calls at USD 0.019030400.
 S6 run `5a216e69-9126-49b0-849f-9811d5ba0a35` accepted `JSON` and then completed with a
-stale “Awaiting your selection” summary; `7b54772` blocks this offline, with a live retest
-pending. Its previously omitted third call cost USD 0.002510000. The latest complete retest
-export contains 213 calls, all uniquely audited at USD 0.354409976; cumulative local cost is
-USD 2.948814710. S5 is withheld pending diagnosis, S7 remains passed, and S8 is eligible after
-the natural S4 parser child test failure. A `cmd.exe /k` PTY in this environment reports both
-stdin and stdout as TTYs; the earlier non-TTY result describes a different launch path. No
-new paid call was made during this audit. Provider billing remains unknown.
+stale “Awaiting your selection” summary; `7b54772` blocks that wording offline. The later
+same-run retest `e12b7b3e-e2a9-402a-a0bb-8e9e34c14c96` restored the same question after
+quit/resume and accepted `JSON`, but still completed with output status `waiting_for_user`, a stale
+summary, and no workspace changes. A new failing/green regression and runtime guard now cover
+that status. A second post-fix run `b4235f5b-0c92-419b-9803-adbc4f00c8ff` restored the question,
+accepted `JSON`, and emitted `run.completed` with output status `blocked`, a stale waiting summary,
+and no changes. The completed lifecycle event is inconsistent with the nested blocked output, and
+S6 still fails. The final S6 TUI transcript view did not show a readable completion. At the S6 checkpoint, its two
+exports added six calls costing USD 0.023594000 locally; all 219 retest IDs were audited once at
+USD 0.378003976, with cumulative local cost USD 2.972408710. S6 has USD 0.584124 remaining and
+remains failed. S5 is withheld pending diagnosis; S7 remains passed. S8 has now been attempted
+under its natural-failure rule and failed at result validation/retry eligibility. Its 25 calls cost
+USD 0.024644374 locally; all 244 retest IDs are audited once at USD 0.402648350. Cumulative local
+cost is USD 2.997053084, leaving USD 5.502946916 to the USD 8.50 stop and USD 7.002946916 to the
+USD 10 ceiling. S8 has USD 1.475355626 remaining in its allocation. Provider billing remains
+unknown.
 
 ## Gate 1: in-house ledger and model qualification
 
 Continue the existing retest subledger; record a new clean fixture commit, selected model
 assignments, and frozen price snapshot before the next scenario. Preserve the historical USD
 2.594404734 campaign ledger separately; never reset or overwrite its evidence. Add each new
-charge to the current cumulative USD 2.948814710 for the best-effort USD 10 ceiling and
-normal USD 8.50 local stop. Current local headroom is USD 7.051185290 to the ceiling and USD
-5.551185290 to the normal stop. Reassign scenario allowances within that headroom.
+charge to the current cumulative USD 2.997053084 for the best-effort USD 10 ceiling and
+normal USD 8.50 local stop. Current local headroom is USD 7.002946916 to the ceiling and USD
+5.502946916 to the normal stop. Reassign scenario allowances within that headroom.
 
 Complete this gate before any paid model request:
 
@@ -481,6 +490,36 @@ a clean disposable fixture and a genuine TTY, recording both the pre-answer ques
 the post-answer result. A blocked `execution.answer_not_continued` is truthful failure handling,
 but S6 passes only when the same run creates and independently verifies the selected JSON path.
 
+2026-09-26 post-fix S6 attempt: session `80e5b2ec-5cef-4950-b19a-8570eee1b187`, run
+`e12b7b3e-e2a9-402a-a0bb-8e9e34c14c96`, task `5fb0c3bc-78a7-412d-bc1c-ce4142f1f102`,
+attempt `ddbdde96-6d59-4b7a-9355-653ed794c1be`, question
+`3805f481-9722-4e9e-aec7-9cf0c2393ed5`. The question card appeared before quit and after resume
+with the same ID. After the resume model-selection overlay closed, focus now returned to the
+question answer field; the accepted answer was `JSON`. The run nevertheless completed with
+`output.status="waiting_for_user"`, stale summary “A blocking question was asked for you to
+choose the exporter format (JSON or CSV). No changes will be made to exporter.py until you
+answer.”, and `changed_paths=[]`. Neither exporter nor focused test exists. The final TUI
+transcript overlay was empty during capture, so its result did not match the export.
+
+The schema-v2 export is `session-S6-retest-2026-09-26-final.json`. Three completed GPT-4.1 calls
+used 9,578 input, 6,272 cached input, and 217 output tokens at frozen rates 2/0.5/8 USD per
+million; local cost is USD 0.011484000. The catalog revision was
+`8f8fa434c2c7ef6d58d56bd798785740edb03f8fc58133b8116c1b8b518d5607`; all three call IDs are
+audited once and no call is unresolved. S6 remains failed live. The regression
+`test_answered_question_cannot_complete_with_a_stale_waiting_result` now includes this structured
+status and passes offline after extending the guard; a fresh live run must still implement and
+independently verify JSON in that same run.
+
+2026-09-27 second post-fix S6 retry: session `6f4f6be0-d231-42f9-8592-cd246696268f`, run
+`b4235f5b-0c92-419b-9803-adbc4f00c8ff`, task `a797be93-d2f9-4cc5-b4c2-06a60cd7f628`,
+attempt `d7163965-b952-4189-a119-6276d233e4e3`, question
+`30250faf-58c7-469b-ba0d-d7acb7d172d4`. The same card appeared after resume, answer `JSON` was
+accepted, and the run completed with output status `blocked`, summary “Blocked for user input:
+Awaiting your selection of export format (JSON or CSV). No code changes will occur until you
+choose.”, and no changed paths. No exporter or focused test was added. The in-house cost is
+USD 0.012110000 across three GPT-4.1 calls at frozen rates 2/0.5/8 per million; no calls are
+unresolved. This result is a truthful failure; S6 remains incomplete.
+
 The exported continuation tool sequence is `execution_decision`, `grep`, `ls`, four `read_file`,
 `glob`, `ls`, two `write_file`, two `ls`, `read_file`, `write_file`, two `read_file`, `write_file`,
 `read_file`, then seventeen `ls` calls. The export records names but not arguments, and the fixture
@@ -541,8 +580,15 @@ defect. Do not invent one solely to trigger escalation.
 Retest eligibility update (2026-09-26): S4 parser task `be009401-0e9f-4356-846e-5b8f7d366159`
 in run `7e949a2f-6a9b-47df-970c-94f408bb7e62` made a real implementer attempt in its declared
 worktree. The operator's focused check reported 2 passed, 1 failed at `test_parse_records_with_spaces`.
-This satisfies the natural-failure gate; S8 has not yet run. If exercised, use a fresh task for a
-baseline parser test, preserve that task ID, and allow at most its documented second attempt.
+This satisfied the natural-failure gate. The 2026-09-27 S8 run used a fresh task for
+`tests/test_parser.py::test_parse_records_ignores_blank_lines_and_splits_once`, whose baseline
+failure was independently verified. Attempt `385fab9f-0fab-468d-a48c-cf286082aaa4` failed
+`result_validation` at `$.artifacts.0.kind`; the same task's second assignment was blocked as
+`routing_ineligible` / `model_disabled` before a second provider call. The child worktree's parser
+tests passed 3/3, but its result was not accepted or integrated; the parent fixture remains unchanged.
+S8 is exercised but failed/incomplete. Its 25 calls cost USD 0.024644374 locally; USD 1.475355626
+of its USD 1.50 allocation remains. The retest ledger is USD 0.402648350 across 244 calls, and
+cumulative local cost is USD 2.997053084. Provider billing remains unknown.
 
 ## Stop conditions and completion
 
@@ -560,3 +606,13 @@ not exercised; exact models and frozen prices; per-model token counts; in-house 
 and total; unresolved calls; defects; and limitations. Do not describe this calculation as
 verified provider billing. If token accounting or DevPass access becomes uncertain, stop paid
 calls and report the live matrix as pending.
+
+## Final acceptance update — 2026-09-26
+
+The S6 live attempts used the verified interactive PTY and both restored the same question after
+quit/resume, but neither implemented the selected JSON path; the latest offline guard has not yet
+been exercised live. S8 was exercised after a natural parser-test failure and did not produce an
+accepted child result or checkpoint. The final ordered offline gates passed: Ruff, mypy (126
+files), unit/contract (903 passed, 2 skipped), smoke, and full suite (1,195 passed, 5 skipped).
+The latest three-run suite median was 109.25s, but its unexplained 52.02s difference from the prior
+161.27s median keeps the speed objective open. S4/S5 retries remain gated; S7 remains passed.

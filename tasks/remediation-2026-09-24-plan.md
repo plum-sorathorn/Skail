@@ -11,8 +11,14 @@ prior revisions).
 S1 and S3 passed their applicable retests; S2's corrected focused test passed, but its final TUI
 text was not captured. S4 remains failed after bounded live attempts: no child TaskResult was
 accepted and no checkpoint or FIFO follow-up completed. Its scope fix is verified offline, while
-direct live denial remains unobserved. S5 is withheld pending diagnosis. S6 needs a same-run live
-retest after the repair; S8 is eligible after a natural parser test failure. The 20% offline suite
+direct live denial remains unobserved. S5 is withheld pending diagnosis. Two post-fix S6 same-run
+retries accepted `JSON` but neither produced the exporter: one completed with output status
+`waiting_for_user`, and the next emitted `run.completed` with output status `blocked` and a stale
+waiting summary. The structured-status guard
+is fixed offline; S6 remains failed and further paid retries need a distinct corrective route.
+S8 was exercised after the natural parser test failure; its first child result failed validation
+and its single retry route was blocked before a provider call, leaving no accepted result. S8 remains
+incomplete. The 20% offline suite
 speed target remains unmet. See [the checklist](defect-remediation-todo.md) for individual defects.
 
 The 2026-09-26 offline S4 diagnosis found that the preserved export records the expected rejection
@@ -21,15 +27,10 @@ categories and contains no raw child output; the attempt-two handoff now include
 bug or justify another paid S4 attempt; S4 remains failed live. S5's cause remains unknown, and S5
 remains withheld with no paid retry.
 
-The latest complete retest export exposed 16 previously unlogged S4 calls (USD 0.019030400) and
-one S6 continuation call (USD 0.002510000). All 213 retest call IDs now occur once in
-`CALL_COST_AUDIT.csv`; its USD 0.354409976 sum matches exported model usage. Adding the historical
-USD 2.594404734 gives a USD 2.948814710 cumulative in-house stop total, with USD 5.551185290
-to the USD 8.50 normal stop and USD 7.051185290 to the USD 10 ceiling. Actual provider billing
-remains unknown. S6's 2026-09-26 retest attempt was blocked before launch because this agent command
-runner is not a bidirectional PTY (`stdin=True`, `stdout=False`); the earlier `cmd.exe /k`
-`True/True` result remains valid for its different PTY. No new paid run was made and cumulative
-local cost remains USD 2.948814710; provider billing is unknown.
+At the prior cost checkpoint, the complete retest export contained 213 audited calls costing
+USD 0.354409976 in-house, and cumulative local cost was USD 2.948814710. The earlier command-runner
+PTY block remains historical; a verified interactive `cmd.exe /k` route was subsequently used.
+Actual provider billing remains unknown. The 2026-09-27 retry update is recorded below.
 
 ## Evidence baseline and rules
 
@@ -317,8 +318,10 @@ valid for its different PTY. No paid call was made and cumulative local cost rem
 2.948814710; provider billing is unknown. Do not authorize a headless substitute. S4 paid retry is
 still not justified; S5 remains withheld because its historical cause is unknown.
 
-For item 18, specs/architecture/features/this plan were checked; README was intentionally not
-edited, and its audit remains not done. Item 18 stays unchecked while README audit is required.
+README, the product docs, ADRs, tasks, CI workflows, local links, and documented commands were
+audited read-only. No verified README inaccuracy was found, so README remains unchanged. The public
+v0.1.0 release endpoint returned 404, consistent with the Unreleased badge. The item 18 audit is
+complete; verified behavior and documentation changes are recorded in Conventional Commit commits.
 
 ## Documentation and delivery gate
 
@@ -329,3 +332,81 @@ Check local links and commands. Do not turn unconfirmed hypotheses into product 
 Commit coherent behavior, test-suite, and documentation changes with Conventional Commit
 messages; preserve pre-existing worktree changes. The final report separates **fixed and
 verified offline**, **confirmed live**, **still open**, and **external billing unknown**.
+
+## 2026-09-26 S6 retest after stale-summary repair
+
+The verified interactive PTY route completed S6 run `e12b7b3e-e2a9-402a-a0bb-8e9e34c14c96`
+in session `80e5b2ec-5cef-4950-b19a-8570eee1b187`. The same question
+`3805f481-9722-4e9e-aec7-9cf0c2393ed5` was restored after quit/resume; the accepted answer was
+`JSON`. The run then completed with structured output status `waiting_for_user`, a stale
+“A blocking question was asked...” summary, and no changed paths. No exporter or focused test
+exists, and the independent fixture suite remains at its four seeded failures. S6 failed live.
+
+The export `session-S6-retest-2026-09-26-final.json` contains three GPT-4.1 calls at frozen rates
+2/0.5/8 USD per million, totaling USD 0.011484000 in-house. All three call IDs are audited once;
+there are no unresolved calls. Retest subledger cost is USD 0.365893976 across 216 calls;
+cumulative local cost is USD 2.960298710, leaving USD 5.539701290 to the USD 8.50 stop and
+USD 7.039701290 to the USD 10 ceiling. S6 has used USD 0.153766 of its USD 0.75 allowance and
+has USD 0.596234 remaining. Provider billing remains unknown.
+
+A failing integration regression for the exported `waiting_for_user` result was added before the
+runtime guard change. It now blocks with `execution.answer_not_continued`; focused coverage passes.
+A fresh same-run live pass is still required. The TUI transcript overlay showed no final answer
+during this attempt; preserve the schema-v2 export as the terminal result evidence.
+
+## 2026-09-26 final offline suite profile
+
+On Windows 11 / Python 3.14.6, three serial `python -m pytest -q --durations=40` runs on the
+final behavior/test revision each collected 1,199 cases (1,194 passed, 5 skipped). Wall times were
+162.76s, 146.77s, and 161.27s (161.27s median); pytest-reported times were 159.22s, 143.24s, and
+157.70s (157.70s median). The wall median is 1.8% below the 164.17s baseline, but sample ranges
+overlap, so no causal gain is claimed. The 20% target remains unmet; no safe boundary-preserving
+setup sharing was identified. Per-run duration logs are
+`out/live-agentic/offline-final-e9fdf6b-s6guard-durations-{1,2,3}-python-pytest.txt`.
+
+## 2026-09-27 S6 retry2 outcome
+
+Fresh session `6f4f6be0-d231-42f9-8592-cd246696268f` resumed run
+`b4235f5b-0c92-419b-9803-adbc4f00c8ff`, restored question
+`30250faf-58c7-469b-ba0d-d7acb7d172d4`, and accepted `JSON`. Its `run.completed` event carried
+output status `blocked`, a stale waiting summary, and no changed paths. No exporter or test was
+written; S6 remains failed under its acceptance criteria. The schema-v2 export is
+`session-S6-retry-2026-09-26-final.json`.
+
+The three GPT-4.1 calls cost USD 0.012110000 locally. All 219 retest call IDs are now audited
+once at USD 0.378003976. Cumulative local cost is USD 2.972408710, leaving USD 5.527591290 to
+the USD 8.50 stop and USD 7.027591290 to the USD 10 ceiling. S6 has used USD 0.165876 and has
+USD 0.584124 remaining. Provider billing remains unknown.
+
+## 2026-09-27 S8 natural escalation result
+
+The existing S8 workspace `workspace-s8-2026-09-26` was clean at baseline
+`113ed8c9f69b0b6dfca596b0dc86052d3b63dc3a`; the focused parser test failed naturally with
+`NotImplementedError`. Session `58b8533a-d99b-4acd-bcc5-adcccd86a78a` ran `14913447-a527-452f-93b6-f83de65ce04b`,
+plan `520b8cda-ded1-42bb-92ab-34ff1e80b8ce`, and implementer task
+`f4dd996c-fb76-4914-8a2d-a11c42a248c7`. The first attempt failed TaskResult validation at
+`$.artifacts.0.kind`; the same task's one second assignment was blocked as
+`routing_ineligible` / `model_disabled` before provider execution. The child worktree passed its
+focused parser tests (3 passed), but its result was not accepted or integrated. The parent fixture
+remains unchanged. S8 is exercised but failed/incomplete.
+
+All 25 completed calls are priced at USD 0.024644374 in-house. The retest ledger is USD 0.402648350
+across 244 calls; cumulative local cost is USD 2.997053084, with USD 5.502946916 to the normal
+USD 8.50 stop and USD 7.002946916 to the USD 10 ceiling. S8 has USD 1.475355626 left in its USD
+1.50 allocation. Actual provider billing remains unknown.
+
+## Final offline timing review
+
+Three additional serial runs after the final blocked-result regression collected 1,200 cases each
+(1,195 passed, 5 skipped). Pytest-reported times were 109.25s, 109.15s, and 111.52s (median
+109.25s). Although that median is 33.5% below the original 164.17s baseline, it is 52.02s below
+the prior 161.27s median on the same platform and command, with one more test and no performance
+change. The discrepancy is unexplained; no repeatable gain is claimed and the speed objective
+remains open. Both series are retained under `out/live-agentic/`.
+
+The final ordered offline gates on the working tree passed: Ruff, strict mypy (126 source files),
+unit/contract (903 passed, 2 skipped), smoke, and full suite (1,195 passed, 5 skipped). The
+accepted-answer regression passed all four stale-result variants. This does not change S6's live
+status: both verified-PTY attempts failed the same-run JSON implementation criterion. S8 was
+exercised under the natural-failure rule and failed/incomplete; S4 and S5 paid retries remain
+withheld pending offline evidence.

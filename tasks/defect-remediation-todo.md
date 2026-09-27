@@ -92,9 +92,11 @@ remain open until matching evidence is recorded.
     32-call limit. Its exported tool names were inspected in order, but arguments are absent; no
     identical-call cause is assigned and the detector remains unchanged. S7 passed: Skail denied the outside write and no outside file exists
     (USD 0.010002 locally). The historical S8 campaign was not exercised because the fixture had
-    no natural concurrency defect; no failure was forced. In the current retest, an S4 parser child
-    attempt naturally failed its focused test, so the S8 eligibility gate is now met; S8 remains
-    unrun. Actual provider billing remains unknown.
+    no natural concurrency defect; no failure was forced. The current S8 attempt used the baseline
+    parser failure in a fresh task: its first child result failed validation at
+    `$.artifacts.0.kind`, and its sole retry assignment was blocked as `model_disabled`. The child
+    focused tests passed, but its result was not integrated; S8 was exercised and remains
+    incomplete. Actual provider billing remains unknown.
   - Future runs compare locally recomputed per-call costs with schema-v2 provider_calls and
     model_usage; the LLM Gateway CLI remains removed from the procedure.
 - [ ] Update `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, and `COSTS.csv` with verified outcomes.
@@ -255,7 +257,15 @@ withheld because its historical cause is unknown.
   selection...” blocked summary. The existing guard recognized only “Waiting for your answer”.
   A regression for this exact alternate prefix failed before the fix and passes after extending
   the guard. Tool-name evidence has no repeated identical-call sequence; no loop-detector change.
-  A same-run live retest remains pending.
+  A later same-run live retest in run `e12b7b3e-e2a9-402a-a0bb-8e9e34c14c96` accepted `JSON`
+  and then completed with output status `waiting_for_user`, stale “A blocking question was asked...”
+  summary, and no file changes. A third regression for the structured status failed before the
+  guard was extended and passes after it. This live run is an S6 failure; post-fix live confirmation
+  remains pending. A second post-fix run `b4235f5b-0c92-419b-9803-adbc4f00c8ff` also accepted
+  `JSON`, then emitted `run.completed` with output status `blocked`, a stale waiting summary, and
+  no changed paths. The structured summary path now has a failing/green regression and guard. S6
+  still fails because no selected-format implementation or focused test exists; do not repeat
+  without a distinct corrective route.
 - [x] 13. Recheck prior intent, ownership, queue, cancellation, question, output, and UTF-8
   fixes with focused regressions. Live-pending closures remain tied to matching live observations.
 - [x] 14. Baseline the offline suite three times, map independent mechanisms, optimize measured
@@ -266,28 +276,42 @@ withheld because its historical cause is unknown.
   record final counts and before/after timings after the package path fix.
 - [ ] 17. Refresh the disposable fixture and live plan; freeze models/prices and a new
   in-house subledger under the cumulative stop; S1–S3 are rechecked, S4 remains failed after
-  bounded plans, S6 remains eligible, S5 is withheld, S7 is unchanged, and S8 is eligible after the
-    natural parser test failure. Reconcile after every call and update all evidence.
+  bounded plans, S6 remains incomplete after two same-run post-fix attempts, S5 is withheld, S7 is
+  unchanged, and S8 has been exercised under its natural-failure rule but failed at result
+  validation/retry eligibility. S6 used USD 0.165876 of its USD 0.75 allocation, leaving
+  USD 0.584124; S8 used USD 0.024644374 of its USD 1.50 allocation. Reconcile after every call and
+  update all evidence.
 - [x] Reconcile the latest complete retest export before more paid calls. The earlier USD
   0.002510000 gap was the third S6 call. A second audit found 16 omitted S4 calls costing USD
-  0.019030400. All 213 retest call IDs are now audited once; token costs total USD 0.354409976
-  and match exported model usage. `COSTS.csv` cumulative local cost is USD 2.948814710;
-  headroom is USD 5.551185290 to the USD 8.50 normal stop and USD 7.051185290 to the USD 10
-  ceiling. Provider billing remains unknown. The two malformed zero-cost CSV placeholders were
-  corrected without removing any paid-call evidence.
+  0.019030400. At the prior checkpoint, all 213 retest call IDs were audited once for USD
+  0.354409976. Two S6 exports add six calls totaling USD 0.023594000 and S8 adds 25 calls totaling
+  USD 0.024644374; all 244 retest IDs now match `CALL_COST_AUDIT.csv` once and match exported
+  `model_usage`. `COSTS.csv` cumulative local cost is USD 2.997053084; headroom is USD 5.502946916
+  to the USD 8.50 normal stop and USD 7.002946916 to the USD 10 ceiling. Provider billing remains
+  unknown. The two malformed zero-cost CSV placeholders were corrected without removing any
+  paid-call evidence.
 - [x] Verify a bidirectional terminal path. A `cmd.exe /k` PTY in this environment reported
   Python `stdin.isatty() == True` and `stdout.isatty() == True`. The earlier `True False` result
   remains evidence for its separate shell invocation. No Skail TUI or provider call was launched
   during this verification; recheck from the isolated fixture before S6.
-- [ ] 18. Audit README, specs, ADRs, and test procedures against verified behavior; check
+- [x] 18. Audit README, specs, ADRs, and test procedures against verified behavior; check
   local links and commands; commit coherent changes with Conventional Commit messages.
   - Checked architecture, features, the plan, checklist, live plan, and local links in docs/skail,
-    docs/decisions, and tasks as part of this pass. README was intentionally not edited and its audit remains not done;
-    this item stays unchecked because the README audit is required.
-- [ ] 19. Re-profile and safely condense the current full offline suite. The only comparable
-  three-run after median is 166.71s versus the 164.17s baseline, so the faster-suite objective
-  is still open. Keep the mechanism map and independent process, wheel, evaluation, security,
-  and mounted TUI boundaries; record three comparable runs after each retained optimization.
+    docs/decisions, and tasks. The README audit was read-only; 53 local links resolve and the
+    documented CLI, lint, benchmark, eval, smoke, package, release, and uninstall commands were
+    checked. No verified README inaccuracy was found, so README remains unchanged. The public
+    v0.1.0 release endpoint returned 404, consistent with the Unreleased badge. The verified
+    behavior and documentation changes are committed with Conventional Commit messages.
+- [ ] 19. Re-profile and safely condense the current full offline suite. The latest three serial
+  runs collected 1,200 cases each (1,195 passed, 5 skipped), with pytest-reported times 109.25s,
+  109.15s, and 111.52s (109.25s median). This is 33.5% below the 164.17s original baseline
+  median, but 52.02s below the preceding 161.27s median on the same platform and command despite
+  one additional test and no suite-performance change. That unexplained variance prevents a
+  repeatable gain claim; keep the objective open and investigate it before closing the 20% target.
+  Preserve both series at `offline-final-e9fdf6b-s6guard-durations-{1,2,3}-python-pytest.txt`
+  and `offline-final-e9fdf6b-s6guard2-durations-{1,2,3}-python-pytest.txt`.
+  Final ordered gates passed: Ruff, mypy (126 files), unit/contract (903 passed, 2 skipped),
+  smoke, and full suite (1,195 passed, 5 skipped); the focused stale-result regression passed 4.
 - [x] 20a. Complete the offline S4 export diagnosis and attempt-two handoff regression. The
   2026-09-26 review of `session-S4-qwen-final.json` (run
   `9652cfc8-bd46-4195-81e8-1419efd41ef1`) records parser task
@@ -316,13 +340,17 @@ withheld because its historical cause is unknown.
   (901 passed, 2 skipped), smoke, and full suite (1,191 passed, 4 skipped, 1 deselected).
   Collection comparison reported 1,195/1,196 collected, 1 deselected. Its single full-suite gate
   took 109.38s wall / 106.58s pytest time; this does not replace the three-run median.
-- Suite speed was profiled 2026-09-26. No safe candidate was retained; objective remains open,
-  with no speed win claimed. Comparable median remains 166.71s vs baseline 164.17s. Preserve wheel,
-  subprocess, evaluation, security, and mounted TUI boundaries. Slowest test was
+- Earlier suite speed profile: no safe candidate was retained; objective remained open. Its
+  comparable median was 166.71s vs baseline 164.17s. Preserve wheel, subprocess, evaluation,
+  security, and mounted TUI boundaries. Slowest test in that revision was
   `tests/unit/test_packaging.py::test_wheel_contains_only_the_skail_runtime` (4.54s).
+- Final revision profile after the S6 recovery regressions and `waiting_for_user` guard: 1,194
+  passed, 5 skipped in each of three runs. Wall median 161.27s; pytest median 157.70s. The observed
+  medians are slightly below baseline, but sample ranges overlap and no speed gain is attributed to
+  code changes. The 20% target remains unmet; no boundary-preserving consolidation remains.
 - S6 retest was blocked before launch because the agent command runner is not a bidirectional PTY
   (`stdout.isatty() == False`). Earlier `cmd.exe /k` `True/True` result remains valid for a
   different PTY. No paid call; item 17 stays unchecked. Do not authorize a headless substitute.
 - S4 paid retry remains unjustified; S5 remains withheld. Item 9 stays unchecked.
-- Item 18 remains unchecked: specs/architecture/features/plan were checked and README was
-  intentionally not edited; README audit remains not done.
+- Item 18 README/documentation audit is complete. README was checked read-only with no verified
+  inaccuracy; local links and documented commands were verified.
