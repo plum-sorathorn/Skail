@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -113,6 +115,15 @@ async def test_answered_question_writes_only_selected_json_exporter_and_focused_
     assert (tmp_path / "test_exporter.py").read_text(encoding="utf-8") == focused_test
     assert {path.name for path in tmp_path.glob("*.py")} == {"exporter.py", "test_exporter.py"}
     assert not tuple(tmp_path.glob("*.csv"))
+    focused = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "test_exporter.py"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert focused.returncode == 0, focused.stdout + focused.stderr
+    assert "1 passed" in focused.stdout
     events = journal.events_after(run_id=str(result.run_id))
     assert any(event.type == "user.question" for event in events)
     assert any(event.type == "user.answer" for event in events)

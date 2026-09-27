@@ -21,6 +21,12 @@ and its single retry route was blocked before a provider call, leaving no accept
 incomplete. The 20% offline suite
 speed target remains unmet. See [the checklist](defect-remediation-todo.md) for individual defects.
 
+Offline S4 scope evidence (2026-09-27): an integration test now exercises the planned resource scope
+through request construction, task validation, and the assembled child agent's actual filesystem
+tool. Its scripted out-of-scope write is denied and leaves no outside file. The focused test passed;
+this confirms the exercised offline boundary and adds no source fix. It is not direct live child
+denial evidence; that retest remains unobserved.
+
 The 2026-09-26 offline S4 diagnosis found that the preserved export records the expected rejection
 categories and contains no raw child output; the attempt-two handoff now includes a safe
 `validation_path`, and its focused regression passes. This does not establish a runtime acceptance
@@ -148,6 +154,32 @@ checkpoint, disjoint scopes, and FIFO follow-up).
 `failure_category`, no `validation_path`, and no raw child result. The cause remains unknown. The new
 handoff change does not reconstruct or fix the historical S5 failure. S5 stays withheld; no paid
 S5 retry.
+
+#### Offline S8 and result-acceptance follow-up
+
+The current S8 export records a child `result_validation` failure at
+`$.artifacts.0.kind`; its one retry assignment ended `model_disabled` before a provider call. The
+natural parser test failure was not induced. This does not establish that a schema-valid result was
+rejected, nor that the natural-escalation transition is defective: offline `TaskResult` contract
+coverage accepts artifact `kind`, while routing intentionally blocks a disabled model. No specific
+offline regression reproduces an acceptance or escalation defect, so no runtime/schema change is
+justified. Keep S8 incomplete and do not weaken result validation. For any later offline
+investigation, separately verify the exact model exclusion and eligible-candidate set rather than
+equating `model_disabled` with a broken retry.
+
+The separate S4 export observations remain: one child failed validation at
+`$.artifacts.0.kind`, another was `malformed_result` at `$`, and neither includes raw output or a
+schema-valid result dropped by the runtime. This is not evidence of a valid-result acceptance bug;
+do not change the schema or infer the model's malformed content. The existing artifact-kind
+contract tests cover valid `TaskResult` construction. S5 still has no raw result, category, or path,
+so its cause remains unknown and no route/cause is inferred from S8.
+
+The latest offline call-ID audit lists 572 unique IDs. All audited S4 (210), S6 (3), and S8 (25)
+IDs are accounted; seven of the 142 S5 IDs are marked `missing_usage`. The cumulative in-house
+estimate is USD 2.997053084; provider billing remains unknown. These reconciliations do not alter
+the live outcomes or authorize another provider call. Recorded full-suite timing medians were
+161.27 seconds earlier and 109.25 seconds later; the reason for the difference is unknown, and it
+must not be presented as an established performance cause or comparable controlled measurement.
 
 ### 2.3 Answer/resume and bounded loops
 

@@ -7,8 +7,8 @@ from decimal import Decimal
 
 import pytest
 from fakes.barriers import AsyncStartBarrier
-from fakes.models import ScriptedChatModel, parallel_tool_call_message
-from langchain_core.messages import AIMessage
+from fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_call_message
+from langchain_core.messages import AIMessage, ToolMessage
 
 from skail.agents.profiles import builtin_profiles
 from skail.agents.task_graph import (
@@ -36,6 +36,7 @@ from skail.runtime.leases import WorkspaceLeaseManager
 from skail.runtime.run_controller import _task_request_for_plan_node
 from skail.runtime.scheduler import ChildScheduler
 from skail.runtime.task_validation import TaskValidationError, TaskValidator
+from skail.tools.assembly import build_default_agent
 from skail.tools.backend import PolicyFilesystemBackend
 
 
@@ -148,6 +149,57 @@ def test_plan_node_resource_scopes_confine_child_filesystem_writes(tmp_path) -> 
 
     assert allowed.error is None
     assert denied.error == "write is outside the delegated task scope"
+    assert not (tmp_path / "src/live_fixture/report_test.py").exists()
+
+
+@pytest.mark.asyncio
+async def test_assembled_child_agent_denies_write_outside_planned_resource_scope(tmp_path) -> None:
+    node = PlanNode(
+        local_id="report",
+        kind=PlanNodeKind.AGENT,
+        objective="Implement the report module",
+        effect_scope=EffectScope.WORKSPACE_WRITE,
+        resource_scopes=("src/live_fixture/report.py",),
+        task_features={"profile": "implementer"},
+    )
+    request = _task_request_for_plan_node(node)
+    spec = TaskValidator(
+        profiles=builtin_profiles(),
+        workspace_root=tmp_path,
+        max_depth=1,
+        background_enabled=False,
+    ).create_spec(
+        request,
+        run_id=new_run_id(),
+        parent_task_id=None,
+        parent_depth=0,
+        workspace_revision="git:abc",
+    )
+    model = ScriptedChatModel(responses=[
+        tool_call_message(
+            "write_file",
+            {"file_path": "src/live_fixture/report_test.py", "content": "outside scope"},
+            call_id="out-of-scope-write",
+        ),
+        AIMessage(content="write attempted"),
+    ])
+    child = build_default_agent(
+        model,
+        workspace=tmp_path,
+        profile="implementer",
+        task_id=str(spec.task_id),
+        allowed_write_paths=spec.permission_set.allowed_paths,
+        state_dir=tmp_path / ".state",
+    )
+
+    result = await child.ainvoke(
+        {"messages": [{"role": "user", "content": "Write the report test file."}]}
+    )
+    tool_result = next(
+        message for message in result["messages"] if isinstance(message, ToolMessage)
+    )
+
+    assert "write is outside the delegated task scope" in str(tool_result.content)
     assert not (tmp_path / "src/live_fixture/report_test.py").exists()
 
 

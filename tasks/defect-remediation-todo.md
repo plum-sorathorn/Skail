@@ -94,9 +94,17 @@ remain open until matching evidence is recorded.
     (USD 0.010002 locally). The historical S8 campaign was not exercised because the fixture had
     no natural concurrency defect; no failure was forced. The current S8 attempt used the baseline
     parser failure in a fresh task: its first child result failed validation at
-    `$.artifacts.0.kind`, and its sole retry assignment was blocked as `model_disabled`. The child
-    focused tests passed, but its result was not integrated; S8 was exercised and remains
-    incomplete. Actual provider billing remains unknown.
+    `$.artifacts.0.kind`, and its sole retry assignment was blocked as `model_disabled` before a
+    provider call. Child focused tests passed, but no accepted result was integrated. Offline review
+    found no demonstrated valid-result acceptance or retry defect: contract tests accept artifact
+    `kind`, and no regression establishes a schema-valid result was dropped. Do not loosen the
+    schema or claim the retry guard failed. S8 remains incomplete; any future investigation must
+    establish why the assigned model was disabled and whether an eligible alternative existed
+    before another live attempt is considered. Actual provider billing remains unknown.
+    The latest audit lists 572 unique call IDs: all S4 (210), S6 (3), and S8 (25) IDs are accounted;
+    seven of 142 S5 IDs are `missing_usage`. Cumulative in-house cost is USD 2.997053084, not
+    provider billing. Full-suite timing medians of 161.27s earlier and 109.25s later have no
+    established cause and are not proof of a controlled speedup.
   - Future runs compare locally recomputed per-call costs with schema-v2 provider_calls and
     model_usage; the LLM Gateway CLI remains removed from the procedure.
 - [ ] Update `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, and `COSTS.csv` with verified outcomes.
@@ -354,3 +362,6 @@ withheld because its historical cause is unknown.
 - S4 paid retry remains unjustified; S5 remains withheld. Item 9 stays unchecked.
 - Item 18 README/documentation audit is complete. README was checked read-only with no verified
   inaccuracy; local links and documented commands were verified.
+
+
+Offline child-scope integration evidence (2026-09-27): `tests/integration/test_task_graph.py::test_assembled_child_agent_denies_write_outside_planned_resource_scope` passes through planned resource-scope propagation, task validation, and the assembled filesystem tool. The out-of-scope write is denied and no outside file is created. This is newly exercised offline coverage, not a source fix or direct live child-scope denial; the latter remains unobserved.

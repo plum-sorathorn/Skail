@@ -120,6 +120,25 @@ cost is USD 2.997053084, leaving USD 5.502946916 to the USD 8.50 stop and USD 7.
 USD 10 ceiling. S8 has USD 1.475355626 remaining in its allocation. Provider billing remains
 unknown.
 
+Offline follow-up does not change that status: the S8 child failed result validation at
+`$.artifacts.0.kind`, and the sole retry was blocked as `model_disabled` before a provider call.
+This proves neither rejection of a valid `TaskResult` nor a broken natural-escalation transition.
+The offline TaskResult contract accepts artifact `kind`; no specific offline defect was reproduced.
+Keep result validation unchanged and S8 incomplete. S4 separately has one validation failure at
+`$.artifacts.0.kind` and one `malformed_result` at `$`, with no raw child output or valid result
+shown as rejected. S5's cause remains unknown; do not infer a shared cause from these observations.
+
+The latest call-ID audit has 572 unique IDs. S4's 210, S6's 3, and S8's 25 IDs are accounted;
+7 of S5's 142 IDs are marked `missing_usage`. In `CALL_COST_AUDIT.csv`, one ambiguous
+`current_campaign` call is marked `missing_usage`; `COSTS.csv` records USD 0.177912 for it as a
+conservative attempt estimate in the local stop total, not observed usage. The other six are
+completed `legacy_export` calls with unknown usage and no token-derived local costs in the audit;
+their treatment in the historical base is not itemized, so whether the USD 2.997053084 cumulative
+local estimate includes any cost for them is unknown. That cumulative total is not observed provider
+usage. Provider billing remains unknown. Earlier and later full-suite timing medians of 161.27s and
+109.25s have
+no established cause; they do not alone demonstrate a controlled performance improvement.
+
 ## Gate 1: in-house ledger and model qualification
 
 Continue the existing retest subledger; record a new clean fixture commit, selected model
@@ -557,6 +576,14 @@ changed paths; `out/live-agentic/outside-skail-live-test.txt` does not exist. Th
 used 8,225 input, 202 output, and 5,376 cached tokens; local cost USD 0.010002 at refreshed rates
 2/8/0.5 per million. S7 passed; provider billing remains unknown.
 
+Offline child-scope coverage: `tests/integration/test_task_graph.py::test_assembled_child_agent_denies_write_outside_planned_resource_scope`
+passes using a planned `PlanNode` resource scope propagated through `_task_request_for_plan_node`
+and `TaskValidator` into an assembled child agent's real filesystem tool, with a scripted model and
+temporary workspace. The tool returns the delegated-scope denial and the outside file is absent.
+This adds coverage; it did not expose a defect or change the boundary implementation. The S7 live
+probe above exercised the lead's workspace traversal boundary, not a live child with a planned
+resource scope. Direct live confirmation of that child-scope denial remains unobserved.
+
 ### S8 — Natural escalation only
 
 Run only if sufficient in-house ledger headroom remains. Prompt:
@@ -616,3 +643,66 @@ accepted child result or checkpoint. The final ordered offline gates passed: Ruf
 files), unit/contract (903 passed, 2 skipped), smoke, and full suite (1,195 passed, 5 skipped).
 The latest three-run suite median was 109.25s, but its unexplained 52.02s difference from the prior
 161.27s median keeps the speed objective open. S4/S5 retries remain gated; S7 remains passed.
+
+## 2026-09-27 S6 preflight outcome
+
+This S6 preflight was **blocked before fixture creation and did not make a provider model call**.
+That statement applies only to this preflight, not to earlier S6 attempts, which include audited
+provider calls. The separate manual print-mode probe may have made a provider call; its call and
+cost status remains unresolved, so this evidence does not establish zero spend across all
+preflight activity. The existing
+metadata-only snapshot `out/live-agentic/catalog-preflight-block-20260927.md` records catalog
+revision `bdcb3838a4ca0166ba0170b73bbfc430634712edcf701f15925f1cc763883380`, exact
+`llmgateway:gpt-4.1-mini` rates of USD 0.40 / 0.10 cached / 1.60 per million tokens, and no
+trusted capability evidence for auto-eligibility. Its metadata does not establish route health.
+The manual-pin exception therefore could not be used safely: health was not verified. A fresh
+local `skail models list` check showed a cached catalog age of about 26 minutes and zero catalog
+models, so it did not refresh or establish current health. It lists the configured provider alias
+but supplies no enabled/healthy route evidence. `skail --help` confirmed `--lead-model`,
+`--budget`, and `--resume` syntax; this is CLI syntax validation, not a TUI launch.
+
+The current Python environment reported `pywinpty` unavailable. No PTY launch was attempted,
+and actual `stdin.isatty()` / `stdout.isatty()` were not verified. No isolated installation was
+performed because the unverified route-health gate independently prohibited a paid attempt. No
+fixture or session was created, no baseline test was run, and no paid calls were started; S6's
+authorized USD 0.584124 scenario allocation remains untouched. This attempt produced no new call
+IDs to reconcile. Do not interpret metadata discovery, a manually selected model, or the prior
+successful PTY probe in another environment as current route health or current PTY qualification.
+Re-run the health and true/true PTY preflights before considering another S6 attempt.
+
+2026-09-27 isolated single-process S6 preflight retry: blocked before fixture creation and made no
+provider model call in that isolated retry. The persistent ignored run directory is
+`out/live-agentic/new-s6-20260927T045748Z`; its `preflight.log` records commands and results. Setup
+used `python -m pip install --disable-pip-version-check --target <isolated-target> .[openai-compatible] pywinpty`
+with HOME/USERPROFILE and pip cache directed into this run directory. The first install was terminated
+by the shell at 120 seconds while installing collected packages; retrying the same command with
+`--quiet` and an 8-minute timeout exited 0. It installed the harness, its provider extra, and pywinpty
+without a global installation. The local environment's pre-existing pip warning mentioned unrelated
+installed-package conflicts; installation itself completed successfully.
+
+`python -m skail.cli.main --help` exited 0 and confirmed `--lead-model`, `--budget`, and `--resume`.
+`python -m skail.cli.main auth status` exited 0 and reported `LLMGATEWAY_API_KEY: CONFIGURED` without
+printing a value. `python -m skail.cli.main models refresh` exited 1 with the exact error
+`Model catalog refresh requires an llmgateway provider.` The subsequent
+`python -m skail.cli.main models list` exited 0 but showed `No models selected` and
+`LLMGateway catalog: unavailable`. The isolated HOME had no Skail provider configuration; the
+credential environment being present does not constitute the required Skail `llmgateway` provider
+configuration (`api_key_env`) or model enablement. Therefore the required Skail catalog refresh,
+manual pin, enabled/healthy selector validation, and actual candidate qualification were not met.
+The existing metadata-only catalog snapshot is not a substitute. No model call was made to test
+route health, because the candidate was not otherwise eligible. No fixture was created, baseline
+pytest was not run, no PTY was spawned or verified, and no Skail TUI launch occurred. Do not infer a
+PTY failure: actual stdin/stdout `isatty()` remains unverified in this attempt.
+
+Exact setup mishaps were also recorded: two PowerShell setup attempts failed before pip was invoked
+because `$HOME` is a read-only automatic variable (including a local `$home` name collision); the
+successful attempt used `$homePath`. A probe for `target/Scripts/skail.exe --help` failed because no
+such launcher executable was present at that path; using `python -m skail.cli.main --help` then
+succeeded. These setup mishaps did not change tracked files or themselves invoke a provider. The
+isolated CLI preflight has no recorded call IDs, but the separate manual print-mode probe's call and
+cost status remains unresolved; do not infer zero spend for all preflight activity. This isolated
+retry adds no confirmed call IDs or priced usage; cumulative local ledger remains the previously
+documented USD 2.997053084, with USD 0.584124 remaining in S6's allocation. Provider billing
+remains unknown. Next action requires
+proper `llmgateway` configuration inside the isolated HOME, then rerun refresh and validate the
+manually pinned model against Skail's selector before proceeding.
