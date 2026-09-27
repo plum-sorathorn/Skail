@@ -141,6 +141,72 @@ They are different boundaries and do not demonstrate a controlled performance im
 three-run record has medians of 166.938s external wall and 163.330s pytest-reported time (1,196
 passed, 5 skipped per run); raw evidence is `out/live-agentic/timing-20260927T055212Z/`.
 
+## S6 launch remediation outcome (2026-09-27)
+
+Fixed the launcher only: `pty_preflight.py` and `session.py` call pywinpty with an argv list,
+the fixture as `cwd`, and an isolated HOME; no shell command string is used as the executable.
+The actual Python child reported stdin/stdout TTY as `True True` in the same invocation shape;
+`--help` succeeded and import origin resolved to the current checkout's `src/skail/__init__.py`.
+Offline evidence is `out/live-agentic/s6-launch-20260927T060000Z/pty-help.txt`.
+
+The catalog was already fresh and priced when inspected, but every discovered model was
+`manual-only`, including `gpt-4.1-mini`; selecting that lead model put the TUI in the model
+selection overlay before it accepted the task, and no task was sent. After waiting the full
+five minutes, there was no question card and no provider call. No answer was sent, no exporter
+file was created, and there is no usage to book from this attempt. The attempted session id is
+`208fe2f8-06b7-4f1d-a42c-e6b7cae2849e`; its schema-v2 export has zero provider calls.
+The current launcher failure is therefore resolved; S6 did not run and remains incomplete.
+Evidence and the session export are under `out/live-agentic/s6-launch-20260927T060000Z/`.
+
+### Follow-up preparation (2026-09-27)
+
+A separate disposable clone was created at
+`out/live-agentic/s6-launch-20260927T060000Z/fixture-retick` from baseline
+`113ed8c9f69b0b6dfca596b0dc86052d3b63dc3a`. Its initial Git status was clean at detached `HEAD`.
+Independent `python -m pytest -q` reported four expected seeded-fixture failures in normalization,
+parser, report, and integration; the test run completed in 0.11s. The TODOs remain untouched. This is
+fixture qualification, not an S6 model run. The picker was not driven, selection/overlay closure was
+not confirmed, no prompt was sent, no provider call was started, and no session export or new call
+cost was produced. S6 remains incomplete; do not infer a picker defect from this preparation-only
+result.
+
+### Post-fix S6 retest preflight outcome (2026-09-27)
+
+Created a new fixture clone at
+`out/live-agentic/s6-postfix-20260927T092542Z/fixture` from baseline
+`113ed8c9f69b0b6dfca596b0dc86052d3b63dc3a`; its recorded starting status is clean at detached
+HEAD. Independent `python -m pytest -q` reproduced the four expected seeded failures in
+normalization, parser, report, and integration. Existing fixtures and prior evidence were not
+modified. The isolated state root is
+`out/live-agentic/s6-postfix-20260927T092542Z/isolated-home`.
+
+This did not pass the paid-run preflight. The first catalog listing had no discovered models; a
+later listing using the isolated provider configuration reported the LLMGateway catalog unavailable.
+The manually supplied `gpt-4.1-mini` rates ($0.40/$0.10/$1.60 per million input/cached-input/output
+tokens) therefore were not verified against a current Skail catalog snapshot. Do not treat this
+model as qualified for this attempt. The documented `skail --approve-project` trust approval was
+not completed. No TUI session or run was launched and the exact S6 prompt was not submitted; there
+is no same-run `ask_user` question, resume, answer, exporter, session export, or focused post-run test.
+No task inference call ID or usage was collected, so no new inference cost is booked; catalog refresh
+attempts and any associated provider-side charges were not reconciled and must not be represented as
+verified zero provider spend. Stop here rather than retrying blindly. S6 remains incomplete, with no
+pass claim. Preflight command output and fixture baseline test output are retained under
+`out/live-agentic/s6-postfix-20260927T092542Z/`.
+
+The subsequent interactive launch used the prepared trusted fixture, isolated HOME, and exact
+`python -m skail.cli.main --mode manual --lead-model llmgateway:gpt-4.1-mini --budget 0.50`
+arguments. The process was started with pywinpty and the fixture as its working directory, but the
+driver called `PtyProcess.read(timeout=...)`, an unsupported API; it captured only repeated Python
+`TypeError` messages and never read the TUI screen or submitted the requested prompt. The five-minute
+wait therefore produced no evidence of composer focus, `run.started`, provider activity, or an
+`ask_user` card; no answer was sent. No session/journal or schema-v2 export was produced, and the
+fixture has no exporter changes (only Python `__pycache__` artifacts from the baseline test). This is
+a PTY-driver failure, not evidence of an S6 behavior result. No new Skail task/provider call IDs or
+usage are available to reconcile; do not claim verified zero provider billing. No implementation or
+focused post-run test was performed. Evidence is retained in
+`out/live-agentic/s6-postfix-20260927T092542Z/`; correct the PTY reader and capture a usable live
+transcript before scheduling another attempt. S6 remains incomplete.
+
 ## Gate 1: in-house ledger and model qualification
 
 Continue the existing retest subledger; record a new clean fixture commit, selected model
@@ -720,13 +786,59 @@ considering a new paid attempt.
 
 ## 2026-09-27 user-reported provider usage — attribution pending
 
-The user reports one detected GPT-4.1-mini usage costing USD 0.0018 at approximately 01:00 EDT;
-the date is not stated. If it was 2026-09-27, that is approximately 05:00 UTC, outside the
-05:06–05:15 UTC unresolved window if exact. This is provider-reported observation only—not
-in-house token-derived cost. There is no call ID, token usage, exact timestamp, or verified match
-to the manual print-mode probe. It does not close the probe reconciliation or clear the paid-work
-gate. Keep the previously stated USD 2.997053084 local cumulative total unchanged; do not add a
-speculative local token-cost or call-audit entry. The user-reported USD 0.0018 is captured only as
-an unattributed provider-side observation in `COSTS.csv`, not as a verified billing delta or local
-charge. Paid work remains held pending attribution plus usage evidence or a conservative attempt
-estimate before further paid work.
+The user reports GPT-4.1-mini usage costing USD 0.0018 during 2026-09-27 01:00–01:59 EDT
+(05:00–05:59 UTC), and reports no other models used during that hour. This is a provider-side
+observation, not in-house token-derived cost. The report does not establish whether USD 0.0018 is
+the total GPT-4.1-mini cost for the hour or the cost of one or more observed entries; the absence
+of other models does not establish a single GPT-4.1-mini request. No call ID, per-request token
+usage, or verified match to the manual print-mode probe is available here. The hour overlaps the
+previously unresolved 05:06–05:15 UTC window, so the report alone does not close that
+reconciliation or clear the paid-work gate. Keep the previously stated USD 2.997053084 local
+cumulative total unchanged; do not add USD 0.0018 as local token-derived cost or invent a call
+audit entry. Record the reported amount only as an unattributed provider observation in
+`COSTS.csv`. Before any further paid call, settle ambiguous preflight activity with a verified
+finite conservative bound against the applicable in-house budget; if no such bound is verified,
+keep paid work held. This does not require unavailable perfect provider records when a verified
+finite conservative settlement is available.
+
+
+## 2026-09-27 resumed S6 live outcome
+
+A bounded new run was made from the clean `113ed8c9f69b0b6dfca596b0dc86052d3b63dc3a` fixture in an isolated HOME after a successful fresh Skail catalog refresh and trusted pricing/capability check. The actual child Skail invocation ran through pywinpty with both TTY streams verified true. The operator selected the manually pinned `llmgateway:gpt-4.1-mini` in the catalog picker and entered the documented ask-before-write JSON-or-CSV prompt. The transcript did not show a question card or provider response; the operator quit without submitting an answer. The same session resume, again in a true TTY, returned `checkpoint_unavailable: session has no checkpoint`. Schema-v2 export `out/live-agentic/new-s6-20260927T045748Z/session-S6-retest-2026-09-27.json` confirms run `1ecce2ef-1579-4152-bf87-663f7d270215` cancelled, attempt interrupted, zero provider calls and zero usage; assignment reservation `$0.044818` was released and is not charged as a model call. No exporter was written and no selected-format test could be run. S6 remains failed/incomplete. Evidence and operator transcripts are preserved beside the export; `COSTS.csv` records the zero-call attempt.
+
+This authorization explicitly waives holding solely because the old print-mode attribution/bound is unknown. Keep that historical call unknown; do not assign it to this session. The reported provider-hour GPT-4.1-mini `$0.0018` remains a separate user-reported, unattributed provider observation and is not added to the nominal in-house token ledger. This zero-call outcome adds `$0` token-derived local cost to the prior nominal `$2.997053084`; actual provider billing remains unknown. The `$0.50` setting was an in-house run budget, not a provider hard cap.
+
+### S6 TUI input attempt (2026-09-27)
+
+A fresh detached disposable clone at `out/live-agentic/s6-live-20260927-043027` uses baseline
+`113ed8c9f69b0b6dfca596b0dc86052d3b63dc3a`. The TUI was launched from that fixture using the
+current checkout's `src` import, isolated fixture-local HOME, and `--mode manual --budget 0.50`.
+The model-selection overlay rendered, but PTY input did not establish that `gpt-4.1-mini` was
+ticked/selected or that the overlay closed. Composer focus was not verified. The prescribed prompt
+was not typed or submitted; no `run.started`, session ID, question card, or provider inference call
+was observed. No answer, export, or exporter change resulted. This is an input/focus failure before
+the live S6 scenario, not a scenario pass or a provider failure. Estimated inference cost is USD
+0.00 from zero observed provider calls; provider billing is not independently asserted. Sanitized
+evidence is `out/live-agentic/s6-live-20260927-043027/s6-ui-input-failure.txt`. Preserve this
+attempt and existing campaign records; S6 remains incomplete.
+
+
+### Post-fix S6 live run outcome — 2026-09-27
+
+The isolated journal at `out/live-agentic/s6-postfix-20260927T092542Z/isolated-home/.skail/journal.sqlite`
+contains session `806bfd14-2a17-4663-ad06-6ee5c130dda9` and nine new provider calls. Run
+`14895c1f-df8a-49ce-8899-bc129ccbe2d5` raised/resumed the internal `ask_user` question, but the
+operator submitted `/quit` as the answer value; that same run terminated. This does not establish
+that `/quit` works as a command. The separate run `1f4c556a-b69e-42df-be10-e2d90940dfea` was
+blocked by `result_validation` at `$.status`. S6 failed; the question UI worked internally, while
+command handling and valid-result acceptance were not demonstrated.
+
+A schema-v2 export was created read-only via `skail sessions export` at
+`out/live-agentic/s6-postfix-20260927T092542Z/session-806bfd14-2a17-4663-ad06-6ee5c130dda9.json`
+(9 provider calls; no model calls). The nine IDs have been appended once to the ignored central
+`CALL_COST_AUDIT.csv`, with usage counts and frozen rates from the journal, and summarized in the
+appended `COSTS.csv` and `RUN_LOG.md` rows. At USD 0.40/0.10/1.60 per million input/cached-input/output, they add USD 0.006708000 to
+the prior USD 2.997053084 local estimate, for USD 3.003761084 cumulative local estimate, excluding
+historical unknown costs. S6's nominal remaining allocation is USD 0.577416 (previously USD
+0.584124). A separate historical hourly USD 0.0018 figure is not a token-derived amount or provider
+billing. Actual provider billing remains unknown. Prior captures and fixture/worktrees were preserved.
