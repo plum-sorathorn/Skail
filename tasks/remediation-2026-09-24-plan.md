@@ -1,5 +1,27 @@
 # Defect remediation, offline suite, and live validation plan
 
+## Current acceptance status (2026-09-27; reconciled)
+
+| Scenario | Current status | Acceptance evidence / remaining gap |
+|---|---|---|
+| S1 | Passed for the earlier live read-only answer | The historical export did not retain the final message; do not claim a current TUI/export presentation match. |
+| S2 | Implementation/focused check passed; presentation open | Operator focused test passed 4/4. Final TUI/export answer comparison was not captured. |
+| S3 | Read-only checks passed; presentation open | Requested model routing was observed; final rendered TUI/export text comparison was not captured. |
+| S4 | Failed/incomplete live | No accepted child result, checkpoint, or FIFO follow-up. Offline planned child-scope denial passes; direct live child denial remains unobserved. |
+| S5 | Withheld | Historical explorer failure cause remains unknown; no accepted discoveries/checkpoint/revision. |
+| S6 | Failed live | `out/live-agentic/s6-retest-20260927T140000Z/session-export-schema-v2.json` has `run.completed`/succeeded task despite two `decision.plan_invalid` errors (`effect_scope: invalid_type`); no model-written exporter or focused test. The operator-edited fixture is quarantined. This is an S6 acceptance false-positive, not evidence by itself of a global lifecycle-contract defect. Offline enum/type diagnostics and the mounted Ctrl+C/resume test are not live acceptance. |
+| S7 | Passed for lead workspace traversal denial | The lead's outside write was denied. Offline child-scope test passes, but live child-scope denial was not exercised. |
+| S8 | Exercised; failed/incomplete | Natural first attempt failed result validation; sole retry was ineligible (`model_disabled`) before provider execution. Synthetic offline eligibility tests do not establish live eligibility or close S8. |
+
+The ordered offline gates passed on the current code tree (`e9779f6`; documentation-only edits were
+present): Ruff, strict mypy (126 files), unit/contract **916 passed, 2 skipped**, smoke, and full
+suite **1,213 passed, 5 skipped**. These gates are not a release verification. A separate
+clean-HEAD timing record on `0d916ab` reports a **201.816 s external-wall median** (three runs);
+the 20% wall-time target remains open, and this timing is not measured on the current HEAD. The
+local in-house token-derived campaign total is **USD 3.019357484**, excluding historical unknown
+costs and unattributed provider observations; it is not provider billing. Preserve ignored evidence
+and dated entries unchanged.
+
 Status as of 2026-09-26: verified handoff change `e7f2ba535cc6d62271c13db2914c385e332176af`
 adds allowlisted `failure_category` and schema-shaped `validation_path` to attempt-two failure
 handoff when recorded; raw child output is not copied. Its offline gates passed: Ruff, mypy,

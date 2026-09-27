@@ -1,5 +1,26 @@
 # Defect Remediation Checklist
 
+## Current acceptance reconciliation (2026-09-27)
+
+The matrix in the [remediation plan](remediation-2026-09-24-plan.md) is authoritative for current
+S1-S8 acceptance. In brief: S1 passed its historical live read-only criterion; S2's focused
+implementation test passed 4/4 but final presentation was not captured; S3 read-only routing passed
+but final presentation was not captured; S4 failed live (no accepted child result/checkpoint/FIFO,
+and live child-scope denial unobserved); S5 is withheld with cause unknown; S6 failed live despite
+`run.completed`/succeeded markers (invalid decisions, no model-written exporter/test, operator-edited
+fixture quarantined); S7 passed lead traversal denial only; and S8 was exercised but failed result
+acceptance with its only retry ineligible. Offline child-scope and synthetic S8 eligibility coverage
+do not substitute for those live criteria. The mounted offline Ctrl+C/question-resume test and
+enum/type diagnostics are offline evidence, not live closure or a general lifecycle-contract claim.
+
+Ordered offline gates passed on the current code tree (`e9779f6`; documentation-only edits were
+present): Ruff, strict mypy (126 files), unit/contract **916 passed, 2 skipped**, smoke, and full
+suite **1,213 passed, 5 skipped**. These are not release verification. Separate clean-HEAD timing
+evidence from `0d916ab` has a **201.816 s external-wall median**; it is not a measurement of current
+HEAD, and the 20% speed target remains open. The token-derived local campaign total is
+**USD 3.019357484**, excluding historical unknowns and unattributed provider observations; provider
+billing remains unknown. Preserve ignored run evidence without duplicating already-recorded events.
+
 Current sequence and acceptance checks: [2026-09-24 remediation plan](remediation-2026-09-24-plan.md).
 The completed items below are historical offline milestones; unchecked live confirmations
 remain open until matching evidence is recorded.

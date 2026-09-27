@@ -1,5 +1,38 @@
 # Live Agentic Test Plan: Skail Interactive Validation
 
+## Current acceptance status (2026-09-27; reconciled)
+
+The scenario matrix below is historical evidence and procedure; current acceptance is:
+
+- **S1:** historical live read-only answer passed; final response was not retained for a TUI/export
+  presentation comparison.
+- **S2:** focused operator test passed 4/4; final TUI/export answer comparison was not captured.
+- **S3:** read-only routing checks passed; final TUI/export answer comparison was not captured.
+- **S4:** failed/incomplete live; no accepted child result, checkpoint, or FIFO follow-up. Offline
+  planned child-scope denial passes, but direct live child-scope denial is unobserved.
+- **S5:** withheld; historical explorer failure cause remains unknown.
+- **S6:** failed live. The latest schema-v2 export at
+  `out/live-agentic/s6-retest-20260927T140000Z/session-export-schema-v2.json` records `run.completed`
+  and a succeeded task after two invalid execution decisions (`effect_scope: invalid_type`), but no
+  model-written exporter or focused test. Later operator edits contaminated the fixture, now
+  quarantined. This scenario acceptance false-positive is not, alone, proof of a global runtime
+  lifecycle-contract defect.
+- **S7:** passed for a lead workspace traversal denial only; the live child-scope denial criterion
+  was not exercised.
+- **S8:** exercised after a natural failure, but failed/incomplete: result validation rejected the
+  first child result and the one retry was `model_disabled` before provider execution. Synthetic
+  offline eligibility tests are not live eligibility evidence and do not close S8.
+
+Offline enum/type diagnostics and the mounted Ctrl+C/question-resume test pass, but establish neither
+live S6 completion nor S8 eligibility. Ordered offline gates passed on the current code tree
+(`e9779f6`; documentation-only edits were present): Ruff, strict mypy (126 files), unit/contract
+**916 passed, 2 skipped**, smoke, and full suite **1,213 passed, 5 skipped**. These are not release
+verification. A separate clean-HEAD timing record from `0d916ab` reports **201.816 s external-wall
+median**; it is not a measurement of current HEAD, and suite-speed acceptance remains open. Local
+token-derived cost is **USD 3.019357484**, excluding historical unknown costs and unattributed
+provider observations; provider billing remains unknown. Ignored evidence is preserved, with no
+duplicate run-log additions.
+
 This plan reconstructs the S1-S8 interactive matrix formerly in `tasks/plan.md` (available in
 Git history at `c2190ff`). Use it with `tasks/remediation-2026-09-24-plan.md` and
 `tasks/defect-remediation-todo.md`. The September 22 run and its defects are recorded under
