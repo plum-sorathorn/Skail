@@ -717,3 +717,16 @@ per-request timestamps, tokens, and cost. Do not add a speculative call to `CALL
 claim zero spend, or proceed with paid work until reconciled. Independent offline work is complete;
 S6 remains failed. Once reconciliation is complete, separately validate manual-route health before
 considering a new paid attempt.
+
+## 2026-09-27 user-reported provider usage — attribution pending
+
+The user reports one detected GPT-4.1-mini usage costing USD 0.0018 at approximately 01:00 EDT;
+the date is not stated. If it was 2026-09-27, that is approximately 05:00 UTC, outside the
+05:06–05:15 UTC unresolved window if exact. This is provider-reported observation only—not
+in-house token-derived cost. There is no call ID, token usage, exact timestamp, or verified match
+to the manual print-mode probe. It does not close the probe reconciliation or clear the paid-work
+gate. Keep the previously stated USD 2.997053084 local cumulative total unchanged; do not add a
+speculative local token-cost or call-audit entry. The user-reported USD 0.0018 is captured only as
+an unattributed provider-side observation in `COSTS.csv`, not as a verified billing delta or local
+charge. Paid work remains held pending attribution plus usage evidence or a conservative attempt
+estimate before further paid work.
