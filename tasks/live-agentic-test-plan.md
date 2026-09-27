@@ -666,14 +666,14 @@ models, so it did not refresh or establish current health. It lists the configur
 but supplies no enabled/healthy route evidence. `skail --help` confirmed `--lead-model`,
 `--budget`, and `--resume` syntax; this is CLI syntax validation, not a TUI launch.
 
-The current Python environment reported `pywinpty` unavailable. No PTY launch was attempted,
-and actual `stdin.isatty()` / `stdout.isatty()` were not verified. No isolated installation was
-performed because the unverified route-health gate independently prohibited a paid attempt. No
-fixture or session was created, no baseline test was run, and no paid calls were started; S6's
-authorized USD 0.584124 scenario allocation remains untouched. This attempt produced no new call
-IDs to reconcile. Do not interpret metadata discovery, a manually selected model, or the prior
-successful PTY probe in another environment as current route health or current PTY qualification.
-Re-run the health and true/true PTY preflights before considering another S6 attempt.
+The initial Python environment reported `pywinpty` unavailable; a later isolated install
+successfully installed it, and an isolated `cmd.exe /k` PTY subsequently verified both stdin and
+stdout as TTYs. The isolated setup also later established catalog metadata for 142 models. These
+correct earlier setup limitations, but do not establish current manual-route health or resolve the
+separate manual print-mode probe's possible provider call. No fixture or session was created for this
+preflight, and no baseline test was run. Do not describe missing `pywinpty` or catalog metadata as a
+permanent blocker. Reconcile possible provider activity and validate manual route health before any
+further paid work.
 
 2026-09-27 isolated single-process S6 preflight retry: blocked before fixture creation and made no
 provider model call in that isolated retry. The persistent ignored run directory is
@@ -708,6 +708,12 @@ isolated CLI preflight has no recorded call IDs, but the separate manual print-m
 cost status remains unresolved; do not infer zero spend for all preflight activity. This isolated
 retry adds no confirmed call IDs or priced usage; cumulative local ledger remains the previously
 documented USD 2.997053084, with USD 0.584124 remaining in S6's allocation. Provider billing
-remains unknown. Next action requires
-proper `llmgateway` configuration inside the isolated HOME, then rerun refresh and validate the
-manually pinned model against Skail's selector before proceeding.
+remains unknown. Later evidence corrected the temporary setup findings: isolated PTY stdin/stdout
+were both verified as TTYs, and isolated catalog metadata contained 142 models. Neither proves
+manual-route health. The manual print-mode command's possible provider request remains unresolved;
+no call ID, tokens, or cost are established. As of 2026-09-27 05:15 UTC, paid preflight and future
+paid work are held pending provider-side Activity reconciliation for 05:06–05:15 UTC, including
+per-request timestamps, tokens, and cost. Do not add a speculative call to `CALL_COST_AUDIT.csv`,
+claim zero spend, or proceed with paid work until reconciled. Independent offline work is complete;
+S6 remains failed. Once reconciliation is complete, separately validate manual-route health before
+considering a new paid attempt.
