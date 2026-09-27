@@ -368,5 +368,19 @@ withheld because its historical cause is unknown.
 - Item 18 README/documentation audit is complete. README was checked read-only with no verified
   inaccuracy; local links and documented commands were verified.
 
+## 2026-09-27 clean-HEAD full-suite timing recheck
+
+- On clean `0d916abdd3f269d913047aab136374b0305428bf`, three serial executions of the unchanged
+  `py -3.14 -m pytest -q --durations=40` suite each passed 1,213 tests, skipped 5, and emitted 5
+  warnings. External wall times: 202.412s, 200.767s, 201.816s (median 201.816s, range 1.645s).
+  Pytest times: 198.78s, 197.17s, 198.30s (median 198.30s, range 1.61s). Raw logs and run
+  conditions: `out/live-agentic/timing-20260927T152807Z/`.
+- The repeated ~201s wall results mean the previous 200.96s observation is not a one-off outlier
+  relative to this run. This is 20.9% slower than the prior 166.938s wall median, but test counts
+  and unresolved cross-campaign timing variation differ. No repeatable cause or safe optimization
+  was established; do not claim a gain or reduce test boundaries. The 20% reduction objective
+  remains open and is not supported as feasible by current measurements. Only the full-suite gate
+  was run here; Ruff, mypy, and smoke statuses were not rechecked.
+
 
 Offline child-scope integration evidence (2026-09-27): `tests/integration/test_task_graph.py::test_assembled_child_agent_denies_write_outside_planned_resource_scope` passes through planned resource-scope propagation, task validation, and the assembled filesystem tool. The out-of-scope write is denied and no outside file is created. This is newly exercised offline coverage, not a source fix or direct live child-scope denial; the latter remains unobserved.

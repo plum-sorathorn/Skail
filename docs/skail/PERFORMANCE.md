@@ -107,6 +107,22 @@ their independent boundaries. No additional setup-sharing change was retained be
 remove one of those boundaries or duplicate work; this pass reports the measured result without
 claiming a performance optimization.
 
+At clean HEAD `0d916abdd3f269d913047aab136374b0305428bf`, a fresh serial recheck on Windows 11
+build 26200, Python 3.14.6, pytest 9.1.1, and a 20-logical-CPU AMD Ryzen AI 9 465 collected 1,218
+tests in each run (1,213 passed, 5 skipped, 5 warnings). Using the literal command
+`py -3.14 -m pytest -q --durations=40`, external wall times were 202.412s, 200.767s, and 201.816s
+(median 201.816s; range 1.645s); pytest-reported times were 198.78s, 197.17s, and 198.30s
+(median 198.30s; range 1.61s). Each complete top-40 duration report and timestamped environment,
+plugin, and CPU-counter evidence is retained in `out/live-agentic/timing-20260927T152807Z/`.
+The optional 10-second total-CPU counter averaged about 15–18% during the runs; it is only a coarse
+host-load proxy. All three results reproduce the approximately 200.96s observation, so that value
+is not an isolated slow-run outlier relative to this recheck. Compared with the older 166.938s wall
+median, this median is 20.9% slower; changed test count and the unresolved difference between timing
+campaigns prevent assigning a cause. The proposed 20% reduction from that older median (about
+133.55s) is not supported as feasible by these current measurements. Keep the objective open and
+all independent suite boundaries unchanged; no repeatable cause or justified optimization has been
+identified. This timing-only run does not re-run Ruff, mypy, or smoke gates.
+
 Before optimization, unit/contract, integration, E2E, security, packaging, and mounted TUI slices
 took 108.29s, 67.43s, 37.68s, 9.97s, 8.41s, and 64.11s respectively. The direct/module help
 subprocess test fell from 15.84s to 0.62s; removed-alias checks fell from nine E2E subprocesses at
