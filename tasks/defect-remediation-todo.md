@@ -8,8 +8,9 @@ implementation test passed 4/4 but final presentation was not captured; S3 read-
 but final presentation was not captured; S4 failed live (no accepted child result/checkpoint/FIFO,
 and live child-scope denial unobserved); S5 is withheld with cause unknown; S6 failed live despite
 `run.completed`/succeeded markers (invalid decisions, no model-written exporter/test, operator-edited
-fixture quarantined); S7 passed lead traversal denial only; and S8 was exercised but failed result
-acceptance with its only retry ineligible. Offline child-scope and synthetic S8 eligibility coverage
+fixture quarantined); S7 passed lead traversal denial only; and S8 accepted no child TaskResult: first
+failed schema validation at `$.artifacts.0.kind`; retry blocked `model_disabled` before provider call.
+Offline child-scope and synthetic S8 eligibility coverage
 do not substitute for those live criteria. The mounted offline Ctrl+C/question-resume test and
 enum/type diagnostics are offline evidence, not live closure or a general lifecycle-contract claim.
 
