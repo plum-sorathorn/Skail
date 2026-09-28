@@ -1566,12 +1566,29 @@ class RunController:
                         "type": "skail.plan_checkpoint",
                         "plan_id": persisted.plan_id,
                         "expected_revision": persisted.plan.revision,
+                        "next_revision": persisted.plan.revision + 1,
                         "checkpoint": node.model_dump(mode="json"),
                         "current_plan": persisted.plan.model_dump(mode="json"),
                         "evidence_refs": evidence_refs,
+                        "revision_metadata_example": {
+                            "expected_revision": persisted.plan.revision,
+                            "added_nodes": [],
+                            "replaced_local_ids": [],
+                            "cancelled_local_ids": [],
+                            "justification": (
+                                "No plan changes are needed after reviewing accepted results."
+                            ),
+                            "evidence_refs": evidence_refs,
+                        },
                         "instruction": (
-                            "Reconsider the plan from this evidence. Call execution_decision "
-                            "with a complete next-revision plan and PlanRevision metadata."
+                            "Call execution_decision with mode='planned' and the complete "
+                            "current_plan "
+                            "changed to next_revision, and a revision object matching "
+                            "revision_metadata_example. For an evidence-only acknowledgement, keep "
+                            "added_nodes, replaced_local_ids, and cancelled_local_ids empty, use a "
+                            "non-empty justification, and copy every supplied evidence_refs entry "
+                            "exactly into revision.evidence_refs. If changing nodes, make the plan "
+                            "and revision metadata match. Do not omit revision metadata."
                         ),
                     }
                     latest_lead_state = cast(

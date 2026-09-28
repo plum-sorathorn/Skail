@@ -481,6 +481,34 @@ async def test_two_plan_writers_checkpoint_and_evidence_only_revision_complete(
                 break
 
     final_snapshot = journal.get_session_snapshot(str(session_id))
+    checkpoint_payloads = []
+    for call in lead_model.calls:
+        for message in call:
+            if not isinstance(message.content, str):
+                continue
+            try:
+                payload = json.loads(message.content)
+            except json.JSONDecodeError:
+                continue
+            if payload.get("type") == "skail.plan_checkpoint":
+                checkpoint_payloads.append(payload)
+    checkpoint_payloads = list(
+        {json.dumps(payload, sort_keys=True): payload for payload in checkpoint_payloads}.values()
+    )
+    assert len(checkpoint_payloads) == 1
+    assert checkpoint_payloads[0]["next_revision"] == 2
+    assert checkpoint_payloads[0]["revision_metadata_example"] == {
+        "expected_revision": 1,
+        "added_nodes": [],
+        "replaced_local_ids": [],
+        "cancelled_local_ids": [],
+        "justification": "No plan changes are needed after reviewing accepted results.",
+        "evidence_refs": evidence_refs,
+    }
+    assert "complete current_plan changed to next_revision" in checkpoint_payloads[0][
+        "instruction"
+    ]
+    assert "Do not omit revision metadata." in checkpoint_payloads[0]["instruction"]
     assert len(final_snapshot.runs) == 2
     assert final_snapshot.runs[0].status == "completed"
     assert final_snapshot.runs[1].status == "completed"
