@@ -1,5 +1,10 @@
 # Defect remediation, offline suite, and live validation plan
 
+> The current implementation handoff is [the remaining remediation plan](plan.md), with its
+> [execution checklist](todo.md). It diagnoses the outstanding paths at `9f9d1c9` and supersedes
+> the prospective execution order and older balances below. Preserve these dated records as
+> evidence; the 2026-09-28 implementation progress and remaining live gaps are recorded in plan.md and todo.md.
+
 ## Current acceptance status (2026-09-27; reconciled)
 
 | Scenario | Current status | Acceptance evidence / remaining gap |

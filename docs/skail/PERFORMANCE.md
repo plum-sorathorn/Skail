@@ -135,3 +135,47 @@ An after-run Windows warning revealed that Git diff output was decoded with CP12
 provenance. `evals.evidence.git_value` now reads that output as UTF-8. A regression with a U+201D
 working-tree edit verifies the digest changes; the three final full-suite runs no longer show the
 reader-thread warning.
+
+### 2026-09-28 remediation candidate timing
+
+On Windows 11 build 26200 with Python 3.14.6, pytest 9.1.1, and 20 logical processors, three serial
+runs of py -3.14 -m pytest -q --durations=40 on the same implementation candidate each passed
+1,230 tests, skipped 5, and emitted 5 warnings. External wall times were 137.173s, 140.055s, and
+143.163s (median 140.055s, range 5.990s); pytest-reported times were 134.38s, 137.26s, and 140.38s.
+Raw logs, run records, and environment are under
+out/live-agentic/timing-remediation-20260928T013000Z/.
+
+The median is 14.7% below the earlier 164.17s / 1,176-pass baseline, with 54 additional passing
+tests. It is 8.719s above the original 20% target of 131.336s. This candidate run is repeatable
+within its three-sample range, but the old and new collections differ, so the comparison does not
+attribute the gain to a particular change. The corrected mounted quit/resume test no longer types
+its prompt character by character; it still presses Enter and Ctrl+C, creates the durable question,
+opens fresh stores, resumes, writes only the selected output, and runs independent pytest. In this
+candidate, that test took 3.03s versus the previous 22.36s duration record.
+
+The slowest current paths are the two-writer worktree/checkpoint integration (5.21s), real wheel
+inspection (3.57s), mounted model-picker return (3.23s), and the isolated no-credential CLI test
+(2.99s). Each protects a separate runtime, artifact, UI, or process boundary. No safe reduction
+large enough to reach 131.336s is established. The 20% objective remains open; no claim of meeting
+it is made.
+
+### 2026-09-28 final implementation candidate
+
+After the final filesystem-digest size/stability guard and its regression, three serial runs of
+py -3.14 -m pytest -q --durations=40 used the identical source/test worktree and passed 1,231 tests,
+skipped 5, and emitted 5 warnings each. External wall times were 137.640s, 137.754s, and 137.611s
+(median 137.640s, range 0.143s); pytest times were 134.82s, 135.00s, and 134.87s. The raw logs,
+source/test fingerprint, and environment are in
+out/live-agentic/timing-remediation-final-20260928T020400Z/.
+
+The median is 16.16% below the older 164.17s / 1,176-pass baseline and 6.304s above the original
+131.336s 20% target. The test collections differ by 55 passing cases, so this comparison does not
+attribute the gain to one change. The three current runs are very close to one another, but no new
+same-candidate baseline was collected before this remediation. The target remains open.
+
+The measured leaders are the two-writer worktree/checkpoint/FIFO integration (5.13s), wheel
+inspection (3.58s), mounted model-picker return (3.37s), and the isolated no-credential CLI test
+(2.98s). These protect orchestration, artifact, keyboard, and process boundaries. The corrected
+question-resume test took 3.31s and preserves real Enter/Ctrl+C, durable state, fresh stores, answer,
+filesystem, and subprocess checks. No additional consolidation was shown to preserve those separate
+boundaries while closing the remaining 6.304s gap. Do not claim the 20% objective was met.

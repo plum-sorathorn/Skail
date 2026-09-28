@@ -1,5 +1,14 @@
 # Defect Remediation Checklist
 
+> Continue with [the current implementation plan](plan.md) and [its task checklist](todo.md).
+> The plan maps every defect/output ID and the unchecked items below to remaining work. Historical
+> checked milestones are preserved; they do not close missing live criteria or the speed objective.
+> Implementation checkpoint (2026-09-28): ordered local gates pass on the updated tree (Ruff,
+> strict mypy, unit/contract 927 passed and 2 skipped, smoke, full suite 1231 passed and 5
+> skipped). R1-R4/R6-R8 are verified offline; S4/S5/S6/S8 and remaining live presentations
+> retain their dispositions below. The current timing median is 137.640s wall, 16.16% under
+> the old 164.17s baseline; the 20% objective remains open. Provider billing is unknown.
+
 ## Current acceptance reconciliation (2026-09-27)
 
 The matrix in the [remediation plan](remediation-2026-09-24-plan.md) is authoritative for current
