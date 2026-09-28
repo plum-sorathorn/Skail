@@ -502,6 +502,13 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
     assert "Final TaskResult contract: return exactly one JSON object" in child_prompt
     assert "Allowed status values are succeeded, failed, blocked" in child_prompt
     assert "SHA-256 digest returned by file_digest" in child_prompt
+    assert "verification as a JSON array" in child_prompt
+    assert 'evidence_ref must use the exact keys "kind", "path", and "digest"' in child_prompt
+    assert (
+        '"kind": "file", "path": "<workspace-relative scoped path>", '
+        '"digest": "<SHA-256 returned by file_digest>"'
+    ) in child_prompt
+    assert "Use the field name digest, not sha256." in child_prompt
     assert "A file digest proves file contents only" in child_prompt
     child_assignment = next(
         assignment
