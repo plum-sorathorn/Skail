@@ -1621,13 +1621,10 @@ class SkailApp(App[int]):
         else:
             answer = ""
         if answer:
-            self.projection.transcript_items.append(
-                TranscriptItem(
-                    id=f"lead-{len(self.projection.transcript_items)}",
-                    role="lead",
-                    title="Skail Response",
-                    content=answer,
-                )
+            result_run_id = getattr(result, "run_id", None)
+            self.projection.add_run_answer(
+                None if result_run_id is None else str(result_run_id),
+                answer,
             )
             return
         if result.pending_interrupt is not None:

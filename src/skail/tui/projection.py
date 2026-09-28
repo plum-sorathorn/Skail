@@ -14,6 +14,7 @@ from decimal import Decimal
 from typing import Any
 
 from skail.domain.events import EventEnvelope, InterruptKind
+from skail.runtime.presentation import model_content_to_text, present_lead_answer
 from skail.sessions.journal import SessionSnapshot
 
 BUDGET_UNAVAILABLE_COPY = "Budget details are unavailable for this provider."
@@ -515,6 +516,23 @@ class TuiProjection:
         self.unread += 1
         return True
 
+    def add_run_answer(self, run_id: str | None, answer: str) -> bool:
+        """Add one final answer using an ID shared by live results and event replay."""
+        if not answer:
+            return False
+        return self._add_transcript_item(
+            TranscriptItem(
+                id=(
+                    f"run-answer:{run_id}"
+                    if run_id is not None
+                    else f"lead-{len(self.transcript_items)}"
+                ),
+                role="lead",
+                title="Skail Response",
+                content=answer,
+            )
+        )
+
     def apply_budget_snapshot(self, snapshot: SessionSnapshot) -> None:
         """Refresh current-run budget state without rebuilding the transcript."""
         current_run = snapshot.runs[-1] if snapshot.runs else None
@@ -853,6 +871,12 @@ class TuiProjection:
                     task_id=task_id_str,
                 )
             )
+
+        elif ev_type == "run.completed":
+            output = getattr(event.payload, "output", None)
+            if output is not None:
+                answer = present_lead_answer(model_content_to_text(output))
+                self.add_run_answer(str(event.run_id), answer)
 
         elif ev_type.startswith("tool."):
             tool_name = getattr(event.payload, "tool", "tool")

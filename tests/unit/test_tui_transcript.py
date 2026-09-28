@@ -9,9 +9,12 @@ from __future__ import annotations
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
 from rich.text import Text
 from textual.widgets import Static
 
+from skail.domain.events import EventEnvelope, LifecyclePayload
+from skail.domain.ids import new_event_id, new_run_id, new_session_id
 from skail.sessions.journal import RunSnapshot, SessionSnapshot, UsageSnapshot
 from skail.tui.app import SkailApp, clean_lead_output
 from skail.tui.projection import TranscriptItem
@@ -85,6 +88,41 @@ async def test_tui_pilot_renders_answer_without_structured_verification() -> Non
         assert visible_text.count(answer) == 1
         assert "Criterion" not in visible_text
         assert "Passed" not in visible_text
+
+
+@pytest.mark.parametrize("size", [(80, 24), (120, 40)])
+async def test_tui_pilot_renders_answer_replayed_from_completion_event(size) -> None:
+    answer = "Restored answer from the durable run export."
+    app = SkailApp()
+    async with app.run_test(size=size) as pilot:
+        app.apply_event(
+            EventEnvelope(
+                event_id=new_event_id(),
+                session_id=new_session_id(),
+                run_id=new_run_id(),
+                sequence=1,
+                type="run.completed",
+                payload=LifecyclePayload(
+                    status="completed",
+                    output={
+                        "answer": answer,
+                        "verification": [
+                            {"criterion": "selected export", "passed": True, "evidence": "private"}
+                        ],
+                    },
+                ),
+            )
+        )
+        app.update_views()
+        await pilot.pause()
+
+        chat = app.query_one("#chat-transcript", ChatTranscript)
+        leads = list(chat.query(".role-lead"))
+        assert len(leads) == 1
+        rendered = leads[0].query_one(".msg-measure", Static).renderable
+        visible_text = rendered.plain if isinstance(rendered, Text) else str(rendered)
+        assert visible_text == answer
+        assert "private" not in visible_text
 
 
 def test_apply_blocked_run_without_output_shows_an_actionable_state() -> None:

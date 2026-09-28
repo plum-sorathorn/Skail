@@ -14,6 +14,7 @@ from skail.domain.events import (
     DiagnosticPayload,
     EventEnvelope,
     InterruptKind,
+    LifecyclePayload,
     PlanPayload,
     TaskPayload,
     ToolPayload,
@@ -42,6 +43,48 @@ from skail.sessions.journal import (
     UsageSnapshot,
 )
 from skail.tui.projection import TuiProjection
+
+
+def test_completed_event_replays_the_presented_lead_answer_once() -> None:
+    session_id = new_session_id()
+    run_id = new_run_id()
+    answer = "Implemented the selected JSON export."
+    event = EventEnvelope(
+        event_id=new_event_id(),
+        session_id=session_id,
+        run_id=run_id,
+        sequence=1,
+        type="run.completed",
+        payload=LifecyclePayload(
+            status="completed",
+            output={
+                "answer": answer,
+                "verification": [{"criterion": "test", "passed": True}],
+            },
+        ),
+    )
+    projection = TuiProjection()
+    snapshot = SessionSnapshot(
+        session_id=str(session_id),
+        status="idle",
+        runs=(RunSnapshot(run_id=str(run_id), status="completed", budget_limit_usd=None),),
+        tasks=(),
+        attempts=(),
+        assignments=(),
+        budget_reservations=(),
+        usage_records=(),
+        approvals=(),
+        events=(event,),
+    )
+
+    projection.apply_snapshot(snapshot)
+    projection.apply_event(event)
+
+    lead_rows = [item for item in projection.transcript_items if item.role == "lead"]
+    assert len(lead_rows) == 1
+    assert lead_rows[0].id == f"run-answer:{run_id}"
+    assert lead_rows[0].content == answer
+    assert "verification" not in lead_rows[0].content
 
 
 def test_projection_initial_state() -> None:

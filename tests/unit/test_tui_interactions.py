@@ -18,7 +18,8 @@ from textual.containers import Container
 from textual.widgets import Button, Input, Static, TabbedContent
 
 from skail.cli.main import RuntimeModelSet
-from skail.domain.events import InterruptKind
+from skail.domain.events import EventEnvelope, InterruptKind, LifecyclePayload
+from skail.domain.ids import new_event_id, new_run_id, new_session_id
 from skail.runtime.redaction import RedactionRegistry
 from skail.runtime.run_controller import RunController
 from skail.sessions.checkpoints import CheckpointStore
@@ -110,6 +111,36 @@ async def test_composer_enter_submits_regular_prompt() -> None:
         assert app.projection.transcript_items[-1].content == "hello"
 
 
+def test_tui_run_result_does_not_duplicate_answer_from_completion_event() -> None:
+    session_id = new_session_id()
+    run_id = new_run_id()
+    answer = "The work is complete."
+    app = SkailApp(projection=TuiProjection())
+    app.apply_event(
+        EventEnvelope(
+            event_id=new_event_id(),
+            session_id=session_id,
+            run_id=run_id,
+            sequence=1,
+            type="run.completed",
+            payload=LifecyclePayload(status="completed", output=answer),
+        )
+    )
+
+    app._apply_run_result(
+        SimpleNamespace(
+            run_id=run_id,
+            pending_interrupt=None,
+            output=answer,
+            status="completed",
+        )
+    )
+
+    lead_rows = [item for item in app.projection.transcript_items if item.role == "lead"]
+    assert len(lead_rows) == 1
+    assert lead_rows[0].content == answer
+
+
 @pytest.mark.asyncio
 async def test_active_run_shows_running_indicator_until_response_arrives() -> None:
     controller = _BlockingController()
@@ -167,7 +198,7 @@ async def test_question_interrupt_pilot_has_answer_and_cancel_actions() -> None:
         run_id="run-1",
     )
 
-    async with app.run_test(size=(120, 40)) as pilot:
+    async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
         card = app.query_one("#interrupt-container", Container).query_one(InterruptWidget)
         title = str(card.query_one(".interrupt-title", Static).renderable)
@@ -180,6 +211,16 @@ async def test_question_interrupt_pilot_has_answer_and_cancel_actions() -> None:
         )
         assert str(card.query_one("#btn-answer", Button).label) == "Answer"
         assert str(card.query_one("#btn-cancel-question", Button).label) == "Cancel run"
+        assert any(
+            str(widget.renderable) == "Options: JSON · Markdown"
+            for widget in card.query(Static)
+        )
+        assert card.query_one("#interrupt-input", Input).placeholder == "Type your answer..."
+        assert app.focused is card.query_one("#interrupt-input", Input)
+        for selector in ("#btn-answer", "#btn-cancel-question"):
+            button = card.query_one(selector, Button)
+            assert button.region.y >= 0
+            assert button.region.y + button.region.height <= app.screen.size.height
         assert not card.query("#btn-approve, #btn-reject")
         app._run_active = True
         app.update_views()
@@ -229,8 +270,16 @@ async def test_question_cancel_pilot_shows_run_cancellation_copy() -> None:
         run_id="run-cancel",
     )
 
-    async with app.run_test(size=(120, 40)) as pilot:
+    async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
+        card = app.query_one(InterruptWidget)
+        assert card.query_one("#interrupt-input", Input).placeholder == "Type your answer..."
+        assert app.focused is card.query_one("#interrupt-input", Input)
+        assert not any(
+            str(widget.renderable).startswith("Options:") for widget in card.query(Static)
+        )
+        assert str(card.query_one("#btn-answer", Button).label) == "Answer"
+        assert str(card.query_one("#btn-cancel-question", Button).label) == "Cancel run"
         await pilot.click("#btn-cancel-question")
         await pilot.pause()
 
@@ -254,9 +303,12 @@ async def test_long_question_keeps_answer_controls_in_small_terminal() -> None:
     async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
         card = app.query_one(InterruptWidget)
-        answer = card.query_one("#btn-answer", Button)
-        assert answer.region.y < app.screen.size.height
-        assert answer.region.height > 0
+        assert app.focused is card.query_one("#interrupt-input", Input)
+        for selector in ("#btn-answer", "#btn-cancel-question"):
+            button = card.query_one(selector, Button)
+            assert button.region.y >= 0
+            assert button.region.height > 0
+            assert button.region.y + button.region.height <= app.screen.size.height
 
 
 @pytest.mark.asyncio
