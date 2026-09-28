@@ -515,6 +515,11 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
         '"digest":"<64-character SHA-256 from file_digest>"}}]'
     )
     assert verification_example in child_prompt
+    artifact_example = (
+        '"artifacts":[{"kind":"file","path":"<scoped file path>",'
+        '"digest":"<SHA-256 digest>"}]'
+    )
+    assert artifact_example in child_prompt
     assert "Use the field name digest, not sha256." in child_prompt
     assert "A file digest proves file contents only" in child_prompt
     child_assignment = next(
