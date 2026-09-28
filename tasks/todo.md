@@ -2,7 +2,8 @@
 
 Authoritative detail, dependencies, evidence, and acceptance: [plan.md](plan.md).
 Baseline: `9f9d1c9ed19b8ad63feea77f0bbc04feef847c55`. Latest source commit `6a99a32` passes the
-ordered offline gates and package-check. S4, S6, the separate live child-scope denial, and the R9
+ordered offline gates and package-check; clean-worktree release-check passed on `4f0b342`. S4, S6,
+the separate live child-scope denial, and the R9
 active-child cancellation pass. S5 remains withheld, S8 failed/incomplete, and presentation/speed/
 R9 conditional edges/hosted release evidence remain open. Current local campaign estimate is
 USD 3.746818284; provider billing is unknown.
@@ -52,15 +53,17 @@ USD 3.746818284; provider billing is unknown.
   boundary was removed and no causal optimization is established.
 - [x] R12: Reconcile LIVE-001–044, OUT-001–015, new findings, old unchecked items, and changed docs.
 - [x] R13: Final-revision Ruff -> mypy -> unit/contract -> smoke -> full offline suite; Graphify/diff review.
-- [ ] R14-local: Package build/install passed on source `6a99a32`; run package-check and release-check
-  on the clean final documentation commit before marking this exact-candidate gate complete. The
-  historical `9d28dc4` release evidence remains valid for that earlier candidate only.
+- [x] R14-local: Package build/install and clean-worktree release-check passed on code candidate
+  `6a99a32` / documentation commit `4f0b342`. Wheel SHA-256 `64d823546ce4696a450c445376c394f7072eabc68f10a2b41fea60c78d262c95`;
+  sdist SHA-256 `ec2ab8c425489ff35af04219a408f8c318e3f38a2c7c0966c240484aebf8216e`. Subsequent
+  changes are documentation-only and locally link-checked. Hosted external gates remain separate.
 - [ ] R14-external: Exact-candidate hosted Windows/Linux matrix, Python 3.12–3.14 fast-matrix evidence,
   and branch-protection required-check verification.
 - [ ] Checkpoint D: Report passed/failed/unexercised/withheld/external-unknown items separately;
   release readiness is withheld while applicable acceptance or actionable defects remain open.
 
-Current dispositions: S4, S6, S7 lead traversal, and separate child-scope denial passed their stated
+Current dispositions: S4, S6, S7 lead traversal, separate child-scope denial, and R9 active-child
+cancellation passed their stated
 criteria. S5 is withheld; S8 failed/incomplete. S1-S3/S6 presentation comparisons, R9 permission/
 question edges, the 20% speed objective, and hosted/branch-protection evidence remain open. Provider
 billing is unknown.

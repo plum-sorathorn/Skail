@@ -490,8 +490,9 @@ discarded on cancellation, reservations settled/released, and no follow-up call 
 occurred. Conditional permission/question edges remain open. Presentation comparisons, the 20% suite-
 speed objective, and hosted release/branch-protection evidence remain open.
 
-Ordered offline gates and package-check passed on source commit `6a99a32`; release-check on the clean
-final documentation commit remains. The current append-only in-house campaign total is USD
+Ordered offline gates and package-check passed on source commit `6a99a32`; clean-worktree
+release-check passed on documentation candidate `4f0b342` with the same code. Later edits are
+documentation-only and link-checked. The current append-only in-house campaign total is USD
 `3.746818284`, with 821 unique call IDs audited once. Provider billing remains unknown. See
 `out/live-agentic/RUN_LOG.md`, `COSTS.csv`, and `CALL_COST_AUDIT.csv` for the new live evidence and
 reconciliation.

@@ -5,7 +5,8 @@
 > checked milestones are preserved; they do not close missing live criteria or the speed objective.
 > Implementation checkpoint (2026-09-28): ordered local gates pass on source candidate `6a99a32`
 > (Ruff, strict mypy, unit/contract 927 passed and 2 skipped, smoke, full suite 1,231 passed and 5
-> skipped); package-check passed, and release-check on the clean final documentation commit remains.
+> skipped); package-check passed on `6a99a32`, and clean-worktree release-check passed on `4f0b342`
+> with the same source code. Later docs-only updates passed the local link check.
 > S4 and S6 passed live; the separate direct child-scope denial and R9 active-child cancellation
 > passed. S5 remains withheld, S8 failed/incomplete, and presentation checks remain open. The
 > exact-candidate timing median remains 153.587s wall (6.446% below the 164.17s baseline); the 20%
@@ -30,11 +31,12 @@ enum/type diagnostics are offline evidence, not live closure or a general lifecy
 
 Ordered offline gates passed on source candidate `6a99a32`: Ruff, strict mypy (126 files),
 unit/contract **927 passed, 2 skipped**, smoke, and full suite **1,231 passed, 5 skipped**;
-package-check passed. Release-check on the clean final documentation commit remains. The
+package-check passed. Clean-worktree release-check passed on documentation candidate `4f0b342`
+with the same source code; the later edits are documentation-only and link-checked. The
 exact-candidate external-wall median remains **153.587 s**, 6.446% below the 164.17 s baseline and
-22.251 s above the 20% target. The token-derived local campaign total is **USD 3.713027484**,
+22.251 s above the 20% target. The token-derived local campaign total is **USD 3.746818284**,
 excluding historical unknowns and unattributed provider observations; provider billing remains
-unknown. The call audit contains 815 unique IDs. Preserve evidence without duplicate rows.
+unknown. The call audit contains 821 unique IDs. Preserve evidence without duplicate rows.
 
 Current sequence and acceptance checks: [2026-09-24 remediation plan](remediation-2026-09-24-plan.md).
 The completed items below are historical offline milestones; unchecked live confirmations

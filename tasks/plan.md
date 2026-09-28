@@ -46,8 +46,9 @@ open.
 
 Ordered offline gates and package-check passed on source commit `6a99a32`: Ruff, strict mypy (126
 files), unit/contract (927 passed, 2 skipped), smoke, full suite (1,231 passed, 5 skipped), and
-package build/install. Release-check awaits a clean tracked documentation commit. `CALL_COST_AUDIT.csv`
-contains 821 unique call IDs; `COSTS.csv` cumulative local estimate is USD 3.746818284, with USD
+package build/install. Clean-worktree release-check passed on `4f0b342`; the evidence updates in this
+documentation-only continuation are separately link-checked. `CALL_COST_AUDIT.csv` contains 821
+unique call IDs; `COSTS.csv` cumulative local estimate is USD 3.746818284, with USD
 4.753181716 to the USD 8.50 normal stop and USD 6.253181716 to the USD 10 ceiling. S4 has USD
 0.783867312 remaining in its allocation; S7 has USD 0.6808022 remaining from its USD 0.75 threshold.
 Provider billing remains unknown.
@@ -106,7 +107,7 @@ The full-suite gate's 189.549 seconds is one external-wall observation, not a ti
 | R9 active-child cancellation | Passed live | Session `b1afdf23-3f8e-48a7-bcd1-49bbdfb72c6f`, run `2fdb4d2b-0a4b-4007-ac02-de0fb3f1b4d3`: two child calls active at Ctrl+C; child tasks/attempts, plan nodes, and reservations terminal; queued prompt shown then discarded; no later provider start, warning, or workspace change. Permission/question edges remain open. |
 | S8 | Failed/incomplete | `session-S8-retest-2026-09-26-final.json`, run `14913447-a527-452f-93b6-f83de65ce04b`, task `f4dd996c-fb76-4914-8a2d-a11c42a248c7`: natural result-validation failure, then attempt-two admission blocked before a provider call. The fresh route preflight found no automatic retry candidate with trusted capability evidence and fit at the 0.65 floor; no accepted/integrated result or completed escalation. |
 | Suite speed | Open | Exact candidate `9d28dc4`: 161.856/153.587/151.763 seconds; median 153.587, 22.251 seconds above the 131.336s target. No established causal gain. |
-| Release qualification | Incomplete | Ordered local gates and package-check passed on `6a99a32`; release-check on the clean final documentation commit, hosted Windows/Linux matrix, Python 3.12–3.14 CI evidence, and branch-protection verification remain. See Task R14. |
+| Release qualification | Incomplete | Ordered local gates/package-check passed on `6a99a32`; clean-worktree release-check passed on `4f0b342`. Hosted Windows/Linux matrix, Python 3.12–3.14 CI evidence, and branch-protection verification remain. See Task R14. |
 
 All evidence paths in this table are relative to `out/live-agentic/` unless stated otherwise.
 Also reviewed: `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, `COSTS.csv`,

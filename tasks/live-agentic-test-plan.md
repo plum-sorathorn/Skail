@@ -64,8 +64,9 @@ and question lifecycle edges remain unexercised.
 Offline enum/type diagnostics and the mounted Ctrl+C/question-resume test are not substitutes for
 the remaining live criteria. The final ordered offline gates passed on source commit `6a99a32`: Ruff,
 strict mypy (126 files), unit/contract **927 passed, 2 skipped**, smoke, and full suite
-**1,231 passed, 5 skipped**. Package-check passed on source commit `6a99a32`; release-check is
-pending a clean tracked worktree. This does not establish release completion. The latest measured
+**1,231 passed, 5 skipped**. Package-check passed on source commit `6a99a32`; clean-worktree
+release-check passed on commit `4f0b342` with the same source code. Subsequent edits are
+documentation-only and link-checked. This does not establish release completion. The latest measured
 exact-candidate external-wall median remains **153.587 s**, 6.446% below the 164.17 s baseline and
 22.251 s above the 20% target; suite-speed acceptance remains open. Current campaign local
 token-derived cost is **USD 3.746818284**, excluding historical unknowns and unattributed provider
