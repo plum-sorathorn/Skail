@@ -53,6 +53,15 @@ ineligibility, and ordinary task failures.
    an enum is `invalid_value`; a value of the wrong JSON type is `invalid_type`. Validation paths
    retain only allowlisted field names and nonnegative indexes through 99; all other indexes are
    rendered as `<index>`.
+6. When no decision has been admitted, two decision validation rejections exhaust the bounded
+   repair allowance. If no operational work succeeded, initial and resumed completion terminate
+   blocked with `execution.decision_exhausted`. An admitted decision or completed operational work
+   prevents this guard from converting the result to blocked.
+7. Plan-repair diagnostics preserve a submitted valid mode: direct-mode plans are told to omit the
+   plan and revision, discovery plans are told to remain read-only, and planned plans retain planned
+   guidance. Diagnostics name allowed effect-scope values without echoing submitted values. Writer
+   TaskResults may use the runtime `file_digest` tool for a current file reference. The digest
+   verifies bytes only and must not be described as test execution evidence.
 
 ## Consequences
 
@@ -75,3 +84,7 @@ ineligibility, and ordinary task failures.
 - `tests/integration/test_task_graph.py` covers provider and route failure categories.
 - `tests/integration/test_lead.py` verifies a malformed child result reaches the persisted task event
   without including the raw child output.
+- `tests/integration/test_phase10c_resume_dispatch.py` proves an accepted answer followed by two
+  rejected decisions cannot complete without an admitted decision or operational work.
+- `tests/contract/test_execution_decisions.py` covers direct-mode-preserving diagnostics and safe
+  effect-scope guidance; `tests/integration/test_task_graph.py` covers runtime file digests.

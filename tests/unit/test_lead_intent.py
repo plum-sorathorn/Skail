@@ -18,6 +18,25 @@ def test_explicit_planned_execution_sets_a_required_run_mode() -> None:
     assert controls.required_mode.value == "planned"
 
 
+def test_read_only_discovery_scope_does_not_block_a_later_planned_writer() -> None:
+    controls = resolve_lead_controls(
+        "Use planned execution. Submit two independent read-only discovery agent nodes "
+        "and a checkpoint. At the checkpoint, add one implementation agent with "
+        "effect_scope workspace_write."
+    )
+
+    assert controls.required_mode.value == "planned"
+    assert controls.write_allowed is None
+
+
+def test_read_only_review_stays_write_blocked_when_future_work_is_only_discussed() -> None:
+    controls = resolve_lead_controls(
+        "Review this in read-only mode and explain how a future writer could change it."
+    )
+
+    assert controls.write_allowed is False
+
+
 def test_mentioning_planned_execution_does_not_require_it() -> None:
     controls = resolve_lead_controls("What does 'use planned execution' mean?")
 

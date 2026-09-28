@@ -182,6 +182,81 @@ def test_effect_scope_rejections_report_only_safe_category_and_path(
     assert forbidden_text not in message
     assert "Input should be" not in message
     assert "enum" not in message
+    assert (
+        "supported effect_scope values are read, workspace_write, external_write, or unknown"
+        in message
+    )
+
+
+def test_direct_plan_rejection_guidance_preserves_direct_mode() -> None:
+    gate = ExecutionDecisionGate(admit_plan=lambda _: None)
+
+    with pytest.raises(DecisionAdmissionError) as caught:
+        gate.admit(
+            {
+                "mode": "direct",
+                "objective": "Create the selected JSON exporter",
+                "reason": "The accepted answer selected JSON.",
+                "plan": {
+                    "schema_version": 1,
+                    "policy_version": "adaptive-v1",
+                    "revision": 1,
+                    "nodes": [
+                        {
+                            "local_id": "export",
+                            "kind": "checkpoint",
+                            "objective": "Record the bounded export work",
+                        }
+                    ],
+                },
+            }
+        )
+
+    message = str(caught.value)
+    assert message.startswith("decision.plan_invalid")
+    assert "mode=direct" in message
+    assert "omit plan and revision" in message
+
+
+def test_discovery_plan_rejection_guidance_preserves_read_only_mode() -> None:
+    gate = ExecutionDecisionGate(admit_plan=lambda _: None)
+    plan = {
+        "schema_version": 1,
+        "policy_version": "adaptive-v1",
+        "revision": 1,
+        "nodes": [
+            {
+                "local_id": "inspect",
+                "kind": "agent",
+                "objective": "Inspect source",
+                "effect_scope": "workspace_write",
+                "resource_scopes": ["src"],
+                "task_features": {"profile": "explorer"},
+            },
+            {
+                "local_id": "checkpoint",
+                "kind": "checkpoint",
+                "objective": "Review source findings",
+                "depends_on": ["inspect"],
+                "effect_scope": "read",
+            },
+        ],
+    }
+
+    with pytest.raises(DecisionAdmissionError) as caught:
+        gate.admit(
+            {
+                "mode": "discovery",
+                "objective": "Inspect source",
+                "reason": "Read-only evidence is needed.",
+                "plan": plan,
+            }
+        )
+
+    message = str(caught.value)
+    assert message.startswith("decision.plan_invalid")
+    assert "mode=discovery" in message
+    assert "discovery plans must use read effects" in message
 
 
 def test_required_planned_mode_rejects_direct_decisions() -> None:

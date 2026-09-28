@@ -263,7 +263,9 @@ class ExecutionDecisionGate:
                     "discovery); direct must not send plan"
                 ) from exc
             self._consume_repair()
-            raise DecisionAdmissionError(_actionable_plan_invalid(exc)) from exc
+            raise DecisionAdmissionError(
+                _actionable_plan_invalid(exc, mode=normalized.get("mode"))
+            ) from exc
 
     def _record(self, decision: ExecutionDecision) -> None:
         if decision.plan is not None:
@@ -469,7 +471,7 @@ def _comparable_decision_field(name: str, value: Any) -> Any:
     return value
 
 
-def _actionable_plan_invalid(exc: ValidationError) -> str:
+def _actionable_plan_invalid(exc: ValidationError, *, mode: object = None) -> str:
     """Render safe schema diagnostics plus a minimal valid skeleton."""
 
     missing: list[str] = []
@@ -498,9 +500,19 @@ def _actionable_plan_invalid(exc: ValidationError) -> str:
     if invalid:
         details.append(f"invalid={sorted(set(invalid))[:3]}")
     detail = f" ({'; '.join(details)})" if details else ""
+    normalized_mode = mode.casefold() if isinstance(mode, str) else None
+    if normalized_mode == "direct":
+        correction = "correct the fields and resend mode=direct; omit plan and revision"
+    elif normalized_mode == "discovery":
+        correction = (
+            "correct the fields and resend mode=discovery; discovery plans must use read effects"
+        )
+    else:
+        correction = "correct the fields and resend mode=planned with a validated plan"
     return (
-        "decision.plan_invalid: resend mode=planned with objective, reason, "
-        "and a validated plan; minimal plan skeleton="
+        "decision.plan_invalid: "
+        f"{correction}; supported effect_scope values are "
+        "read, workspace_write, external_write, or unknown; minimal plan skeleton="
         "{'schema_version': 1, 'policy_version': 'adaptive-v1', 'revision': 1, "
         "'nodes': [{'local_id': '<id>', 'kind': 'checkpoint', "
         "'objective': '<what>', 'effect_scope': 'read'}]}"

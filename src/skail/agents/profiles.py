@@ -37,7 +37,7 @@ def _profile(
 def builtin_profiles() -> dict[str, AgentProfile]:
     """Return fresh immutable definitions for Skail's stable built-in roles."""
 
-    file_read_tools = ("ls", "glob", "grep", "read_file")
+    file_read_tools = ("ls", "glob", "grep", "read_file", "file_digest")
     read_tools = (*file_read_tools, "skills", "memory", "ask_user")
     general_tools = (
         *file_read_tools,
@@ -100,8 +100,10 @@ def builtin_profiles() -> dict[str, AgentProfile]:
             tools=general_tools,
             permissions=PermissionSet(read=True, write=True, execute=True),
             prompt=(
-                "Preserve user changes, report touched paths, "
-                "and include relevant verification evidence."
+                "Preserve user changes and report touched paths. Use file_digest for "
+                "runtime-checked file evidence. Run checks only through tools allowed by the "
+                "task policy; never "
+                "claim a test or build passed unless it actually ran."
             ),
             expected_calls=8,
             response_schema="task_result",

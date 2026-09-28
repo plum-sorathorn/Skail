@@ -500,6 +500,9 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
     )
     assert "Preserve user changes" in child_prompt
     assert "Final TaskResult contract: return exactly one JSON object" in child_prompt
+    assert "Allowed status values are succeeded, failed, blocked" in child_prompt
+    assert "SHA-256 digest returned by file_digest" in child_prompt
+    assert "A file digest proves file contents only" in child_prompt
     child_assignment = next(
         assignment
         for assignment in journal.get_session_snapshot(str(session_id)).assignments

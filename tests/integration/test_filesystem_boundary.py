@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from skail.runtime.redaction import RedactionRegistry
+from skail.tools import backend as backend_module
 from skail.tools.backend import CURRENT_TOOL_CALL_ID, PolicyFilesystemBackend
 from skail.tools.filesystem import FilesystemBoundary, PathBoundaryError
 
@@ -97,6 +99,39 @@ def test_deepagents_backend_enforces_sensitive_reads_and_records_writes(tmp_path
     assert all(
         entry["path"] != "/.git" for entry in (backend.ls("/").entries or [])
     )
+
+
+def test_backend_file_digest_uses_workspace_and_sensitive_path_boundaries(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    outside = tmp_path / "outside.txt"
+    workspace.mkdir()
+    content = b"runtime evidence\n"
+    (workspace / "evidence.txt").write_bytes(content)
+    outside.write_bytes(content)
+    (workspace / ".env").write_text("TOKEN=canary", encoding="utf-8")
+    backend = PolicyFilesystemBackend(
+        workspace, redactor=RedactionRegistry(), task_id="task-digest"
+    )
+
+    assert backend.file_digest("evidence.txt") == hashlib.sha256(content).hexdigest()
+    for path in ("../outside.txt", str(outside), ".env", "missing.txt"):
+        with pytest.raises((OSError, ValueError)):
+            backend.file_digest(path)
+
+
+def test_backend_file_digest_bounds_read_size(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "large.txt").write_bytes(b"larger than the configured digest limit")
+    monkeypatch.setattr(backend_module, "MAX_FILE_DIGEST_BYTES", 4)
+    backend = PolicyFilesystemBackend(
+        workspace, redactor=RedactionRegistry(), task_id="task-digest"
+    )
+
+    with pytest.raises(PermissionError, match="file.evidence_unavailable"):
+        backend.file_digest("large.txt")
 
 
 def test_grep_reads_utf8_files_on_windows_locale(tmp_path: Path) -> None:

@@ -33,6 +33,14 @@ must all be read-only. Minimal planned shape (copy this):
 "effect_scope": "read", "resource_scopes": ["<survey-scope>"]},
 {"local_id": "gate", "kind": "checkpoint", "objective": "<review evidence>",
 "depends_on": ["survey"], "effect_scope": "read"}]}}
+For an authorized planned implementation, a writer node looks like:
+{"local_id":"implement","kind":"agent","objective":"<bounded change>",
+"effect_scope":"workspace_write","resource_scopes":["<write-scope>"],
+"task_features":{"profile":"implementer"}}.
+Effect-scope values are read, workspace_write, external_write, or unknown. Resource scopes constrain
+paths but do not grant tools, permissions, approvals, or command execution. Use direct mode for
+bounded work when the direct tool loop satisfies the user's constraints; do not use planned mode
+just to gain write authority.
 Plan fields are validated: the plan root accepts schema_version, policy_version, revision, and
 nodes; node fields include local_id, kind, objective, depends_on, acceptance_criteria, inputs,
 output_contract, effect_scope, resource_scopes, task_features, artifact_refs, and task_lineage.
@@ -129,7 +137,7 @@ def resolve_lead_controls(
             "execution.intent_conflict: planned execution conflicts with the current "
             "required execution mode"
         )
-    no_write = any(
+    explicit_no_write = any(
         re.search(pattern, normalized)
         for pattern in (
             r"\bdo not edit(?: any| the)? (?:files?|workspace|code)?\b",
@@ -137,9 +145,21 @@ def resolve_lead_controls(
             r"\bdo not modify(?: any| the)? (?:files?|workspace|code)?\b",
             r"\bdon't modify(?: any| the)? (?:files?|workspace|code)?\b",
             r"\bdo not change (?:any |the )?(?:files?|workspace|code)\b",
-            r"\bread[- ]only\b",
+            r"\bdo not write(?: any| the)? (?:files?|workspace|code)?\b",
+            r"\bdon't write(?: any| the)? (?:files?|workspace|code)?\b",
             r"\bno file (?:edits?|writes?|modifications?)\b",
         )
+    )
+    mentions_read_only = re.search(r"\bread[- ]only\b", normalized) is not None
+    has_write_scope = re.search(r"\bworkspace[_ -]write\b", normalized) is not None
+    staged_write_phase = re.search(
+        r"\bread[- ]only\b.*\b(?:then|after|once|at (?:the )?checkpoint)\b"
+        r".{0,400}\b(?:add|create|implement|write|edit|modify)\b"
+        r".{0,160}\b(?:implementation|implementer|writer|workspace[_ -]write)\b",
+        normalized,
+    ) is not None
+    no_write = explicit_no_write or (
+        mentions_read_only and not (has_write_scope or staged_write_phase)
     )
     conditional_write = requires_user_answer and re.search(
         r"\buntil i answer\b", normalized

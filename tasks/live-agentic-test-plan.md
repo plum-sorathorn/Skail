@@ -1,5 +1,16 @@
 # Live Agentic Test Plan: Skail Interactive Validation
 
+> Before executing another scenario, apply [the current implementation plan](plan.md), especially
+> its scoped-child verification prerequisite, checkpoint-revision procedure, retry qualification,
+> and live evidence rules. The scenario acceptance criteria below remain in force; older dated
+> budget figures and run instructions are historical. No live scenario run has been made during this implementation.
+
+> Implementation update (2026-09-28): R1-R4/R6-R8 offline regressions pass. Scoped writer children
+> return runtime-checked file digests through file_digest; the operator runs focused tests after
+> integration because the child worktree does not grant shell execution. Final local gates pass
+> (1,231 full-suite passes, 5 skipped). Live S4/S5/S6/S8 acceptance and current retry qualification
+> are still open; local token estimate remains USD 3.019357484 and provider billing is unknown.
+
 ## Current acceptance status (2026-09-27; reconciled)
 
 The scenario matrix below is historical evidence and procedure; current acceptance is:
@@ -434,19 +445,19 @@ Prompt:
 >       {
 >         "local_id": "parser",
 >         "kind": "agent",
->         "objective": "Implement the parser TODO and focused test",
+>         "objective": "Implement the parser TODO and focused test file",
 >         "effect_scope": "workspace_write",
 >         "resource_scopes": ["src/live_fixture/parser.py", "tests/test_parser.py"],
->         "acceptance_criteria": ["rtk pytest tests/test_parser.py -q passes"],
+>         "acceptance_criteria": ["Implement the parser change and return a valid file digest reference for the scoped source and test files"],
 >         "task_features": {"profile": "implementer"}
 >       },
 >       {
 >         "local_id": "report",
 >         "kind": "agent",
->         "objective": "Implement the report TODO and focused test",
+>         "objective": "Implement the report TODO and focused test file",
 >         "effect_scope": "workspace_write",
 >         "resource_scopes": ["src/live_fixture/report.py", "tests/test_report.py"],
->         "acceptance_criteria": ["rtk pytest tests/test_report.py -q passes"],
+>         "acceptance_criteria": ["Implement the report change and return a valid file digest reference for the scoped source and test files"],
 >         "task_features": {"profile": "implementer"}
 >       },
 >       {
@@ -461,21 +472,22 @@ Prompt:
 > }
 > ```
 >
-> Each child must return one JSON `TaskResult` using its assigned task ID, an allowed status,
-> summary, changed paths, artifacts as objects with `kind` and `path`, and a verification entry for
-> its acceptance criterion. For a passing result, use `status: "succeeded"`. A write-capable
-> verification must include `evidence_ref` as `{"kind":"file","path":"<scoped file>","digest":"<sha256>"}`;
-> compute the digest from the exact file bytes with Python and use the actual task ID. Do not use
-> strings or null for `evidence_ref`, and do not return prose outside the JSON object. Write only
-> within the node's `resource_scopes`.
+> Each child must return one JSON `TaskResult` with an allowed status, summary, changed paths,
+> artifacts, and verification for its implementation criterion. For success, include an
+> `evidence_ref` object with `kind=file`, the scoped file path, and the SHA-256 returned by the
+> runtime `file_digest` tool. This digest proves file bytes only; it does not prove that pytest ran.
+> Do not claim that a test or build passed unless it actually ran through an available permitted
+> check path. Use `status=blocked` or `failed` if the implementation criterion was not met. Return
+> JSON only and write only within the node's `resource_scopes`.
 >
-> Delegate only those two independent writers. Each child runs its focused test. After the
-> checkpoint and integration, return one final answer with changed paths and focused test results.
-> Do not add an integration agent or plan tool node. The operator runs
-> `rtk pytest tests/test_integration.py -v` after the active run completes and records that
-> verification separately. After `execution_decision` admits the plan, do not call `task()` to
-> recreate its agent nodes. Return control so Skail dispatches the admitted nodes. The write scopes
-> must not overlap.
+> Delegate only those two independent writers. Children implement the scoped source and test files
+> and report runtime-checked file digests; the current scoped worktree policy does not grant their
+> shell execution. After both results are accepted and integrated, the operator independently runs
+> `rtk pytest tests/test_parser.py tests/test_report.py -q` and records the result. Run the parent
+> integration test as well, then report changed paths and actual test results distinctly from child
+> claims. Do not add an integration agent or plan tool node. After `execution_decision` admits the
+> plan, do not call `task()` to recreate its agent nodes. Return control so Skail dispatches the
+> admitted nodes. The write scopes must not overlap.
 
 While both children are active, queue with `Ctrl+Enter`:
 
@@ -483,8 +495,9 @@ While both children are active, queue with `Ctrl+Enter`:
 > wall times overlapped. Do not modify files.
 
 Pass: exactly two implementer agent nodes, one checkpoint depending on both, disjoint `resource_scopes`, peak
-concurrency two and never over three, accepted child results, no writes outside declared scopes,
-operator-run integration test pass, and one visible FIFO
+concurrency two and never over three, accepted child implementation results with runtime-checked
+file digests, no writes outside declared scopes, operator-run parser/report and integration test
+passes, and one visible FIFO
 follow-up after completion. No queued coroutine warning on cancel or quit. Record actual
 assignment timestamps; do not infer overlap from the prompt. A count or scope conflict must be
 rejected before plan admission and repaired within the bounded decision allowance.
@@ -701,6 +714,9 @@ Run only if sufficient in-house ledger headroom remains. Prompt:
 > Delegate one bounded implementer task for a real, independently verified failing fixture test.
 > Preserve the task identity. If the first attempt genuinely fails, use Skail's single escalation
 > path with recorded failure evidence. Do not manufacture a failure or retry more than once.
+> The scoped child returns implementation evidence and runtime file digests; do not claim that it ran
+> pytest because scoped worktree execution is unavailable. After an accepted result integrates, the
+> operator independently runs the selected focused test and records its actual output.
 
 Choose the task and focused test from the fixture's current baseline before prompting; record
 their paths, failure, and expected behavior. If no eligible task remains, mark S8 not exercised.

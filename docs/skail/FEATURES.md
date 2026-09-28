@@ -146,6 +146,9 @@ Plans use local names and declare dependencies, acceptance criteria, output cont
 resource scopes, and decision checkpoints. Admission allocates persistent IDs atomically and rejects
 cycles, missing references, duplicate objectives, invalid scopes, and unauthorized effects. A
 revision identifies its expected predecessor; completed nodes retain identity and retry history.
+Plan nodes use the `read`, `workspace_write`, `external_write`, or `unknown` effect scope. A
+`workspace_write` node also names non-empty resource scopes; those path limits do not grant extra
+tools, permissions, approvals, or command execution.
 
 ### Result logic
 
@@ -222,14 +225,19 @@ Rules:
 
 ### Implementer
 
-Function: make a bounded code change and run focused verification.
+Function: make a bounded code change and provide evidence that the changed files match the result.
 
 Rules:
 
-- gets filesystem edit and execution tools;
+- gets filesystem edit tools; execution is available only when the task's workspace and permission
+  policy allow it;
 - requires a shared-workspace write lease or worktree;
 - must preserve user changes and report touched paths;
-- success requires the requested change plus relevant verification evidence.
+- can call `file_digest` for a runtime-computed SHA-256 of a readable, non-sensitive workspace file;
+  this proves the file bytes, not that a test or build ran;
+- success requires the requested change plus relevant evidence. Required tests must run through an
+  available, permitted check path or be reported as unverified/blocked; a model-authored claim is
+  not a test receipt.
 
 ### Tester
 

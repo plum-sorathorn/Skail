@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections import deque
 from decimal import Decimal
@@ -201,6 +202,46 @@ async def test_assembled_child_agent_denies_write_outside_planned_resource_scope
 
     assert "write is outside the delegated task scope" in str(tool_result.content)
     assert not (tmp_path / "src/live_fixture/report_test.py").exists()
+
+
+@pytest.mark.asyncio
+async def test_assembled_child_can_get_runtime_file_digest_for_scoped_result(tmp_path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target = workspace / "src/live_fixture/exporter.py"
+    target.parent.mkdir(parents=True)
+    content = "def export_json(data):\n    return str(data)\n"
+    target.write_text(content, encoding="utf-8")
+    expected_digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    model = ScriptedChatModel(
+        responses=[
+            tool_call_message(
+                "file_digest",
+                {"file_path": "src/live_fixture/exporter.py"},
+                call_id="digest-exporter",
+            ),
+            AIMessage(content="I obtained the file digest for the result.")
+        ]
+    )
+    child = build_default_agent(
+        model,
+        workspace=workspace,
+        profile="implementer",
+        task_id="task-digest",
+        allowed_write_paths=("src/live_fixture/exporter.py",),
+        state_dir=tmp_path / "state",
+    )
+
+    result = await child.ainvoke(
+        {"messages": [{"role": "user", "content": "Return a file evidence digest."}]}
+    )
+
+    assert "file_digest" in model.bound_tool_names
+    tool_result = next(
+        message for message in result["messages"] if isinstance(message, ToolMessage)
+    )
+    assert "src/live_fixture/exporter.py" in str(tool_result.content)
+    assert expected_digest in str(tool_result.content)
 
 
 def test_task_validator_rejects_unsafe_context_file_references(tmp_path) -> None:

@@ -399,6 +399,174 @@ async def test_answered_question_cannot_complete_with_a_stale_waiting_result(
 
 
 @pytest.mark.asyncio
+async def test_answered_question_cannot_complete_after_decision_repairs_are_exhausted(
+    tmp_path: Path,
+) -> None:
+    journal, checkpoints, questions, approvals = _stores(tmp_path, "exhausted-decision-resume")
+    session_id = _session(journal)
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message(
+                "ask_user",
+                {
+                    "prompt": "Choose JSON or CSV.",
+                    "reason": "The export format is required.",
+                    "options": ["JSON", "CSV"],
+                },
+                call_id="ask-format",
+            )
+        ],
+    )
+    controller = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {"lead-model": lead},
+    )
+    first = await controller.run_instruction(
+        "Before editing exporter.py, ask me to choose JSON or CSV. "
+        "Do not write until I answer."
+    )
+    assert first.status == "blocked"
+    assert first.interrupted is True
+
+    def invalid_plan(effect_scopes: list[object], call_id: str) -> AIMessage:
+        return tool_call_message(
+            "execution_decision",
+            {
+                "mode": "planned",
+                "objective": "Create the selected JSON exporter",
+                "reason": "The accepted answer selected JSON.",
+                "plan": {
+                    "schema_version": 1,
+                    "policy_version": "adaptive-v1",
+                    "revision": 1,
+                    "nodes": [
+                        {
+                            "local_id": f"node-{index}",
+                            "kind": "checkpoint",
+                            "objective": "Record the bounded export step",
+                            "effect_scope": scope,
+                        }
+                        for index, scope in enumerate(effect_scopes)
+                    ],
+                },
+            },
+            call_id=call_id,
+        )
+
+    resumed_lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            invalid_plan([17], "invalid-effect-scope-one"),
+            invalid_plan([17, 18], "invalid-effect-scope-two"),
+            AIMessage(
+                content=(
+                    "I cannot determine how to encode write scopes, "
+                    "so I will ask for clarification."
+                )
+            ),
+        ],
+    )
+    resumed = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {"lead-model": resumed_lead},
+    )
+    assert resumed.restore_interrupted() is True
+
+    result = await resumed.resume_interrupted("JSON")
+
+    assert result.status == "blocked"
+    assert not (tmp_path / "exporter.py").exists()
+    assert len(resumed_lead.calls) == 3
+    events = journal.events_after(run_id=str(result.run_id))
+    assert sum(
+        event.type == "tool.failed"
+        and getattr(event.payload, "tool", None) == "execution_decision"
+        for event in events
+    ) == 2
+    assert not any(event.type == "run.completed" for event in events)
+    assert any(
+        event.type == "diagnostic.error"
+        and getattr(event.payload, "code", None) == "execution.decision_exhausted"
+        for event in events
+    )
+
+
+@pytest.mark.asyncio
+async def test_initial_run_cannot_complete_after_decision_repairs_are_exhausted(
+    tmp_path: Path,
+) -> None:
+    journal, checkpoints, questions, approvals = _stores(tmp_path, "exhausted-decision-initial")
+    session_id = _session(journal)
+
+    def invalid_plan(scopes: list[object], call_id: str) -> AIMessage:
+        return tool_call_message(
+            "execution_decision",
+            {
+                "mode": "planned",
+                "objective": "Implement a bounded exporter",
+                "reason": "A finite plan may help.",
+                "plan": {
+                    "schema_version": 1,
+                    "policy_version": "adaptive-v1",
+                    "revision": 1,
+                    "nodes": [
+                        {
+                            "local_id": f"checkpoint-{index}",
+                            "kind": "checkpoint",
+                            "objective": f"Record implementation completion {index}",
+                            "effect_scope": scope,
+                        }
+                        for index, scope in enumerate(scopes)
+                    ],
+                },
+            },
+            call_id=call_id,
+        )
+
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            invalid_plan([17], "invalid-scope-one"),
+            invalid_plan([18, 19], "invalid-scope-two"),
+            AIMessage(content="I cannot determine how to encode the plan scopes."),
+        ],
+    )
+    controller = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {"lead-model": lead},
+    )
+
+    result = await controller.run_instruction("Implement a bounded exporter")
+
+    assert result.status == "blocked"
+    assert not journal.plans_for_run(str(result.run_id))
+    assert len(lead.calls) == 3
+    events = journal.events_after(run_id=str(result.run_id))
+    assert not any(event.type == "run.completed" for event in events)
+    assert any(
+        event.type == "diagnostic.error"
+        and getattr(event.payload, "code", None) == "execution.decision_exhausted"
+        for event in events
+    )
+
+
+@pytest.mark.asyncio
 async def test_resume_preserves_required_agent_profile_constraint(tmp_path: Path) -> None:
     journal, checkpoints, questions, approvals = _stores(tmp_path, "profile-resume")
     session_id = _session(journal)

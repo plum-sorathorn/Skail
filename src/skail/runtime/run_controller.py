@@ -1306,6 +1306,35 @@ class RunController:
                     saw_required_rejection = True
         return saw_required_rejection and not saw_completion
 
+    def _decision_repairs_exhausted_requires_blocked(
+        self,
+        *,
+        run_id: RunId,
+        recorded_child_results: Sequence[TaskResult],
+    ) -> bool:
+        """Block a no-work run after its execution-decision repairs are exhausted."""
+        if recorded_child_results:
+            return False
+        if self.journal.get_execution_decision(str(run_id)) is not None:
+            return False
+
+        rejected_decisions = 0
+        for event in self.journal.events_after(run_id=str(run_id)):
+            if event.type == "tool.completed" and isinstance(event.payload, ToolPayload):
+                if event.payload.tool not in {"ask_user", "execution_decision"}:
+                    return False
+            if event.type != "tool.failed" or not isinstance(event.payload, ToolPayload):
+                continue
+            reason = event.payload.reason
+            if event.payload.tool == "execution_decision" and isinstance(reason, str):
+                if reason.startswith("decision."):
+                    rejected_decisions += 1
+            elif isinstance(reason, str) and reason.startswith(
+                "execution.decision_exhausted"
+            ):
+                return True
+        return rejected_decisions >= 2
+
     def _required_mode_error(
         self, run_id: RunId, required_mode: ExecutionMode | None
     ) -> str | None:
@@ -2770,15 +2799,23 @@ class RunController:
             run_id, active_controls.requires_user_answer
         )
         required_mode_error = self._required_mode_error(run_id, active_controls.required_mode)
+        decision_repairs_exhausted = self._decision_repairs_exhausted_requires_blocked(
+            run_id=run_id,
+            recorded_child_results=recorded_child_results,
+        )
         if (
             required_question_error is not None
             or required_mode_error is not None
+            or decision_repairs_exhausted
             or self._gated_noop_requires_blocked(
             run_id=run_id, recorded_child_results=recorded_child_results
             )
         ):
             output_text = required_question_error or required_mode_error or (
-                "Execution blocked: every operational tool call was rejected "
+                "Execution blocked: execution-decision repairs were exhausted without an "
+                "admitted decision; no operational work was performed."
+                if decision_repairs_exhausted
+                else "Execution blocked: every operational tool call was rejected "
                 "because no execution decision was recorded "
                 "(execution.decision_required), and no work was performed."
             )
@@ -2787,6 +2824,8 @@ class RunController:
                 if required_question_error is not None
                 else "execution.intent_not_satisfied"
                 if required_mode_error is not None
+                else "execution.decision_exhausted"
+                if decision_repairs_exhausted
                 else "execution.decision_required"
             )
             self._record_execution_gate_blocked(
@@ -3333,6 +3372,38 @@ class RunController:
                 child_count=len(gate.completed),
             )
 
+        if self._decision_repairs_exhausted_requires_blocked(
+            run_id=pending.run_id,
+            recorded_child_results=child_results,
+        ):
+            error_message = (
+                "Execution blocked: execution-decision repairs were exhausted without an "
+                "admitted decision; no operational work was performed."
+            )
+            self._record_execution_gate_blocked(
+                run_id=pending.run_id,
+                task_id=pending.lead_task_id,
+                attempt_id=pending.lead_attempt_id,
+                code="execution.decision_exhausted",
+                summary=error_message,
+            )
+            self._finalize_assignment_budget(pending.lead_assignment)
+            self._release_lead_allowances()
+            self._pending_run = None
+            self._pending_interrupt_payload = None
+            return RunResult(
+                run_id=pending.run_id,
+                lead_assignment=pending.lead_assignment,
+                lead_context_packet=pending.lead_context_packet,
+                output=error_message,
+                messages=messages,
+                child_results=child_results,
+                status="blocked",
+                child_wall_seconds=gate.child_wall_seconds,
+                child_peak_active=gate.peak_active,
+                child_count=len(gate.completed),
+            )
+
         output_text = ""
         output_content: Any = None
         for message in reversed(messages):
@@ -3751,13 +3822,21 @@ class RunController:
                 f"- {criterion}" for criterion in spec.request.success_criteria
             )
             prompt_sections.append(
-                "Final TaskResult contract: return exactly one JSON object with status, summary, "
-                "and verification fields. Do not wrap it in Markdown or invent task IDs. For "
-                "succeeded, include one verification item for every success criterion below, "
-                "with criterion, passed=true, and concrete evidence. Read-only analyses must cite "
-                "inspected source as path:line in evidence; write-capable work must include a "
-                "valid evidence_ref for each verification item. For failed or blocked work, set "
-                "that status and put the reason in summary or follow_up.\n"
+                "Final TaskResult contract: return exactly one JSON object without Markdown. "
+                "Allowed status values are succeeded, failed, blocked, cancelled, budget_blocked, "
+                "and returned_to_lead. Include summary, artifacts as objects with kind, path, and "
+                "optional digest, changed_paths as workspace-relative paths, and verification "
+                "items with criterion, passed, evidence, and optional evidence_ref. Do not invent "
+                "task IDs or runtime-owned failure diagnostics. For succeeded, include one passed "
+                "verification item with concrete evidence for every success criterion below. "
+                "Read-only analyses cite inspected sources as path:line in evidence. For "
+                "write-capable work, include a file evidence_ref with kind=file, path, and the "
+                "SHA-256 digest returned by file_digest after the final write. A file digest "
+                "proves "
+                "file contents only; it does not prove that a test or build ran. Do not claim a "
+                "check passed unless it actually ran through an available, permitted check path. "
+                "If a required check is unavailable or fails, return blocked or failed and explain "
+                "the next step in summary or follow_up.\n"
                 f"Success criteria:\n{criteria}"
             )
             formatted_prompt = "\n\n".join(prompt_sections)

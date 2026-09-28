@@ -718,6 +718,7 @@ def default_registry(*, version: str = "0.7.13") -> ToolRegistry:
         ("glob", SideEffect.READ_ONLY, read_profiles, "allow"),
         ("grep", SideEffect.READ_ONLY, read_profiles, "allow"),
         ("read_file", SideEffect.READ_ONLY, read_profiles, "allow"),
+        ("file_digest", SideEffect.READ_ONLY, read_profiles, "allow"),
         ("write_file", SideEffect.WORKSPACE_WRITE, write_profiles, "policy"),
         ("edit_file", SideEffect.WORKSPACE_WRITE, write_profiles, "policy"),
         ("execute", SideEffect.UNKNOWN, execute_profiles, "policy"),
@@ -787,6 +788,15 @@ def build_default_agent(
     artifacts = ArtifactStore(
         (state_dir or workspace_state_dir(identify_workspace(workspace))) / "artifacts",
         redaction,
+    )
+    backend = PolicyFilesystemBackend(
+        workspace,
+        redactor=redaction,
+        task_id=task_id,
+        lease_manager=lease_manager,
+        allowed_write_paths=allowed_write_paths,
+        forbidden_host_paths=forbidden_host_paths,
+        state_dir=state_dir,
     )
 
     @tool("execute")
@@ -891,6 +901,20 @@ def build_default_agent(
             runtime_event("user.answer", question.question_id, answered.answer or "")
         return answered.answer or ""
 
+    @tool("file_digest")
+    def file_digest(file_path: str) -> dict[str, str]:
+        """Return the SHA-256 digest of a readable, non-sensitive workspace file."""
+        try:
+            digest = backend.file_digest(file_path)
+        except (OSError, ValueError):
+            return {"status": "error", "code": "file.evidence_unavailable"}
+        return {
+            "status": "completed",
+            "kind": "file",
+            "path": file_path,
+            "digest": digest,
+        }
+
     custom_tools: list[Any] = list(extension_tools)
     visible_names = frozenset(item.name for item in registry.visible_to(profile))
     visible_names |= frozenset(
@@ -902,6 +926,8 @@ def build_default_agent(
         custom_tools.append(execute)
     if "ask_user" in visible_names:
         custom_tools.append(ask_user)
+    if "file_digest" in visible_names:
+        custom_tools.append(file_digest)
     activity_middleware: list[AgentMiddleware[Any, Any, Any]] = []
     if (
         runtime_event is not None
@@ -924,15 +950,7 @@ def build_default_agent(
         model,
         tools=custom_tools,
         subagents=subagents,
-        backend=PolicyFilesystemBackend(
-            workspace,
-            redactor=redaction,
-            task_id=task_id,
-            lease_manager=lease_manager,
-            allowed_write_paths=allowed_write_paths,
-            forbidden_host_paths=forbidden_host_paths,
-            state_dir=state_dir,
-        ),
+        backend=backend,
         skills=skills,
         memory=memory,
         middleware=[
