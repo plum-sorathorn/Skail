@@ -736,6 +736,6 @@ scenario runs, and provider billing verification remain open.
 
 Planning-deliverable checks: all local Markdown links in the five changed documents resolve;
 explicit source/test paths checked by the plan audit exist; `git diff --check` passed.
-`graphify update .` completed its AST rebuild (4,787 nodes, 13,692 edges). It warned that 14 JSON
+`graphify update .` completed its AST rebuild (4,787 nodes, 13,693 edges). It warned that 14 JSON
 source/fixture files yielded no nodes and that documentation semantic updates require a separate
 workflow. No semantic completeness or newly indexed plan content is claimed from that AST update.
