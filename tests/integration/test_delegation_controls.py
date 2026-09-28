@@ -1,7 +1,10 @@
 import asyncio
 import hashlib
+import json
+import os
 import sqlite3
 import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event
@@ -25,6 +28,8 @@ from skail.runtime.run_controller import RunController
 from skail.runtime.workspaces import WorkspaceManager, WorkspaceMode
 from skail.sessions.journal import Journal
 from skail.tools.execution import ExecutionPolicy, ExecutionResult
+from skail.tui.app import SkailApp
+from skail.tui.widgets.composer import ComposerTextArea
 
 
 def _journal(tmp_path: Path) -> Journal:
@@ -268,6 +273,291 @@ async def test_disjoint_worktree_writers_overlap_before_serial_integration(
     assert all(item.status == "succeeded" for item in result.child_results)
     assert (workspace / "tracked.txt").read_bytes() == b"integrated tracked.txt\n"
     assert (workspace / "second.txt").read_bytes() == b"integrated second.txt\n"
+
+
+@pytest.mark.asyncio
+async def test_two_plan_writers_checkpoint_and_evidence_only_revision_complete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = _repository(tmp_path)
+    journal = _journal(tmp_path / "state")
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id),
+        title="Two writers and a final checkpoint",
+        created_at=datetime.now(UTC),
+    )
+    criterion = "Write assigned source and test files with runtime-readable evidence."
+    outputs = {
+        "parser": {
+            "src/live_fixture/parser.py": (
+                b"def parse_record(line):\n"
+                b"    key, value = line.split('=', 1)\n"
+                b"    return key, value\n"
+            ),
+            "tests/test_parser.py": (
+                b"from live_fixture.parser import parse_record\n\n"
+                b"def test_parser_splits_only_once():\n"
+                b"    assert parse_record('name=one=two') == ('name', 'one=two')\n"
+            ),
+        },
+        "report": {
+            "src/live_fixture/report.py": (
+                b"def render_report(title, rows):\n"
+                b"    return title + '\\n' + '\\n'.join(rows)\n"
+            ),
+            "tests/test_report.py": (
+                b"from live_fixture.report import render_report\n\n"
+                b"def test_report_keeps_title_and_rows():\n"
+                b"    assert render_report('Daily', ['one', 'two']) == 'Daily\\none\\ntwo'\n"
+            ),
+        },
+    }
+    digests = {
+        path: hashlib.sha256(content).hexdigest()
+        for files in outputs.values()
+        for path, content in files.items()
+    }
+    evidence_refs = ["plan-node:parser:succeeded"]
+    evidence_refs.extend(
+        f"file:{path}:{digests[path]}" for path in outputs["parser"]
+    )
+    evidence_refs.append("plan-node:report:succeeded")
+    evidence_refs.extend(
+        f"file:{path}:{digests[path]}" for path in outputs["report"]
+    )
+
+    plan = {
+        "schema_version": 1,
+        "policy_version": "adaptive-v1",
+        "revision": 1,
+        "nodes": [
+            {
+                "local_id": local_id,
+                "kind": "agent",
+                "objective": f"Implement the {local_id} module and focused test file",
+                "acceptance_criteria": [criterion],
+                "effect_scope": "workspace_write",
+                "resource_scopes": list(files),
+                "task_features": {"profile": "implementer"},
+            }
+            for local_id, files in outputs.items()
+        ]
+        + [
+            {
+                "local_id": "integrate",
+                "kind": "checkpoint",
+                "objective": "Accept the two completed writer results",
+                "depends_on": ["parser", "report"],
+                "effect_scope": "read",
+            }
+        ],
+    }
+    revised_plan = {**plan, "revision": 2}
+    barrier = AsyncStartBarrier()
+    started: list[str] = []
+
+    class Writer:
+        def __init__(self, root: Path, task_id: str, local_id: str) -> None:
+            self.root = root
+            self.task_id = task_id
+            self.local_id = local_id
+
+        async def ainvoke(self, state) -> dict[str, object]:
+            del state
+            started.append(self.local_id)
+            await barrier.worker(self.local_id)
+            artifacts = []
+            for path, content in outputs[self.local_id].items():
+                target = self.root / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+                artifacts.append(
+                    ArtifactRef(kind="file", path=path, digest=digests[path])
+                )
+            result = TaskResult(
+                task_id=self.task_id,
+                status="succeeded",
+                summary=f"Implemented and returned file digests for {self.local_id}.",
+                artifacts=tuple(artifacts),
+                changed_paths=tuple(outputs[self.local_id]),
+                verification=(
+                    VerificationResult(
+                        criterion=criterion,
+                        passed=True,
+                        evidence="The scoped files were written; test execution is operator-owned.",
+                        evidence_ref=artifacts[0],
+                    ),
+                ),
+            )
+            return {"messages": [AIMessage(content=result.model_dump_json())]}
+
+    def build_child(*args, **kwargs):
+        del args
+        allowed = tuple(kwargs["allowed_write_paths"])
+        local_id = "parser" if "src/live_fixture/parser.py" in allowed else "report"
+        return Writer(kwargs["workspace"], kwargs["task_id"], local_id)
+
+    monkeypatch.setattr("skail.runtime.run_controller.build_default_agent", build_child)
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "planned",
+                            "objective": "Implement parser and report independently",
+                            "reason": "The two scoped changes can run concurrently.",
+                            "plan": plan,
+                        },
+                        "admit-two-writers",
+                    )
+                ]
+            ),
+            AIMessage(content="The two admitted writers are running."),
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "planned",
+                            "objective": "Accept both completed writer results",
+                            "reason": (
+                                "Both scoped results and their runtime file digests are present."
+                            ),
+                            "plan": revised_plan,
+                            "revision": {
+                                "expected_revision": 1,
+                                "added_nodes": [],
+                                "replaced_local_ids": [],
+                                "cancelled_local_ids": [],
+                                "justification": "All planned implementation work is complete.",
+                                "evidence_refs": evidence_refs,
+                            },
+                        },
+                        "ack-two-writer-checkpoint",
+                    )
+                ]
+            ),
+            AIMessage(content="Both implementations were integrated for independent testing."),
+            AIMessage(content="The queued read-only follow-up ran after integration."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=workspace,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": lead_model},
+        profile_models={"implementer": "implementer-model"},
+        workspace_mode="worktree",
+        workspace_manager=WorkspaceManager(tmp_path / "skail-data"),
+    )
+
+    app = SkailApp(controller=controller, session_id=session_id)
+    queued = "After integration, summarize which modules changed. Do not edit files."
+    async with app.run_test(size=(120, 40)) as pilot:
+        composer = app.query_one("#composer-input", ComposerTextArea)
+        composer.text = "Implement the two independent fixture modules"
+        await pilot.press("enter")
+        await asyncio.wait_for(barrier.wait_for_started(2), timeout=10)
+        assert set(started) == {"parser", "report"}
+        composer.text = queued
+        await pilot.press("ctrl+enter")
+        await pilot.pause()
+        assert app.projection.queue == [queued]
+        barrier.release("parser")
+        barrier.release("report")
+        for _ in range(200):
+            await pilot.pause(0.05)
+            snapshot = journal.get_session_snapshot(str(session_id))
+            if (
+                len(snapshot.runs) == 2
+                and snapshot.runs[-1].status == "completed"
+                and not app._run_active
+                and not app.projection.queue
+            ):
+                break
+
+    final_snapshot = journal.get_session_snapshot(str(session_id))
+    assert len(final_snapshot.runs) == 2
+    assert final_snapshot.runs[0].status == "completed"
+    assert final_snapshot.runs[1].status == "completed"
+    first_run_id = final_snapshot.runs[0].run_id
+    first_tasks = {
+        task.task_id: task for task in final_snapshot.tasks if task.run_id == first_run_id
+    }
+    first_attempts = [
+        attempt for attempt in final_snapshot.attempts if attempt.task_id in first_tasks
+    ]
+    assert len(first_tasks) == 3
+    assert len(first_attempts) == 3
+    assert all(task.status is TaskStatus.SUCCEEDED for task in first_tasks.values())
+    assert set(started) == {"parser", "report"}
+    assert (workspace / "src/live_fixture/parser.py").read_bytes() == outputs["parser"][
+        "src/live_fixture/parser.py"
+    ]
+    assert (workspace / "tests/test_report.py").read_bytes() == outputs["report"][
+        "tests/test_report.py"
+    ]
+    persisted = journal.plans_for_run(first_run_id)[0]
+    assert persisted.plan.revision == 2
+    assert persisted.node_states == {
+        "parser": PlanNodeState.SUCCEEDED,
+        "report": PlanNodeState.SUCCEEDED,
+        "integrate": PlanNodeState.SUCCEEDED,
+    }
+    child_task_ids = {
+        journal.plan_node_task_binding(persisted.node_ids[local_id]).task_id
+        for local_id in ("parser", "report")
+    }
+    with sqlite3.connect(journal.path) as connection:
+        result_rows = connection.execute(
+            "SELECT task_id,payload_json FROM task_results WHERE task_id IN (?,?)",
+            tuple(sorted(child_task_ids)),
+        ).fetchall()
+    child_results = {task_id: json.loads(payload) for task_id, payload in result_rows}
+    assert len(child_results) == 2
+    assert all(result["status"] == "succeeded" for result in child_results.values())
+    assert all(
+        result["verification"][0]["evidence_ref"]["digest"]
+        for result in child_results.values()
+    )
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(
+        filter(None, (str(workspace / "src"), environment.get("PYTHONPATH", "")))
+    )
+    focused = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "tests/test_parser.py", "tests/test_report.py"],
+        cwd=workspace,
+        env=environment,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert focused.returncode == 0, focused.stdout + focused.stderr
+    assert "2 passed" in focused.stdout
+    change_sets = journal.get_session_snapshot(str(session_id)).changesets
+    assert [record.status for record in change_sets] == [
+        "integrated",
+        "integrated",
+    ]
+    assert len(
+        [
+            item
+            for item in app.projection.transcript_items
+            if item.role == "user" and item.content == queued
+        ]
+    ) == 1
+    assert len(
+        [
+            item
+            for item in app.projection.transcript_items
+            if item.role == "lead"
+            and item.content == "The queued read-only follow-up ran after integration."
+        ]
+    ) == 1
 
 
 @pytest.mark.asyncio
@@ -539,6 +829,331 @@ async def test_planned_ready_agent_nodes_use_the_admitted_child_lifecycle(tmp_pa
     assert {binding.attempt_id for binding in bindings if binding is not None} <= {
         attempt.attempt_id for attempt in snapshot.attempts
     }
+
+
+@pytest.mark.asyncio
+async def test_two_explorers_revision_then_scoped_writer_passes_operator_test(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = _repository(tmp_path)
+    parser_path = workspace / "src/live_fixture/parser.py"
+    parser_path.parent.mkdir(parents=True)
+    parser_path.write_text(
+        "def parse_records(text, *, strict=False):\n"
+        "    raise NotImplementedError\n",
+        encoding="utf-8",
+    )
+    test_path = workspace / "tests/test_parser.py"
+    test_path.parent.mkdir(parents=True)
+    test_path.write_text(
+        "from live_fixture.parser import parse_records\n\n"
+        "def test_strict_split_preserves_equals_in_value():\n"
+        "    assert parse_records('key=value=tail', strict=True) == [('key', 'value=tail')]\n\n"
+        "def test_permissive_mode_ignores_invalid_lines():\n"
+        "    assert parse_records('invalid', strict=False) == []\n",
+        encoding="utf-8",
+    )
+    _git(workspace, "add", "src/live_fixture/parser.py", "tests/test_parser.py")
+    _git(workspace, "commit", "-m", "Add strict parser fixture")
+    journal = _journal(tmp_path / "state")
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id),
+        title="Two discovery reports then parser implementation",
+        created_at=datetime.now(UTC),
+    )
+    discovery_criterion = "Return source-backed parser findings with path:line evidence."
+    write_criterion = "Implement strict parsing while preserving permissive behavior."
+    findings = "src/live_fixture/parser.py:1; tests/test_parser.py:1"
+    explorers = ScriptedChatModel(
+        model_name="explorer-model",
+        responses=[
+            AIMessage(
+                content=json.dumps(
+                    {
+                        "status": "succeeded",
+                        "summary": "The parser is a stub and focused tests cover strict behavior.",
+                        "verification": [
+                            {
+                                "criterion": discovery_criterion,
+                                "passed": True,
+                                "evidence": findings,
+                            }
+                        ],
+                    }
+                )
+            ),
+            AIMessage(
+                content=json.dumps(
+                    {
+                        "status": "succeeded",
+                        "summary": "The existing tests cover strict and permissive behavior.",
+                        "verification": [
+                            {
+                                "criterion": discovery_criterion,
+                                "passed": True,
+                                "evidence": findings,
+                            }
+                        ],
+                    }
+                )
+            ),
+        ],
+    )
+    implementation = (
+        "def parse_records(text, *, strict=False):\n"
+        "    records = []\n"
+        "    for line in text.splitlines():\n"
+        "        if not line.strip() or '=' not in line:\n"
+        "            if strict and line.strip():\n"
+        "                raise ValueError('expected key=value')\n"
+        "            continue\n"
+        "        key, value = line.split('=', 1)\n"
+        "        records.append((key, value))\n"
+        "    return records\n"
+    )
+    implementation_digest = hashlib.sha256(
+        implementation.replace("\n", os.linesep).encode()
+    ).hexdigest()
+    implementer = ScriptedChatModel(
+        model_name="implementer-model",
+        responses=[
+            tool_call_message(
+                "write_file",
+                {"file_path": "src/live_fixture/parser.py", "content": implementation},
+                call_id="write-parser",
+            ),
+            tool_call_message(
+                "file_digest",
+                {"file_path": "src/live_fixture/parser.py"},
+                call_id="digest-parser",
+            ),
+            tool_call_message(
+                "file_digest",
+                {"file_path": "tests/test_parser.py"},
+                call_id="digest-parser-tests",
+            ),
+            AIMessage(
+                content=json.dumps(
+                    {
+                        "status": "succeeded",
+                        "summary": "Implemented only the scoped parser source.",
+                        "artifacts": [
+                            {
+                                "kind": "file",
+                                "path": "src/live_fixture/parser.py",
+                                "digest": implementation_digest,
+                            },
+                            {
+                                "kind": "file",
+                                "path": "tests/test_parser.py",
+                                "digest": hashlib.sha256(test_path.read_bytes()).hexdigest(),
+                            },
+                        ],
+                        "changed_paths": ["src/live_fixture/parser.py"],
+                        "verification": [
+                            {
+                                "criterion": write_criterion,
+                                "passed": True,
+                                "evidence": (
+                                    "The parser source and focused test digests were checked."
+                                ),
+                                "evidence_ref": {
+                                    "kind": "file",
+                                    "path": "src/live_fixture/parser.py",
+                                    "digest": implementation_digest,
+                                },
+                            }
+                        ],
+                    }
+                )
+            ),
+        ],
+    )
+    initial_plan = {
+        "schema_version": 1,
+        "policy_version": "adaptive-v1",
+        "revision": 1,
+        "nodes": [
+            {
+                "local_id": "audit-cli-api",
+                "kind": "agent",
+                "objective": "Audit parser implementation and report source-backed findings.",
+                "acceptance_criteria": [discovery_criterion],
+                "effect_scope": "read",
+                "resource_scopes": ["src/live_fixture/parser.py"],
+                "task_features": {"profile": "explorer"},
+            },
+            {
+                "local_id": "audit-test-gaps",
+                "kind": "agent",
+                "objective": "Audit parser tests and report source-backed findings.",
+                "acceptance_criteria": [discovery_criterion],
+                "effect_scope": "read",
+                "resource_scopes": ["tests/test_parser.py"],
+                "task_features": {"profile": "explorer"},
+            },
+            {
+                "local_id": "discovery-checkpoint",
+                "kind": "checkpoint",
+                "objective": "Review both discovery reports before implementation.",
+                "depends_on": ["audit-cli-api", "audit-test-gaps"],
+                "effect_scope": "read",
+            },
+        ],
+    }
+    writer = {
+        "local_id": "implement-parser",
+        "kind": "agent",
+        "objective": "Implement strict parsing and preserve permissive parsing.",
+        "acceptance_criteria": [write_criterion],
+        "depends_on": ["discovery-checkpoint"],
+        "effect_scope": "workspace_write",
+        "resource_scopes": ["src/live_fixture/parser.py", "tests/test_parser.py"],
+        "task_features": {"profile": "implementer"},
+    }
+    revised_plan = {
+        **initial_plan,
+        "revision": 2,
+        "nodes": [*initial_plan["nodes"], writer],
+    }
+    revision_evidence = [
+        "plan-node:audit-cli-api:succeeded",
+        "plan-node:audit-test-gaps:succeeded",
+    ]
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "planned",
+                            "objective": "Inspect the parser before choosing implementation work.",
+                            "reason": "Two independent read-only audits ground the change.",
+                            "plan": initial_plan,
+                        },
+                        "admit-discovery-plan",
+                    )
+                ]
+            ),
+            AIMessage(content="The two read-only audits are running."),
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "planned",
+                            "objective": "Implement the evidence-backed strict parser change.",
+                            "reason": "Both reports support one scoped parser writer.",
+                            "plan": revised_plan,
+                            "revision": {
+                                "expected_revision": 1,
+                                "added_nodes": [writer],
+                                "replaced_local_ids": [],
+                                "cancelled_local_ids": [],
+                                "justification": (
+                                    "The reports identify the stub and focused test behavior."
+                                ),
+                                "evidence_refs": revision_evidence,
+                            },
+                        },
+                        "revise-after-discovery",
+                    )
+                ]
+            ),
+            AIMessage(content="The scoped implementation was integrated for independent testing."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=workspace,
+        journal=journal,
+        models={
+            "lead-model": lead_model,
+            "explorer-model": explorers,
+            "implementer-model": implementer,
+        },
+        profile_models={"explorer": "explorer-model", "implementer": "implementer-model"},
+        workspace_mode="worktree",
+        workspace_manager=WorkspaceManager(tmp_path / "skail-data"),
+    )
+
+    result = await controller.run_instruction(
+        "Use planned execution. Submit two independent read-only discovery agent nodes and a "
+        "checkpoint. After the checkpoint, add one implementer with effect_scope workspace_write "
+        "scoped to the parser source and test files, then implement strict parsing while "
+        "preserving "
+        "permissive behavior."
+    )
+
+    assert result.status == "completed", (
+        result.status,
+        result.output,
+        [
+            (event.type, event.payload)
+            for event in journal.events_after(run_id=str(result.run_id))
+            if event.type
+            in {"tool.failed", "task.blocked", "plan.node_blocked", "diagnostic.error"}
+        ],
+    )
+    persisted = journal.plans_for_run(str(result.run_id))[0]
+    assert persisted.plan.revision == 2
+    assert persisted.node_states == {
+        "audit-cli-api": PlanNodeState.SUCCEEDED,
+        "audit-test-gaps": PlanNodeState.SUCCEEDED,
+        "discovery-checkpoint": PlanNodeState.SUCCEEDED,
+        "implement-parser": PlanNodeState.SUCCEEDED,
+    }
+    plan_events = journal.events_after(run_id=str(result.run_id))
+    revision_sequence = next(
+        event.sequence for event in plan_events if event.type == "plan.revised"
+    )
+    discovery_task_ids = {
+        journal.plan_node_task_binding(persisted.node_ids[local_id]).task_id
+        for local_id in ("audit-cli-api", "audit-test-gaps")
+    }
+    assert max(
+        event.sequence
+        for event in plan_events
+        if event.type == "task.succeeded" and str(event.task_id) in discovery_task_ids
+    ) < revision_sequence
+    writer_task_id = journal.plan_node_task_binding(
+        persisted.node_ids["implement-parser"]
+    ).task_id
+    assert next(
+        event.sequence
+        for event in plan_events
+        if event.type == "task.proposed" and str(event.task_id) == writer_task_id
+    ) > revision_sequence
+    assert next(
+        event.sequence
+        for event in plan_events
+        if event.type == "plan.node_succeeded"
+        and event.payload.node_id == persisted.node_ids["discovery-checkpoint"]
+    ) > revision_sequence
+    snapshot = journal.get_session_snapshot(str(session_id))
+    plan_tasks = [
+        task for task in snapshot.tasks if task.run_id == str(result.run_id)
+    ]
+    assert len(plan_tasks) == 4
+    assert implementer.bound_tool_names >= {"write_file", "file_digest"}
+    assert (workspace / "src/live_fixture/parser.py").read_text(encoding="utf-8") == implementation
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(
+        filter(None, (str(workspace / "src"), environment.get("PYTHONPATH", "")))
+    )
+    focused = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "tests/test_parser.py"],
+        cwd=workspace,
+        env=environment,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert focused.returncode == 0, focused.stdout + focused.stderr
+    assert "2 passed" in focused.stdout
 
 
 @pytest.mark.asyncio

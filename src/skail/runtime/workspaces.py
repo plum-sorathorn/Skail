@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
+import stat
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -139,7 +141,14 @@ class WorkspaceManager:
         except ValueError as error:
             raise ValueError("workspace.worktree_path_invalid") from error
         if path.exists():
-            raise ValueError("workspace.worktree_exists")
+            workspace = IsolatedWorkspace(
+                snapshot.snapshot_id,
+                task_id,
+                path,
+                f"skail/{snapshot.snapshot_id[:12]}/{task_id}",
+            )
+            self._resume_retained(snapshot, workspace)
+            return workspace
         branch = f"skail/{snapshot.snapshot_id[:12]}/{task_id}"
         self._git(root, "worktree", "add", "--no-checkout", "-b", branch, str(path), snapshot.head)
         try:
@@ -167,18 +176,7 @@ class WorkspaceManager:
     def cleanup(self, workspace: IsolatedWorkspace) -> bool:
         self._validate_workspace_ownership(workspace)
         if not self._matches_snapshot(workspace):
-            retained = workspace.path / "retained.json"
-            if not retained.exists():
-                retained.write_text(
-                    json.dumps(
-                        {
-                            "reason": "workspace.unintegrated_changes",
-                            "snapshot_id": workspace.snapshot_id,
-                        }
-                    )
-                    + "\n",
-                    encoding="utf-8",
-                )
+            self.retain(workspace, "workspace.unintegrated_changes")
             return False
         original_root = self._git(workspace.path, "rev-parse", "--git-common-dir")
         common = (workspace.path / original_root).resolve()
@@ -229,10 +227,96 @@ class WorkspaceManager:
 
     def retain(self, workspace: IsolatedWorkspace, reason: str) -> None:
         self._validate_workspace_ownership(workspace)
-        (workspace.path / "retained.json").write_text(
-            json.dumps({"reason": reason, "snapshot_id": workspace.snapshot_id}) + "\n",
-            encoding="utf-8",
-        )
+        retained_dir = self._data_root / "retained"
+        retained_dir.mkdir(parents=True, exist_ok=True)
+        if retained_dir.resolve(strict=True).parent != self._data_root:
+            raise ValueError("workspace.retention_path_invalid")
+        metadata_path = self._retention_path(workspace.snapshot_id, workspace.task_id)
+        payload = {
+            "schema_version": 1,
+            "snapshot_id": workspace.snapshot_id,
+            "task_id": workspace.task_id,
+            "branch": workspace.branch,
+            "head": self._git_context(workspace.path)[1],
+            "reason": reason[:500],
+        }
+        encoded = json.dumps(payload, sort_keys=True) + "\n"
+        try:
+            with metadata_path.open("x", encoding="utf-8") as record:
+                record.write(encoded)
+                record.flush()
+                os.fsync(record.fileno())
+        except FileExistsError:
+            existing = self._read_retention_record(metadata_path)
+            owner_fields = ("schema_version", "snapshot_id", "task_id", "branch", "head")
+            if any(existing.get(field) != payload[field] for field in owner_fields):
+                raise ValueError("workspace.retention_state_invalid")
+
+    def _resume_retained(
+        self, snapshot: WorkspaceSnapshot, workspace: IsolatedWorkspace
+    ) -> None:
+        self._validate_workspace_ownership(workspace)
+        _, head = self._git_context(workspace.path)
+        if head != snapshot.head:
+            raise ValueError("workspace.snapshot_base_stale")
+        metadata_path = self._retention_path(workspace.snapshot_id, workspace.task_id)
+        payload = self._read_retention_record(metadata_path)
+        expected = {
+            "schema_version": 1,
+            "snapshot_id": snapshot.snapshot_id,
+            "task_id": workspace.task_id,
+            "branch": workspace.branch,
+            "head": snapshot.head,
+        }
+        if any(payload.get(field) != value for field, value in expected.items()) or not isinstance(
+            payload.get("reason"), str
+        ):
+            raise ValueError("workspace.retention_state_invalid")
+        metadata_path.unlink()
+
+    def _retention_path(self, snapshot_id: str, task_id: str) -> Path:
+        return self._data_root / "retained" / f"{snapshot_id}-{task_id}.json"
+
+    @staticmethod
+    def _read_retention_record(path: Path) -> dict[str, object]:
+        try:
+            before = path.lstat()
+        except OSError as error:
+            raise ValueError("workspace.retention_state_missing") from error
+        attributes = getattr(before, "st_file_attributes", 0)
+        reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_nlink != 1
+            or bool(reparse and attributes & reparse)
+        ):
+            raise ValueError("workspace.retention_state_invalid")
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(path, os.O_RDONLY | no_follow)
+            with os.fdopen(descriptor, "rb", closefd=True) as source:
+                opened = os.fstat(source.fileno())
+                if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+                    raise ValueError("workspace.retention_state_invalid")
+                content = source.read(4097)
+                if len(content) > 4096:
+                    raise ValueError("workspace.retention_state_invalid")
+            after = path.lstat()
+        except OSError as error:
+            raise ValueError("workspace.retention_state_invalid") from error
+        if (before.st_dev, before.st_ino, before.st_size) != (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+        ):
+            raise ValueError("workspace.retention_state_invalid")
+        try:
+            value = json.loads(content.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("workspace.retention_state_invalid") from error
+        if not isinstance(value, dict):
+            raise ValueError("workspace.retention_state_invalid")
+        return value
 
     def _validate_workspace_ownership(self, workspace: IsolatedWorkspace) -> None:
         root = self._git_context(workspace.path)[0]

@@ -10,6 +10,7 @@ allows lead-direct writes (T3).
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 import subprocess
 from datetime import UTC, datetime
@@ -249,6 +250,156 @@ async def test_child_write_integrates_with_changeset_and_cleanup(
     assert _changesets(journal) == [("integrated",)]
     assert child_roots and child_roots[0] != workspace
     assert not child_roots[0].exists(), "isolated worktree was not cleaned up"
+
+
+@pytest.mark.asyncio
+async def test_failed_child_reuses_authenticated_worktree_for_same_task_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = _repository(tmp_path)
+    (workspace / "tracked.txt").write_text("user input\n", encoding="utf-8")
+    journal = _journal(tmp_path / "state")
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id),
+        title="Retry retained child work",
+        created_at=datetime.now(UTC),
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        _direct_decision("Delegate the bounded edit"),
+                        "decision-1",
+                    ),
+                    (
+                        "task",
+                        {
+                            "description": json.dumps(
+                                {
+                                    "description": "Update tracked.txt and retain task identity",
+                                    "success_criteria": ["Provide a digest for the final file"],
+                                    "write_scope": ["tracked.txt"],
+                                }
+                            ),
+                            "subagent_type": "implementer",
+                        },
+                        "task-1",
+                    ),
+                ]
+            ),
+            AIMessage(content="The implementer result was integrated."),
+        ],
+    )
+    child_roots: list[Path] = []
+
+    class RetryChild:
+        def __init__(self, root: Path, task_id: str) -> None:
+            self.root = root
+            self.task_id = task_id
+
+        async def ainvoke(self, state: object) -> dict[str, object]:
+            del state
+            child_roots.append(self.root)
+            target = self.root / "tracked.txt"
+            if len(child_roots) == 1:
+                target.write_text("partial work\n", encoding="utf-8")
+                result = TaskResult(
+                    task_id=cast(TaskId, self.task_id),
+                    status="failed",
+                    summary="The first implementation attempt did not meet its criterion.",
+                    failure_category="task_failure",
+                )
+            else:
+                assert target.read_text(encoding="utf-8") == "partial work\n"
+                target.write_text("integrated retry\n", encoding="utf-8")
+                digest = hashlib.sha256(target.read_bytes()).hexdigest()
+                result = TaskResult(
+                    task_id=cast(TaskId, self.task_id),
+                    status="succeeded",
+                    summary="The retry completed the scoped edit.",
+                    verification=(
+                        VerificationResult(
+                            criterion="Provide a digest for the final file",
+                            passed=True,
+                            evidence="The final file digest was checked by Skail.",
+                            evidence_ref=ArtifactRef(
+                                kind="file", path="tracked.txt", digest=digest
+                            ),
+                        ),
+                    ),
+                )
+            return {"messages": [AIMessage(content=result.model_dump_json())]}
+
+    def build_child(*args: object, **kwargs: object) -> RetryChild:
+        del args
+        assert isinstance(kwargs["workspace"], Path)
+        assert isinstance(kwargs["task_id"], str)
+        return RetryChild(kwargs["workspace"], kwargs["task_id"])
+
+    monkeypatch.setattr("skail.runtime.run_controller.build_default_agent", build_child)
+    controller = RunController(
+        session_id=session_id,
+        workspace=workspace,
+        journal=journal,
+        models={
+            "lead-model": lead_model,
+            "implementer-model": ScriptedChatModel(
+                model_name="unused-child-model", responses=[]
+            ),
+            "strong-model": ScriptedChatModel(model_name="strong-model", responses=[]),
+        },
+        default_lead_model="lead-model",
+        default_child_model="implementer-model",
+        workspace_mode="worktree",
+        workspace_manager=WorkspaceManager(tmp_path / "skail-data"),
+    )
+
+    result = await controller.run_instruction("Update tracked.txt")
+
+    assert result.status == "completed", (
+        result.status,
+        result.output,
+        result.child_results,
+        [
+            (event.type, getattr(event.payload, "reason", None))
+            for event in journal.events_after(run_id=str(result.run_id))
+            if event.type in {"task.failed", "task.blocked", "diagnostic.error"}
+        ],
+    )
+    assert len(result.child_results) == 2
+    first_result, child_result = result.child_results
+    assert first_result.status == "failed"
+    assert child_result.status == "succeeded"
+    assert first_result.task_id == child_result.task_id
+    final_snapshot = journal.get_session_snapshot(str(session_id))
+    child_attempts = [
+        attempt
+        for attempt in final_snapshot.attempts
+        if attempt.task_id == str(child_result.task_id)
+    ]
+    assert [(attempt.number, attempt.status.value) for attempt in child_attempts] == [
+        (1, "failed"),
+        (2, "succeeded"),
+    ]
+    attempt_ids = {attempt.attempt_id for attempt in child_attempts}
+    child_assignments = [
+        assignment
+        for assignment in final_snapshot.assignments
+        if assignment.attempt_id in attempt_ids
+    ]
+    assert [assignment.model for assignment in child_assignments] == [
+        "implementer-model",
+        "strong-model",
+    ]
+    assert len(child_roots) == 2
+    assert child_roots[0] == child_roots[1]
+    assert (workspace / "tracked.txt").read_text(encoding="utf-8") == "integrated retry\n"
+    assert _changesets(journal) == [("integrated",)]
+    assert not child_roots[0].exists()
 
 
 @pytest.mark.asyncio

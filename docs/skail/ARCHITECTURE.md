@@ -132,8 +132,11 @@ When a checkpoint reaches `ready`, the coordinator durably records its launch, m
 and wakes the same lead attempt with the current plan plus only the evidence references produced by
 the checkpoint's successful prerequisites. The next `execution_decision` carries the complete next
 plan and a typed `PlanRevision`. Skail rejects invented evidence, applies the journal revision
-compare-and-set, and settles the checkpoint successfully only after that revision commits. A lead
-response without an admissible revision blocks the checkpoint rather than completing the run.
+compare-and-set, and settles the checkpoint successfully only after that revision commits. If the
+evidence supports no additional work, a no-delta revision may acknowledge exactly one running
+checkpoint only when its prerequisites succeeded and their evidence references are included; it
+records the decision without adding a dummy task. A lead response without an admissible revision
+blocks the checkpoint rather than completing the run.
 
 ### 5.3 Compiled task graph
 
@@ -271,6 +274,12 @@ class TaskSpec(BaseModel):
 ```
 
 The lead supplies `TaskRequest`. Skail creates `TaskSpec`; model-generated IDs, budgets, or permission claims are ignored.
+
+Plan-node `effect_scope` values are `read`, `workspace_write`, `external_write`, and `unknown`.
+An effect declaration does not grant a profile tool or user permission. `workspace_write` nodes
+carry explicit resource scopes into filesystem writes. `file_digest` returns a runtime SHA-256 for
+a readable, non-sensitive workspace file so a child can provide a verifiable `ArtifactRef` without
+shell execution; the digest proves file contents, not a claimed test run.
 
 ### 6.3 Assignment
 
@@ -806,12 +815,18 @@ Examples:
 - `runtime.framework_contract_changed`;
 - `provider.rate_limited`;
 - `session.recovery_conflict`.
+- `execution.decision_exhausted`.
 
 Errors are rendered for people in the TUI and remain structured in JSONL.
 
 If an accepted question answer is followed by a result with status `waiting_for_user` or a stale
 waiting summary, resume terminates blocked with `execution.answer_not_continued`; it does not emit
 `run.completed` for that result.
+
+When no execution decision was admitted, two decision validation rejections exhaust the bounded
+repair allowance. If no operational work succeeded, initial and resumed completion end blocked
+with `execution.decision_exhausted`; an admitted decision or completed operational work does not
+match this condition.
 
 ## 19. Observability
 

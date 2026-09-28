@@ -40,6 +40,9 @@ a product claim or treat a tag as permission to rename a repository or remote.
 4. The runtime persists plan identity, schema version, policy version, revision, node identity, legal
    transitions, and revision evidence before dispatch. Skail owns persistent opaque IDs; model
    output uses plan-local names. Completed node identities remain stable across revisions.
+   When a checkpoint's evidence supports no additional executable work, a no-delta revision may
+   acknowledge exactly one running checkpoint only if its prerequisites succeeded and their
+   persisted evidence references are included. This records the decision without a placeholder task.
 5. Plan, node, revision, route, workspace, change-set, and verification records are Skail domain
    contracts. Their schema versions are owned by the domain modules that serialize them. Journal
    migrations are owned by `sessions/migrations.py`; event envelope and payload evolution are owned

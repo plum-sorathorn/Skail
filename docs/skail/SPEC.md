@@ -157,6 +157,9 @@ When a discovery checkpoint becomes ready, Skail wakes the same lead assignment 
 plan and the bounded evidence references produced by its completed prerequisites. The lead records
 the complete next plan plus typed revision metadata through `execution_decision`; the runtime
 validates those references and applies the revision compare-and-set before releasing new work.
+When the evidence supports no additional executable work, an evidence-only revision may acknowledge
+one running checkpoint after every prerequisite succeeded and its evidence references are supplied.
+This records the checkpoint decision without adding a placeholder task.
 
 The lead should delegate when at least one of these is true:
 

@@ -1839,10 +1839,37 @@ class Journal:
                         code, "active plan node payload cannot be rewritten"
                     )
             if not added_ids and not replaced_ids and not cancelled_ids:
-                raise FrameworkContractError(
-                    "plan.revision_no_progress",
-                    "plan revision must change executable work",
-                )
+                running_checkpoints = [
+                    local_id
+                    for local_id, node in previous_nodes.items()
+                    if node.kind is PlanNodeKind.CHECKPOINT
+                    and PlanNodeState(existing[local_id]["status"]) is PlanNodeState.RUNNING
+                ]
+                if len(running_checkpoints) != 1:
+                    raise FrameworkContractError(
+                        "plan.revision_no_progress",
+                        "a plan revision without new work may only acknowledge "
+                        "one running checkpoint",
+                    )
+                checkpoint = previous_nodes[running_checkpoints[0]]
+                required_evidence = {
+                    f"plan-node:{dependency}:succeeded"
+                    for dependency in checkpoint.depends_on
+                }
+                if (
+                    not checkpoint.depends_on
+                    or not required_evidence.issubset(revision.evidence_refs)
+                    or any(
+                        PlanNodeState(existing[dependency]["status"])
+                        is not PlanNodeState.SUCCEEDED
+                        for dependency in checkpoint.depends_on
+                    )
+                ):
+                    raise FrameworkContractError(
+                        "plan.checkpoint_evidence_incomplete",
+                        "checkpoint acknowledgement requires succeeded prerequisites "
+                        "and their evidence references",
+                    )
             for local_id in replaced_ids | cancelled_ids:
                 if PlanNodeState(existing[local_id]["status"]) in terminal:
                     raise FrameworkContractError(
