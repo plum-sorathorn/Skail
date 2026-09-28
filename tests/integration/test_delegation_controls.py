@@ -15,8 +15,9 @@ from fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_cal
 from langchain_core.messages import AIMessage
 
 from skail.agents.lead import LeadControls
+from skail.domain.decisions import ExecutionDecision
 from skail.domain.ids import new_session_id
-from skail.domain.plans import PlanNodeState
+from skail.domain.plans import ExecutionPlan, PlanNodeState
 from skail.domain.tasks import (
     ArtifactRef,
     AttemptStatus,
@@ -497,17 +498,26 @@ async def test_two_plan_writers_checkpoint_and_evidence_only_revision_complete(
     )
     assert len(checkpoint_payloads) == 1
     assert checkpoint_payloads[0]["next_revision"] == 2
-    assert checkpoint_payloads[0]["revision_metadata_example"] == {
-        "expected_revision": 1,
-        "added_nodes": [],
-        "replaced_local_ids": [],
-        "cancelled_local_ids": [],
-        "justification": "No plan changes are needed after reviewing accepted results.",
-        "evidence_refs": evidence_refs,
+    decision_example = checkpoint_payloads[0]["evidence_only_decision_example"]
+    assert {key: value for key, value in decision_example.items() if key != "plan"} == {
+        "mode": "planned",
+        "objective": "Acknowledge the completed plan checkpoint.",
+        "constraints": [],
+        "reason": "All planned implementation work is complete; preserve the existing nodes.",
+        "revision": {
+            "expected_revision": 1,
+            "added_nodes": [],
+            "replaced_local_ids": [],
+            "cancelled_local_ids": [],
+            "justification": "No plan changes are needed after reviewing accepted results.",
+            "evidence_refs": evidence_refs,
+        },
     }
-    assert "complete current_plan changed to next_revision" in checkpoint_payloads[0][
-        "instruction"
-    ]
+    expected_plan = ExecutionPlan.model_validate(revised_plan)
+    assert decision_example["plan"] == expected_plan.model_dump(mode="json")
+    validated_example = ExecutionDecision.model_validate(decision_example)
+    assert validated_example.plan == expected_plan
+    assert "evidence_only_decision_example" in checkpoint_payloads[0]["instruction"]
     assert "Do not omit revision metadata." in checkpoint_payloads[0]["instruction"]
     assert len(final_snapshot.runs) == 2
     assert final_snapshot.runs[0].status == "completed"
