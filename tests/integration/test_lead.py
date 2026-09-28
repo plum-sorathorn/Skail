@@ -516,7 +516,9 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
     )
     assert verification_example in child_prompt
     artifact_example = (
-        '"artifacts":[{"kind":"file","path":"<scoped file path>",'
+        '"artifacts":[{"kind":"file","path":"<scoped source path>",'
+        '"digest":"<SHA-256 digest>"},'
+        '{"kind":"file","path":"<scoped test path>",'
         '"digest":"<SHA-256 digest>"}]'
     )
     assert artifact_example in child_prompt
