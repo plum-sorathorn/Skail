@@ -508,6 +508,13 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
         '"kind": "file", "path": "<workspace-relative scoped path>", '
         '"digest": "<SHA-256 returned by file_digest>"'
     ) in child_prompt
+    verification_example = (
+        '"verification":[{"criterion":"<exact success criterion>",'
+        '"passed":true,"evidence":"<concise non-empty evidence>",'
+        '"evidence_ref":{"kind":"file","path":"<workspace-relative scoped path>",'
+        '"digest":"<64-character SHA-256 from file_digest>"}}]'
+    )
+    assert verification_example in child_prompt
     assert "Use the field name digest, not sha256." in child_prompt
     assert "A file digest proves file contents only" in child_prompt
     child_assignment = next(
