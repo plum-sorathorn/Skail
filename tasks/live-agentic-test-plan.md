@@ -1,17 +1,23 @@
 # Live Agentic Test Plan: Skail Interactive Validation
 
-> Before executing another scenario, apply [the current implementation plan](plan.md), especially
-> its scoped-child verification prerequisite, checkpoint-revision procedure, retry qualification,
-> and live evidence rules. The scenario acceptance criteria below remain in force; older dated
-> budget figures and run instructions are historical. No live scenario run has been made during this implementation.
+> Continue with [the current implementation plan](plan.md) and this scenario matrix. The acceptance
+> criteria below remain authoritative; dated run budgets and outcomes are updated in the current
+> acceptance section and append-only execution records.
 
-> Implementation update (2026-09-28): R1-R4/R6-R8 offline regressions pass. Scoped writer children
-> return runtime-checked file digests through file_digest; the operator runs focused tests after
-> integration because the child worktree does not grant shell execution. Final local gates pass
-> (1,231 full-suite passes, 5 skipped). Live S4/S5/S6/S8 acceptance and current retry qualification
-> are still open; local token estimate remains USD 3.019357484 and provider billing is unknown.
+> Implementation update (2026-09-28): R1-R4/R6-R8 offline regressions pass. S6 passed live in
+> attempt 10. S4 passed live in the final retry: both child results were accepted, the checkpoint
+> completed, actual child intervals overlapped, the FIFO follow-up completed, and the independent
+> parser/report/integration tests passed 3/3. A separate direct live child write-scope denial also
+> passed; it remains distinct from S7's lead traversal check. The R9 active-child cancellation path
+> passed with both child calls active, a visible discarded FIFO prompt, settled reservations, and no
+> follow-up call or runtime warning; permission/question edges remain unobserved. S5 is withheld
+> because historical explorer failures remain unexplained and the fresh route preflight found no
+> qualified automatic candidate; S8 remains failed/incomplete and is not eligible for an automatic
+> retry. Source `6a99a32` passed ordered offline gates and package-check; release-check awaits a clean
+> final documentation commit. Campaign local token estimate is USD 3.746818284; provider billing is
+> unknown.
 
-## Current acceptance status (2026-09-27; reconciled)
+## Current acceptance status (2026-09-28; reconciled)
 
 The scenario matrix below is historical evidence and procedure; current acceptance is:
 
@@ -19,30 +25,54 @@ The scenario matrix below is historical evidence and procedure; current acceptan
   presentation comparison.
 - **S2:** focused operator test passed 4/4; final TUI/export answer comparison was not captured.
 - **S3:** read-only routing checks passed; final TUI/export answer comparison was not captured.
-- **S4:** failed/incomplete live; no accepted child result, checkpoint, or FIFO follow-up. Offline
-  planned child-scope denial passes, but direct live child-scope denial is unobserved.
-- **S5:** withheld; historical explorer failure cause remains unknown.
-- **S6:** failed live. The latest schema-v2 export at
-  `out/live-agentic/s6-retest-20260927T140000Z/session-export-schema-v2.json` records `run.completed`
-  and a succeeded task after two invalid execution decisions (`effect_scope: invalid_type`), but no
-  model-written exporter or focused test. Later operator edits contaminated the fixture, now
-  quarantined. This scenario acceptance false-positive is not, alone, proof of a global runtime
-  lifecycle-contract defect.
-- **S7:** passed for a lead workspace traversal denial only; the live child-scope denial criterion
-  was not exercised.
+- **S4:** passed live in session `d59ee73b-4efc-4806-b6b6-ed157aaae0a5`: both child results were
+  accepted and integrated, all three plan nodes succeeded, and main run
+  `5360fc2f-fbe5-448b-b740-efe2369566a8` plus FIFO run `b9dbd334-a419-4394-abf0-8426551bcdf0`
+  completed. The two GPT-4.1 child intervals overlapped by 15.783365 seconds. The queued prompt was
+  visible while both writers were active; the follow-up completed without changing files. Independent
+  parser/report/integration tests passed 3/3 with provider credentials removed. Only the scoped parser
+  and report source files changed. Evidence is under
+  `out/live-agentic/s4-live-remediation-20260928T101200Z-fifo-direct/`.
+- **S5:** withheld; historical explorer failure cause remains unknown. A fresh 142-model catalog
+  preflight found no automatic candidate with trusted tools/structured-output capability and the
+  observed 0.65 retry floor; do not enable or fabricate eligibility. See
+  `out/live-agentic/child-scope-denial-live-20260928T103251Z-scope-mismatch/model-route-qualification.json`.
+- **S6:** passed live in attempt 10. Session `6b480702-4fcf-485e-9685-f9d7acca4dd2`, run
+  `e533a686-5cbd-4f41-a41b-3e9abe322a2c`, restored and answered one durable JSON question in the
+  same run, wrote only `src/live_fixture/exporter.py` and `tests/test_exporter.py`, and completed
+  successfully. The independent focused test passed 1 test. Earlier contaminated operator-edited
+  evidence remains quarantined and was not credited. The final captured TUI transcript does not
+  show the completion answer surface; keep S1-S3/S6 presentation comparisons open.
+- **S7:** passed for a lead workspace traversal denial only. A separate direct live child-scope
+  denial passed in run `ae17ce6a-3a03-4f75-afc6-77f0c1381c8e`; the child-owned `write_file` event
+  returned `write is outside the delegated task scope`, and the out-of-scope test file was absent
+  from the parent and isolated workspace. Evidence is under
+  `out/live-agentic/child-scope-denial-live-20260928T103251Z-scope-mismatch/`.
 - **S8:** exercised after a natural failure, but failed/incomplete: result validation rejected the
-  first child result and the one retry was `model_disabled` before provider execution. Synthetic
-  offline eligibility tests are not live eligibility evidence and do not close S8.
+  first child result and the one retry was `model_disabled` before provider execution. The fresh
+  route preflight found no automatic retry candidate at the trusted 0.65 floor. Synthetic offline
+  eligibility tests do not close S8.
 
-Offline enum/type diagnostics and the mounted Ctrl+C/question-resume test pass, but establish neither
-live S6 completion nor S8 eligibility. Ordered offline gates passed on the current code tree
-(`e9779f6`; documentation-only edits were present): Ruff, strict mypy (126 files), unit/contract
-**916 passed, 2 skipped**, smoke, and full suite **1,213 passed, 5 skipped**. These are not release
-verification. A separate clean-HEAD timing record from `0d916ab` reports **201.816 s external-wall
-median**; it is not a measurement of current HEAD, and suite-speed acceptance remains open. Local
-token-derived cost is **USD 3.019357484**, excluding historical unknown costs and unattributed
-provider observations; provider billing remains unknown. Ignored evidence is preserved, with no
-duplicate run-log additions.
+**R9 active-child cancellation:** passed live in session `b1afdf23-3f8e-48a7-bcd1-49bbdfb72c6f`,
+run `2fdb4d2b-0a4b-4007-ac02-de0fb3f1b4d3`. Two child model calls were active when the queued prompt
+was visible; Ctrl+C cancelled the run, terminalized both child tasks/attempts and plan nodes, settled
+or released reservations, and prevented a follow-up run/provider call. The unchanged fixture and
+absence of runtime warnings are recorded in
+`out/live-agentic/r9-live-cancel-20260928T111443Z/r9-cancel-verification.json`. Conditional permission
+and question lifecycle edges remain unexercised.
+
+Offline enum/type diagnostics and the mounted Ctrl+C/question-resume test are not substitutes for
+the remaining live criteria. The final ordered offline gates passed on source commit `6a99a32`: Ruff,
+strict mypy (126 files), unit/contract **927 passed, 2 skipped**, smoke, and full suite
+**1,231 passed, 5 skipped**. Package-check passed on source commit `6a99a32`; release-check is
+pending a clean tracked worktree. This does not establish release completion. The latest measured
+exact-candidate external-wall median remains **153.587 s**, 6.446% below the 164.17 s baseline and
+22.251 s above the 20% target; suite-speed acceptance remains open. Current campaign local
+token-derived cost is **USD 3.746818284**, excluding historical unknowns and unattributed provider
+observations; provider billing remains unknown. S6's remaining allocation is USD 0.4889184; S4's
+remaining allocation is USD 0.783867312. S7 has USD 0.6808022 remaining from its USD 0.75 threshold.
+The call audit contains 821 unique call IDs. R9 cancellation consumed USD 0.0040208 in measured
+calls plus USD 0.029770 in conservative settlements for two interrupted child calls.
 
 This plan reconstructs the S1-S8 interactive matrix formerly in `tasks/plan.md` (available in
 Git history at `c2190ff`). Use it with `tasks/remediation-2026-09-24-plan.md` and
@@ -445,19 +475,19 @@ Prompt:
 >       {
 >         "local_id": "parser",
 >         "kind": "agent",
->         "objective": "Implement the parser TODO and focused test file",
+>         "objective": "Implement parse_records: ignore blank lines, split once at the first '=', preserve the value remainder and input order, and return one key/value dict per record",
 >         "effect_scope": "workspace_write",
 >         "resource_scopes": ["src/live_fixture/parser.py", "tests/test_parser.py"],
->         "acceptance_criteria": ["Implement the parser change and return a valid file digest reference for the scoped source and test files"],
+>         "acceptance_criteria": ["Pass existing parser expectations and return runtime file_digest evidence for the scoped source and test files; do not claim pytest ran"],
 >         "task_features": {"profile": "implementer"}
 >       },
 >       {
 >         "local_id": "report",
 >         "kind": "agent",
->         "objective": "Implement the report TODO and focused test file",
+>         "objective": "Implement render_report: collect key/value pairs across all records, sort globally by key, and emit one stable key=value line per pair",
 >         "effect_scope": "workspace_write",
 >         "resource_scopes": ["src/live_fixture/report.py", "tests/test_report.py"],
->         "acceptance_criteria": ["Implement the report change and return a valid file digest reference for the scoped source and test files"],
+>         "acceptance_criteria": ["Globally sort key/value pairs across records and emit one key=value line per pair; return runtime file_digest evidence for scoped files; do not claim pytest ran"],
 >         "task_features": {"profile": "implementer"}
 >       },
 >       {
@@ -473,9 +503,36 @@ Prompt:
 > ```
 >
 > Each child must return one JSON `TaskResult` with an allowed status, summary, changed paths,
-> artifacts, and verification for its implementation criterion. For success, include an
-> `evidence_ref` object with `kind=file`, the scoped file path, and the SHA-256 returned by the
-> runtime `file_digest` tool. This digest proves file bytes only; it does not prove that pytest ran.
+> artifacts, and verification for its implementation criterion. `verification` must be a JSON
+> array with one object per required criterion; copy each criterion exactly and include `passed`,
+> non-empty `evidence`, and `evidence_ref` when the criterion is a write. For a successful write,
+> the reference is an `ArtifactRef` with the exact keys `kind`, `path`, and `digest`, for example:
+> `{"kind":"file","path":"src/live_fixture/parser.py","digest":"<SHA-256 from file_digest>"}`.
+> Use the field name `digest`, not `sha256`, and map the runtime `file_digest` result into it.
+> `artifacts` and `changed_paths` are JSON arrays. Each file artifact uses `kind`, `path`, and
+> `digest`; for example:
+> `{"artifacts":[{"kind":"file","path":"src/live_fixture/parser.py","digest":"<SHA-256 from file_digest>"}]}`.
+> A digest proves file bytes only; it does not prove that pytest ran.
+>
+> Successful writer verification shape (replace every placeholder and copy the criterion exactly):
+>
+> ```json
+> {
+>   "verification": [
+>     {
+>       "criterion": "<exact success criterion>",
+>       "passed": true,
+>       "evidence": "<concise non-empty evidence>",
+>       "evidence_ref": {
+>         "kind": "file",
+>         "path": "<workspace-relative scoped path>",
+>         "digest": "<64-character SHA-256 from file_digest>"
+>       }
+>     }
+>   ]
+> }
+> ```
+>
 > Do not claim that a test or build passed unless it actually ran through an available permitted
 > check path. Use `status=blocked` or `failed` if the implementation criterion was not met. Return
 > JSON only and write only within the node's `resource_scopes`.
@@ -491,8 +548,11 @@ Prompt:
 
 While both children are active, queue with `Ctrl+Enter`:
 
-> After the active run completes, summarize which model handled each child and whether their
-> wall times overlapped. Do not modify files.
+> After the active run completes, answer directly with no tools or delegation. Summarize which model
+> handled each child and whether their intervals overlapped; do not modify files. If the lead cannot
+> access timing from the TUI context, queue a direct summary with the operator-verified facts, then
+> independently check actual assignments and task intervals in the schema-v2 export. The prompt
+> itself is not overlap evidence.
 
 Pass: exactly two implementer agent nodes, one checkpoint depending on both, disjoint `resource_scopes`, peak
 concurrency two and never over three, accepted child implementation results with runtime-checked
@@ -502,13 +562,12 @@ follow-up after completion. No queued coroutine warning on cancel or quit. Recor
 assignment timestamps; do not infer overlap from the prompt. A count or scope conflict must be
 rejected before plan admission and repaired within the bounded decision allowance.
 
-Current S4 disposition: failed/incomplete after bounded live attempts. The previously omitted
-run `be73b1cc-6df8-43a0-8d38-3e8d8da76bc6` used 16 completed DevPass lead/child calls at
-USD 0.019030400 and also blocked before accepted results. With that run included, S4 retest
-cost is USD 0.263971288 of its USD 1.60 allocation; USD 1.336028712 remains. Do not run
-another paid S4 attempt until deterministic child-result evidence establishes a corrective
-action. The `d92b4b9` scope repair passed an offline denied-write regression; later live
-worktrees had no out-of-scope file, but no direct denied-write attempt was observed.
+Current S4 disposition: passed live in session `d59ee73b-4efc-4806-b6b6-ed157aaae0a5`. Both
+TaskResults were accepted, the checkpoint completed, the two child intervals overlapped by
+15.783365 seconds, both the main and FIFO follow-up runs completed, and the independent focused
+tests passed 3/3. The latest direct live child-scope probe also observed a task-owned denial and an
+absent out-of-scope test file; this is separate from S7's lead traversal probe. Detailed run and cost
+records remain append-only under `out/live-agentic/`.
 
 ### S5 — Adaptive plan and checkpoint
 
@@ -703,9 +762,10 @@ Offline child-scope coverage: `tests/integration/test_task_graph.py::test_assemb
 passes using a planned `PlanNode` resource scope propagated through `_task_request_for_plan_node`
 and `TaskValidator` into an assembled child agent's real filesystem tool, with a scripted model and
 temporary workspace. The tool returns the delegated-scope denial and the outside file is absent.
-This adds coverage; it did not expose a defect or change the boundary implementation. The S7 live
-probe above exercised the lead's workspace traversal boundary, not a live child with a planned
-resource scope. Direct live confirmation of that child-scope denial remains unobserved.
+The direct live child-scope denial has now also passed separately in run
+`ae17ce6a-3a03-4f75-afc6-77f0c1381c8e`: a child-owned `write_file` failed with the delegated-scope
+error and the out-of-scope test file remained absent from the parent and isolated workspace. This
+is separate evidence from the S7 lead traversal probe above.
 
 ### S8 — Natural escalation only
 

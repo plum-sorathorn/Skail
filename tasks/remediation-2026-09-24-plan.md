@@ -472,3 +472,26 @@ accepted-answer regression passed all four stale-result variants. This does not 
 status: both verified-PTY attempts failed the same-run JSON implementation criterion. S8 was
 exercised under the natural-failure rule and failed/incomplete; S4 and S5 paid retries remain
 withheld pending offline evidence.
+
+## 2026-09-28 live continuation addendum
+
+The current implementation status is maintained in [plan.md](plan.md), [todo.md](todo.md), and
+[live-agentic-test-plan.md](live-agentic-test-plan.md); this dated record does not rewrite the
+September 24–27 outcomes above. S4 subsequently passed live in session
+`d59ee73b-4efc-4806-bb6b-ed157aaae0a5`: two accepted child results, completed evidence-only
+checkpoint, 15.783365 seconds of observed child overlap, completed FIFO follow-up, and independent
+parser/report/integration tests (3 passed). The separate direct live child-scope denial passed in run
+`ae17ce6a-3a03-4f75-afc6-77f0c1381c8e`; this is distinct from S7's lead traversal denial. S6 passed
+in attempt 10. S5 remains withheld because historical explorer failures lack sufficient cause
+evidence; S8 remains failed/incomplete after its natural first-attempt result-validation failure and
+ineligible retry. R9 active-child cancellation passed in session `b1afdf23-3f8e-48a7-bcd1-49bbdfb72c6f`,
+run `2fdb4d2b-0a4b-4007-ac02-de0fb3f1b4d3`; both children were active, the FIFO prompt was visibly
+discarded on cancellation, reservations settled/released, and no follow-up call or runtime warning
+occurred. Conditional permission/question edges remain open. Presentation comparisons, the 20% suite-
+speed objective, and hosted release/branch-protection evidence remain open.
+
+Ordered offline gates and package-check passed on source commit `6a99a32`; release-check on the clean
+final documentation commit remains. The current append-only in-house campaign total is USD
+`3.746818284`, with 821 unique call IDs audited once. Provider billing remains unknown. See
+`out/live-agentic/RUN_LOG.md`, `COSTS.csv`, and `CALL_COST_AUDIT.csv` for the new live evidence and
+reconciliation.

@@ -3,33 +3,38 @@
 > Continue with [the current implementation plan](plan.md) and [its task checklist](todo.md).
 > The plan maps every defect/output ID and the unchecked items below to remaining work. Historical
 > checked milestones are preserved; they do not close missing live criteria or the speed objective.
-> Implementation checkpoint (2026-09-28): ordered local gates pass on the updated tree (Ruff,
-> strict mypy, unit/contract 927 passed and 2 skipped, smoke, full suite 1231 passed and 5
-> skipped). R1-R4/R6-R8 are verified offline; S4/S5/S6/S8 and remaining live presentations
-> retain their dispositions below. The current timing median is 137.640s wall, 16.16% under
-> the old 164.17s baseline; the 20% objective remains open. Provider billing is unknown.
+> Implementation checkpoint (2026-09-28): ordered local gates pass on source candidate `6a99a32`
+> (Ruff, strict mypy, unit/contract 927 passed and 2 skipped, smoke, full suite 1,231 passed and 5
+> skipped); package-check passed, and release-check on the clean final documentation commit remains.
+> S4 and S6 passed live; the separate direct child-scope denial and R9 active-child cancellation
+> passed. S5 remains withheld, S8 failed/incomplete, and presentation checks remain open. The
+> exact-candidate timing median remains 153.587s wall (6.446% below the 164.17s baseline); the 20%
+> objective remains open. Campaign local token estimate is USD 3.746818284. Provider billing is
+> unknown.
 
-## Current acceptance reconciliation (2026-09-27)
+## Current acceptance reconciliation (2026-09-28)
 
 The matrix in the [remediation plan](remediation-2026-09-24-plan.md) is authoritative for current
 S1-S8 acceptance. In brief: S1 passed its historical live read-only criterion; S2's focused
 implementation test passed 4/4 but final presentation was not captured; S3 read-only routing passed
-but final presentation was not captured; S4 failed live (no accepted child result/checkpoint/FIFO,
-and live child-scope denial unobserved); S5 is withheld with cause unknown; S6 failed live despite
-`run.completed`/succeeded markers (invalid decisions, no model-written exporter/test, operator-edited
-fixture quarantined); S7 passed lead traversal denial only; and S8 accepted no child TaskResult: first
+but final presentation was not captured; S4 passed live with accepted child results, checkpoint,
+observed overlap, FIFO completion, and independent 3/3 tests; separate child-scope denial passed;
+S5 is withheld with cause unknown; S6 passed live in attempt 10 after the same-run durable JSON
+answer, exact exporter/test writes, and independent focused-test pass (earlier operator-edited fixture
+remains quarantined); S7 passed lead traversal denial only;
+and S8 accepted no child TaskResult: first
 failed schema validation at `$.artifacts.0.kind`; retry blocked `model_disabled` before provider call.
 Offline child-scope and synthetic S8 eligibility coverage
 do not substitute for those live criteria. The mounted offline Ctrl+C/question-resume test and
 enum/type diagnostics are offline evidence, not live closure or a general lifecycle-contract claim.
 
-Ordered offline gates passed on the current code tree (`e9779f6`; documentation-only edits were
-present): Ruff, strict mypy (126 files), unit/contract **916 passed, 2 skipped**, smoke, and full
-suite **1,213 passed, 5 skipped**. These are not release verification. Separate clean-HEAD timing
-evidence from `0d916ab` has a **201.816 s external-wall median**; it is not a measurement of current
-HEAD, and the 20% speed target remains open. The token-derived local campaign total is
-**USD 3.019357484**, excluding historical unknowns and unattributed provider observations; provider
-billing remains unknown. Preserve ignored run evidence without duplicating already-recorded events.
+Ordered offline gates passed on source candidate `6a99a32`: Ruff, strict mypy (126 files),
+unit/contract **927 passed, 2 skipped**, smoke, and full suite **1,231 passed, 5 skipped**;
+package-check passed. Release-check on the clean final documentation commit remains. The
+exact-candidate external-wall median remains **153.587 s**, 6.446% below the 164.17 s baseline and
+22.251 s above the 20% target. The token-derived local campaign total is **USD 3.713027484**,
+excluding historical unknowns and unattributed provider observations; provider billing remains
+unknown. The call audit contains 815 unique IDs. Preserve evidence without duplicate rows.
 
 Current sequence and acceptance checks: [2026-09-24 remediation plan](remediation-2026-09-24-plan.md).
 The completed items below are historical offline milestones; unchecked live confirmations
@@ -237,20 +242,20 @@ withheld because its historical cause is unknown.
 | LIVE-010 | Fixed and confirmed live in an 80×24 TUI. |
 | LIVE-011 | UTF-8 fix confirmed live in S3. |
 | LIVE-012 | Direct/no-delegate conflict rejection confirmed live in S3. |
-| LIVE-013 | Exact-count rejection confirmed live; successful two-writer result remains incomplete. |
+| LIVE-013 | Exact-count rejection confirmed live; the final S4 run also passed with exactly two writers. |
 | LIVE-014 | Fixed offline; a matching live blocked-plan transition remains pending. |
-| LIVE-015 | Closed as a test-plan mismatch; operator integration test remains pending. |
-| LIVE-016 | Named implementer plans were admitted live, but S4 child results failed validation and the checkpoint did not complete; a scope enforcement fix is in `d92b4b9`, with direct denied-write live evidence pending. |
-| LIVE-017 | Fixed offline; live cancellation had no child, so active-child cleanup remains unconfirmed. |
+| LIVE-015 | Test-plan mismatch clarified; S4 operator parser/report/integration tests now pass 3/3. |
+| LIVE-016 | Named implementer plan and checkpoint passed in the final S4 live run; separate direct child-scope denial also passed after `d92b4b9`. |
+| LIVE-017 | Fixed offline and confirmed in R9 live cancellation with two active child calls; tasks, attempts, nodes, and reservations terminalized, no follow-up start, and no runtime warning. Conditional permission/question edges remain open. |
 | LIVE-018 | Fixed offline; the old empty headless invocation remains evidence, fresh live CLI recheck pending. |
-| LIVE-019 | Plan dispatch without duplicate `task()` confirmed live; FIFO completion remains pending. |
-| LIVE-020 | Fixed offline; later GLM assignments support the reservation diagnosis, full S4 remains incomplete. |
+| LIVE-019 | Plan dispatch without duplicate `task()` and FIFO completion confirmed live in S4. |
+| LIVE-020 | Reservation correction is covered offline; final S4 live run completed within its reconciled budget. |
 | LIVE-021 | Provider call outcome unknown; locally settled; do not replay. |
 | LIVE-022 | Provider call outcome unknown; locally settled; do not replay. |
 | LIVE-023 | Closed as expected session-history projection. |
-| LIVE-024 | Open: three S5 explorer runs produced no accepted results; offline handoff diagnostics now include `validation_path` for future failures; historical S5 cause remains unknown; no additional attempt. |
+| LIVE-024 | Withheld: three S5 explorer runs produced no accepted results; offline handoff diagnostics now include `validation_path`; historical cause remains unknown. Fresh catalog preflight found no qualified automatic candidate, so no additional attempt was made. |
 | LIVE-025 | Ambiguous provider call locally settled; outcome unknown; do not replay. |
-| LIVE-026 | Resource-scope guidance fixed offline; S4 exposed that `PlanNode.resource_scopes` were not reaching the filesystem backend. Commit `d92b4b9` maps the declared scopes into child write permissions; live recheck pending. The invalid field in run 9c251 remains unknown. |
+| LIVE-026 | `PlanNode.resource_scopes` reach the child filesystem boundary (`d92b4b9`); a direct live child write was denied and the out-of-scope test file remained absent. The invalid field in run 9c251 remains unknown. |
 | LIVE-027 | Fixed offline; a later planned run admitted and blocked truthfully, but rejected/no-decision live edge remains pending. |
 | LIVE-028 | Top-level planned mode with “do not delegate further” admitted live; nested child delegation was not exercised. |
 | LIVE-029 | Question display, restoration, and accepted `JSON` answer confirmed live; work continuation is LIVE-030. |
@@ -260,27 +265,28 @@ withheld because its historical cause is unknown.
 | LIVE-033 | Initial S2 implementation dropped existing lowercasing; operator test failed 2/4. Same-session correction restored lowercasing and scoped the test; operator focused test passed 4/4. Six-call local ledger reconciled; TUI/export match not observed. |
 | LIVE-034 | S3 zero-call config-revision failure reproduced offline and fixed in `b278324`; the live Economy-mode retry routed both pinned models successfully. Final answer TUI/export text comparison was not captured. |
 | LIVE-035 | The first S3 run has no assignment or provider call; its task/attempt are interrupted, but the parent run remains `running` in the final export. Future pre-assignment exceptions now terminalize through `84f798d`; historical state is preserved. |
-| LIVE-036 | S4 child TaskResult responses failed across repeated plans, including the previously unlogged run `be73b1cc-6df8-43a0-8d38-3e8d8da76bc6` (16 calls, USD 0.019030400). The latest Qwen run had parser `$.artifacts.0.kind` and report `$` failures. No child result reached the checkpoint; S4 remains failed. |
-| LIVE-037 | An earlier S4 report child wrote `src/live_fixture/report_test.py` outside its declared scopes. The red/green filesystem boundary fix is in `d92b4b9`; later report worktrees contain no such file, but no direct post-fix denied-write event was observed. |
-| LIVE-038 | S6 accepted `JSON` in run `5a216e69-9126-49b0-849f-9811d5ba0a35` and then completed with a stale “Awaiting your selection” result. `7b54772` blocks that variant offline; same-run live recheck pending. |
+| LIVE-036 | Earlier S4 TaskResults failed validation. Runtime guidance now supplies complete child result and checkpoint-decision examples (`6a99a32`); focused regression and final S4 live acceptance pass. Historical failures remain preserved. |
+| LIVE-037 | An earlier S4 report child wrote `src/live_fixture/report_test.py` outside its declared scopes. The red/green filesystem boundary fix is in `d92b4b9`; direct live recheck passed in run `ae17ce6a-3a03-4f75-afc6-77f0c1381c8e` with a task-owned denial and absent out-of-scope file. |
+| LIVE-038 | The stale “Awaiting your selection” result is blocked offline; S6 attempt 10 then completed the selected JSON implementation in the same durable run. |
+| LIVE-044 | Evidence-only checkpoint guidance lacked a copy-ready valid decision; fixed with a complete `ExecutionDecision` example in `6a99a32`, covered by a regression, and confirmed in the final S4 live pass. Exact rejected prior arguments remain unavailable. |
 | OUT-001 | Fixed offline; live provider-cancellation rendering pending. |
 | OUT-002 | Answer-only presentation confirmed live in S1; historical raw model response remains unavailable. |
-| OUT-003 | Fixed offline; live unawaited-coroutine check pending. |
+| OUT-003 | Fixed offline; R9 live active-child cancellation emitted no unawaited-coroutine warning. |
 | OUT-004 | Expected question interrupt confirmed in S6; S4 card display pending. |
 | OUT-005 | Question Answer/Cancel card confirmed live; separate permission card remains unobserved. |
 | OUT-006 | Original model-authored options mismatch confirmed; tool guidance fixed offline, matching live question pending. |
 | OUT-007 | Fixed and confirmed live at 80×24. |
 | OUT-008 | UTF-8 handling confirmed live in S3. |
-| OUT-009 | Resource-scope guidance fixed offline and plans were admitted, but S4 exposed an out-of-scope child write in its isolated worktree; `d92b4b9` carries scopes to the filesystem boundary, live recheck pending. |
+| OUT-009 | Resource-scope guidance and runtime enforcement are fixed offline; a direct live child write was denied in run `ae17ce6a-3a03-4f75-afc6-77f0c1381c8e`, with no out-of-scope file created. |
 | OUT-010 | False successes fixed offline; latest planned run blocked truthfully, invalid/no-plan live path pending. |
 | OUT-011 | Question interrupt and restored card confirmed live. |
-| OUT-012 | Fixed offline to block stale waiting completion; same-run live recheck pending. |
-| OUT-013 | S4 child TaskResult outputs failed at `$.status`, `$.artifacts.0`, `$.verification.0.evidence_ref`, and finally `$.artifacts.0.kind` / `$`; no accepted results. |
-| OUT-014 | S6 stale “Awaiting your selection” completion is fixed offline in `7b54772`; same-run live recheck pending. |
+| OUT-012 | Fixed offline; S6 attempt 10 completed the selected JSON work after the accepted same-run answer. |
+| OUT-013 | Earlier S4 outputs failed at `$.status`, `$.artifacts.0`, and `$.verification.0.evidence_ref`; complete runtime examples were added and the final S4 live run accepted both results. S8's separate historical malformed result remains unchanged. |
+| OUT-014 | Fixed offline and rechecked in S6 attempt 10; the accepted JSON answer continued to successful implementation. |
 
 ## Next execution cycle
 
-- [x] 10. Reconcile LIVE-001–032 and OUT-001–012 against the latest exports; correct stale
+- [x] 10. Reconcile LIVE-001–044 and OUT-001–015 against the latest exports; correct stale
   statuses, link each open item to a reproducer, and preserve uncertain call outcomes.
 - [ ] 11. Diagnose S5 explorer result failures (LIVE-024) with safe failure-category evidence,
   then prove accepted child results, checkpoint, and revision in deterministic tests. Historical
@@ -302,11 +308,12 @@ withheld because its historical cause is unknown.
   and then completed with output status `waiting_for_user`, stale “A blocking question was asked...”
   summary, and no file changes. A third regression for the structured status failed before the
   guard was extended and passes after it. This live run is an S6 failure; post-fix live confirmation
-  remains pending. A second post-fix run `b4235f5b-0c92-419b-9803-adbc4f00c8ff` also accepted
+  remained pending at that checkpoint. A second post-fix run `b4235f5b-0c92-419b-9803-adbc4f00c8ff` also accepted
   `JSON`, then emitted `run.completed` with output status `blocked`, a stale waiting summary, and
-  no changed paths. The structured summary path now has a failing/green regression and guard. S6
-  still fails because no selected-format implementation or focused test exists; do not repeat
-  without a distinct corrective route.
+  no changed paths. The structured summary path now has a failing/green regression and guard. These
+  historical outcomes are superseded by S6 attempt 10 on 2026-09-28: the same durable run wrote the
+  selected JSON exporter and focused test, and the independent focused test passed 1 test. See the
+  current acceptance section and `out/live-agentic/RUN_LOG.md`.
 - [x] 13. Recheck prior intent, ownership, queue, cancellation, question, output, and UTF-8
   fixes with focused regressions. Live-pending closures remain tied to matching live observations.
 - [x] 14. Baseline the offline suite three times, map independent mechanisms, optimize measured
@@ -315,13 +322,13 @@ withheld because its historical cause is unknown.
   Python/platform checks.
 - [x] 16. Pass Ruff, mypy, unit/contract, smoke, and full offline suite in repository order;
   record final counts and before/after timings after the package path fix.
-- [ ] 17. Refresh the disposable fixture and live plan; freeze models/prices and a new
-  in-house subledger under the cumulative stop; S1–S3 are rechecked, S4 remains failed after
-  bounded plans, S6 remains incomplete after two same-run post-fix attempts, S5 is withheld, S7 is
-  unchanged, and S8 has been exercised under its natural-failure rule but failed at result
-  validation/retry eligibility. S6 used USD 0.165876 of its USD 0.75 allocation, leaving
-  USD 0.584124; S8 used USD 0.024644374 of its USD 1.50 allocation. Reconcile after every call and
-  update all evidence.
+- [ ] 17. Continue bounded live validation under current per-scenario and campaign caps. S4, S6,
+  the separate child-scope denial, and R9 active-child cancellation passed; their calls are reconciled once. S6 has USD 0.4889184
+  remaining, S4 USD 0.783867312, and S7 USD 0.6808022 of its USD 0.75 threshold. S5 remains withheld
+  because historical explorer causes are unknown. S8 remains failed/incomplete and must not be rerun
+  without a trusted automatic alternative. S1-S3/S6 presentation comparisons, R9 conditional
+  permission/question edges, and the 20% timing objective remain open. Campaign local estimate is USD 3.746818284; provider billing is
+  unknown. Reconcile every new call and update evidence before proceeding.
 - [x] Reconcile the latest complete retest export before more paid calls. The earlier USD
   0.002510000 gap was the third S6 call. A second audit found 16 omitted S4 calls costing USD
   0.019030400. At the prior checkpoint, all 213 retest call IDs were audited once for USD
@@ -370,13 +377,12 @@ withheld because its historical cause is unknown.
   allowlisted `failure_category` and schema-shaped `validation_path`, dropping unknown categories
   and unsafe paths without raw output. Its regression and focused tests pass (9 passed); Ruff and
   mypy passed on this revision.
-- [ ] 20b. Before another paid S4 attempt, separately justify a fresh fixture run and establish
-  the acceptance repair or eligible route. The acceptance bug was not reproduced offline, and the
-  handoff change does not make S4 live-eligible. S4 remains failed live; direct post-fix denied-write
-  observation is pending (`d92b4b9` remains the offline denied-write repair). Two accepted
-  implementer results, checkpoint, disjoint scopes, and FIFO follow-up are still required. Record
-  the formerly omitted run `be73b1cc-6df8-43a0-8d38-3e8d8da76bc6` under LIVE-036/OUT-013. Maintain
-   S5's separate eligibility gate because its historical cause remains unknown.
+- [x] 20b. Complete the bounded S4 live recheck after child-result/checkpoint guidance repairs.
+  Session `d59ee73b-4efc-4806-bb6b-ed157aaae0a5` accepted both child results, completed the evidence-
+  only checkpoint and FIFO follow-up, observed 15.783365 seconds of actual child overlap, and passed
+  the independent parser/report/integration tests 3/3. The separate live child-scope denial passed
+  in `ae17ce6a-3a03-4f75-afc6-77f0c1381c8e`. Prior failed runs, including `be73b1cc`, remain in the
+  append-only evidence. S5 remains separately withheld because its historical cause is unknown.
 
 ## 2026-09-26 handoff revision and audit update
 

@@ -14,9 +14,9 @@ the evidence-backed writer revision, integrates its scoped result, and independe
 focused parser tests. The R9 offline edge audit also passed: mounted question cards retain focus and
 visible Answer/Cancel controls at 80x24 for free-form and fixed-choice questions; related tests cover
 pending-question refusal, transient queue disposal, canceled-plan ownership, non-TTY resume/continue
-guards, admission failure, and admitted-but-unlaunched terminalization. Active-child live cancellation,
-settled accounting at exit, and other R9 live observations remain open. R10 live scenarios have not
-been run.
+guards, admission failure, and admitted-but-unlaunched terminalization. At this original checkpoint,
+active-child live cancellation and settled accounting remained open; the 2026-09-28 R9 live
+cancellation pass is recorded below. Conditional permission/question edges remain open.
 
 Final ordered offline gates passed on clean commit `9d28dc4`: Ruff, strict mypy (126 files),
 unit/contract (927 passed, 2 skipped), smoke, and full suite (1,231 passed, 5 skipped). The local
@@ -26,14 +26,31 @@ passed. Graphify rebuilt the code graph. Three exact-candidate timing runs measu
 151.763s external wall (median 153.587s, range 10.093s): 6.446% under the older 164.17s baseline
 and 22.251s above the 131.336s 20% target. R5 currently has no eligible S8 automatic retry in the
 retained snapshot; the historical S8 replay is diagnostic evidence, not a fresh route qualification.
-R10 live acceptance remains outstanding. R14 still needs exact-candidate hosted Windows/Linux
-matrix evidence and branch-protection verification; local checks alone do not make the release
-eligible while live acceptance items remain failed or open.
+The original 9d28dc4 progress checkpoint predates the live continuation recorded below. R14 still
+needs exact-candidate hosted Windows/Linux matrix evidence and branch-protection verification; local
+checks alone do not make the release eligible while acceptance items remain open.
 
-Historical records contain scenario-specific paid-retest limits. This implementation has made no
-provider generation calls. Carry forward any still-active limits before R10; do not infer new budget
-authority from historical ledger headroom. The live plan records the later waiver concerning the old
-ambiguous print-mode probe.
+### Live continuation update (2026-09-28)
+
+S4 now passes its live criteria: two accepted child results, successful checkpoint, observed 15.783365
+seconds of child overlap, completed FIFO follow-up, no out-of-scope changes, and 3/3 independent
+parser/report/integration tests. S6 passed its same-run durable question/resume/exporter criterion.
+A separate child write-scope denial also passed live, distinct from S7's lead traversal denial. The
+R9 active-child cancellation path also passed live with settled task/attempt/node/reservation state,
+a visible discarded FIFO prompt, no follow-up call, no warning, and no fixture changes; natural
+permission/question edges remain open. S5
+remains withheld because its historical explorer failures lack sufficient cause evidence. S8 remains
+failed/incomplete after a natural result-validation failure and an ineligible retry. S1-S3/S6
+presentation comparisons, the 20% timing objective, and R14 hosted/branch protection evidence remain
+open.
+
+Ordered offline gates and package-check passed on source commit `6a99a32`: Ruff, strict mypy (126
+files), unit/contract (927 passed, 2 skipped), smoke, full suite (1,231 passed, 5 skipped), and
+package build/install. Release-check awaits a clean tracked documentation commit. `CALL_COST_AUDIT.csv`
+contains 821 unique call IDs; `COSTS.csv` cumulative local estimate is USD 3.746818284, with USD
+4.753181716 to the USD 8.50 normal stop and USD 6.253181716 to the USD 10 ceiling. S4 has USD
+0.783867312 remaining in its allocation; S7 has USD 0.6808022 remaining from its USD 0.75 threshold.
+Provider billing remains unknown.
 
 ## Authority and scope
 
@@ -46,10 +63,10 @@ the corrections and additional prerequisites below must be applied before execut
 Older references to `tasks/plan.md` in ignored evidence predate this new file; they are not references
 to this implementation plan.
 
-The plan implementation has made no provider generation calls. Recheck scenario-specific
-authorization, qualification, costs, and prior bounded-retest limits before R10. Historical budget
-headroom does not by itself authorize a new call. Do not resurrect the superseded provider-billing
-hold for the old ambiguous print-mode probe; its later waiver is recorded in the live plan.
+The user explicitly authorized the live continuation. Before any further paid work, continue to check
+the scenario-specific thresholds and fresh route qualification; historical campaign headroom alone is
+not a per-scenario allowance. The old ambiguous print-mode probe remains separately settled under the
+later waiver recorded in the live plan.
 
 Success means correct product behavior, independently verified fixture results, matching live
 acceptance evidence, and exact-candidate offline/platform gates. Offline green alone is insufficient.
@@ -81,40 +98,32 @@ The full-suite gate's 189.549 seconds is one external-wall observation, not a ti
 | S1 | Historical read-only pass | Preserve the original pass. Historical raw answer provenance is unavailable; checklist item 5 still needs a current paired presentation observation or explicit evidence-based closure. |
 | S2 | Implementation verified; presentation incomplete | `session-S2-correction.json` and later complete session exports; operator normalization check passed 4/4. Capture rendered final answer versus exported final output. |
 | S3 | Read-only routing verified; presentation incomplete | `session-S3-live-final.json`; two requested routes worked after the config-revision fix. Capture final answers for both models, with unchanged fixture. |
-| S4 | Failed/incomplete | `session-S4-qwen-final.json`, run `9652cfc8-bd46-4195-81e8-1419efd41ef1`: parser rejected at `$.artifacts.0.kind`, report malformed at `$`. Two accepted/integrated results, completed checkpoint, actual overlap, independent integration test, and FIFO follow-up are missing. |
-| S5 | Withheld | `session-S5-final-retry-final.json`, run `071ba5b0-5c91-479d-bb14-74db2e951997`: failed explorers have null reasons and no safe category/path/raw result. Historical cause remains unknown; accepted discoveries, checkpoint, revision, and implementation are absent. |
-| S6 | Failed | `s6-retest-20260927T140000Z/session-export-schema-v2.json`, session `12b4460d-e40d-4d4d-b753-db696e551658`, run `470f56c5-9828-48ae-a961-71d759246958`: accepted JSON, two invalid plans, final clarification prose, no model-written exporter/test. Quarantined operator edits are not acceptance evidence. |
-| S7 | Passed, lead boundary only | Run `6b2da5e7-797c-4502-9d91-19742ac9ff34`: traversal write denied and outside file absent. This is not a child resource-scope test. |
-| Child write denial | Live unexercised | Offline `test_assembled_child_agent_denies_write_outside_planned_resource_scope` passes. Require an actual child attempt, task-owned denial event, and absence of the out-of-scope file. |
-| S8 | Failed/incomplete | `session-S8-retest-2026-09-26-final.json`, run `14913447-a527-452f-93b6-f83de65ce04b`, task `f4dd996c-fb76-4914-8a2d-a11c42a248c7`: natural result-validation failure, then attempt-two admission blocked before a provider call. No accepted/integrated result or completed escalation. |
+| S4 | Passed live | Session `d59ee73b-4efc-4806-b6b6-ed157aaae0a5`: main run `5360fc2f-fbe5-448b-b740-efe2369566a8` and FIFO run `b9dbd334-a419-4394-abf0-8426551bcdf0` completed; two accepted child results, checkpoint, 15.783365 seconds observed overlap, and 3/3 independent focused tests. Evidence: `s4-live-remediation-20260928T101200Z-fifo-direct/`. |
+| S5 | Withheld | Historical explorer failures in run `071ba5b0-5c91-479d-bb14-74db2e951997` lack safe cause evidence. The fresh 142-model catalog preflight found no auto-eligible route with trusted tool/structured-output capability and the 0.65 retry floor; keep S5 withheld. Details: `child-scope-denial-live-20260928T103251Z-scope-mismatch/model-route-qualification.json`. |
+| S6 | Passed live | Session `6b480702-4fcf-485e-9685-f9d7acca4dd2`, run `e533a686-5cbd-4f41-a41b-3e9abe322a2c`: durable JSON question restored/answered in the same run, only exporter and focused test written, and independent focused test passed. Earlier operator-edited fixture remains quarantined. |
+| S7 | Passed, lead boundary only | Run `6b2da5e7-797c-4502-9d91-19742ac9ff34`: traversal write denied and outside file absent. This remains separate from the child-scope denial. |
+| Child write denial | Passed live | Run `ae17ce6a-3a03-4f75-afc6-77f0c1381c8e`, child task `cdf0e48b-b628-48d6-a27d-2336d5856c09`: task-owned `write_file` denial `write is outside the delegated task scope`; parent fixture unchanged and out-of-scope test absent. Evidence: `child-scope-denial-live-20260928T103251Z-scope-mismatch/`. |
+| R9 active-child cancellation | Passed live | Session `b1afdf23-3f8e-48a7-bcd1-49bbdfb72c6f`, run `2fdb4d2b-0a4b-4007-ac02-de0fb3f1b4d3`: two child calls active at Ctrl+C; child tasks/attempts, plan nodes, and reservations terminal; queued prompt shown then discarded; no later provider start, warning, or workspace change. Permission/question edges remain open. |
+| S8 | Failed/incomplete | `session-S8-retest-2026-09-26-final.json`, run `14913447-a527-452f-93b6-f83de65ce04b`, task `f4dd996c-fb76-4914-8a2d-a11c42a248c7`: natural result-validation failure, then attempt-two admission blocked before a provider call. The fresh route preflight found no automatic retry candidate with trusted capability evidence and fit at the 0.65 floor; no accepted/integrated result or completed escalation. |
 | Suite speed | Open | Exact candidate `9d28dc4`: 161.856/153.587/151.763 seconds; median 153.587, 22.251 seconds above the 131.336s target. No established causal gain. |
-| Release qualification | Incomplete | Local Windows gates, package build/install, benchmark, and deterministic evaluation passed on `9d28dc4`; hosted Windows/Linux matrix, Python 3.12–3.14 CI evidence, and branch-protection verification remain. See Task R14. |
+| Release qualification | Incomplete | Ordered local gates and package-check passed on `6a99a32`; release-check on the clean final documentation commit, hosted Windows/Linux matrix, Python 3.12–3.14 CI evidence, and branch-protection verification remain. See Task R14. |
 
 All evidence paths in this table are relative to `out/live-agentic/` unless stated otherwise.
 Also reviewed: `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, `COSTS.csv`,
 `CALL_COST_AUDIT.csv`, the S6 corrected/postfix exports, and the S8 frozen pricing snapshot.
 
-The read-only cost audit found **600 unique call IDs, zero duplicate IDs, and zero arithmetic
-mismatches among priced rows**. All IDs in the inspected final S4 (210), S5 (142), S8 (25), and latest
-S6 (4) exports occur in the audit. These are export/session counts, not necessarily counts for one
-scenario, and overlapping snapshots must not be summed.
+At the original 2026-09-27 baseline the read-only cost audit found 600 unique call IDs. After the
+2026-09-28 continuation, the append-only audit has **821 unique IDs, zero duplicates, and no
+arithmetic mismatches among priced rows**. Overlapping export snapshots are not summed; `COSTS.csv`
+holds the cumulative local stop estimate.
 
-Current local campaign reconciliation, using Decimal arithmetic:
-
-```text
-current_campaign measured calls                         1.826083134
-retest_subledger_48b7ce35-3ac1-4b43-8487-fb01cf1b37c0     0.402648350
-historical conservative settlements                     0.783784000
-retained reconciliation buffer                          0.006842000
-nominal cumulative in-house estimate                    3.019357484 USD
-```
-
-Ten current-campaign audit rows lack usage; their settlement is conservative, not measured zero.
-Six legacy rows also lack usage. Legacy measured USD 0.173399080 remains outside this campaign
-total. The user-reported hourly USD 0.0018 and old uncertain print-mode activity are separate,
-unattributed observations. Provider billing is unknown. Nominal arithmetic headroom is USD
-5.480642516 to the historical USD 8.50 stop and USD 6.980642516 to USD 10; this excludes historical
-unknowns and is neither a verified billing balance nor a new spending allocation.
+The original 2026-09-27 campaign snapshot was USD `3.019357484`. The append-only ledgers now
+reconcile the current in-house campaign stop at USD **3.746818284**, including measured new calls,
+conservative settlements for tokenless calls, and the retained historical stop buffer. Current
+headroom is USD `4.753181716` to the USD 8.50 normal stop and USD `6.253181716` to the USD 10
+ceiling. This arithmetic excludes historical unknowns and is neither provider billing nor new
+per-scenario authority. The earlier hourly USD 0.0018 observation and actual provider billing remain
+unattributed/unknown; six legacy calls without usage remain outside this campaign total.
 
 ## Diagnosis: what the code and evidence actually establish
 
@@ -156,16 +165,17 @@ some durable restore behavior, but cannot establish that Ctrl+C caused that shut
 the prompt character by character and polls two durability conditions. The saved timing series names
 it as the 22.36-second duration leader; the overall slowdown's cause has not been established.
 
-### D4. Child JSON guidance and actual verification capability must be reconciled
+### D4. Child JSON guidance and actual verification capability
 
-`runtime/run_controller.py:_build_profile_subagent` and `_format_context_packet` name result fields
-but omit complete `ArtifactRef` and `VerificationResult` examples and allowed statuses.
-`agents/result_evaluator.py` correctly rejects malformed JSON, wrong identities, invalid fields,
-missing criteria, bad file references, and unsupported source references. No preserved export
-contains a schema-valid child result that was demonstrably dropped. `response_schema` in a profile
-is a requirement label, not a provider-bound JSON output schema.
+The live child result guidance now contains complete `ArtifactRef` and `VerificationResult` shapes,
+allowed statuses, and explicitly says that a file digest does not prove a test ran. The checkpoint
+payload now includes a copy-ready, validated evidence-only `ExecutionDecision` with a full next
+revision and `PlanRevision` metadata. A red/green integration regression validates that example;
+source commit `6a99a32` passes the ordered offline gates. The final S4 run accepted both child results
+and completed the checkpoint. `agents/result_evaluator.py` continues to reject malformed JSON,
+wrong identities, invalid fields, missing criteria, bad file references, and unsupported references.
 
-There is a second, separate capability mismatch: scoped or isolated child execution sets
+There is a separate capability limit: scoped or isolated child execution sets
 `execute_allowed=False` at `run_controller.py:3736`, and `tools/assembly.py:execute` rejects it.
 The live S4 prompt nevertheless requires each child to run pytest and compute a SHA-256 with Python.
 The child guidance does not explain this limitation. `_validate_evidence_at` validates a file digest;
@@ -388,6 +398,13 @@ provider calls with actionable exclusions; the first attempt's recorded failure 
 by the parent plan's later block; live eligibility is not inferred from synthetic tests.
 Verification: existing selector/assignment tests plus controller-level first-pin-to-auto-retry
 coverage. Freeze current qualification evidence again immediately before any authorized live run.
+
+Latest route-only qualification (2026-09-28): the fresh 142-model catalog has zero automatic
+candidates with trusted capability evidence, tools/structured-output support, and the observed
+0.65 routine implementer retry floor. The isolated provider config currently enables only
+`gpt-4.1-mini`, whose price/support facts are current but whose capability vector is absent. S5 stays
+withheld and S8 stays failed/incomplete; do not toggle eligibility or infer capability. Snapshot
+summary: `out/live-agentic/child-scope-denial-live-20260928T103251Z-scope-mismatch/model-route-qualification.json`.
 
 ### R6 — Preserve failed work safely across a same-task worktree retry
 
