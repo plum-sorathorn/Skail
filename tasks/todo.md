@@ -1,8 +1,9 @@
 # Remaining remediation execution checklist
 
 Authoritative detail, dependencies, evidence, and acceptance: [plan.md](plan.md).
-Baseline: `9f9d1c9ed19b8ad63feea77f0bbc04feef847c55`. Offline R1-R4 and R6-R8 slices and final
-offline gates pass. Live scenarios and exact-candidate release evidence remain.
+Baseline: `9f9d1c9ed19b8ad63feea77f0bbc04feef847c55`. Offline implementation and exact-candidate
+Windows offline/package/release checks passed on `9d28dc4`. Live criteria and hosted platform/
+branch-protection evidence remain.
 
 - [x] R0: Reconcile existing provider-call IDs and freeze the current local cost/evidence baseline.
 - [x] R1: Correct Ctrl+C test ordering; prove shutdown while mounted and restore with fresh stores.
@@ -34,11 +35,16 @@ offline gates pass. Live scenarios and exact-candidate release evidence remain.
   unobserved transitions open unless separately justified by the accepted verification contract.
 - [ ] Checkpoint C: Live outcome, export, fixture diff, independent tests, and cost audit agree.
 - [x] R11: Three controlled current-candidate external-wall runs; preserve all independent test boundaries.
-- [ ] R11-speed: Meet the original 20% objective (131.336-second median versus 164.17 baseline). Current
-  final-source median is 137.640 seconds (16.16% reduction, 6.304 seconds above target); no boundary was removed.
+- [ ] R11-speed: Meet the original 20% objective (131.336-second median versus 164.17 baseline). The
+  exact-candidate median is 153.587 seconds (6.446% reduction, 22.251 seconds above target); no
+  boundary was removed and no causal optimization is established.
 - [x] R12: Reconcile LIVE-001–043, OUT-001–015, new findings, old unchecked items, and changed docs.
 - [x] R13: Final-revision Ruff -> mypy -> unit/contract -> smoke -> full offline suite; Graphify/diff review.
-- [ ] R14: Exact-candidate package/release checks, Windows/Linux evidence, Python matrix, hosting check.
+- [x] R14-local: Exact-candidate Windows package build/install and release check passed on `9d28dc4`,
+  including benchmark thresholds and fresh deterministic paired evaluation; wheel/sdist hashes and
+  logs are under `out/live-agentic/release-candidate-9d28dc4/`.
+- [ ] R14-external: Exact-candidate hosted Windows/Linux matrix, Python 3.12–3.14 fast-matrix evidence,
+  and branch-protection required-check verification.
 - [ ] Checkpoint D: Report passed/failed/unexercised/withheld/external-unknown items separately;
   release readiness is withheld while applicable acceptance or actionable defects remain open.
 

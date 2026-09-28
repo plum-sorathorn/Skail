@@ -18,13 +18,17 @@ guards, admission failure, and admitted-but-unlaunched terminalization. Active-c
 settled accounting at exit, and other R9 live observations remain open. R10 live scenarios have not
 been run.
 
-Final ordered offline gates passed: Ruff, mypy, unit/contract (927 passed, 2 skipped), smoke, and
-full suite (1,231 passed, 5 skipped). Graphify rebuilt the code graph. The final three-run current
-external-wall median is 137.640s, 16.16% under the older 164.17s baseline and 6.304s above the
-131.336s 20% target. R5 currently has no eligible S8 automatic retry in the retained snapshot;
-the historical S8 replay is diagnostic evidence, not a fresh route qualification. R12 now records
-the new offline defects and tests; R14 still needs a clean exact-candidate package/release check and
-platform evidence. R10 live acceptance remains outstanding.
+Final ordered offline gates passed on clean commit `9d28dc4`: Ruff, strict mypy (126 files),
+unit/contract (927 passed, 2 skipped), smoke, and full suite (1,231 passed, 5 skipped). The local
+Windows package check and release check also passed on that exact commit, using the retained wheel
+and sdist under `out/live-agentic/release-candidate-9d28dc4/`; the release evaluation and benchmark
+passed. Graphify rebuilt the code graph. Three exact-candidate timing runs measured 161.856/153.587/
+151.763s external wall (median 153.587s, range 10.093s): 6.446% under the older 164.17s baseline
+and 22.251s above the 131.336s 20% target. R5 currently has no eligible S8 automatic retry in the
+retained snapshot; the historical S8 replay is diagnostic evidence, not a fresh route qualification.
+R10 live acceptance remains outstanding. R14 still needs exact-candidate hosted Windows/Linux
+matrix evidence and branch-protection verification; local checks alone do not make the release
+eligible while live acceptance items remain failed or open.
 
 Historical records contain scenario-specific paid-retest limits. This implementation has made no
 provider generation calls. Carry forward any still-active limits before R10; do not infer new budget
@@ -83,8 +87,8 @@ The full-suite gate's 189.549 seconds is one external-wall observation, not a ti
 | S7 | Passed, lead boundary only | Run `6b2da5e7-797c-4502-9d91-19742ac9ff34`: traversal write denied and outside file absent. This is not a child resource-scope test. |
 | Child write denial | Live unexercised | Offline `test_assembled_child_agent_denies_write_outside_planned_resource_scope` passes. Require an actual child attempt, task-owned denial event, and absence of the out-of-scope file. |
 | S8 | Failed/incomplete | `session-S8-retest-2026-09-26-final.json`, run `14913447-a527-452f-93b6-f83de65ce04b`, task `f4dd996c-fb76-4914-8a2d-a11c42a248c7`: natural result-validation failure, then attempt-two admission blocked before a provider call. No accepted/integrated result or completed escalation. |
-| Suite speed | Open | `timing-20260927T152807Z/`: three serial external-wall times 202.412/200.767/201.816 seconds on clean `0d916ab`; median 201.816. No established causal gain. |
-| Release qualification | Incomplete | Current Windows offline gates are not final Linux/package/benchmark/evaluation/platform evidence. See Task R14. |
+| Suite speed | Open | Exact candidate `9d28dc4`: 161.856/153.587/151.763 seconds; median 153.587, 22.251 seconds above the 131.336s target. No established causal gain. |
+| Release qualification | Incomplete | Local Windows gates, package build/install, benchmark, and deterministic evaluation passed on `9d28dc4`; hosted Windows/Linux matrix, Python 3.12–3.14 CI evidence, and branch-protection verification remain. See Task R14. |
 
 All evidence paths in this table are relative to `out/live-agentic/` unless stated otherwise.
 Also reviewed: `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, `COSTS.csv`,
@@ -573,12 +577,12 @@ ownership/accounting conditions and on the scenario's allocated call/cost bounda
 
 ### R11 — Profile and optimize the corrected offline suite without deleting coverage
 
-**Status: three controlled final-source runs passed; 20% objective remains open.** The serial median
-and full top-40 data are documented in PERFORMANCE.md and
-out/live-agentic/timing-remediation-final-20260928T020400Z/. External-wall median is 137.640
-seconds, 16.16% below the older 164.17-second baseline and 6.304 seconds above the 20% target.
-The prior 1,230-test timing series is preliminary; use the final 1,231-test series for the current
-candidate.
+**Status: three controlled exact-candidate runs passed; 20% objective remains open.** The current
+serial median and full top-40 data are documented in PERFORMANCE.md and
+out/live-agentic/timing-remediation-final-candidate-9d28dc4/. External-wall median is 153.587
+seconds, 6.446% below the older 164.17-second baseline and 22.251 seconds above the 20% target.
+The earlier 137.640-second series predates the final R9 UI assertions and did not record its power
+scheme; do not use it as the current-candidate result.
 
 Dependencies: R1; final measurements after behavior/test changes. Scope: measurement, then one small
 candidate per commit. Read `docs/skail/PERFORMANCE.md`, `tests/conftest.py`, packaging/CLI/eval
@@ -729,10 +733,13 @@ ADRs 0006/0008/0009/0010 were read alongside the code. Graphify was used to loca
 
 Initial planning used read-only probes for intent/gate behavior, event projection, and Decimal/call-ID
 reconciliation. The implementation then used only disposable pytest workspaces. It made no provider
-generation call and no new live acceptance run. Final source/test verification: Ruff, strict mypy
-(126 files), unit/contract (927 passed, 2 skipped), smoke, and full offline suite (1,231 passed,
-5 skipped). The standalone exact-candidate package/release checks, hosted platform matrix, live
-scenario runs, and provider billing verification remain open.
+generation call and no new live acceptance run. Final source/test verification on clean commit
+`9d28dc4`: Ruff, strict mypy (126 files), unit/contract (927 passed, 2 skipped), smoke, and full
+offline suite (1,231 passed, 5 skipped). Exact-candidate Windows package build/install and
+release-check passed, including benchmark thresholds and fresh deterministic paired evaluation; logs
+and SHA-256 artifact evidence are under `out/live-agentic/release-candidate-9d28dc4/` and
+`out/live-agentic/final-gates-candidate-9d28dc4/`. Hosted platform evidence, live scenario runs,
+branch-protection verification, and provider billing verification remain open.
 
 Planning-deliverable checks: all local Markdown links in the five changed documents resolve;
 explicit source/test paths checked by the plan audit exist; `git diff --check` passed.

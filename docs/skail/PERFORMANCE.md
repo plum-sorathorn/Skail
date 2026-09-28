@@ -179,3 +179,19 @@ inspection (3.58s), mounted model-picker return (3.37s), and the isolated no-cre
 question-resume test took 3.31s and preserves real Enter/Ctrl+C, durable state, fresh stores, answer,
 filesystem, and subprocess checks. No additional consolidation was shown to preserve those separate
 boundaries while closing the remaining 6.304s gap. Do not claim the 20% objective was met.
+
+### 2026-09-28 exact-candidate timing on commit 9d28dc4
+
+After the final R9 question-card assertions, three serial runs of the exact command
+`py -3.14 -m pytest -q --durations=40` used clean source/test commit `9d28dc433216968209d30b5969a55f8f4b1eca00`.
+Windows 11 build 26200, Python 3.14.6, pytest 9.1.1, 20 logical processors, and the Balanced power
+scheme were recorded. Each run passed 1,231 tests, skipped 5, and emitted 5 warnings. External wall
+times were 161.856s, 153.587s, and 151.763s (median 153.587s, range 10.093s); pytest-reported times
+were 159.10s, 150.46s, and 148.54s (median 150.46s, range 10.56s). Complete raw logs and per-run
+records are in `out/live-agentic/timing-remediation-final-candidate-9d28dc4/`.
+
+The external median is 6.446% below the older 164.17s baseline and 22.251s above the original
+131.336s 20% target. The preceding 137.640s median was measured before the final UI assertion edits
+and did not record its power scheme. The current run's elevated median cannot be attributed to those
+assertions because host load and power conditions were not matched across series. No boundary was
+removed and no causal optimization is established. Keep the 20% objective open.
