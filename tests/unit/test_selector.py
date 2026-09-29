@@ -129,6 +129,31 @@ def test_hard_filters_and_explanations_account_for_every_exclusion() -> None:
     assert result.binding_constraint in result.excluded_counts
 
 
+def test_retry_failure_names_enabled_candidates_blocker_before_disabled_catalog_noise() -> None:
+    requirements = RequirementBuilder().build(
+        role="implementer",
+        risk=TaskRisk.ROUTINE,
+        escalated=True,
+        failed_model=("p", "failed"),
+    )
+    manual_only = _candidate("p", "manual-only", auto_eligible=False)
+    candidates = (
+        _candidate("p", "failed"),
+        manual_only,
+        *(_candidate("p", f"disabled-{index}", enabled=False) for index in range(4)),
+    )
+
+    result = select_model(candidates, requirements)
+
+    assert isinstance(result, RouteFailure)
+    assert result.excluded_counts == {
+        "auto_ineligible": 1,
+        "model_disabled": 4,
+        "model_excluded": 1,
+    }
+    assert result.binding_constraint == "auto_ineligible"
+
+
 def test_manual_uses_exact_pin_but_still_validates_hard_compatibility() -> None:
     candidates = (_candidate("p", "manual", auto_eligible=False), _candidate("p", "other"))
     requirements = RequirementBuilder().build(

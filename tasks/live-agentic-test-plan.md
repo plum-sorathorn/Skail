@@ -1,5 +1,19 @@
 # Live Agentic Test Plan: Skail Interactive Validation
 
+## S8 diagnosis update (2026-09-28, latest)
+
+[The S8 diagnosis](s8-diagnosis-2026-09-28.md) confirms that the prior first implementer attempt
+failed result validation at `$.artifacts.0.kind`, while the same-task retry had no provider call.
+The historical `model_disabled` binding reflects catalog-wide exclusion counts and does not identify
+the enabled alternatives' actual retry blockers. Fresh authenticated catalog discovery found 143
+accessible models, zero automatically eligible; selected GPT-4.1, GPT-4.1-mini, and Qwen3.8 Flash
+each lack trusted capability vectors. No natural S8 rerun is qualified by merely choosing a model
+list. The route explanation regression now prioritizes enabled candidates' blocking reason.
+S8 remains failed/incomplete; the historical run is not turned into a pass by this diagnosis.
+No inference calls or cost rows were added. Provider billing remains unknown.
+Ordered offline gates passed: Ruff, strict mypy, unit/contract 928 passed and 2 skipped, smoke,
+full suite 1,232 passed and 5 skipped.
+
 ## S5 diagnosis and live acceptance update (2026-09-28, latest)
 
 [The S5 diagnosis](s5-diagnosis-2026-09-28.md) supersedes older S5 withholding statements below.

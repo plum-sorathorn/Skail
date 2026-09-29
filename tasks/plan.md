@@ -1,5 +1,18 @@
 # Remaining remediation implementation plan
 
+## S8 diagnosis update (2026-09-28, latest)
+
+[The S8 diagnosis](s8-diagnosis-2026-09-28.md) found a genuine first child result-validation
+failure and a retry blocked before provider execution. The exported `model_disabled` binding
+can be dominated by disabled catalog entries; it does not prove enabled alternatives were disabled.
+Fresh authenticated discovery found 143 accessible models and zero auto-eligible models. The
+selector's binding explanation is repaired with a red/green regression, while routing admission
+remains unchanged. S8 live acceptance requires trusted evidence for a distinct model above the
+0.65 escalated implementer floor, then a natural failure, same-task second assignment, accepted
+integration, and independent test. No new paid call was justified; S8 remains failed/incomplete.
+Ordered gates passed: Ruff, strict mypy, unit/contract 928 passed and 2 skipped, smoke, full suite
+1,232 passed and 5 skipped. Package/release checks still require renewal on this source revision.
+
 ## S5 diagnosis and live acceptance update (2026-09-28, latest)
 
 [The S5 diagnosis](s5-diagnosis-2026-09-28.md) supersedes older S5 withholding statements below.

@@ -147,6 +147,7 @@ def select_model(
         raise ValueError("manual routing requires an exact provider/model pin")
     included: list[RouteCandidate] = []
     excluded: Counter[str] = Counter()
+    available_excluded: Counter[str] = Counter()
     manual_model_reason: str | None = None
     for candidate in sorted(
         candidates, key=lambda item: (item.profile.provider, item.profile.model)
@@ -163,9 +164,18 @@ def select_model(
             included.append(candidate)
         else:
             excluded[reason] += 1
+            if (
+                (candidate.profile.provider, candidate.profile.model)
+                not in requirements.excluded_models
+                and candidate.configured
+                and candidate.healthy
+                and candidate.enabled
+            ):
+                available_excluded[reason] += 1
     counts = dict(sorted(excluded.items()))
+    relevant = available_excluded or excluded
     binding = manual_model_reason or (
-        min(counts, key=lambda reason: (-counts[reason], reason)) if counts else None
+        min(relevant, key=lambda reason: (-relevant[reason], reason)) if relevant else None
     )
     if not included:
         return RouteFailure(excluded_counts=counts, binding_constraint=binding)

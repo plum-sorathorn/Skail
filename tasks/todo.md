@@ -1,5 +1,21 @@
 # Remaining remediation execution checklist
 
+## S8 diagnosis update (2026-09-28, latest)
+
+[The S8 diagnosis](s8-diagnosis-2026-09-28.md) confirms a natural first child result-validation
+failure at `$.artifacts.0.kind`, followed by a same-task retry rejected before a provider call.
+The exported `model_disabled` was an aggregate binding reason; the earlier snapshot's 139 disabled
+entries could dominate it, and it did not identify a disabled GPT alternative. A fresh authenticated
+read-only catalog refresh found 143 accessible models and zero auto-eligible models, including no trusted capability vector
+for GPT-4.1, GPT-4.1-mini, or Qwen3.8 Flash. A red/green regression now makes the route explanation
+prioritize the actionable `auto_ineligible` reason among enabled alternatives. No new inference
+calls were made. S8 remains failed/incomplete, and R5/R10-S8 stay unchecked until trusted evidence
+qualifies a genuine stronger auto retry and a live run passes integration and independent testing.
+Ordered gates on this routing-explanation change passed: Ruff, strict mypy (126 files), unit/contract
+928 passed with 2 skipped, smoke, and full offline suite 1,232 passed with 5 skipped. Earlier S5
+gate counts below refer to the prior source commit. Campaign local estimate remains USD 3.946369484, excluding
+historical unknowns; provider billing is unknown.
+
 ## S5 diagnosis and live acceptance update (2026-09-28, latest)
 
 [The S5 diagnosis](s5-diagnosis-2026-09-28.md) supersedes older S5 withholding statements below.
@@ -73,11 +89,12 @@ USD 3.946369484; provider billing is unknown.
 - [x] R13: Final-revision Ruff -> mypy -> unit/contract -> smoke -> full offline suite; Graphify/diff review.
 - [x] R14-local: Package build/install and clean-worktree release-check passed on code candidate
   `6a99a32` / documentation commit `4f0b342`. Wheel SHA-256 `64d823546ce4696a450c445376c394f7072eabc68f10a2b41fea60c78d262c95`;
-  sdist SHA-256 `ec2ab8c425489ff35af04219a408f8c318e3f38a2c7c0966c240484aebf8216e`. The later S5 source-guidance change passed ordered offline gates; package/release checks need renewal.
+  sdist SHA-256 `ec2ab8c425489ff35af04219a408f8c318e3f38a2c7c0966c240484aebf8216e`. The later S5 guidance and S8 route-explanation changes passed ordered offline gates; package/release checks need renewal.
   Hosted external gates remain separate.
 - [ ] R14-external: Exact-candidate hosted Windows/Linux matrix, Python 3.12–3.14 fast-matrix evidence,
   and branch-protection required-check verification.
-- [ ] R14-renewal: Renew package/release checks on the final source candidate after the S5 guidance fix.
+- [ ] R14-renewal: Renew package/release checks on the final source candidate after the S5 guidance
+  and S8 route-explanation fixes.
 - [ ] Diagnostic follow-up: Retain safe attempt-keyed child failure reason codes through retry
   terminalization and export; current task-level results overwrite first-failure detail. See the
   [S5 diagnosis](s5-diagnosis-2026-09-28.md); raw provider output must remain excluded.

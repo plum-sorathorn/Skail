@@ -333,6 +333,9 @@ The route decision records:
 - user overrides;
 - reservation ID.
 
+When no model qualifies, the binding reason prioritizes configured, healthy, enabled candidates
+that were not excluded by a prior attempt; catalog-wide disabled counts remain visible separately.
+
 `/route` renders this record; it does not recompute a possibly different answer.
 
 ### Model stickiness

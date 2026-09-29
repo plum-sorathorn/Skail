@@ -1,5 +1,18 @@
 # Defect Remediation Checklist
 
+## S8 diagnosis update (2026-09-28, latest)
+
+[The S8 diagnosis](s8-diagnosis-2026-09-28.md) separates the first child's invalid artifact
+result from the later retry routing failure. The historical `model_disabled` binding was
+catalog-wide and cannot identify a specific disabled alternative; the retry candidate snapshot
+was not exported. Current authenticated discovery returned 143 accessible models and none with
+trusted capability evidence for automatic routing. A selector regression repairs the misleading
+binding explanation without admitting any new model. S8 is still failed/incomplete; no new paid
+run was qualified, no inference calls were made, and the cost ledger is unchanged. Older S8
+statements below are historical observations and should be read with this diagnosis. Ordered gates
+passed: Ruff, strict mypy, unit/contract 928 passed and 2 skipped, smoke, full suite 1,232 passed
+and 5 skipped.
+
 ## S5 diagnosis and live acceptance update (2026-09-28, latest)
 
 [The S5 diagnosis](s5-diagnosis-2026-09-28.md) supersedes older S5 withholding statements below.
