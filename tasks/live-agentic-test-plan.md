@@ -1,5 +1,21 @@
 # Live Agentic Test Plan: Skail Interactive Validation
 
+## S5 diagnosis and live acceptance update (2026-09-28, latest)
+
+[The S5 diagnosis](s5-diagnosis-2026-09-28.md) supersedes older S5 withholding statements below.
+Fresh run `31f697cc-3018-43c8-a6fe-af638ad819e5` passed the main adaptive-plan path: two accepted
+explorers, checkpoint/revision 2, later scoped writer integrated, independent parser tests 4/4,
+and mounted `/plan` replay matching persisted IDs/states. Historical explorer causes remain unknown.
+Explicit manual GPT-4.1 routes are authorized; missing automatic capability evidence still blocks
+S8 escalation and does not prohibit a fresh manual S5 run. The prior 0.65 floor was S8-specific.
+New child guidance requires full workspace-relative source references; a red/green regression and
+all ordered offline gates passed (927 unit/contract, 1,231 full-suite passes). Package/release checks
+from earlier commits are historical and require renewal for this source revision before release.
+The call audit now has 877 unique IDs. This continuation added 56 fully priced calls, USD 0.1995512;
+campaign local estimate is USD 3.946369484, S5 allocation remaining USD 1.618440346. Provider billing
+is unknown. Other unchecked acceptance, speed, conditional lifecycle, and hosted gates remain open.
+
+
 > Continue with [the current implementation plan](plan.md) and this scenario matrix. The acceptance
 > criteria below remain authoritative; dated run budgets and outcomes are updated in the current
 > acceptance section and append-only execution records.
@@ -33,10 +49,10 @@ The scenario matrix below is historical evidence and procedure; current acceptan
   parser/report/integration tests passed 3/3 with provider credentials removed. Only the scoped parser
   and report source files changed. Evidence is under
   `out/live-agentic/s4-live-remediation-20260928T101200Z-fifo-direct/`.
-- **S5:** withheld; historical explorer failure cause remains unknown. A fresh 142-model catalog
-  preflight found no automatic candidate with trusted tools/structured-output capability and the
-  observed 0.65 retry floor; do not enable or fabricate eligibility. See
-  `out/live-agentic/child-scope-denial-live-20260928T103251Z-scope-mismatch/model-route-qualification.json`.
+- **S5:** main live path passed in run `31f697cc-3018-43c8-a6fe-af638ad819e5` with explicit
+  GPT-4.1 routes, independent 4/4 parser tests, and mounted plan replay. See
+  [diagnosis](s5-diagnosis-2026-09-28.md). Historical failure causes remain unknown; automatic
+  retry qualification and conditional cancellation/question edges are separate.
 - **S6:** passed live in attempt 10. Session `6b480702-4fcf-485e-9685-f9d7acca4dd2`, run
   `e533a686-5cbd-4f41-a41b-3e9abe322a2c`, restored and answered one durable JSON question in the
   same run, wrote only `src/live_fixture/exporter.py` and `tests/test_exporter.py`, and completed

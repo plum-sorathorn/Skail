@@ -1176,6 +1176,10 @@ async def test_two_explorers_revision_then_scoped_writer_passes_operator_test(
         task for task in snapshot.tasks if task.run_id == str(result.run_id)
     ]
     assert len(plan_tasks) == 4
+    explorer_prompt = "\n".join(str(message.content) for message in explorers.calls[0])
+    assert "full workspace-relative path:line" in explorer_prompt
+    assert "no leading slash or drive letter" in explorer_prompt
+    assert "Do not shorten a source reference to its basename" in explorer_prompt
     assert implementer.bound_tool_names >= {"write_file", "file_digest"}
     assert (workspace / "src/live_fixture/parser.py").read_text(encoding="utf-8") == implementation
     environment = os.environ.copy()

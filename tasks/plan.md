@@ -1,5 +1,21 @@
 # Remaining remediation implementation plan
 
+## S5 diagnosis and live acceptance update (2026-09-28, latest)
+
+[The S5 diagnosis](s5-diagnosis-2026-09-28.md) supersedes older S5 withholding statements below.
+Fresh run `31f697cc-3018-43c8-a6fe-af638ad819e5` passed the main adaptive-plan path: two accepted
+explorers, checkpoint/revision 2, later scoped writer integrated, independent parser tests 4/4,
+and mounted `/plan` replay matching persisted IDs/states. Historical explorer causes remain unknown.
+Explicit manual GPT-4.1 routes are authorized; missing automatic capability evidence still blocks
+S8 escalation and does not prohibit a fresh manual S5 run. The prior 0.65 floor was S8-specific.
+New child guidance requires full workspace-relative source references; a red/green regression and
+all ordered offline gates passed (927 unit/contract, 1,231 full-suite passes). Package/release checks
+from earlier commits are historical and require renewal for this source revision before release.
+The call audit now has 877 unique IDs. This continuation added 56 fully priced calls, USD 0.1995512;
+campaign local estimate is USD 3.946369484, S5 allocation remaining USD 1.618440346. Provider billing
+is unknown. Other unchecked acceptance, speed, conditional lifecycle, and hosted gates remain open.
+
+
 Planning baseline: `9f9d1c9ed19b8ad63feea77f0bbc04feef847c55`, 2026-09-27.
 This is the active implementation and acceptance handoff. The progress section records changes made
 after its baseline; the dated sections below still define remaining work.
@@ -100,7 +116,7 @@ The full-suite gate's 189.549 seconds is one external-wall observation, not a ti
 | S2 | Implementation verified; presentation incomplete | `session-S2-correction.json` and later complete session exports; operator normalization check passed 4/4. Capture rendered final answer versus exported final output. |
 | S3 | Read-only routing verified; presentation incomplete | `session-S3-live-final.json`; two requested routes worked after the config-revision fix. Capture final answers for both models, with unchanged fixture. |
 | S4 | Passed live | Session `d59ee73b-4efc-4806-b6b6-ed157aaae0a5`: main run `5360fc2f-fbe5-448b-b740-efe2369566a8` and FIFO run `b9dbd334-a419-4394-abf0-8426551bcdf0` completed; two accepted child results, checkpoint, 15.783365 seconds observed overlap, and 3/3 independent focused tests. Evidence: `s4-live-remediation-20260928T101200Z-fifo-direct/`. |
-| S5 | Withheld | Historical explorer failures in run `071ba5b0-5c91-479d-bb14-74db2e951997` lack safe cause evidence. The fresh 142-model catalog preflight found no auto-eligible route with trusted tool/structured-output capability and the 0.65 retry floor; keep S5 withheld. Details: `child-scope-denial-live-20260928T103251Z-scope-mismatch/model-route-qualification.json`. |
+| S5 | Passed main live path | Fresh run `31f697cc-3018-43c8-a6fe-af638ad819e5`; accepted discoveries, checkpoint/revision, integrated scoped writer, independent 4/4 parser tests, mounted plan replay. Historical causes remain unknown. See [diagnosis](s5-diagnosis-2026-09-28.md). |
 | S6 | Passed live | Session `6b480702-4fcf-485e-9685-f9d7acca4dd2`, run `e533a686-5cbd-4f41-a41b-3e9abe322a2c`: durable JSON question restored/answered in the same run, only exporter and focused test written, and independent focused test passed. Earlier operator-edited fixture remains quarantined. |
 | S7 | Passed, lead boundary only | Run `6b2da5e7-797c-4502-9d91-19742ac9ff34`: traversal write denied and outside file absent. This remains separate from the child-scope denial. |
 | Child write denial | Passed live | Run `ae17ce6a-3a03-4f75-afc6-77f0c1381c8e`, child task `cdf0e48b-b628-48d6-a27d-2336d5856c09`: task-owned `write_file` denial `write is outside the delegated task scope`; parent fixture unchanged and out-of-scope test absent. Evidence: `child-scope-denial-live-20260928T103251Z-scope-mismatch/`. |

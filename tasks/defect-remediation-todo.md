@@ -1,5 +1,21 @@
 # Defect Remediation Checklist
 
+## S5 diagnosis and live acceptance update (2026-09-28, latest)
+
+[The S5 diagnosis](s5-diagnosis-2026-09-28.md) supersedes older S5 withholding statements below.
+Fresh run `31f697cc-3018-43c8-a6fe-af638ad819e5` passed the main adaptive-plan path: two accepted
+explorers, checkpoint/revision 2, later scoped writer integrated, independent parser tests 4/4,
+and mounted `/plan` replay matching persisted IDs/states. Historical explorer causes remain unknown.
+Explicit manual GPT-4.1 routes are authorized; missing automatic capability evidence still blocks
+S8 escalation and does not prohibit a fresh manual S5 run. The prior 0.65 floor was S8-specific.
+New child guidance requires full workspace-relative source references; a red/green regression and
+all ordered offline gates passed (927 unit/contract, 1,231 full-suite passes). Package/release checks
+from earlier commits are historical and require renewal for this source revision before release.
+The call audit now has 877 unique IDs. This continuation added 56 fully priced calls, USD 0.1995512;
+campaign local estimate is USD 3.946369484, S5 allocation remaining USD 1.618440346. Provider billing
+is unknown. Other unchecked acceptance, speed, conditional lifecycle, and hosted gates remain open.
+
+
 > Continue with [the current implementation plan](plan.md) and [its task checklist](todo.md).
 > The plan maps every defect/output ID and the unchecked items below to remaining work. Historical
 > checked milestones are preserved; they do not close missing live criteria or the speed objective.
@@ -255,7 +271,7 @@ withheld because its historical cause is unknown.
 | LIVE-021 | Provider call outcome unknown; locally settled; do not replay. |
 | LIVE-022 | Provider call outcome unknown; locally settled; do not replay. |
 | LIVE-023 | Closed as expected session-history projection. |
-| LIVE-024 | Withheld: three S5 explorer runs produced no accepted results; offline handoff diagnostics now include `validation_path`; historical cause remains unknown. Fresh catalog preflight found no qualified automatic candidate, so no additional attempt was made. |
+| LIVE-024 | Historical cause remains unknown. Fresh S5 source-reference failures diagnosed separately as LIVE-045; corrected main live path passed with accepted discoveries, checkpoint, revision, integrated writer and independent 4/4 tests. |
 | LIVE-025 | Ambiguous provider call locally settled; outcome unknown; do not replay. |
 | LIVE-026 | `PlanNode.resource_scopes` reach the child filesystem boundary (`d92b4b9`); a direct live child write was denied and the out-of-scope test file remained absent. The invalid field in run 9c251 remains unknown. |
 | LIVE-027 | Fixed offline; a later planned run admitted and blocked truthfully, but rejected/no-decision live edge remains pending. |
@@ -290,15 +306,11 @@ withheld because its historical cause is unknown.
 
 - [x] 10. Reconcile LIVE-001–044 and OUT-001–015 against the latest exports; correct stale
   statuses, link each open item to a reproducer, and preserve uncertain call outcomes.
-- [ ] 11. Diagnose S5 explorer result failures (LIVE-024) with safe failure-category evidence,
-  then prove accepted child results, checkpoint, and revision in deterministic tests. Historical
-  exports lack child results and failure categories, so their exact cause remains unknown; S5 is
-  withheld and no additional attempt has been made.
-  - The 2026-09-26 review of `session-S5-final-retry-final.json` (run
-    `071ba5b0-5c91-479d-bb14-74db2e951997`) found `task.failed` with null reason, no
-    `failure_category`, no `validation_path`, and no raw child result. Offline evidence still cannot
-    establish the cause; S5 stays withheld, with no paid retry. The accepted-result, checkpoint, and
-    revision criteria remain incomplete.
+- [x] 11. Diagnose fresh S5 explorer failures with safe per-attempt evidence and prove the
+  corrected two-explorer/checkpoint/revision/writer path offline and live. Fresh failures used
+  leading-slash or basename-only source references; guidance now requires full workspace-relative
+  paths. Historical initial causes remain unknown. See [diagnosis](s5-diagnosis-2026-09-28.md)
+  and the passing run `31f697cc-3018-43c8-a6fe-af638ad819e5`; independent parser tests passed 4/4.
 - [x] 12. Reproduce and repair same-run post-answer continuation (LIVE-030/OUT-012); inspect
   the repeated S6 tool sequence before changing loop detection. The schema-v2 export for run
   `5a216e69-9126-49b0-849f-9811d5ba0a35` records one failed `execution_decision`, one `ask_user`,
