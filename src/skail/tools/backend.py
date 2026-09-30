@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import os
+import stat
 from contextlib import AbstractContextManager, nullcontext
 from contextvars import ContextVar
 from pathlib import Path, PurePosixPath
@@ -9,6 +12,7 @@ from deepagents.backends import FilesystemBackend
 from deepagents.backends.protocol import (
     EditResult,
     GlobResult,
+    GrepMatch,
     GrepResult,
     LsResult,
     ReadResult,
@@ -22,6 +26,7 @@ from skail.tools.filesystem import FilesystemBoundary, PathBoundaryError
 CURRENT_TOOL_CALL_ID: ContextVar[str | None] = ContextVar(
     "skail_tool_call_id", default=None
 )
+MAX_FILE_DIGEST_BYTES = 256 * 1024 * 1024
 
 
 class PolicyFilesystemBackend(FilesystemBackend):
@@ -59,6 +64,66 @@ class PolicyFilesystemBackend(FilesystemBackend):
             raise PathBoundaryError("virtual path traversal is not permitted")
         return str(value).lstrip("/") or "."
 
+    def file_digest(self, file_path: str) -> str:
+        """Return a runtime-computed digest for a readable workspace file."""
+        relative = self._relative(file_path)
+        candidate = self.boundary.resolve(relative)
+        self.boundary._assert_not_sensitive(candidate)
+        try:
+            before = candidate.lstat()
+        except OSError as error:
+            raise PathBoundaryError("file.evidence_unavailable") from error
+        attributes = getattr(before, "st_file_attributes", 0)
+        reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_nlink != 1
+            or bool(reparse and attributes & reparse)
+            or before.st_size > MAX_FILE_DIGEST_BYTES
+        ):
+            raise PathBoundaryError("file.evidence_unavailable")
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(candidate, os.O_RDONLY | no_follow)
+        except OSError as error:
+            raise PathBoundaryError("file.evidence_unavailable") from error
+        digest = hashlib.sha256()
+        total_bytes = 0
+        with os.fdopen(descriptor, "rb", closefd=True) as source:
+            opened = os.fstat(source.fileno())
+            identity = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+            opened_identity = (
+                opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns
+            )
+            if identity != opened_identity or not stat.S_ISREG(opened.st_mode):
+                raise PathBoundaryError("file.evidence_unavailable")
+            while True:
+                chunk = source.read(min(64 * 1024, MAX_FILE_DIGEST_BYTES + 1 - total_bytes))
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > MAX_FILE_DIGEST_BYTES:
+                    raise PathBoundaryError("file.evidence_unavailable")
+                digest.update(chunk)
+            closed = os.fstat(source.fileno())
+        try:
+            after = candidate.lstat()
+            resolved_after = self.boundary.resolve(relative)
+            self.boundary._assert_not_sensitive(resolved_after)
+        except OSError as error:
+            raise PathBoundaryError("file.evidence_unavailable") from error
+        if (
+            identity
+            != (closed.st_dev, closed.st_ino, closed.st_size, closed.st_mtime_ns)
+            or identity
+            != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+            or resolved_after != candidate
+            or not stat.S_ISREG(after.st_mode)
+            or after.st_nlink != 1
+        ):
+            raise PathBoundaryError("file.evidence_unavailable")
+        return digest.hexdigest()
+
     def _next_call(self) -> str:
         active = CURRENT_TOOL_CALL_ID.get()
         if active is not None:
@@ -89,30 +154,120 @@ class PolicyFilesystemBackend(FilesystemBackend):
         max_count: int | None = None,
         context_lines: int = 0,
     ) -> GrepResult:
-        result = super().grep(
-            pattern,
-            path,
-            glob,
-            max_count=max_count,
-            context_lines=context_lines,
-        )
+        try:
+            result = (
+                self._grep_utf8(pattern, path, glob, max_count, context_lines)
+                if not pattern.isascii()
+                else super().grep(
+                    pattern,
+                    path,
+                    glob,
+                    max_count=max_count,
+                    context_lines=context_lines,
+                )
+            )
+        except UnicodeDecodeError:
+            result = self._grep_utf8(pattern, path, glob, max_count, context_lines)
         if result.matches is None:
             return result
-        safe = []
+        safe: list[GrepMatch] = []
+        content_by_path: dict[Path, list[str]] = {}
         for match in result.matches:
             try:
                 candidate = self.boundary.resolve(self._relative(match["path"]))
                 self.boundary._assert_not_sensitive(candidate)
             except (PermissionError, OSError):
                 continue
-            match["text"] = self.boundary.redactor.scrub_text(match["text"])
+            try:
+                file_lines = content_by_path.get(candidate)
+                if file_lines is None:
+                    file_lines = self.boundary.read_text(candidate).splitlines()
+                    content_by_path[candidate] = file_lines
+            except (OSError, UnicodeDecodeError):
+                continue
+            line_number = int(match.get("line", 0))
+            if 1 <= line_number <= len(file_lines):
+                match["text"] = file_lines[line_number - 1]
+            else:
+                match["text"] = self.boundary.redactor.scrub_text(match["text"])
             for field in ("context_before", "context_after"):
-                lines = cast(list[dict[str, Any]], match.get(field, []))
-                for line in lines:
-                    line["text"] = self.boundary.redactor.scrub_text(line["text"])
+                context = cast(list[dict[str, Any]], match.get(field, []))
+                for line in context:
+                    context_number = int(line.get("line", 0))
+                    if 1 <= context_number <= len(file_lines):
+                        line["text"] = file_lines[context_number - 1]
+                    else:
+                        line["text"] = self.boundary.redactor.scrub_text(line["text"])
             safe.append(match)
         result.matches = safe
         return result
+
+    def _grep_utf8(
+        self,
+        pattern: str,
+        path: str | None,
+        glob: str | None,
+        max_count: int | None,
+        context_lines: int,
+    ) -> GrepResult:
+        try:
+            root = self.boundary.resolve(self._relative(path or "."))
+        except (OSError, PermissionError) as exc:
+            return GrepResult(error=str(exc), matches=[])
+        if not root.exists():
+            return GrepResult(matches=[])
+        candidates: list[dict[str, Any]]
+        if root.is_file():
+            candidates = [
+                {"path": f"/{root.relative_to(self.boundary.workspace).as_posix()}"}
+            ]
+        else:
+            glob_result = super().glob(glob or "*", path=path)
+            if glob_result.matches is None:
+                return GrepResult(error=glob_result.error, matches=[])
+            candidates = [
+                {"path": str(item["path"])}
+                for item in glob_result.matches
+                if not item.get("is_dir", False)
+            ]
+
+        matches: list[GrepMatch] = []
+        truncated = False
+        for item in candidates:
+            try:
+                relative = self._relative(str(item["path"]))
+                candidate = self.boundary.resolve(relative)
+                self.boundary._assert_not_sensitive(candidate)
+                content = self.boundary.read_text(candidate)
+            except (OSError, PermissionError, UnicodeDecodeError):
+                continue
+            for line_number, line in enumerate(content.splitlines(), start=1):
+                if pattern not in line:
+                    continue
+                if max_count is not None and len(matches) >= max_count:
+                    truncated = True
+                    break
+                matches.append(
+                    {
+                        "path": f"/{candidate.relative_to(self.boundary.workspace).as_posix()}",
+                        "line": line_number,
+                        "text": line,
+                    }
+                )
+            if truncated:
+                break
+
+        error: str | None = None
+        if context_lines:
+            unreadable = self._add_grep_context(
+                matches, context_lines, pattern, newline=None
+            )
+            if unreadable:
+                error = (
+                    f"Error: could not read context for {len(unreadable)} file(s): "
+                    + ", ".join(sorted(unreadable))
+                )
+        return GrepResult(error=error, matches=matches, truncated=truncated)
 
     def write(self, file_path: str, content: str) -> WriteResult:
         try:

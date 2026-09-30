@@ -130,6 +130,8 @@ class InterruptWidget(Widget):
     .interrupt-question {
         margin: 1 0;
         color: $text;
+        max-height: 5;
+        overflow-y: auto;
     }
     .interrupt-owner {
         color: $textMuted;
@@ -207,6 +209,10 @@ class InterruptWidget(Widget):
         self._submitted = not should_render_buttons(interrupt)
         self._focus_index = 0
         self._update_state_class()
+
+    def on_mount(self) -> None:
+        if self.interrupt.kind is InterruptKind.QUESTION and not self._submitted:
+            self.query_one("#interrupt-input", Input).focus()
 
     def _update_state_class(self) -> None:
         try:

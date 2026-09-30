@@ -9,8 +9,10 @@ the reported speedup is not supported by the preserved diagnostics. It must not 
 provider-quality result, provider-cost saving, safety guarantee, or release verification.
 
 Skail retains offline fixtures for contract testing. They exercise the runtime under deterministic
-scripted responses; they do not establish real-provider quality or savings. Live-provider validation
-is opt-in and has not been performed for v0.1.0.
+scripted responses; they do not establish real-provider quality or savings. Opt-in exploratory
+DevPass live runs are recorded in `out/live-agentic/` and the repository's live test plan. Several
+scenarios remain incomplete, provider billing is unverified, and these runs do not qualify
+v0.1.0 for live-provider quality or economic claims.
 
 ## Independent execution foundation
 
@@ -26,7 +28,10 @@ historical reports remain historical rather than being relabelled as current rel
 
 ## Current methodology record
 
-- The documented end-to-end parallel gate remains at 15% against the serial policy.
+- The documented end-to-end parallel gate remains at 15% against the serial policy. A
+  fixture/seed pair contributes only when every AUTO repetition records at least two
+  simultaneously active children; wall-clock differences without that observed concurrency do not
+  count and leave the pair incomplete.
 - With the same 450 ms synthetic child delay, the preserved diagnostics reported 23.4% for seed
   42 and 14.5% for seed 100. The latter fails the gate.
 - An interrupted change raised the delay to 650 ms. It was removed without using it as release
@@ -41,6 +46,8 @@ historical reports remain historical rather than being relabelled as current rel
   platform and dependency versions, timestamp, and the exact invoking command. Policy summaries
   report failed-work spend separately and divide all measured spend by independently completed
   tasks; a policy with zero successful tasks reports cost per success as unavailable.
+- Git output used for the working-tree digest is decoded as UTF-8 so non-ASCII source or
+  documentation changes remain in provenance on Windows.
 - Phase 15's final Windows offline verification completed all 270 cells across the 54-fixture,
   five-policy workload. Its frozen six-fixture parallel matrix completed all 300 cells and all 12
   fixture/seed pairs, measuring 24.38% and 23.79% seed speedups with a 0.59-point spread. The

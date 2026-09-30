@@ -65,3 +65,147 @@ over as evidence for this commit.
   and the eval-journal-close fix do not weaken commit or rollback semantics.
 - Linux CI raw evidence is still required; Linux green is not claimed. Exact-final-commit
   Windows/Linux verification remains pending in Phase 24.
+
+## 5. Offline verification runtime (developer gate)
+
+These timings describe the repository's offline test suite, not Skail runtime latency or provider
+performance. They were measured serially on Windows 11 / Python 3.14.6 with
+`python -m pytest -q --durations=40`.
+
+| Measurement | Wall times | Median | Result |
+|---|---:|---:|---|
+| Before this remediation cycle | 164.17s, 159.42s, 173.13s | 164.17s | 1,176 passed, 5 skipped |
+| After measured optimization pass | 169.45s, 166.24s, 166.71s | 166.71s | 1,185 passed, 5 skipped |
+
+The measured after median is 1.5% longer than the baseline, so the planned 20% reduction was not
+met. At that measurement, the suite had nine more passing regression cases. Pytest times were
+165.70s, 161.75s, and 163.01s (163.01s median). The measured subprocess, evaluation, and artifact
+checks became faster, while the mounted TUI slice remained effectively unchanged. The remaining no-credential subprocess
+and real wheel build stay because they test isolated process and artifact boundaries.
+
+Later behavioral repairs changed the test count. A three-run measurement on Windows 11 / Python
+3.14.6 used `python -m pytest -q --durations=40` and collected 1,199 cases each run (1,194 passed,
+5 skipped). Wall times were 162.76s, 146.77s, and 161.27s (median 161.27s); pytest-reported times
+were 159.22s, 143.24s, and 157.70s (median 157.70s).
+
+After the final stale-result regression, three serial runs collected 1,200 cases each (1,195
+passed, 5 skipped); pytest-reported times were 109.25s, 109.15s, and 111.52s (median 109.25s).
+That record has no external wall measurement. The preceding three-run record was 1,199 cases
+(1,194 passed, 5 skipped), with 161.27s external-wall median and 157.70s pytest-reported median.
+These are separate metric boundaries: comparing 109.25s pytest time with 161.27s wall time does
+not establish a 33.5% speedup. Fresh three-run baseline (2026-09-27), on Windows 11 / Python
+3.14.6 with the same command, collected 1,201 tests per run (1,196 passed, 5 skipped, 5 warnings):
+external wall times were 159.466s, 173.378s, and 166.938s (median 166.938s); pytest-reported times
+were 156.010s, 169.850s, and 163.330s (median 163.330s). Neither the unexplained difference
+between timing records nor a repeatable performance gain has been established. Keep the 20% speed
+objective open; do not infer a cause. Raw logs and summary: `out/live-agentic/timing-20260927T055212Z/`.
+
+The current repeated-duration leaders are real-wheel inspection (4.90s median), the isolated
+no-credential CLI subprocess (3.88s), mounted TUI keyboard navigation (3.62s), and the parallel
+evaluation fixture (3.13s). The wheel, subprocess, evaluation, security, and mounted-TUI tests keep
+their independent boundaries. No additional setup-sharing change was retained because it would
+remove one of those boundaries or duplicate work; this pass reports the measured result without
+claiming a performance optimization.
+
+At clean HEAD `0d916abdd3f269d913047aab136374b0305428bf`, a fresh serial recheck on Windows 11
+build 26200, Python 3.14.6, pytest 9.1.1, and a 20-logical-CPU AMD Ryzen AI 9 465 collected 1,218
+tests in each run (1,213 passed, 5 skipped, 5 warnings). Using the literal command
+`py -3.14 -m pytest -q --durations=40`, external wall times were 202.412s, 200.767s, and 201.816s
+(median 201.816s; range 1.645s); pytest-reported times were 198.78s, 197.17s, and 198.30s
+(median 198.30s; range 1.61s). Each complete top-40 duration report and timestamped environment,
+plugin, and CPU-counter evidence is retained in `out/live-agentic/timing-20260927T152807Z/`.
+The optional 10-second total-CPU counter averaged about 15–18% during the runs; it is only a coarse
+host-load proxy. All three results reproduce the approximately 200.96s observation, so that value
+is not an isolated slow-run outlier relative to this recheck. Compared with the older 166.938s wall
+median, this median is 20.9% slower; changed test count and the unresolved difference between timing
+campaigns prevent assigning a cause. The proposed 20% reduction from that older median (about
+133.55s) is not supported as feasible by these current measurements. Keep the objective open and
+all independent suite boundaries unchanged; no repeatable cause or justified optimization has been
+identified. This timing-only run does not re-run Ruff, mypy, or smoke gates.
+
+Before optimization, unit/contract, integration, E2E, security, packaging, and mounted TUI slices
+took 108.29s, 67.43s, 37.68s, 9.97s, 8.41s, and 64.11s respectively. The direct/module help
+subprocess test fell from 15.84s to 0.62s; removed-alias checks fell from nine E2E subprocesses at
+8.96s to one subprocess at 0.87s plus in-process parser coverage; the parallel evaluation fixture
+fell from 5.09s to 3.50s. Wheel inspection fell from 6.02s to 5.19s in the full suite and now shares
+the built release artifact with package and release checks. The mounted TUI slice measured 64.31s
+after the pilot consolidation versus 64.11s before; keyboard, focus, queue, and resume pilots remain.
+
+An after-run Windows warning revealed that Git diff output was decoded with CP1252 in evaluation
+provenance. `evals.evidence.git_value` now reads that output as UTF-8. A regression with a U+201D
+working-tree edit verifies the digest changes; the three final full-suite runs no longer show the
+reader-thread warning.
+
+### 2026-09-28 remediation candidate timing
+
+On Windows 11 build 26200 with Python 3.14.6, pytest 9.1.1, and 20 logical processors, three serial
+runs of py -3.14 -m pytest -q --durations=40 on the same implementation candidate each passed
+1,230 tests, skipped 5, and emitted 5 warnings. External wall times were 137.173s, 140.055s, and
+143.163s (median 140.055s, range 5.990s); pytest-reported times were 134.38s, 137.26s, and 140.38s.
+Raw logs, run records, and environment are under
+out/live-agentic/timing-remediation-20260928T013000Z/.
+
+The median is 14.7% below the earlier 164.17s / 1,176-pass baseline, with 54 additional passing
+tests. It is 8.719s above the original 20% target of 131.336s. This candidate run is repeatable
+within its three-sample range, but the old and new collections differ, so the comparison does not
+attribute the gain to a particular change. The corrected mounted quit/resume test no longer types
+its prompt character by character; it still presses Enter and Ctrl+C, creates the durable question,
+opens fresh stores, resumes, writes only the selected output, and runs independent pytest. In this
+candidate, that test took 3.03s versus the previous 22.36s duration record.
+
+The slowest current paths are the two-writer worktree/checkpoint integration (5.21s), real wheel
+inspection (3.57s), mounted model-picker return (3.23s), and the isolated no-credential CLI test
+(2.99s). Each protects a separate runtime, artifact, UI, or process boundary. No safe reduction
+large enough to reach 131.336s is established. The 20% objective remains open; no claim of meeting
+it is made.
+
+### 2026-09-28 final implementation candidate
+
+After the final filesystem-digest size/stability guard and its regression, three serial runs of
+py -3.14 -m pytest -q --durations=40 used the identical source/test worktree and passed 1,231 tests,
+skipped 5, and emitted 5 warnings each. External wall times were 137.640s, 137.754s, and 137.611s
+(median 137.640s, range 0.143s); pytest times were 134.82s, 135.00s, and 134.87s. The raw logs,
+source/test fingerprint, and environment are in
+out/live-agentic/timing-remediation-final-20260928T020400Z/.
+
+The median is 16.16% below the older 164.17s / 1,176-pass baseline and 6.304s above the original
+131.336s 20% target. The test collections differ by 55 passing cases, so this comparison does not
+attribute the gain to one change. The three current runs are very close to one another, but no new
+same-candidate baseline was collected before this remediation. The target remains open.
+
+The measured leaders are the two-writer worktree/checkpoint/FIFO integration (5.13s), wheel
+inspection (3.58s), mounted model-picker return (3.37s), and the isolated no-credential CLI test
+(2.98s). These protect orchestration, artifact, keyboard, and process boundaries. The corrected
+question-resume test took 3.31s and preserves real Enter/Ctrl+C, durable state, fresh stores, answer,
+filesystem, and subprocess checks. No additional consolidation was shown to preserve those separate
+boundaries while closing the remaining 6.304s gap. Do not claim the 20% objective was met.
+
+### 2026-09-28 exact-candidate timing on commit 9d28dc4
+
+After the final R9 question-card assertions, three serial runs of the exact command
+`py -3.14 -m pytest -q --durations=40` used clean source/test commit `9d28dc433216968209d30b5969a55f8f4b1eca00`.
+Windows 11 build 26200, Python 3.14.6, pytest 9.1.1, 20 logical processors, and the Balanced power
+scheme were recorded. Each run passed 1,231 tests, skipped 5, and emitted 5 warnings. External wall
+times were 161.856s, 153.587s, and 151.763s (median 153.587s, range 10.093s); pytest-reported times
+were 159.10s, 150.46s, and 148.54s (median 150.46s, range 10.56s). Complete raw logs and per-run
+records are in `out/live-agentic/timing-remediation-final-candidate-9d28dc4/`.
+
+The external median is 6.446% below the older 164.17s baseline and 22.251s above the original
+131.336s 20% target. The preceding 137.640s median was measured before the final UI assertion edits
+and did not record its power scheme. The current run's elevated median cannot be attributed to those
+assertions because host load and power conditions were not matched across series. No boundary was
+removed and no causal optimization is established. Keep the 20% objective open.
+
+### 2026-09-30 isolated release candidate timing
+
+On clean isolated commit `557b3fc2fe2338c948c8fada1bae541c595a20d9`, three serial runs of
+`py -3.14 -m pytest -q --durations=40` used Python 3.14.6 and the Windows Balanced power scheme.
+All runs collected 1,257 tests, passed 1,252, skipped 5, and emitted 5 warnings. External wall
+times were 238.548, 210.763, and 237.399 seconds (median 237.399); pytest times were 234.62,
+207.10, and 233.59 seconds. Raw logs, collected test IDs, source identity, power scheme, and
+per-run records are under `out/live-agentic/release-renewal-20260930/timing/`.
+
+The median is 106.063 seconds above the original 131.336-second target. Compared with the earlier
+`9d28dc4` series, the test collection is larger and many unrelated duration leaders rose together;
+these observations do not isolate a causal code slowdown or justify removing independent tests.
+The 20% suite speed objective remains open.

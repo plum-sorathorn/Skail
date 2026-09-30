@@ -22,6 +22,7 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.widgets import Input, Static, TabbedContent, TabPane
+from textual.worker import WorkerCancelled, WorkerFailed
 
 from skail import __version__
 from skail.agents.lead import DelegationMode, LeadControls
@@ -449,6 +450,7 @@ class SkailApp(App[int]):
         self.profile_models = profile_models or {}
         self.simulated: bool = False
         self._active_worker: Any = None
+        self._shutdown_exit_pending = False
         self._run_active = False
         self._pending_prompts: deque[str] = deque()
         self._mounted: bool = False
@@ -705,7 +707,17 @@ class SkailApp(App[int]):
             except Exception:
                 pass
         self._focus_before_overlay = None
-        self._restore_composer_focus()
+        pending = getattr(getattr(self, "projection", None), "pending_interrupt", None)
+        if pending is not None and pending.kind is InterruptKind.QUESTION:
+            def focus_question_answer() -> None:
+                try:
+                    self.query_one("#interrupt-input").focus()
+                except Exception:
+                    self._restore_composer_focus()
+
+            self.call_after_refresh(focus_question_answer)
+        else:
+            self._restore_composer_focus()
 
     def _restore_composer_focus(self) -> None:
         try:
@@ -777,10 +789,19 @@ class SkailApp(App[int]):
         resume_target = self.bootstrap.get("resume_session", None)
         if resume_target is not None:
             controller.restore_interrupted()
+            snapshot = self.journal.get_session_snapshot(str(self.session_id))
+            self.projection.apply_snapshot(snapshot)
+            self._restore_pending_interrupt(snapshot)
         self.onboarding_credentials.clear()
         selection_required = bool(
             getattr(runtime_models, "selection_required", False)
-            or not self._enabled_models
+            or (
+                not self._enabled_models
+                and not (
+                    bool(getattr(runtime_models, "explicit_lead_model", False))
+                    and bool(self.bootstrap.get("project_trusted", False))
+                )
+            )
         )
         self.app_state = "selection_required" if selection_required else "ready"
         self.startup_error = None
@@ -1534,8 +1555,40 @@ class SkailApp(App[int]):
         return_code: int = 0,
         message: Any = None,
     ) -> None:
-        """Apply queue and worker shutdown before Textual exits the event loop."""
+        """Wait for the active run to settle before Textual exits the event loop."""
         self._begin_shutdown()
+        if self._shutdown_exit_pending:
+            return
+        worker = self._active_worker
+        if worker is not None and not worker.is_finished and self.is_running:
+            self._shutdown_exit_pending = True
+            self.run_worker(
+                self._wait_for_worker_then_exit(
+                    worker,
+                    result=result,
+                    return_code=return_code,
+                    message=message,
+                ),
+                name="shutdown-after-run",
+                group="shutdown",
+                exit_on_error=False,
+            )
+            return
+        super().exit(result, return_code=return_code, message=message)
+
+    async def _wait_for_worker_then_exit(
+        self,
+        worker: Any,
+        *,
+        result: Any,
+        return_code: int,
+        message: Any,
+    ) -> None:
+        try:
+            await worker.wait()
+        except (WorkerCancelled, WorkerFailed):
+            pass
+        self._shutdown_exit_pending = False
         super().exit(result, return_code=return_code, message=message)
 
     def _apply_run_result(self, result: Any) -> None:
@@ -1568,13 +1621,10 @@ class SkailApp(App[int]):
         else:
             answer = ""
         if answer:
-            self.projection.transcript_items.append(
-                TranscriptItem(
-                    id=f"lead-{len(self.projection.transcript_items)}",
-                    role="lead",
-                    title="Skail Response",
-                    content=answer,
-                )
+            result_run_id = getattr(result, "run_id", None)
+            self.projection.add_run_answer(
+                None if result_run_id is None else str(result_run_id),
+                answer,
             )
             return
         if result.pending_interrupt is not None:
@@ -1600,6 +1650,25 @@ class SkailApp(App[int]):
             ("Execution ended", f"The run ended with status {status}. Review its recorded events."),
         )
         self._append_system_message(title, content)
+
+    def _restore_pending_interrupt(self, snapshot: SessionSnapshot) -> bool:
+        controller = self.controller
+        if (
+            controller is None
+            or controller.pending_interrupt is None
+            or self.projection.pending_interrupt is not None
+        ):
+            return False
+        owner = next(
+            (run for run in reversed(snapshot.runs) if run.status == "blocked"), None
+        )
+        if owner is None and snapshot.runs:
+            owner = snapshot.runs[-1]
+        self._set_interrupt(
+            controller.pending_interrupt,
+            run_id=owner.run_id if owner is not None else "restored",
+        )
+        return True
 
     def _set_interrupt(self, payload: dict[str, Any], *, run_id: str) -> None:
         payload = dict(payload)
@@ -1728,6 +1797,8 @@ class SkailApp(App[int]):
                         resume_res.session.session_id
                     )
                     self.apply_snapshot(snapshot)
+                    if self._restore_pending_interrupt(snapshot):
+                        self.update_views()
             elif (
                 result.action == "compact"
                 and self.session_service is not None

@@ -14,6 +14,7 @@ from skail.domain.events import (
     DiagnosticPayload,
     EventEnvelope,
     InterruptKind,
+    LifecyclePayload,
     PlanPayload,
     TaskPayload,
     ToolPayload,
@@ -42,6 +43,48 @@ from skail.sessions.journal import (
     UsageSnapshot,
 )
 from skail.tui.projection import TuiProjection
+
+
+def test_completed_event_replays_the_presented_lead_answer_once() -> None:
+    session_id = new_session_id()
+    run_id = new_run_id()
+    answer = "Implemented the selected JSON export."
+    event = EventEnvelope(
+        event_id=new_event_id(),
+        session_id=session_id,
+        run_id=run_id,
+        sequence=1,
+        type="run.completed",
+        payload=LifecyclePayload(
+            status="completed",
+            output={
+                "answer": answer,
+                "verification": [{"criterion": "test", "passed": True}],
+            },
+        ),
+    )
+    projection = TuiProjection()
+    snapshot = SessionSnapshot(
+        session_id=str(session_id),
+        status="idle",
+        runs=(RunSnapshot(run_id=str(run_id), status="completed", budget_limit_usd=None),),
+        tasks=(),
+        attempts=(),
+        assignments=(),
+        budget_reservations=(),
+        usage_records=(),
+        approvals=(),
+        events=(event,),
+    )
+
+    projection.apply_snapshot(snapshot)
+    projection.apply_event(event)
+
+    lead_rows = [item for item in projection.transcript_items if item.role == "lead"]
+    assert len(lead_rows) == 1
+    assert lead_rows[0].id == f"run-answer:{run_id}"
+    assert lead_rows[0].content == answer
+    assert "verification" not in lead_rows[0].content
 
 
 def test_projection_initial_state() -> None:
@@ -183,6 +226,34 @@ def test_projection_apply_snapshot() -> None:
     assert proj.pending_interrupt is not None
 
 
+def test_resume_accepts_nullable_assignment_capability_floor() -> None:
+    snapshot = SessionSnapshot(
+        session_id="nullable-floor-session",
+        status="active",
+        runs=(RunSnapshot(run_id="nullable-floor-run", status="blocked", budget_limit_usd=None),),
+        tasks=(),
+        attempts=(),
+        assignments=(
+            AssignmentSnapshot(
+                assignment_id="nullable-floor-assignment",
+                attempt_id="nullable-floor-attempt",
+                provider="llmgateway",
+                model="qwen3.8-max",
+                estimated_cost_usd=Decimal("0.01"),
+                payload={"capability_floor": None},
+            ),
+        ),
+        budget_reservations=(),
+        usage_records=(),
+        approvals=(),
+        events=(),
+    )
+
+    projection = TuiProjection()
+    projection.apply_snapshot(snapshot)
+    assert projection.route_items["nullable-floor-attempt"].capability_floor == 0.50
+
+
 def test_collapsible_and_uncollapsible_invariants() -> None:
     proj = TuiProjection()
     sid = new_session_id()
@@ -249,6 +320,64 @@ def test_collapsible_and_uncollapsible_invariants() -> None:
     assert q_item.collapsed is False
     assert proj.toggle_collapse(q_item.id) is False
     assert q_item.collapsed is False
+
+
+def test_question_plan_owner_is_scoped_to_its_run() -> None:
+    projection = TuiProjection()
+    session_id = new_session_id()
+    previous_run_id = new_run_id()
+    question_run_id = new_run_id()
+    previous_plan_id = "11111111-1111-4111-8111-111111111111"
+    current_plan_id = "22222222-2222-4222-8222-222222222222"
+
+    projection.apply_event(
+        EventEnvelope(
+            event_id=new_event_id(),
+            session_id=session_id,
+            run_id=previous_run_id,
+            sequence=1,
+            type="plan.admitted",
+            payload=PlanPayload(action="admitted", plan_id=previous_plan_id, revision=1),
+        )
+    )
+    projection.apply_event(
+        EventEnvelope(
+            event_id=new_event_id(),
+            session_id=session_id,
+            run_id=question_run_id,
+            sequence=1,
+            type="user.question",
+            payload=UserPayload(action="question", content="Choose a format"),
+        )
+    )
+
+    assert projection.pending_interrupt is not None
+    assert projection.pending_interrupt.payload["run_id"] == str(question_run_id)
+    assert projection.pending_interrupt.payload["plan_id"] is None
+
+    projection.apply_event(
+        EventEnvelope(
+            event_id=new_event_id(),
+            session_id=session_id,
+            run_id=question_run_id,
+            sequence=2,
+            type="plan.admitted",
+            payload=PlanPayload(action="admitted", plan_id=current_plan_id, revision=1),
+        )
+    )
+    projection.apply_event(
+        EventEnvelope(
+            event_id=new_event_id(),
+            session_id=session_id,
+            run_id=question_run_id,
+            sequence=3,
+            type="user.question",
+            payload=UserPayload(action="question", content="Confirm the current plan"),
+        )
+    )
+
+    assert projection.pending_interrupt is not None
+    assert projection.pending_interrupt.payload["plan_id"] == current_plan_id
 
 
 def test_agent_rail_distinct_states() -> None:

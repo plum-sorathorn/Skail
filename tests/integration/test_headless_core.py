@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage
 
 from skail.agents.lead import LeadControls
 from skail.domain.ids import new_session_id
+from skail.providers.models import CapabilityVector
 from skail.runtime.run_controller import RunController
 from skail.sessions.journal import Journal
 
@@ -345,7 +346,21 @@ async def test_live_child_failure_monitor_escalates_repeated_tool_calls(
         profile_models={"implementer": "child-one"},
     )
 
-    result = await controller.run_instruction("Delegate inspection")
+    snapshot = controller._get_candidates()
+    candidates = tuple(
+        candidate.model_copy(update={"profile": candidate.profile.model_copy(update={
+            "capability": CapabilityVector(
+                coding=0.6, reasoning=0.6, tool_reliability=0.8, latency=0.1,
+            ),
+        })}) if candidate.profile.model == "child-one" else candidate
+        for candidate in (
+            *snapshot.candidates, *controller._get_candidates(for_lead=True).candidates
+        )
+    )
+    controller.candidates_fn = lambda: snapshot.model_copy(update={"candidates": candidates})
+    result = await controller.run_instruction(
+        "Delegate inspection", controls=LeadControls(model="injected:lead-model")
+    )
     snapshot = journal.get_session_snapshot(str(session_id))
 
     assert result.child_results and result.child_results[-1].status == "succeeded", (

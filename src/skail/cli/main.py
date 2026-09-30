@@ -74,6 +74,7 @@ class RuntimeModelSet:
     redaction: RedactionRegistry | None = None
     candidates: tuple[RouteCandidate, ...] = ()
     selection_required: bool = False
+    explicit_lead_model: bool = False
     lead_failure: RouteFailure | None = None
     catalog_degraded: bool = False
 
@@ -347,6 +348,29 @@ def build_run_parser() -> argparse.ArgumentParser:
     return parser
 
 
+class _RemovedCLIAliasError(ValueError):
+    def __init__(self, token: str) -> None:
+        self.token = token
+        super().__init__(token)
+
+
+def _parse_cli_args(raw_args: Sequence[str]) -> argparse.Namespace:
+    """Validate removed aliases and parse a CLI invocation without executing it."""
+    for token in raw_args:
+        if token.lower() in REMOVED_ALIASES:
+            raise _RemovedCLIAliasError(token)
+
+    subcmd = find_subcommand(raw_args)
+    parser = (
+        build_parser()
+        if subcmd is not None or "-h" in raw_args or "--help" in raw_args
+        else build_run_parser()
+    )
+    args = parser.parse_args(raw_args)
+    args.lead_model_cli_supplied = args.lead_model is not None
+    return args
+
+
 def _build_storage(
     *,
     no_session: bool,
@@ -407,23 +431,14 @@ def _apply_run_config(args: argparse.Namespace, config: SkailConfig) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
 
-    # 1. Reject removed Skail aliases and options immediately
-    for token in raw_args:
-        if token.lower() in REMOVED_ALIASES:
-            render_print_stderr(
-                f"Error: '{token}' is removed and not supported in Skail. "
-                "Skail launches the harness directly without proxies or daemons."
-            )
-            return EXIT_USAGE
-
-    subcmd = find_subcommand(raw_args)
-    if subcmd is not None or "-h" in raw_args or "--help" in raw_args:
-        parser = build_parser()
-    else:
-        parser = build_run_parser()
-
     try:
-        args = parser.parse_args(raw_args)
+        args = _parse_cli_args(raw_args)
+    except _RemovedCLIAliasError as exc:
+        render_print_stderr(
+            f"Error: '{exc.token}' is removed and not supported in Skail. "
+            "Skail launches the harness directly without proxies or daemons."
+        )
+        return EXIT_USAGE
     except SystemExit as exc:
         code = exc.code if isinstance(exc.code, int) else EXIT_USAGE
         return EXIT_USAGE if code != 0 else EXIT_OK
@@ -529,8 +544,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.subcommand == "sessions":
         return handle_sessions(args, session_service, journal)
 
-    # 6. Resolve active session
+    # 6. Classify invocation mode before activating or creating a session.
     prompt_text = " ".join(args.prompt).strip()
+    headless_requested = bool(args.print_mode or args.json_mode)
+    interactive_tty = (
+        not headless_requested and sys.stdin.isatty() and sys.stdout.isatty()
+    )
+    if not prompt_text:
+        if headless_requested:
+            render_print_stderr("Error: prompt required in non-interactive print or JSONL mode.")
+            return EXIT_USAGE
+        if not interactive_tty:
+            from skail.tui.onboarding import NON_TTY_USAGE_ERROR
+
+            render_print_stderr(NON_TTY_USAGE_ERROR)
+            return EXIT_FAILURE
+
+    # 7. Resolve active session
     if args.resume_session is not None:
         target_sid = args.resume_session
         if not target_sid:
@@ -557,21 +587,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         session_record = session_service.create_session(
             title=prompt_text[:50] or "New Session",
         )
-
-    # 7. Classify interactive-TTY vs headless BEFORE runtime construction.
-    headless_requested = bool(args.print_mode or args.json_mode)
-    interactive_tty = (
-        not headless_requested and sys.stdin.isatty() and sys.stdout.isatty()
-    )
-    if not prompt_text and not args.continue_session and args.resume_session is None:
-        if args.print_mode or args.json_mode:
-            render_print_stderr("Error: prompt required in non-interactive print or JSONL mode.")
-            return EXIT_USAGE
-        if not headless_requested and not interactive_tty:
-            from skail.tui.onboarding import NON_TTY_USAGE_ERROR
-
-            render_print_stderr(NON_TTY_USAGE_ERROR)
-            return EXIT_FAILURE
 
     approvals = ApprovalStore(workspace_state_path(identity, "approvals.sqlite"))
     question_store = QuestionStore(workspace_state_path(identity, "questions.sqlite"))
@@ -803,18 +818,11 @@ def _build_runtime_models(
             if selected_provider in provider_configs
             else ()
         )
-        has_configured_overlap = any(
-            profile.model in configured_models
-            for (provider, _), profile in catalog.profiles.items()
-            if provider == selected_provider
-        )
         eligible = [
             profile
             for (provider, _), profile in catalog.profiles.items()
             if provider == selected_provider
-            and (
-                not has_configured_overlap or profile.model in configured_models
-            )
+            and profile.model in configured_models
             and catalog.is_auto_eligible(profile, hard_budget=args.budget is not None)
         ]
         if not eligible and lead_model_name != "auto":
@@ -877,14 +885,22 @@ def _build_runtime_models(
                 profile, ModelOptions()
             )
         profile = next(profile for profile in catalog_profiles if profile.model == actual_model)
+        selected_models = set(selected_config.models if selected_config is not None else ())
+        # Explicit pins also authorize that model for this run. Discovery alone does not.
+        for pin in (
+            args.lead_model,
+            args.default_model,
+            *_parse_agent_models(args.agent_models).values(),
+        ):
+            if pin and pin.startswith(f"{selected_provider}:"):
+                selected_models.add(pin.split(":", 1)[1])
         candidates = tuple(
             _route_candidate(
                 item,
                 hard_budget=args.budget is not None,
                 enabled=(
-                    catalog.price_is_current(item)
-                    if args.budget is not None
-                    else None
+                    item.model in selected_models
+                    and (args.budget is None or catalog.price_is_current(item))
                 ),
             )
             for item in catalog_profiles
@@ -988,6 +1004,11 @@ def _build_runtime_models(
         redaction=redaction,
         candidates=candidate_tuple,
         selection_required=selection_required,
+        explicit_lead_model=(
+            getattr(args, "lead_model_cli_supplied", False)
+            and manual_model is not None
+            and lead_failure is None
+        ),
         lead_failure=lead_failure,
         catalog_degraded=degraded_catalog,
     )

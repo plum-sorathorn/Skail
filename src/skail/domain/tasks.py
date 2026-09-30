@@ -222,6 +222,25 @@ class AttemptSummary(BaseModel):
     model: str
 
 
+TaskFailureCategory = Literal[
+    "provider_error",
+    "malformed_result",
+    "result_validation",
+    "routing_ineligible",
+    "budget_blocked",
+    "task_failure",
+]
+
+
+class AttemptFailureReason(BaseModel):
+    """Safe failure classification retained against its child attempt identity."""
+
+    model_config = ConfigDict(frozen=True)
+
+    attempt_id: AttemptId
+    reason_code: TaskFailureCategory
+
+
 class TaskResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -238,9 +257,15 @@ class TaskResult(BaseModel):
     artifacts: tuple[ArtifactRef, ...] = ()
     verification: tuple[VerificationResult, ...] = ()
     attempts: tuple[AttemptSummary, ...] = ()
+    attempt_failures: tuple[AttemptFailureReason, ...] = ()
     changed_paths: tuple[str, ...] = ()
     follow_up: str | None = None
     verification_authority: Literal["runtime", "model-authored"] | None = None
+    failure_category: TaskFailureCategory | None = None
+    validation_path: str | None = Field(
+        default=None,
+        pattern=r"^\$(?:\.[A-Za-z_][A-Za-z0-9_]*|\.[0-9]+)*$",
+    )
 
     def model_post_init(self, context: object) -> None:
         del context

@@ -484,6 +484,7 @@ def test_parallel_gate_uses_end_to_end_wall_time_not_child_only_timing() -> None
             escalations_count=0,
             interrupts_count=0,
             child_wall_seconds=0.2,
+            child_peak_active=2,
             child_count=3,
         ),
         TaskEvalResult(
@@ -498,6 +499,7 @@ def test_parallel_gate_uses_end_to_end_wall_time_not_child_only_timing() -> None
             escalations_count=0,
             interrupts_count=0,
             child_wall_seconds=0.6,
+            child_peak_active=2,
             child_count=3,
         ),
     ]
@@ -509,6 +511,59 @@ def test_parallel_gate_uses_end_to_end_wall_time_not_child_only_timing() -> None
     comparison = compare_policies(summaries, results, [fixture])
 
     assert comparison.speedup_pct < 0
+    assert not comparison.gate_parallel_passed
+
+
+def test_parallel_gate_requires_observed_concurrent_children() -> None:
+    fixture = EvaluationFixture(
+        id="no-concurrency",
+        title="Sequential children",
+        category="parallel",
+        role="implementer",
+        prompt="Run parallel work",
+        parallel_eligible=True,
+        oracle=OracleSpec(type=OracleType.FILE_EXISTS, target="done.txt"),
+    )
+    results = [
+        TaskEvalResult(
+            fixture_id=fixture.id,
+            policy=EvaluationPolicy.AUTO,
+            completed=True,
+            passed_oracle=True,
+            wall_time_seconds=0.5,
+            total_cost_usd=Decimal("1.00"),
+            models_used=("model",),
+            assignments_count=1,
+            escalations_count=0,
+            interrupts_count=0,
+            child_peak_active=1,
+            child_count=2,
+        ),
+        TaskEvalResult(
+            fixture_id=fixture.id,
+            policy=EvaluationPolicy.SERIAL,
+            completed=True,
+            passed_oracle=True,
+            wall_time_seconds=1.0,
+            total_cost_usd=Decimal("1.00"),
+            models_used=("model",),
+            assignments_count=1,
+            escalations_count=0,
+            interrupts_count=0,
+            child_peak_active=1,
+            child_count=2,
+        ),
+    ]
+    summaries = {
+        policy.value: generate_policy_summary(results, policy)
+        for policy in (EvaluationPolicy.AUTO, EvaluationPolicy.SERIAL)
+    }
+
+    comparison = compare_policies(summaries, results, [fixture])
+
+    assert comparison.parallel_pair_count == 0
+    assert comparison.parallel_expected_pair_count == 1
+    assert not comparison.parallel_pairing_complete
     assert not comparison.gate_parallel_passed
 
 

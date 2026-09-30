@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 
 import pytest
 
 from skail.agents.profiles import builtin_profiles
+from skail.agents.result_evaluator import parse_child_result
 from skail.agents.task_graph import (
     AttemptBinding,
     build_task_graph,
@@ -160,6 +162,65 @@ async def test_escalation_recovers_on_second_attempt(tmp_path) -> None:
     assert settled == [(1, "failed"), (2, "succeeded")]
     # Packet 2 includes failure handoff from attempt 1
     assert any("failure-handoff" in c.label for c in packets[1].components)
+
+
+async def test_second_attempt_handoff_includes_safe_validation_path(tmp_path) -> None:
+    spec = _spec(tmp_path)
+    packets = []
+    raw_payload_sentinel = '{"secret":"must not be copied"}'
+
+    def assign(s, number, excluded):
+        model = "weak-model" if number == 1 else "strong-model"
+        floor = 0.50 if number == 1 else 0.65
+        return AttemptBinding(
+            new_attempt_id(), _assignment(s, number, model, floor=floor)
+        )
+
+    async def execute(s, a, packet):
+        packets.append(packet)
+        if a.attempt_number == 1:
+            raw_child_output = json.dumps(
+                {
+                    "task_id": str(s.task_id),
+                    "status": "failed",
+                    "summary": raw_payload_sentinel,
+                    "artifacts": [{"kind": None, "path": "src/live_fixture/parser.py"}],
+                }
+            )
+            return parse_child_result(
+                raw_child_output,
+                task_id=s.task_id,
+                required_criteria=("Must pass tests",),
+            )
+        return TaskResult(
+            task_id=s.task_id,
+            status="succeeded",
+            summary="Fixed on strong model",
+            verification=(
+                VerificationResult(
+                    criterion="Must pass tests", passed=True, evidence="passed on retry"
+                ),
+            ),
+        )
+
+    graph = build_task_graph(
+        profile=builtin_profiles()["implementer"],
+        assign=assign,
+        execute=execute,
+        gate=ChildRunGate(3),
+        leases=WorkspaceLeaseManager(),
+    )
+    state = await graph.ainvoke({"spec": spec})
+
+    assert state["result"].status == "succeeded"
+    failure_handoff = next(
+        component
+        for component in packets[1].components
+        if "failure-handoff" in component.label
+    )
+    assert "result_validation" in failure_handoff.content
+    assert "$.artifacts.0.kind" in failure_handoff.content
+    assert raw_payload_sentinel not in failure_handoff.content
 
 
 @pytest.mark.asyncio

@@ -124,6 +124,51 @@ def test_non_tty_no_args_prints_exact_usage_error(
     assert captured.app_kwargs is None
 
 
+@pytest.mark.parametrize("argv", (["--resume", "01JBOOT"], ["--continue"]))
+def test_non_tty_resume_without_prompt_is_rejected_before_execution(
+    argv: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured = _CapturedLaunch()
+    _install_cli_fakes(monkeypatch, captured)
+    _set_tty(monkeypatch, tty=False)
+
+    import skail.cli.main as cli_main
+
+    class _ExistingSessionService(_FakeSessionService):
+        requests: list[str] = []
+
+        def list_sessions(self) -> list[Any]:
+            self.requests.append("list")
+            return [_FakeSessionRecord()]
+
+        def resume_session(self, session_id: str) -> Namespace:
+            self.requests.append("resume")
+            return Namespace(
+                ok=True,
+                session=_FakeSessionRecord(),
+                recovery_error=None,
+            )
+
+    monkeypatch.setattr(cli_main, "SessionService", _ExistingSessionService)
+    executions: list[dict[str, Any]] = []
+
+    async def _fake_execute(**kwargs: Any) -> int:
+        executions.append(kwargs)
+        return EXIT_OK
+
+    monkeypatch.setattr(cli_main, "_execute_instruction", _fake_execute)
+
+    code = main(argv)
+
+    assert code == EXIT_FAILURE
+    assert NON_TTY_USAGE_ERROR in capsys.readouterr().err
+    assert executions == []
+    assert _ExistingSessionService.requests == []
+    assert captured.app_kwargs is None
+
+
 def test_tty_no_args_no_keys_mounts_onboarding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

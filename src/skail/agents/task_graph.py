@@ -18,13 +18,16 @@ from skail.agents.result_evaluator import evaluate_result
 from skail.domain.ids import AttemptId, RunId, new_task_id
 from skail.domain.routing import TaskAssignment
 from skail.domain.tasks import (
+    AttemptFailureReason,
     AttemptStatus,
     AttemptSummary,
+    TaskFailureCategory,
     TaskRequest,
     TaskResult,
     TaskSpec,
     TaskStatus,
 )
+from skail.providers.errors import ProviderError
 from skail.routing.selector import RouteFailure
 from skail.runtime.deepagents_adapter import ChildRunGate
 from skail.runtime.escalation import bounded_handoff, escalation_floor
@@ -55,6 +58,7 @@ class TaskGraphState(TypedDict):
     assignment: NotRequired[TaskAssignment]
     attempt_id: NotRequired[str]
     attempts: NotRequired[tuple[AttemptSummary, ...]]
+    attempt_failures: NotRequired[tuple[AttemptFailureReason, ...]]
     context_packet: NotRequired[ContextPacket]
     previous_result: NotRequired[TaskResult | None]
     result: NotRequired[TaskResult | None]
@@ -152,12 +156,14 @@ def build_task_graph(
                     task_id=spec.task_id,
                     status="budget_blocked",
                     summary=binding.binding_constraint,
+                    failure_category="budget_blocked",
                 )
             else:
                 result = TaskResult(
                     task_id=spec.task_id,
                     status="blocked",
                     summary=binding.binding_constraint or "no eligible route",
+                    failure_category="routing_ineligible",
                 )
             if task_registry is not None:
                 task_registry.transition(
@@ -168,9 +174,16 @@ def build_task_graph(
                 )
             if task_event is not None:
                 task_event(spec, result.status, None, result.summary)
-            return {
-                "result": result
-            }
+            failures = state.get("attempt_failures", ())
+            result = result.model_copy(
+                update={
+                    "attempts": state.get("attempts", ()),
+                    "attempt_failures": failures,
+                }
+            )
+            if persist_result is not None:
+                persist_result(result)
+            return {"result": result}
         assignment = binding.assignment
         if assignment.task_id != spec.task_id or assignment.attempt_number != number:
             raise ValueError("assignment does not match task attempt")
@@ -194,6 +207,8 @@ def build_task_graph(
                 verification=tuple(
                     f"{item.criterion}={item.passed}" for item in previous.verification
                 ),
+                failure_category=previous.failure_category,
+                validation_path=previous.validation_path,
             )
             references = (
                 ContextComponent(
@@ -301,11 +316,15 @@ def build_task_graph(
                         raise
             else:
                 result = await run_with_gate()
-        except Exception as exc:
+        except Exception as error:
+            failure_category: TaskFailureCategory = (
+                "provider_error" if isinstance(error, ProviderError) else "task_failure"
+            )
             result = TaskResult(
                 task_id=spec.task_id,
                 status="failed",
-                summary=f"attempt execution failed: {exc}",
+                summary="attempt execution failed",
+                failure_category=failure_category,
             )
             if scheduler is not None and str(spec.task_id) in scheduler._children and number == 2:
                 try:
@@ -321,6 +340,10 @@ def build_task_graph(
         result = state["result"]
         assert result is not None
         number = state["attempt_number"]
+        if result.status == "failed" and result.failure_category is None:
+            result = result.model_copy(update={"failure_category": "task_failure"})
+        elif result.status == "budget_blocked" and result.failure_category is None:
+            result = result.model_copy(update={"failure_category": "budget_blocked"})
         status = {
             "succeeded": AttemptStatus.SUCCEEDED,
             "failed": AttemptStatus.FAILED,
@@ -336,11 +359,19 @@ def build_task_graph(
             model=state["assignment"].model,
         )
         attempts = (*state.get("attempts", ()), summary)
-        if not result.attempts:
-            result = result.model_copy(update={"attempts": attempts})
+        failures = state.get("attempt_failures", ())
+        if result.failure_category is not None and result.status != "succeeded":
+            failures = (
+                *failures,
+                AttemptFailureReason(
+                    attempt_id=AttemptId(state["attempt_id"]),
+                    reason_code=result.failure_category,
+                ),
+            )
+        result = result.model_copy(
+            update={"attempts": attempts, "attempt_failures": failures}
+        )
         terminal = result.status != "failed" or number == 2
-        if terminal and persist_result is not None:
-            persist_result(result)
         binding = AttemptBinding(state["attempt_id"], state["assignment"])
         if settle_attempt is not None:
             settle_attempt(binding, result)
@@ -371,6 +402,9 @@ def build_task_graph(
                 result = result.model_copy(
                     update={"status": "returned_to_lead", "attempts": attempts}
                 )
+            if persist_result is not None:
+                persist_result(result)
+            if result.status == "returned_to_lead":
                 if exhaust_fingerprint is not None:
                     exhaust_fingerprint(state["spec"])
             return {"result": result, "attempts": attempts}
@@ -386,6 +420,7 @@ def build_task_graph(
             "attempt_number": 2,
             "excluded_models": ((assignment.provider, assignment.model),),
             "attempts": attempts,
+            "attempt_failures": failures,
             "previous_result": result,
             "result": None,
         }

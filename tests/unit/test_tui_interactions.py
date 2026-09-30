@@ -18,7 +18,10 @@ from textual.containers import Container
 from textual.widgets import Button, Input, Static, TabbedContent
 
 from skail.cli.main import RuntimeModelSet
+from skail.domain.events import EventEnvelope, InterruptKind, LifecyclePayload
+from skail.domain.ids import new_event_id, new_run_id, new_session_id
 from skail.runtime.redaction import RedactionRegistry
+from skail.runtime.run_controller import RunController
 from skail.sessions.checkpoints import CheckpointStore
 from skail.sessions.journal import Journal
 from skail.sessions.service import SessionService
@@ -64,6 +67,27 @@ class _BlockingController:
         return SimpleNamespace(pending_interrupt=None, output=f"done: {text}")
 
 
+class _CleanupBlockingController(_BlockingController):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cleanup_started = asyncio.Event()
+        self.release_cleanup = asyncio.Event()
+        self.cleanup_finished = asyncio.Event()
+
+    async def run_instruction(self, text: str, **kwargs: Any) -> Any:
+        _ = kwargs
+        self.calls.append(text)
+        self.started.set()
+        try:
+            await self.release.wait()
+        except asyncio.CancelledError:
+            self.cleanup_started.set()
+            await self.release_cleanup.wait()
+            self.cleanup_finished.set()
+            raise
+        return SimpleNamespace(pending_interrupt=None, output=f"done: {text}")
+
+
 def test_command_requires_args_helper() -> None:
     assert command_requires_args("agent") is True
     assert command_requires_args("mode") is True
@@ -85,6 +109,36 @@ async def test_composer_enter_submits_regular_prompt() -> None:
         assert area.text == ""
         assert len(app.projection.transcript_items) >= 1
         assert app.projection.transcript_items[-1].content == "hello"
+
+
+def test_tui_run_result_does_not_duplicate_answer_from_completion_event() -> None:
+    session_id = new_session_id()
+    run_id = new_run_id()
+    answer = "The work is complete."
+    app = SkailApp(projection=TuiProjection())
+    app.apply_event(
+        EventEnvelope(
+            event_id=new_event_id(),
+            session_id=session_id,
+            run_id=run_id,
+            sequence=1,
+            type="run.completed",
+            payload=LifecyclePayload(status="completed", output=answer),
+        )
+    )
+
+    app._apply_run_result(
+        SimpleNamespace(
+            run_id=run_id,
+            pending_interrupt=None,
+            output=answer,
+            status="completed",
+        )
+    )
+
+    lead_rows = [item for item in app.projection.transcript_items if item.role == "lead"]
+    assert len(lead_rows) == 1
+    assert lead_rows[0].content == answer
 
 
 @pytest.mark.asyncio
@@ -144,7 +198,7 @@ async def test_question_interrupt_pilot_has_answer_and_cancel_actions() -> None:
         run_id="run-1",
     )
 
-    async with app.run_test(size=(120, 40)) as pilot:
+    async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
         card = app.query_one("#interrupt-container", Container).query_one(InterruptWidget)
         title = str(card.query_one(".interrupt-title", Static).renderable)
@@ -157,6 +211,16 @@ async def test_question_interrupt_pilot_has_answer_and_cancel_actions() -> None:
         )
         assert str(card.query_one("#btn-answer", Button).label) == "Answer"
         assert str(card.query_one("#btn-cancel-question", Button).label) == "Cancel run"
+        assert any(
+            str(widget.renderable) == "Options: JSON · Markdown"
+            for widget in card.query(Static)
+        )
+        assert card.query_one("#interrupt-input", Input).placeholder == "Type your answer..."
+        assert app.focused is card.query_one("#interrupt-input", Input)
+        for selector in ("#btn-answer", "#btn-cancel-question"):
+            button = card.query_one(selector, Button)
+            assert button.region.y >= 0
+            assert button.region.y + button.region.height <= app.screen.size.height
         assert not card.query("#btn-approve, #btn-reject")
         app._run_active = True
         app.update_views()
@@ -206,14 +270,45 @@ async def test_question_cancel_pilot_shows_run_cancellation_copy() -> None:
         run_id="run-cancel",
     )
 
-    async with app.run_test(size=(120, 40)) as pilot:
+    async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
+        card = app.query_one(InterruptWidget)
+        assert card.query_one("#interrupt-input", Input).placeholder == "Type your answer..."
+        assert app.focused is card.query_one("#interrupt-input", Input)
+        assert not any(
+            str(widget.renderable).startswith("Options:") for widget in card.query(Static)
+        )
+        assert str(card.query_one("#btn-answer", Button).label) == "Answer"
+        assert str(card.query_one("#btn-cancel-question", Button).label) == "Cancel run"
         await pilot.click("#btn-cancel-question")
         await pilot.pause()
 
         assert app.projection.pending_interrupt is None
         assert app.projection.transcript_items[-1].title == "Question Cancelled"
         assert app.projection.transcript_items[-1].content == "The waiting run was cancelled."
+
+
+async def test_long_question_keeps_answer_controls_in_small_terminal() -> None:
+    app = SkailApp()
+    app._set_interrupt(
+        {
+            "kind": "question",
+            "question_id": "long-question",
+            "prompt": "Please review the following details before answering.\n" * 14,
+            "options": ["Proceed", "Stop"],
+        },
+        run_id="long-run",
+    )
+
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        card = app.query_one(InterruptWidget)
+        assert app.focused is card.query_one("#interrupt-input", Input)
+        for selector in ("#btn-answer", "#btn-cancel-question"):
+            button = card.query_one(selector, Button)
+            assert button.region.y >= 0
+            assert button.region.height > 0
+            assert button.region.y + button.region.height <= app.screen.size.height
 
 
 @pytest.mark.asyncio
@@ -399,6 +494,41 @@ async def test_ctrl_c_discards_queue_without_starting_follow_up() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("exit_path", ("ctrl_c", "slash_quit", "app_exit"))
+async def test_shutdown_waits_for_active_worker_cleanup(exit_path: str) -> None:
+    from textual.worker import WorkerCancelled
+
+    controller = _CleanupBlockingController()
+    app = SkailApp(controller=controller)
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _start_run_with_queued_prompt(app, controller, pilot)
+        worker = app._active_worker
+        assert worker is not None
+
+        if exit_path == "ctrl_c":
+            await pilot.press("ctrl+c")
+        elif exit_path == "slash_quit":
+            app.query_one("#composer-input", ComposerTextArea).text = "/quit"
+            await pilot.press("enter")
+        else:
+            app.exit(0)
+        await asyncio.wait_for(controller.cleanup_started.wait(), timeout=1)
+        stayed_open_for_cleanup = app.is_running
+        queue_cleared = app.projection.queue == []
+        controller.release_cleanup.set()
+        await asyncio.wait_for(controller.cleanup_finished.wait(), timeout=1)
+        try:
+            await worker.wait()
+        except WorkerCancelled:
+            pass
+
+    assert stayed_open_for_cleanup is True
+    assert queue_cleared is True
+    assert worker.is_finished
+
+
+@pytest.mark.asyncio
 async def test_app_unmount_discards_queue_and_cancels_active_worker() -> None:
     controller = _BlockingController()
     app = SkailApp(controller=controller)
@@ -499,10 +629,18 @@ async def test_model_command_with_argument_sets_future_model() -> None:
 
 
 @pytest.mark.asyncio
-async def test_view_slash_commands_switch_tabs() -> None:
-    app = SkailApp()
+async def test_keyboard_navigation_and_slash_commands_switch_tabs() -> None:
+    app = SkailApp(projection=TuiProjection())
     async with app.run_test() as pilot:
         tabs = app.query_one("#tabs", TabbedContent)
+        composer = app.query_one("#composer-input", ComposerTextArea)
+        composer.focus()
+        expected = ["tab-plan", "tab-route", "tab-budget", "tab-agents", "tab-plan"]
+        for target in expected:
+            await pilot.press("shift+tab")
+            await pilot.pause()
+            assert tabs.active == target
+            assert app.focused is composer
 
         await pilot.click("#composer-input")
         for ch in "/plan":
@@ -521,21 +659,6 @@ async def test_view_slash_commands_switch_tabs() -> None:
             await pilot.press(ch)
         await pilot.press("enter")
         assert tabs.active == "tab-agents"
-
-
-@pytest.mark.asyncio
-async def test_shift_tab_keybinding_cycles_panels() -> None:
-    app = SkailApp()
-    async with app.run_test(size=(120, 40)) as pilot:
-        tabs = app.query_one("#tabs", TabbedContent)
-        composer = app.query_one("#composer-input", ComposerTextArea)
-        composer.focus()
-        await pilot.press("shift+tab")
-        assert tabs.active == "tab-plan"
-        assert app.focused is composer
-        await pilot.press("shift+tab")
-        assert tabs.active == "tab-route"
-        assert app.focused is composer
 
 
 @pytest.mark.asyncio
@@ -593,6 +716,106 @@ def test_runtime_attach_preserves_explicit_lead_model_for_prompt_controls(tmp_pa
 
     assert app.projection.model_for_future() == "lead-model"
     assert app.projection.footer_data.lead_model == "lead-model"
+
+
+async def test_lazy_resume_mounts_restored_question_card(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="booted")
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+
+    def restore(controller: RunController) -> bool:
+        controller._pending_interrupt_payload = {
+            "kind": "question",
+            "question_id": "restored-question",
+            "prompt": "Choose JSON or CSV",
+            "options": ("JSON", "CSV"),
+        }
+        return True
+
+    monkeypatch.setattr(RunController, "restore_interrupted", restore)
+    app = SkailApp(
+        runtime_factory=lambda: _runtime_set(model),
+        bootstrap={
+            "workspace": str(tmp_path),
+            "session_id": session_id,
+            "resume_session": session_id,
+        },
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    app._enabled_models = {"lead-model"}
+    app.app_state = "initializing"
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        for _ in range(30):
+            await pilot.pause()
+            if app.app_state == "ready":
+                break
+        assert app.app_state == "ready"
+        assert app.projection.pending_interrupt is not None
+        assert app.projection.pending_interrupt.kind is InterruptKind.QUESTION
+        answer_input = app.query_one(InterruptWidget).query_one("#interrupt-input", Input)
+        assert app.focused is answer_input
+        for char in "JSON":
+            await pilot.press(char)
+        assert answer_input.value == "JSON"
+        assert app.query_one("#composer-input", ComposerTextArea).text == ""
+
+
+async def test_lazy_resume_keeps_question_card_through_model_selection(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="booted")
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+
+    def restore(controller: RunController) -> bool:
+        controller._pending_interrupt_payload = {
+            "kind": "question",
+            "question_id": "restored-question",
+            "prompt": "Choose JSON or CSV",
+            "options": ("JSON", "CSV"),
+        }
+        return True
+
+    monkeypatch.setattr(RunController, "restore_interrupted", restore)
+    runtime = _runtime_set(model)
+    object.__setattr__(runtime, "selection_required", True)
+    app = SkailApp(
+        runtime_factory=lambda: runtime,
+        bootstrap={
+            "workspace": str(tmp_path),
+            "session_id": session_id,
+            "resume_session": session_id,
+        },
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    app._enabled_models = set()
+    app.app_state = "initializing"
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        for _ in range(30):
+            await pilot.pause()
+            if isinstance(app.screen_stack[-1], ModelPickerOverlay):
+                break
+        assert isinstance(app.screen_stack[-1], ModelPickerOverlay)
+        assert app.projection.pending_interrupt is not None
+
+        await pilot.press("ctrl+space", "enter")
+        await pilot.pause()
+
+        assert app.app_state == "ready"
+        assert app.projection.pending_interrupt is not None
+        assert app.projection.pending_interrupt.kind is InterruptKind.QUESTION
+        answer_input = app.query_one(InterruptWidget).query_one("#interrupt-input", Input)
+        assert app.focused is answer_input
 
 
 @pytest.mark.asyncio
@@ -699,6 +922,170 @@ async def test_first_runtime_catalog_opens_unticked_model_picker(tmp_path: Any) 
         picker = app.screen_stack[-1]
         assert isinstance(picker, ModelPickerOverlay)
         assert picker.enabled == set()
+
+
+@pytest.mark.asyncio
+async def test_failed_explicit_lead_pin_still_requires_model_picker(tmp_path: Any) -> None:
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="booted")
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+    runtime = _runtime_set(model)
+    object.__setattr__(runtime, "explicit_lead_model", True)
+    object.__setattr__(runtime, "selection_required", True)
+    app = SkailApp(
+        runtime_factory=lambda: runtime,
+        bootstrap={"workspace": str(tmp_path), "session_id": session_id, "project_trusted": True},
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    app.app_state = "initializing"
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        for _ in range(30):
+            await pilot.pause()
+            if isinstance(app.screen_stack[-1], ModelPickerOverlay):
+                break
+        assert app.app_state == "selection_required"
+        assert isinstance(app.screen_stack[-1], ModelPickerOverlay)
+
+
+@pytest.mark.asyncio
+async def test_explicit_lead_pin_does_not_bypass_project_trust(tmp_path: Any) -> None:
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="booted")
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+    runtime = _runtime_set(model)
+    object.__setattr__(runtime, "explicit_lead_model", True)
+    app = SkailApp(
+        runtime_factory=lambda: runtime,
+        bootstrap={"workspace": str(tmp_path), "session_id": session_id},
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    app.app_state = "initializing"
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        for _ in range(30):
+            await pilot.pause()
+            if isinstance(app.screen_stack[-1], ModelPickerOverlay):
+                break
+        assert app.app_state == "selection_required"
+        assert isinstance(app.screen_stack[-1], ModelPickerOverlay)
+
+
+@pytest.mark.asyncio
+async def test_explicit_validated_lead_pin_skips_picker_without_onboarding_receipt(
+    tmp_path: Any,
+) -> None:
+    model = DeterministicFakeChatModel(model_name="lead-model", response_text="booted")
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+    runtime = _runtime_set(model)
+    object.__setattr__(runtime, "explicit_lead_model", True)
+    app = SkailApp(
+        runtime_factory=lambda: runtime,
+        bootstrap={
+            "workspace": str(tmp_path),
+            "session_id": session_id,
+            "project_trusted": True,
+        },
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    app.app_state = "initializing"
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        for _ in range(30):
+            await pilot.pause()
+            if app.app_state == "ready":
+                break
+        assert app.app_state == "ready"
+        assert not isinstance(app.screen_stack[-1], ModelPickerOverlay)
+
+        await pilot.click("#composer-input")
+        for char in "run explicit pin":
+            await pilot.press(char)
+        await pilot.press("enter")
+        for _ in range(30):
+            await pilot.pause()
+            if app._active_worker is not None:
+                break
+        assert app._active_worker is not None
+        await asyncio.wait_for(app._active_worker.wait(), timeout=5)
+        assert any(item.content == "booted" for item in app.projection.transcript_items)
+
+
+@pytest.mark.asyncio
+async def test_model_picker_return_to_composer_submits_prompt_once(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal, checkpoints, service, session_id = _session_dependencies(tmp_path)
+    model = DeterministicFakeChatModel(
+        model_name="gpt-4.1-mini",
+        response_text="offline picker reply",
+    )
+    runtime = RuntimeModelSet(
+        models={"gpt-4.1-mini": model},
+        lead_model="gpt-4.1-mini",
+        child_model="gpt-4.1-mini",
+        providers={"injected": FakeProviderAdapter(model)},
+    )
+    object.__setattr__(runtime, "selection_required", True)
+    app = SkailApp(
+        runtime_factory=lambda: runtime,
+        bootstrap={"workspace": str(tmp_path), "session_id": session_id},
+        session_service=service,
+        session_id=session_id,
+        journal=journal,
+        checkpoints=checkpoints,
+        redaction=RedactionRegistry(),
+    )
+    app._enabled_models = set()
+    app.app_state = "initializing"
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        for _ in range(30):
+            await pilot.pause()
+            if isinstance(app.screen_stack[-1], ModelPickerOverlay):
+                break
+        assert isinstance(app.screen_stack[-1], ModelPickerOverlay)
+
+        # Select the only listed (manual-only) model and commit the picker.
+        await pilot.press("ctrl+space", "enter")
+        await pilot.pause()
+        assert app.app_state == "ready"
+        assert app.projection.model_for_future() == "gpt-4.1-mini"
+
+        controller = app.controller
+        assert isinstance(controller, RunController)
+        original_run_instruction = controller.run_instruction
+        submitted: list[str] = []
+
+        async def record_submission(text: str, **kwargs: Any) -> Any:
+            submitted.append(text)
+            return await original_run_instruction(text, **kwargs)
+
+        monkeypatch.setattr(controller, "run_instruction", record_submission)
+        await pilot.click("#composer-input")
+        for char in "Check the offline picker path":
+            await pilot.press(char)
+        await pilot.press("enter")
+
+        assert app._active_worker is not None
+        await asyncio.wait_for(app._active_worker.wait(), timeout=5)
+        await pilot.pause()
+
+        assert submitted == ["Check the offline picker path"]
+        assert (
+            sum(item.content == "offline picker reply" for item in app.projection.transcript_items)
+            == 1
+        )
 
 
 @pytest.mark.asyncio
@@ -837,6 +1224,22 @@ async def test_model_picker_chords_navigate_toggle_and_select_without_scrollbars
         assert getattr(app.focused, "id", None) == "composer-input"
 
 
+async def test_model_picker_ctrl_space_from_filter_toggles_once() -> None:
+    app = SkailApp(projection=TuiProjection())
+    async with app.run_test(size=(80, 24)) as pilot:
+        model = "llmgateway:gpt-4.1"
+        overlay = ModelPickerOverlay([model], current="auto")
+        app.open_overlay("model_picker")
+        app.push_screen(overlay)
+        await pilot.pause()
+        assert getattr(app.focused, "id", None) == "model-search"
+
+        await pilot.press("ctrl+space")
+        await pilot.pause()
+
+        assert overlay.enabled == {model}
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("size", [(120, 40), (99, 30), (60, 12)])
 async def test_model_picker_has_no_scroll_widgets_at_supported_viewports(
@@ -864,21 +1267,6 @@ async def test_passive_panels_do_not_take_focus_or_switch_tabs() -> None:
         await pilot.pause()
         assert app.focused is composer
         assert app.query_one("#tabs", TabbedContent).active == active
-
-
-@pytest.mark.asyncio
-async def test_shift_tab_cycles_panels_without_leaving_composer() -> None:
-    app = SkailApp(projection=TuiProjection())
-    async with app.run_test(size=(120, 40)) as pilot:
-        composer = app.query_one("#composer-input", ComposerTextArea)
-        composer.focus()
-        tabs = app.query_one("#tabs", TabbedContent)
-        expected = ["tab-plan", "tab-route", "tab-budget", "tab-agents", "tab-plan"]
-        for target in expected:
-            await pilot.press("shift+tab")
-            await pilot.pause()
-            assert tabs.active == target
-            assert app.focused is composer
 
 
 @pytest.mark.asyncio

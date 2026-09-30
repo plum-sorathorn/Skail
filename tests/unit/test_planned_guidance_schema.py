@@ -22,6 +22,25 @@ def test_guidance_carries_minimal_planned_skeleton() -> None:
     assert "checkpoint" in TASK_PACKET_GUIDANCE
 
 
+def test_guidance_does_not_reissue_admitted_agents_through_task_tool() -> None:
+    guidance = " ".join(TASK_PACKET_GUIDANCE.split())
+    assert "Skail dispatches admitted AGENT nodes" in guidance
+    assert "Do not call task() for agents already in a planned execution" in guidance
+
+
+def test_guidance_distinguishes_read_surveys_from_scoped_writers() -> None:
+    guidance = " ".join(TASK_PACKET_GUIDANCE.split())
+
+    assert "Effect-scope values are read, workspace_write, external_write, or unknown" in guidance
+    assert '"effect_scope":"workspace_write"' in guidance
+    assert '"task_features":{"profile":"implementer"}' in guidance
+    assert '"resource_scopes":["<write-scope>"]' in guidance
+    assert (
+        "Resource scopes constrain paths but do not grant tools, permissions, approvals, "
+        "or command execution"
+    ) in guidance
+
+
 def test_skeleton_shape_admits_first_try() -> None:
     admitted: list[object] = []
     gate = ExecutionDecisionGate(admit_plan=admitted.append)

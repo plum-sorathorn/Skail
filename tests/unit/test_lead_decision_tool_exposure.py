@@ -76,6 +76,20 @@ def test_lead_guidance_reaches_system_prompt(tmp_path: Path) -> None:
     )
 
 
+def test_ask_user_guidance_matches_fixed_choice_and_free_form_questions(
+    tmp_path: Path,
+) -> None:
+    model = ScriptedChatModel(responses=[AIMessage(content="done")])
+    agent = _build_lead(model, tmp_path)
+
+    getattr(agent, "invoke")({"messages": [HumanMessage(content="hello")]})  # type: ignore[operator]
+
+    ask_user = next(tool for tool in model.bound_tools if getattr(tool, "name", None) == "ask_user")
+    description = " ".join(str(getattr(ask_user, "description", "")).casefold().split())
+    assert "choose exactly one listed option" in description
+    assert "omit options for open-ended answers" in description
+
+
 def test_pinned_context_reaches_the_lead_system_prompt_once(tmp_path: Path) -> None:
     model = ScriptedChatModel(responses=[AIMessage(content="done")])
     gate = ExecutionDecisionGate(admit_plan=lambda plan: None)

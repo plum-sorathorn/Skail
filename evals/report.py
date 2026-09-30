@@ -232,8 +232,11 @@ def _paired_speedups(
                 for policy_runs in runs.values()
             ):
                 continue
+            auto_runs = runs[EvaluationPolicy.AUTO]
+            if any(run.child_peak_active < 2 for run in auto_runs):
+                continue
             auto_time = float(
-                median([run.wall_time_seconds for run in runs[EvaluationPolicy.AUTO]])
+                median([run.wall_time_seconds for run in auto_runs])
             )
             serial_time = float(
                 median([run.wall_time_seconds for run in runs[EvaluationPolicy.SERIAL]])

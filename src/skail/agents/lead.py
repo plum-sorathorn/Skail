@@ -11,6 +11,7 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import Runnable
 
+from skail.domain.decisions import ExecutionMode
 from skail.domain.routing import RoutingMode
 from skail.domain.usage import NormalizedUsage
 from skail.routing.requirements import TaskRisk
@@ -28,12 +29,30 @@ finite plan object (or JSON string of one) with a checkpoint node; discovery pla
 must all be read-only. Minimal planned shape (copy this):
 {"mode": "planned", "objective": "<goal>", "reason": "<why>", "plan":
 {"schema_version": 1, "policy_version": "adaptive-v1", "revision": 1,
-"nodes": [{"local_id": "survey", "kind": "agent", "objective": "<survey work>"},
-{"local_id": "gate", "kind": "checkpoint", "objective": "<review evidence>"}]}}
-Unknown plan fields are rejected; use ONLY schema_version, policy_version,
-revision, nodes{local_id,kind,objective}. constraints may be a string or a list of strings. A final
-answer needs no execution_decision. When delegating, call task(description,
-subagent_type). The description may be plain text or one JSON object with: description,
+"nodes": [{"local_id": "survey", "kind": "agent", "objective": "<survey work>",
+"effect_scope": "read", "resource_scopes": ["<survey-scope>"]},
+{"local_id": "gate", "kind": "checkpoint", "objective": "<review evidence>",
+"depends_on": ["survey"], "effect_scope": "read"}]}}
+For an authorized planned implementation, a writer node looks like:
+{"local_id":"implement","kind":"agent","objective":"<bounded change>",
+"effect_scope":"workspace_write","resource_scopes":["<write-scope>"],
+"task_features":{"profile":"implementer"}}.
+Effect-scope values are read, workspace_write, external_write, or unknown. Resource scopes constrain
+paths but do not grant tools, permissions, approvals, or command execution. Use direct mode for
+bounded work when the direct tool loop satisfies the user's constraints; do not use planned mode
+just to gain write authority.
+Plan fields are validated: the plan root accepts schema_version, policy_version, revision, and
+nodes; node fields include local_id, kind, objective, depends_on, acceptance_criteria, inputs,
+output_contract, effect_scope, resource_scopes, task_features, artifact_refs, and task_lineage.
+Use only supported fields that the plan needs. For an explicit request to use exactly N agents,
+include exactly N agent nodes, give each a non-empty resource_scopes list, and keep those scopes
+pairwise disjoint; do not add survey or verification agent nodes outside that count. If the user
+names a profile, set task_features.profile to that profile for every agent node. constraints may
+be a string or a list of strings. A final answer needs no execution_decision. In planned mode,
+Skail dispatches admitted AGENT nodes after the lead returns from the planning response. Do not call
+task() for agents already in a planned execution; wait for their persisted results and checkpoint
+outcomes. For a new task outside an admitted plan, call task(description, subagent_type). The
+description may be plain text or one JSON object with: description,
 success_criteria, depends_on (persisted task IDs), priority, write_scope, model_policy,
 budget_usd, and background. subagent_type and profile are aliases; description may
 itself be a JSON-encoded object string. Preserve the user's criteria, dependencies,
@@ -59,7 +78,10 @@ class LeadControls:
     write_allowed: bool | None = None
     max_children: int = 3
     direct_only: bool = False
+    required_mode: ExecutionMode | None = None
+    requires_user_answer: bool = False
     required_agent_count: int | None = None
+    required_agent_profile: str | None = None
     routing_mode: RoutingMode = RoutingMode.AUTO
     risk: TaskRisk = TaskRisk.ROUTINE
 
@@ -81,13 +103,41 @@ def resolve_lead_controls(
             r"\bdo (?:this|it|the work) yourself\b",
             r"\bhandle (?:this|it|the work) yourself\b",
             r"\bwithout delegating\b",
-            r"\bdo not delegate\b",
-            r"\bdon't delegate\b",
+            r"\bdo not delegate\b(?!\s+further\b)",
+            r"\bdo not (?:edit|write|modify) (?:or|and) delegate\b",
+            r"\bdon't delegate\b(?!\s+further\b)",
+            r"\bdon't (?:edit|write|modify) (?:or|and) delegate\b",
             r"\bno delegation\b",
             r"\bno subagents?\b",
         )
     )
-    no_write = any(
+    planned_execution = (
+        re.search(r"(?:^|[.!?;]\s*)(?:please\s+)?use planned execution\b", normalized)
+        is not None
+    )
+    requires_user_answer = any(
+        re.search(pattern, normalized) is not None
+        for pattern in (
+            r"^\s*(?:please\s+)?ask me to choose\b",
+            r"^\s*before\b[^!?;]{1,240},\s*(?:please\s+)?ask me to choose\b",
+        )
+    )
+    required_mode = resolved.required_mode
+    if planned_execution:
+        if (direct_only or resolved.direct_only) or (
+            required_mode is not None and required_mode is not ExecutionMode.PLANNED
+        ):
+            raise LeadIntentError(
+                "execution.intent_conflict: planned execution conflicts with the current "
+                "required execution mode"
+            )
+        required_mode = ExecutionMode.PLANNED
+    elif (direct_only or resolved.direct_only) and required_mode is ExecutionMode.PLANNED:
+        raise LeadIntentError(
+            "execution.intent_conflict: planned execution conflicts with the current "
+            "required execution mode"
+        )
+    explicit_no_write = any(
         re.search(pattern, normalized)
         for pattern in (
             r"\bdo not edit(?: any| the)? (?:files?|workspace|code)?\b",
@@ -95,18 +145,38 @@ def resolve_lead_controls(
             r"\bdo not modify(?: any| the)? (?:files?|workspace|code)?\b",
             r"\bdon't modify(?: any| the)? (?:files?|workspace|code)?\b",
             r"\bdo not change (?:any |the )?(?:files?|workspace|code)\b",
-            r"\bread[- ]only\b",
+            r"\bdo not write(?: any| the)? (?:files?|workspace|code)?\b",
+            r"\bdon't write(?: any| the)? (?:files?|workspace|code)?\b",
             r"\bno file (?:edits?|writes?|modifications?)\b",
         )
     )
+    mentions_read_only = re.search(r"\bread[- ]only\b", normalized) is not None
+    has_write_scope = re.search(r"\bworkspace[_ -]write\b", normalized) is not None
+    staged_write_phase = re.search(
+        r"\bread[- ]only\b.*\b(?:then|after|once|at (?:the )?checkpoint)\b"
+        r".{0,400}\b(?:add|create|implement|write|edit|modify)\b"
+        r".{0,160}\b(?:implementation|implementer|writer|workspace[_ -]write)\b",
+        normalized,
+    ) is not None
+    no_write = explicit_no_write or (
+        mentions_read_only and not (has_write_scope or staged_write_phase)
+    )
+    conditional_write = requires_user_answer and re.search(
+        r"\buntil i answer\b", normalized
+    ) is not None
     count_match = re.search(
-        r"\bexactly\s+(\d+|one|two|three|four|five)\s+"
-        r"(?:agents?|subagents?|children)\b",
+        r"\bexactly\s+(?P<count>\d+|one|two|three|four|five)\s+"
+        r"(?:(?P<profile>general[- ]purpose|implementer|tester|explorer|reviewer|researcher)\s+)?"
+        r"(?:child\s+)?(?:agents?|subagents?|children)\b",
         normalized,
     )
     required_agent_count: int | None = None
+    required_agent_profile: str | None = None
     if count_match is not None:
-        count = count_match.group(1)
+        count = count_match.group("count")
+        matched_profile = count_match.group("profile")
+        if matched_profile is not None:
+            required_agent_profile = matched_profile.replace(" ", "-")
         required_agent_count = (
             int(count)
             if count.isdigit()
@@ -127,16 +197,25 @@ def resolve_lead_controls(
     return replace(
         resolved,
         delegation="off" if direct_only else resolved.delegation,
-        write_allowed=False if no_write else resolved.write_allowed,
+        write_allowed=(
+            False if no_write and not conditional_write else resolved.write_allowed
+        ),
         required_agent_count=(
             required_agent_count
             if required_agent_count is not None
             else resolved.required_agent_count
         ),
+        required_agent_profile=(
+            required_agent_profile
+            if required_agent_profile is not None
+            else resolved.required_agent_profile
+        ),
         max_children=(
             required_agent_count if required_agent_count is not None else resolved.max_children
         ),
         direct_only=direct_only or resolved.direct_only,
+        required_mode=required_mode,
+        requires_user_answer=requires_user_answer or resolved.requires_user_answer,
     )
 
 

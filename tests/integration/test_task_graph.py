@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections import deque
 from decimal import Decimal
 
 import pytest
 from fakes.barriers import AsyncStartBarrier
-from fakes.models import ScriptedChatModel, parallel_tool_call_message
-from langchain_core.messages import AIMessage
+from fakes.models import ScriptedChatModel, parallel_tool_call_message, tool_call_message
+from langchain_core.messages import AIMessage, ToolMessage
 
 from skail.agents.profiles import builtin_profiles
 from skail.agents.task_graph import (
@@ -17,6 +18,7 @@ from skail.agents.task_graph import (
     build_task_graph,
     decode_task_request,
 )
+from skail.domain.events import SecretRedactor
 from skail.domain.ids import (
     AssignmentId,
     ReservationId,
@@ -25,15 +27,18 @@ from skail.domain.ids import (
     new_run_id,
     new_task_id,
 )
-from skail.domain.plans import PlanNode, PlanNodeKind
+from skail.domain.plans import EffectScope, PlanNode, PlanNodeKind
 from skail.domain.routing import RoutingMode, TaskAssignment
 from skail.domain.tasks import TaskRequest, TaskResult, VerificationResult
+from skail.providers.errors import ProviderError, ProviderErrorKind
 from skail.routing.selector import RouteFailure
 from skail.runtime.deepagents_adapter import ChildRunGate, build_lead_agent
 from skail.runtime.leases import WorkspaceLeaseManager
 from skail.runtime.run_controller import _task_request_for_plan_node
 from skail.runtime.scheduler import ChildScheduler
 from skail.runtime.task_validation import TaskValidationError, TaskValidator
+from skail.tools.assembly import build_default_agent
+from skail.tools.backend import PolicyFilesystemBackend
 
 
 def _spec(tmp_path, *, profile: str = "implementer"):
@@ -111,6 +116,134 @@ def test_plan_node_request_carries_declared_artifact_and_source_references() -> 
     assert request.source_revisions == ("workspace:abc123",)
 
 
+def test_plan_node_resource_scopes_confine_child_filesystem_writes(tmp_path) -> None:
+    node = PlanNode(
+        local_id="report",
+        kind=PlanNodeKind.AGENT,
+        objective="Implement the report module",
+        effect_scope=EffectScope.WORKSPACE_WRITE,
+        resource_scopes=("src/live_fixture/report.py", "tests/test_report.py"),
+        task_features={"profile": "implementer"},
+    )
+    request = _task_request_for_plan_node(node)
+    spec = TaskValidator(
+        profiles=builtin_profiles(),
+        workspace_root=tmp_path,
+        max_depth=1,
+        background_enabled=False,
+    ).create_spec(
+        request,
+        run_id=new_run_id(),
+        parent_task_id=None,
+        parent_depth=0,
+        workspace_revision="git:abc",
+    )
+    backend = PolicyFilesystemBackend(
+        tmp_path,
+        redactor=SecretRedactor(),
+        task_id=str(spec.task_id),
+        allowed_write_paths=spec.permission_set.allowed_paths,
+    )
+
+    allowed = backend.write("tests/test_report.py", "owned")
+    denied = backend.write("src/live_fixture/report_test.py", "outside scope")
+
+    assert allowed.error is None
+    assert denied.error == "write is outside the delegated task scope"
+    assert not (tmp_path / "src/live_fixture/report_test.py").exists()
+
+
+@pytest.mark.asyncio
+async def test_assembled_child_agent_denies_write_outside_planned_resource_scope(tmp_path) -> None:
+    node = PlanNode(
+        local_id="report",
+        kind=PlanNodeKind.AGENT,
+        objective="Implement the report module",
+        effect_scope=EffectScope.WORKSPACE_WRITE,
+        resource_scopes=("src/live_fixture/report.py",),
+        task_features={"profile": "implementer"},
+    )
+    request = _task_request_for_plan_node(node)
+    spec = TaskValidator(
+        profiles=builtin_profiles(),
+        workspace_root=tmp_path,
+        max_depth=1,
+        background_enabled=False,
+    ).create_spec(
+        request,
+        run_id=new_run_id(),
+        parent_task_id=None,
+        parent_depth=0,
+        workspace_revision="git:abc",
+    )
+    model = ScriptedChatModel(responses=[
+        tool_call_message(
+            "write_file",
+            {"file_path": "src/live_fixture/report_test.py", "content": "outside scope"},
+            call_id="out-of-scope-write",
+        ),
+        AIMessage(content="write attempted"),
+    ])
+    child = build_default_agent(
+        model,
+        workspace=tmp_path,
+        profile="implementer",
+        task_id=str(spec.task_id),
+        allowed_write_paths=spec.permission_set.allowed_paths,
+        state_dir=tmp_path / ".state",
+    )
+
+    result = await child.ainvoke(
+        {"messages": [{"role": "user", "content": "Write the report test file."}]}
+    )
+    tool_result = next(
+        message for message in result["messages"] if isinstance(message, ToolMessage)
+    )
+
+    assert "write is outside the delegated task scope" in str(tool_result.content)
+    assert not (tmp_path / "src/live_fixture/report_test.py").exists()
+
+
+@pytest.mark.asyncio
+async def test_assembled_child_can_get_runtime_file_digest_for_scoped_result(tmp_path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target = workspace / "src/live_fixture/exporter.py"
+    target.parent.mkdir(parents=True)
+    content = "def export_json(data):\n    return str(data)\n"
+    target.write_text(content, encoding="utf-8")
+    expected_digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    model = ScriptedChatModel(
+        responses=[
+            tool_call_message(
+                "file_digest",
+                {"file_path": "src/live_fixture/exporter.py"},
+                call_id="digest-exporter",
+            ),
+            AIMessage(content="I obtained the file digest for the result.")
+        ]
+    )
+    child = build_default_agent(
+        model,
+        workspace=workspace,
+        profile="implementer",
+        task_id="task-digest",
+        allowed_write_paths=("src/live_fixture/exporter.py",),
+        state_dir=tmp_path / "state",
+    )
+
+    result = await child.ainvoke(
+        {"messages": [{"role": "user", "content": "Return a file evidence digest."}]}
+    )
+
+    assert "file_digest" in model.bound_tool_names
+    tool_result = next(
+        message for message in result["messages"] if isinstance(message, ToolMessage)
+    )
+    assert "src/live_fixture/exporter.py" in str(tool_result.content)
+    assert expected_digest in str(tool_result.content)
+
+
 def test_task_validator_rejects_unsafe_context_file_references(tmp_path) -> None:
     validator = TaskValidator(
         profiles=builtin_profiles(), workspace_root=tmp_path, max_depth=1,
@@ -144,10 +277,14 @@ async def test_task_graph_escalates_once_with_isolated_context_and_returns_to_le
     packets = []
     settled = []
     exhausted = []
+    attempt_ids = []
+    persisted = []
 
     def assign(task, number, excluded):
         calls.append((number, excluded))
-        return AttemptBinding(new_attempt_id(), assignments[number - 1])
+        attempt_id = new_attempt_id()
+        attempt_ids.append(attempt_id)
+        return AttemptBinding(attempt_id, assignments[number - 1])
 
     async def execute(task, assignment, packet):
         assert assignment.assignment_id
@@ -157,6 +294,7 @@ async def test_task_graph_escalates_once_with_isolated_context_and_returns_to_le
     graph = build_task_graph(
         profile=builtin_profiles()["implementer"], assign=assign, execute=execute,
         persist_context=packets.append,
+        persist_result=persisted.append,
         settle_attempt=lambda binding, result: settled.append(binding.attempt_id),
         exhaust_fingerprint=lambda task: exhausted.append(task.fingerprint),
         gate=ChildRunGate(3), leases=WorkspaceLeaseManager(),
@@ -169,6 +307,73 @@ async def test_task_graph_escalates_once_with_isolated_context_and_returns_to_le
     assert len(set(settled)) == 2
     assert exhausted == [spec.fingerprint]
     assert len(state["result"].attempts) == 2
+    assert [
+        (item.attempt_id, item.reason_code) for item in state["result"].attempt_failures
+    ] == [
+        (attempt_ids[0], "task_failure"),
+        (attempt_ids[1], "task_failure"),
+    ]
+    assert len(persisted) == 1
+    assert persisted[0].status == "returned_to_lead"
+    assert persisted[0].attempt_failures == state["result"].attempt_failures
+
+
+@pytest.mark.asyncio
+async def test_successful_retry_retains_first_attempt_failure_reason(tmp_path) -> None:
+    spec = _spec(tmp_path)
+    assignments = [_assignment(spec, 1, "economy"), _assignment(spec, 2, "quality")]
+    attempt_ids = []
+    persisted = []
+
+    def assign(task, number, excluded):
+        del task, excluded
+        attempt_id = new_attempt_id()
+        attempt_ids.append(attempt_id)
+        return AttemptBinding(attempt_id, assignments[number - 1])
+
+    results = deque(
+        [
+            TaskResult(
+                task_id=spec.task_id,
+                status="failed",
+                summary="first attempt rejected",
+                failure_category="result_validation",
+            ),
+            TaskResult(
+                task_id=spec.task_id,
+                status="succeeded",
+                summary="retry succeeded",
+                verification=(
+                    VerificationResult(
+                        criterion="Provide evidence for the completed task",
+                        passed=True,
+                        evidence="verified",
+                    ),
+                ),
+            ),
+        ]
+    )
+
+    async def execute(*args):
+        return results.popleft()
+
+    graph = build_task_graph(
+        profile=builtin_profiles()["implementer"],
+        assign=assign,
+        execute=execute,
+        persist_result=persisted.append,
+        gate=ChildRunGate(3),
+        leases=WorkspaceLeaseManager(),
+    )
+    state = await graph.ainvoke({"spec": spec})
+
+    assert state["result"].status == "succeeded"
+    assert [
+        (item.attempt_id, item.reason_code) for item in state["result"].attempt_failures
+    ] == [(attempt_ids[0], "result_validation")]
+    assert len(persisted) == 1
+    assert persisted[0].status == "succeeded"
+    assert persisted[0].attempt_failures == state["result"].attempt_failures
 
 
 @pytest.mark.asyncio
@@ -279,16 +484,19 @@ async def test_task_graph_blocked_events_carry_the_true_reason(tmp_path) -> None
 
     state = await graph_for("budget_unaffordable", {"budget": 1}).ainvoke({"spec": spec})
     assert state["result"].status == "budget_blocked"
+    assert state["result"].failure_category == "budget_blocked"
     assert ("budget_blocked", None, "budget_unaffordable") in events
 
     events.clear()
     state = await graph_for("model_excluded", {"model_excluded": 1}).ainvoke({"spec": spec})
     assert state["result"].status == "blocked"
+    assert state["result"].failure_category == "routing_ineligible"
     assert ("blocked", None, "model_excluded") in events
 
     events.clear()
     state = await graph_for(None, {}).ainvoke({"spec": spec})
     assert state["result"].status == "blocked"
+    assert state["result"].failure_category == "routing_ineligible"
     assert ("blocked", None, "no eligible route") in events
 
 
@@ -303,7 +511,12 @@ async def test_task_graph_converts_execution_error_to_bounded_escalation(tmp_pat
         return AttemptBinding(new_attempt_id(), assignments[number - 1])
 
     async def execute(*args):
-        raise RuntimeError("provider unavailable")
+        raise ProviderError(
+            kind=ProviderErrorKind.TRANSIENT,
+            summary="provider unavailable",
+            provider="fake",
+            retry_safe=True,
+        )
 
     graph = build_task_graph(
         profile=builtin_profiles()["implementer"],
@@ -316,7 +529,8 @@ async def test_task_graph_converts_execution_error_to_bounded_escalation(tmp_pat
     state = await graph.ainvoke({"spec": spec})
     assert assigned == [1, 2]
     assert state["result"].status == "returned_to_lead"
-    assert "provider unavailable" in state["result"].summary
+    assert state["result"].failure_category == "provider_error"
+    assert "provider unavailable" not in state["result"].summary
 
 
 @pytest.mark.asyncio

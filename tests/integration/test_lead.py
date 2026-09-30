@@ -14,10 +14,12 @@ from langchain_core.messages import AIMessage
 from skail.agents.lead import LeadControls
 from skail.domain.events import SecretRedactor
 from skail.domain.ids import new_session_id
+from skail.domain.routing import RoutingMode
 from skail.providers.models import CapabilityVector, ModelProfile, ProviderSupportLevel
 from skail.routing.assignment import (
     AccountingReconciliationRequired,
     RoutingSnapshot,
+    StaleRoutingSnapshot,
     config_revision,
 )
 from skail.routing.selector import RouteCandidate
@@ -84,6 +86,106 @@ async def test_lead_completes_direct_coding_flow_without_delegation(tmp_path: Pa
     assert result.lead_assignment.model == "lead-model"
     assert result.lead_assignment.attempt_number == 1
     assert result.lead_context_packet.task_id == str(result.run_id)
+
+
+@pytest.mark.asyncio
+async def test_per_run_routing_mode_keeps_the_startup_config_revision(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Per-run routing mode", created_at=datetime.now(UTC)
+    )
+    config_snapshot = {
+        "budget": {"run_usd": "1.00"},
+        "routing": {"mode": "auto"},
+    }
+    profile = ModelProfile(
+        provider="injected",
+        model="lead-model",
+        support_level=ProviderSupportLevel.NATIVE,
+        input_usd_per_million=Decimal("1"),
+        output_usd_per_million=Decimal("2"),
+        context_tokens=32_000,
+        max_output_tokens=4_000,
+        supports_tools=True,
+        supports_structured_output=True,
+        capability=CapabilityVector(
+            coding=0.9, reasoning=0.9, tool_reliability=0.9, latency=0.2
+        ),
+        auto_eligible=True,
+    )
+    snapshot = RoutingSnapshot(
+        catalog_revision="catalog-v1",
+        config_revision=config_revision(config_snapshot),
+        health_revision="health-v1",
+        candidates=(
+            RouteCandidate(
+                profile=profile,
+                estimated_cost_usd=Decimal("0.10"),
+                estimate_assumptions=("expected_calls=2",),
+            ),
+        ),
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": ScriptedChatModel(responses=[AIMessage(content="Direct answer.")])},
+        default_lead_model="lead-model",
+        candidates_fn=lambda: snapshot,
+        catalog_revision="catalog-v1",
+        config_snapshot=config_snapshot,
+    )
+
+    result = await controller.run_instruction(
+        "Answer directly",
+        controls=LeadControls(delegation="off", routing_mode=RoutingMode.ECONOMY),
+    )
+
+    assert result.output == "Direct answer."
+    assignment = journal.get_session_snapshot(str(session_id)).assignments[0]
+    assert assignment.payload["config"] == config_snapshot
+    assert assignment.payload["routing_mode"] == "economy"
+
+
+@pytest.mark.asyncio
+async def test_assignment_snapshot_failure_terminalizes_unassigned_run(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Stale assignment snapshot", created_at=datetime.now(UTC)
+    )
+    config_snapshot = {"routing": {"mode": "auto"}}
+    model = ScriptedChatModel(responses=[AIMessage(content="must not run")])
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": model},
+        default_lead_model="lead-model",
+        candidates_fn=lambda: RoutingSnapshot(
+            catalog_revision="catalog-v1",
+            config_revision=config_revision({"routing": {"mode": "manual"}}),
+            health_revision="health-v1",
+            candidates=(),
+        ),
+        catalog_revision="catalog-v1",
+        config_snapshot=config_snapshot,
+    )
+
+    with pytest.raises(StaleRoutingSnapshot):
+        await controller.run_instruction("Answer directly")
+
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert len(snapshot.runs) == 1
+    assert snapshot.runs[0].status == "failed"
+    assert len(snapshot.tasks) == 1
+    assert snapshot.tasks[0].status == "failed"
+    assert len(snapshot.attempts) == 1
+    assert snapshot.attempts[0].status == "failed"
+    assert [event.type for event in snapshot.events][-1] == "run.failed"
+    assert snapshot.assignments == ()
+    assert model.calls == ()
 
 
 @pytest.mark.asyncio
@@ -390,6 +492,38 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
         result.child_results[0].verification[0].evidence_ref
     )
     assert result.child_results[0].status == "succeeded", result.child_results[0]
+    child_prompt = "\n".join(
+        str(message.content)
+        for call in child_model.calls
+        for message in call
+        if message.content
+    )
+    assert "Preserve user changes" in child_prompt
+    assert "Final TaskResult contract: return exactly one JSON object" in child_prompt
+    assert "Allowed status values are succeeded, failed, blocked" in child_prompt
+    assert "SHA-256 digest returned by file_digest" in child_prompt
+    assert "verification as a JSON array" in child_prompt
+    assert 'evidence_ref must use the exact keys "kind", "path", and "digest"' in child_prompt
+    assert (
+        '"kind": "file", "path": "<workspace-relative scoped path>", '
+        '"digest": "<SHA-256 returned by file_digest>"'
+    ) in child_prompt
+    verification_example = (
+        '"verification":[{"criterion":"<exact success criterion>",'
+        '"passed":true,"evidence":"<concise non-empty evidence>",'
+        '"evidence_ref":{"kind":"file","path":"<workspace-relative scoped path>",'
+        '"digest":"<64-character SHA-256 from file_digest>"}}]'
+    )
+    assert verification_example in child_prompt
+    artifact_example = (
+        '"artifacts":[{"kind":"file","path":"<scoped source path>",'
+        '"digest":"<SHA-256 digest>"},'
+        '{"kind":"file","path":"<scoped test path>",'
+        '"digest":"<SHA-256 digest>"}]'
+    )
+    assert artifact_example in child_prompt
+    assert "Use the field name digest, not sha256." in child_prompt
+    assert "A file digest proves file contents only" in child_prompt
     child_assignment = next(
         assignment
         for assignment in journal.get_session_snapshot(str(session_id)).assignments
@@ -399,6 +533,68 @@ async def test_lead_delegates_to_implementer_and_synthesizes_result(tmp_path: Pa
     assert "expected_calls=8" in assumptions
     assert "expected_calls_prior=profile:implementer" in assumptions
     assert "cache_assumption=no_cache_reuse" in assumptions
+
+
+@pytest.mark.asyncio
+async def test_malformed_child_result_emits_safe_validation_diagnostic(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Malformed child result", created_at=datetime.now(UTC)
+    )
+    child_model = ScriptedChatModel(
+        model_name="implementer-model",
+        responses=[AIMessage(content="not-json: do-not-export-this-value")],
+    )
+    lead_model = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            parallel_tool_call_message(
+                [
+                    (
+                        "execution_decision",
+                        {
+                            "mode": "direct",
+                            "objective": "Delegate one bounded file write",
+                            "constraints": [],
+                            "reason": "A single specialist can perform the work.",
+                        },
+                        "task-decision-invalid-result",
+                    ),
+                    (
+                        "task",
+                        {
+                            "description": "Write child_output.txt file",
+                            "subagent_type": "implementer",
+                        },
+                        "task-call-invalid-result",
+                    ),
+                ]
+            ),
+            AIMessage(content="The child result was rejected."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead_model, "implementer-model": child_model},
+        default_lead_model="lead-model",
+        default_child_model="implementer-model",
+    )
+
+    result = await controller.run_instruction("Delegate writing to implementer")
+
+    events = journal.events_after(run_id=str(result.run_id))
+    failed_event = next(event for event in events if event.type == "task.failed")
+    assert getattr(failed_event.payload, "failure_category", None) == "malformed_result"
+    assert getattr(failed_event.payload, "validation_path", None) == "$"
+    assert "do-not-export-this-value" not in repr(failed_event.payload)
+    assert any(
+        event.type == "task.blocked"
+        and getattr(event.payload, "failure_category", None) == "routing_ineligible"
+        for event in events
+    )
 
 
 @pytest.mark.asyncio
@@ -740,7 +936,7 @@ async def test_direct_user_instruction_rejects_plan_and_task_admission(tmp_path:
     )
 
     result = await controller.run_instruction(
-        "Inspect the requested files and do this yourself without delegating."
+        "Review the requested files. Do not edit or delegate."
     )
 
     assert result.status == "completed"
@@ -748,6 +944,151 @@ async def test_direct_user_instruction_rejects_plan_and_task_admission(tmp_path:
     assert journal.plans_for_run(str(result.run_id)) == ()
     snapshot = journal.get_session_snapshot(str(session_id))
     assert len([task for task in snapshot.tasks if task.run_id == str(result.run_id)]) == 1
+
+
+@pytest.mark.asyncio
+async def test_exact_child_agent_instruction_rejects_extra_plan_agents(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Exact child count", created_at=datetime.now(UTC)
+    )
+    planned = {
+        "mode": "planned",
+        "objective": "Implement two independent fixture modules",
+        "constraints": [],
+        "reason": "Three agent nodes were incorrectly proposed for an exact-two request.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "parser",
+                    "kind": "agent",
+                    "objective": "Implement the parser fixture",
+                    "resource_scopes": ["src/live_fixture/parser.py", "tests/test_parser.py"],
+                },
+                {
+                    "local_id": "report",
+                    "kind": "agent",
+                    "objective": "Implement the report fixture",
+                    "resource_scopes": ["src/live_fixture/report.py", "tests/test_report.py"],
+                },
+                {
+                    "local_id": "extra",
+                    "kind": "agent",
+                    "objective": "Run integration verification",
+                    "resource_scopes": ["tests/test_integration.py"],
+                },
+            ],
+        },
+    }
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message("execution_decision", planned, call_id="too-many-agents"),
+            AIMessage(content="The conflicting plan was rejected before work started."),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead},
+    )
+
+    result = await controller.run_instruction("Use exactly two child agents in parallel.")
+
+    assert result.status == "completed"
+    assert result.child_count == 0
+    assert journal.plans_for_run(str(result.run_id)) == ()
+    snapshot = journal.get_session_snapshot(str(session_id))
+    failures = [
+        event
+        for event in snapshot.events
+        if event.run_id == str(result.run_id) and event.type == "tool.failed"
+    ]
+    assert any(
+        "execution.agent_count_conflict" in str(getattr(event.payload, "reason", ""))
+        for event in failures
+    )
+    assert len([task for task in snapshot.tasks if task.run_id == str(result.run_id)]) == 1
+
+
+@pytest.mark.asyncio
+async def test_exact_implementer_intent_rejects_explorer_plan_agents(tmp_path: Path) -> None:
+    journal = _journal(tmp_path)
+    session_id = new_session_id()
+    journal.create_session(
+        session_id=str(session_id), title="Exact implementer profile", created_at=datetime.now(UTC)
+    )
+    planned = {
+        "mode": "planned",
+        "objective": "Implement the parser and report fixtures",
+        "constraints": [],
+        "reason": "The requested implementer profile is required for both writers.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "parser",
+                    "kind": "agent",
+                    "objective": "Inspect parser fixture",
+                    "effect_scope": "read",
+                    "resource_scopes": ["src/live_fixture/parser.py"],
+                    "task_features": {"profile": "explorer"},
+                },
+                {
+                    "local_id": "report",
+                    "kind": "agent",
+                    "objective": "Inspect report fixture",
+                    "effect_scope": "read",
+                    "resource_scopes": ["src/live_fixture/report.py"],
+                    "task_features": {"profile": "explorer"},
+                },
+                {
+                    "local_id": "checkpoint",
+                    "kind": "checkpoint",
+                    "objective": "Review both agent results",
+                    "depends_on": ["parser", "report"],
+                    "effect_scope": "read",
+                },
+            ],
+        },
+    }
+    lead = ScriptedChatModel(
+        model_name="lead-model",
+        responses=[
+            tool_call_message("execution_decision", planned, call_id="wrong-agent-profile"),
+            AIMessage(
+                content="The explorer plan conflicts with the requested implementer profile."
+            ),
+        ],
+    )
+    controller = RunController(
+        session_id=session_id,
+        workspace=tmp_path,
+        journal=journal,
+        models={"lead-model": lead},
+    )
+
+    result = await controller.run_instruction(
+        "Use exactly two implementer child agents in parallel."
+    )
+
+    assert result.child_count == 0
+    assert journal.plans_for_run(str(result.run_id)) == ()
+    snapshot = journal.get_session_snapshot(str(session_id))
+    assert len([task for task in snapshot.tasks if task.run_id == str(result.run_id)]) == 1
+    assert any(
+        event.type == "tool.failed"
+        and "execution.agent_profile_conflict" in str(getattr(event.payload, "reason", ""))
+        for event in snapshot.events
+        if event.run_id == str(result.run_id)
+    )
 
 
 @pytest.mark.asyncio

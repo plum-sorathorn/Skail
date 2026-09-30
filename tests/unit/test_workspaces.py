@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -94,14 +95,50 @@ def test_materialized_worktree_uses_snapshot_inputs_and_retains_changes(tmp_path
     (workspace / "tracked.txt").write_text("dirty\n", encoding="utf-8")
     manager = WorkspaceManager(tmp_path / "skail-data")
 
-    isolated = manager.materialize(manager.capture(workspace), "task-1")
+    snapshot = manager.capture(workspace)
+    isolated = manager.materialize(snapshot, "task-1")
 
     assert isolated.path != workspace
     assert (isolated.path / "tracked.txt").read_text(encoding="utf-8") == "dirty\n"
     (isolated.path / "result.txt").write_text("preserve\n", encoding="utf-8")
     assert manager.cleanup(isolated) is False
     assert isolated.path.exists()
-    assert (isolated.path / "retained.json").exists()
+    retained = (
+        tmp_path
+        / "skail-data"
+        / "retained"
+        / f"{snapshot.snapshot_id}-{isolated.task_id}.json"
+    )
+    assert retained.exists()
+    assert not (isolated.path / "retained.json").exists()
+
+    retry_workspace = manager.materialize(snapshot, "task-1")
+
+    assert retry_workspace == isolated
+    assert (retry_workspace.path / "tracked.txt").read_text(encoding="utf-8") == "dirty\n"
+    assert (retry_workspace.path / "result.txt").read_text(encoding="utf-8") == "preserve\n"
+    assert not retained.exists()
+
+
+def test_materialize_rejects_a_retained_worktree_record_for_another_task(
+    tmp_path: Path,
+) -> None:
+    workspace = _repository(tmp_path)
+    manager = WorkspaceManager(tmp_path / "skail-data")
+    snapshot = manager.capture(workspace)
+    isolated = manager.materialize(snapshot, "task-1")
+    (isolated.path / "result.txt").write_text("preserve\n", encoding="utf-8")
+    assert manager.cleanup(isolated) is False
+    record = tmp_path / "skail-data" / "retained" / f"{snapshot.snapshot_id}-task-1.json"
+    payload = json.loads(record.read_text(encoding="utf-8"))
+    payload["task_id"] = "task-2"
+    record.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="workspace.retention_state_invalid"):
+        manager.materialize(snapshot, "task-1")
+
+    assert isolated.path.exists()
+    assert (isolated.path / "result.txt").read_text(encoding="utf-8") == "preserve\n"
 
 
 def test_snapshot_rejects_symlinked_workspace_input(tmp_path: Path) -> None:

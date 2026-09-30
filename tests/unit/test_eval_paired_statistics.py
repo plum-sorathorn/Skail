@@ -5,7 +5,12 @@ from evals.schema import EvaluationFixture, EvaluationPolicy, OracleSpec, Oracle
 
 
 def _result(
-    *, policy: EvaluationPolicy, seed: int, repetition: int, wall_time_seconds: float
+    *,
+    policy: EvaluationPolicy,
+    seed: int,
+    repetition: int,
+    wall_time_seconds: float,
+    child_peak_active: int = 0,
 ) -> TaskEvalResult:
     return TaskEvalResult(
         fixture_id="parallel-fixture",
@@ -20,6 +25,7 @@ def _result(
         assignments_count=1,
         escalations_count=0,
         interrupts_count=0,
+        child_peak_active=child_peak_active,
     )
 
 
@@ -33,12 +39,36 @@ def test_paired_parallel_gate_uses_per_fixture_medians_for_each_seed() -> None:
         oracle=OracleSpec(type=OracleType.MULTI_ASSERT),
     )
     results = [
-        _result(policy=EvaluationPolicy.AUTO, seed=42, repetition=1, wall_time_seconds=0.8),
-        _result(policy=EvaluationPolicy.AUTO, seed=42, repetition=2, wall_time_seconds=0.9),
+        _result(
+            policy=EvaluationPolicy.AUTO,
+            seed=42,
+            repetition=1,
+            wall_time_seconds=0.8,
+            child_peak_active=2,
+        ),
+        _result(
+            policy=EvaluationPolicy.AUTO,
+            seed=42,
+            repetition=2,
+            wall_time_seconds=0.9,
+            child_peak_active=2,
+        ),
         _result(policy=EvaluationPolicy.SERIAL, seed=42, repetition=1, wall_time_seconds=1.0),
         _result(policy=EvaluationPolicy.SERIAL, seed=42, repetition=2, wall_time_seconds=1.0),
-        _result(policy=EvaluationPolicy.AUTO, seed=100, repetition=1, wall_time_seconds=0.9),
-        _result(policy=EvaluationPolicy.AUTO, seed=100, repetition=2, wall_time_seconds=0.9),
+        _result(
+            policy=EvaluationPolicy.AUTO,
+            seed=100,
+            repetition=1,
+            wall_time_seconds=0.9,
+            child_peak_active=2,
+        ),
+        _result(
+            policy=EvaluationPolicy.AUTO,
+            seed=100,
+            repetition=2,
+            wall_time_seconds=0.9,
+            child_peak_active=2,
+        ),
         _result(policy=EvaluationPolicy.SERIAL, seed=100, repetition=1, wall_time_seconds=1.0),
         _result(policy=EvaluationPolicy.SERIAL, seed=100, repetition=2, wall_time_seconds=1.0),
     ]
@@ -102,12 +132,36 @@ def test_paired_parallel_gate_rejects_excessive_cross_seed_spread() -> None:
         oracle=OracleSpec(type=OracleType.MULTI_ASSERT),
     )
     results = [
-        _result(policy=EvaluationPolicy.AUTO, seed=42, repetition=1, wall_time_seconds=0.7),
-        _result(policy=EvaluationPolicy.AUTO, seed=42, repetition=2, wall_time_seconds=0.7),
+        _result(
+            policy=EvaluationPolicy.AUTO,
+            seed=42,
+            repetition=1,
+            wall_time_seconds=0.7,
+            child_peak_active=2,
+        ),
+        _result(
+            policy=EvaluationPolicy.AUTO,
+            seed=42,
+            repetition=2,
+            wall_time_seconds=0.7,
+            child_peak_active=2,
+        ),
         _result(policy=EvaluationPolicy.SERIAL, seed=42, repetition=1, wall_time_seconds=1.0),
         _result(policy=EvaluationPolicy.SERIAL, seed=42, repetition=2, wall_time_seconds=1.0),
-        _result(policy=EvaluationPolicy.AUTO, seed=100, repetition=1, wall_time_seconds=0.85),
-        _result(policy=EvaluationPolicy.AUTO, seed=100, repetition=2, wall_time_seconds=0.85),
+        _result(
+            policy=EvaluationPolicy.AUTO,
+            seed=100,
+            repetition=1,
+            wall_time_seconds=0.85,
+            child_peak_active=2,
+        ),
+        _result(
+            policy=EvaluationPolicy.AUTO,
+            seed=100,
+            repetition=2,
+            wall_time_seconds=0.85,
+            child_peak_active=2,
+        ),
         _result(policy=EvaluationPolicy.SERIAL, seed=100, repetition=1, wall_time_seconds=1.0),
         _result(policy=EvaluationPolicy.SERIAL, seed=100, repetition=2, wall_time_seconds=1.0),
     ]

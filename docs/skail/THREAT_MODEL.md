@@ -41,7 +41,10 @@ Skail executes locally as a developer pairing tool without cloud daemons, proxy 
 ### 2.2 Shell Execution & Command Injection
 - **Threat**: Malicious prompt injections chaining commands (`; rm -rf /`, `& del /f`, piping to netcat or curl).
 - **Mitigation**: `ExecutionPolicy` strictly rejects destructive executables (`rm`, `rmdir`, `del`, `format`, `shutdown`, `sudo`, `runas`, `git clean -fdx`, `git reset --hard`) and rejects commands executed outside the workspace CWD.
-- **Human Approval**: Any shell invocation (`bash`, `sh`, `pwsh`, `cmd`) or external network call (`curl`, `wget`, `ssh`, `git push`) requires explicit human approval via `ApprovalStore`. `ALLOW_ONCE` grants are consumed immediately and cannot be re-used.
+- **Human Approval**: Shell interpreters (`bash`, `sh`, `pwsh`, `cmd`) and external network commands
+  (`curl`, `wget`, `ssh`, `git push`) require explicit human approval via `ApprovalStore`.
+  Ordinary allowlisted build, test, and read commands may run in an approved trusted project;
+  unknown commands still require approval. `ALLOW_ONCE` grants are consumed immediately.
 
 ### 2.3 Untrusted Project Extensions & Configuration
 - **Threat**: Repository contains malicious `.skail/agents/` or `.skail/skills/` attempting privilege escalation.

@@ -5,26 +5,19 @@ import argparse
 import sys
 from decimal import Decimal
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 # Add project root to sys.path if not present
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from evals.report import render_markdown_report, save_report_json
-from evals.runner import EvaluationRunner
-from evals.schema import (
-    EvaluationFixture,
-    EvaluationPolicy,
-    ExecutionScript,
-    OracleSpec,
-    OracleType,
-    ScriptedModelResponse,
-    ScriptedToolCall,
-    ScriptedUsage,
-)
+if TYPE_CHECKING:
+    from evals.schema import EvaluationFixture, ExecutionScript
 
 
 def _write_script(target: str, content: str) -> ExecutionScript:
+    from evals.schema import ExecutionScript, ScriptedModelResponse, ScriptedToolCall, ScriptedUsage
+
     return ExecutionScript(
         responses=(
             ScriptedModelResponse(
@@ -50,6 +43,8 @@ def _write_script(target: str, content: str) -> ExecutionScript:
 
 
 def _sample_fixtures() -> list[EvaluationFixture]:
+    from evals.schema import EvaluationFixture, OracleSpec, OracleType
+
     return [
         EvaluationFixture(
             id="smoke-trivial-01",
@@ -122,6 +117,11 @@ def main() -> int:
     )
 
     args = parser.parse_args()
+
+    # Help should not pay to import the evaluation runtime and its provider stack.
+    from evals.report import render_markdown_report, save_report_json
+    from evals.runner import EvaluationRunner
+    from evals.schema import EvaluationPolicy
 
     if args.policies.strip().lower() == "all":
         policies = list(EvaluationPolicy)

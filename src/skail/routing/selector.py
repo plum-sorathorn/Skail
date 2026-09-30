@@ -85,7 +85,9 @@ def _exclusion_reason(
         return "provider_unhealthy"
     if not candidate.enabled:
         return "model_disabled"
-    if requirements.mode is not RoutingMode.MANUAL and not profile.auto_eligible:
+    if (
+        requirements.mode is not RoutingMode.MANUAL or requirements.escalated
+    ) and not profile.auto_eligible:
         return "auto_ineligible"
     if requirements.tools_required and (
         profile.supports_tools is False
@@ -119,6 +121,11 @@ def _exclusion_reason(
     if not frozenset(requirements.modalities).issubset(frozenset(profile.input_modalities)):
         return "modality_unsupported"
     fit = _capability_fit(profile)
+    if requirements.escalated:
+        if requirements.failed_capability_fit is None:
+            return "escalation_baseline_unknown"
+        if fit is None or fit <= requirements.failed_capability_fit:
+            return "escalation_not_stronger"
     if requirements.capability_floor is not None and (
         fit is None or fit < requirements.capability_floor
     ):
@@ -147,6 +154,8 @@ def select_model(
         raise ValueError("manual routing requires an exact provider/model pin")
     included: list[RouteCandidate] = []
     excluded: Counter[str] = Counter()
+    available_excluded: Counter[str] = Counter()
+    manual_model_reason: str | None = None
     for candidate in sorted(
         candidates, key=lambda item: (item.profile.provider, item.profile.model)
     ):
@@ -156,12 +165,25 @@ def select_model(
             available_budget_usd=available_budget_usd,
             manual_model=manual_model,
         )
+        if manual_model == (candidate.profile.provider, candidate.profile.model):
+            manual_model_reason = reason
         if reason is None:
             included.append(candidate)
         else:
             excluded[reason] += 1
+            if (
+                (candidate.profile.provider, candidate.profile.model)
+                not in requirements.excluded_models
+                and candidate.configured
+                and candidate.healthy
+                and candidate.enabled
+            ):
+                available_excluded[reason] += 1
     counts = dict(sorted(excluded.items()))
-    binding = min(counts, key=lambda reason: (-counts[reason], reason)) if counts else None
+    relevant = available_excluded or excluded
+    binding = manual_model_reason or (
+        min(relevant, key=lambda reason: (-relevant[reason], reason)) if relevant else None
+    )
     if not included:
         return RouteFailure(excluded_counts=counts, binding_constraint=binding)
 

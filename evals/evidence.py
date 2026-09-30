@@ -34,6 +34,7 @@ def git_value(*args: str) -> str:
             capture_output=True,
             check=True,
             text=True,
+            encoding="utf-8",
             timeout=5,
         )
     except (OSError, subprocess.SubprocessError):

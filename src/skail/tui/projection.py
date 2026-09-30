@@ -14,6 +14,7 @@ from decimal import Decimal
 from typing import Any
 
 from skail.domain.events import EventEnvelope, InterruptKind
+from skail.runtime.presentation import model_content_to_text, present_lead_answer
 from skail.sessions.journal import SessionSnapshot
 
 BUDGET_UNAVAILABLE_COPY = "Budget details are unavailable for this provider."
@@ -341,6 +342,7 @@ class TuiProjection:
         self.route_items: dict[str, RouteViewItem] = {}  # keyed by task_id
         self.plan_items: dict[str, PlanNodeViewItem] = {}  # keyed by local_id
         self.current_plan_id: str | None = None
+        self._plan_ids_by_run: dict[str, str] = {}
         self.current_plan_revision: int = 1
         # keyed by changeset_id
         self.workspace_integrations: dict[str, WorkspaceIntegrationItem] = {}
@@ -514,6 +516,23 @@ class TuiProjection:
         self.unread += 1
         return True
 
+    def add_run_answer(self, run_id: str | None, answer: str) -> bool:
+        """Add one final answer using an ID shared by live results and event replay."""
+        if not answer:
+            return False
+        return self._add_transcript_item(
+            TranscriptItem(
+                id=(
+                    f"run-answer:{run_id}"
+                    if run_id is not None
+                    else f"lead-{len(self.transcript_items)}"
+                ),
+                role="lead",
+                title="Skail Response",
+                content=answer,
+            )
+        )
+
     def apply_budget_snapshot(self, snapshot: SessionSnapshot) -> None:
         """Refresh current-run budget state without rebuilding the transcript."""
         current_run = snapshot.runs[-1] if snapshot.runs else None
@@ -584,6 +603,7 @@ class TuiProjection:
         self.route_items = {}
         self.plan_items = {}
         self.current_plan_id = None
+        self._plan_ids_by_run = {}
         self.current_plan_revision = 1
         self.workspace_integrations = {}
         self.budget_item = BudgetViewItem()
@@ -616,6 +636,7 @@ class TuiProjection:
             payload = asg.payload or {}
             raw_expl = payload.get("explanation", ())
             expl = tuple(raw_expl) if isinstance(raw_expl, list) else (str(raw_expl),)
+            capability_floor = payload.get("capability_floor")
             raw_lineage = payload.get("lineage")
             lineage = tuple(raw_lineage) if isinstance(raw_lineage, list) else ()
             evidence_status = payload.get("evidence_status")
@@ -634,7 +655,9 @@ class TuiProjection:
                 model=asg.model,
                 provider=asg.provider,
                 routing_mode=payload.get("routing_mode", "auto"),
-                capability_floor=float(payload.get("capability_floor", 0.50)),
+                capability_floor=(
+                    0.50 if capability_floor is None else float(capability_floor)
+                ),
                 estimated_cost_usd=asg.estimated_cost_usd,
                 explanation=expl,
                 lineage=lineage,
@@ -849,6 +872,12 @@ class TuiProjection:
                 )
             )
 
+        elif ev_type == "run.completed":
+            output = getattr(event.payload, "output", None)
+            if output is not None:
+                answer = present_lead_answer(model_content_to_text(output))
+                self.add_run_answer(str(event.run_id), answer)
+
         elif ev_type.startswith("tool."):
             tool_name = getattr(event.payload, "tool", "tool")
             status_val = getattr(event.payload, "status", "completed")
@@ -900,7 +929,7 @@ class TuiProjection:
                     "blocking_scope": getattr(event.payload, "blocking_scope", None),
                     "session_id": str(event.session_id),
                     "run_id": str(event.run_id),
-                    "plan_id": self.current_plan_id,
+                    "plan_id": self._plan_ids_by_run.get(str(event.run_id)),
                 },
                 kind=InterruptKind.QUESTION,
             )
@@ -970,6 +999,7 @@ class TuiProjection:
                 plan_id_val = getattr(event.payload, "plan_id", None)
                 if plan_id_val:
                     self.current_plan_id = str(plan_id_val)
+                    self._plan_ids_by_run[str(event.run_id)] = str(plan_id_val)
                 rev_val = getattr(event.payload, "revision", None)
                 if rev_val is not None:
                     self.current_plan_revision = int(rev_val)

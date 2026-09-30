@@ -266,6 +266,24 @@ class BudgetLedger:
                     )
                     self._update_warning(connection, reservation["run_id"])
                     return
+                if (
+                    not existing["authoritative"]
+                    and usage.authority is UsageAuthority.CONSERVATIVE_ESTIMATE
+                    and existing["usage_id"] == usage_id
+                    and existing["idempotency_key"] == idempotency_key
+                    and usage.cost_usd >= Decimal(existing["amount_usd"])
+                ):
+                    connection.execute(
+                        "UPDATE usage_records SET amount_usd=?,authoritative=0,authority=? "
+                        "WHERE reservation_id=?",
+                        (
+                            format(usage.cost_usd, "f"),
+                            usage.authority.value,
+                            reservation_id,
+                        ),
+                    )
+                    self._update_warning(connection, reservation["run_id"])
+                    return
                 raise JournalIdempotencyError(
                     "session.idempotency_conflict",
                     "usage replay conflicts",

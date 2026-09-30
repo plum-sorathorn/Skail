@@ -75,6 +75,7 @@ from skail.domain.tasks import (
     TERMINAL_TASK_STATUSES,
     ArtifactRef,
     AttemptStatus,
+    TaskFailureCategory,
     TaskRequest,
     TaskResult,
     TaskSpec,
@@ -581,7 +582,12 @@ class RunController:
 
     def _routing_config_snapshot(self, mode: RoutingMode) -> dict[str, Any]:
         snapshot = deepcopy(self.config_snapshot)
-        snapshot.setdefault("routing", {})["mode"] = mode.value
+        if self.candidates_fn is None or not snapshot:
+            snapshot.setdefault("routing", {})["mode"] = mode.value
+        else:
+            # The candidate revision covers the loaded config. Per-run mode is recorded in
+            # assignment requirements, so overriding it here would make that revision stale.
+            snapshot.setdefault("routing", {}).setdefault("mode", RoutingMode.AUTO.value)
         return snapshot
 
     def subscribe_events(self, listener: Callable[[EventEnvelope], None]) -> None:
@@ -862,6 +868,7 @@ class RunController:
         lead_attempt_id: AttemptId,
         lead_context_packet: ContextPacket | None = None,
         restored_decision: Any | None = None,
+        question_answered: bool = False,
     ) -> Any:
         delegation_approved = delegation_approved or controls.delegation == "auto"
         allow_delegation = controls.delegation in ("auto", "ask")
@@ -965,8 +972,14 @@ class RunController:
                 run_id=str(run_id), decision=decision
             ),
             restored_decision=restored_decision,
-            required_mode=(ExecutionMode.DIRECT if controls.direct_only else None),
+            required_mode=(
+                controls.required_mode
+                or (ExecutionMode.DIRECT if controls.direct_only else None)
+            ),
+            requires_user_answer=controls.requires_user_answer,
+            question_answered=question_answered,
             required_agent_count=controls.required_agent_count,
+            required_agent_profile=controls.required_agent_profile,
         )
 
         def observe_response(response: ModelResponse[Any]) -> None:
@@ -1293,6 +1306,148 @@ class RunController:
                     saw_required_rejection = True
         return saw_required_rejection and not saw_completion
 
+    def _decision_repairs_exhausted_requires_blocked(
+        self,
+        *,
+        run_id: RunId,
+        recorded_child_results: Sequence[TaskResult],
+    ) -> bool:
+        """Block a no-work run after its execution-decision repairs are exhausted."""
+        if recorded_child_results:
+            return False
+        if self.journal.get_execution_decision(str(run_id)) is not None:
+            return False
+
+        rejected_decisions = 0
+        for event in self.journal.events_after(run_id=str(run_id)):
+            if event.type == "tool.completed" and isinstance(event.payload, ToolPayload):
+                if event.payload.tool not in {"ask_user", "execution_decision"}:
+                    return False
+            if event.type != "tool.failed" or not isinstance(event.payload, ToolPayload):
+                continue
+            reason = event.payload.reason
+            if event.payload.tool == "execution_decision" and isinstance(reason, str):
+                if reason.startswith("decision."):
+                    rejected_decisions += 1
+            elif isinstance(reason, str) and reason.startswith(
+                "execution.decision_exhausted"
+            ):
+                return True
+        return rejected_decisions >= 2
+
+    def _required_mode_error(
+        self, run_id: RunId, required_mode: ExecutionMode | None
+    ) -> str | None:
+        if required_mode is None:
+            return None
+        decision = self.journal.get_execution_decision(str(run_id))
+        if decision is not None and decision.mode is required_mode:
+            return None
+        return (
+            "Execution blocked: the request explicitly requires "
+            f"mode={required_mode.value}, but no matching execution decision was admitted; "
+            "no work was performed."
+        )
+
+    def _question_answered(
+        self,
+        run_id: RunId,
+        *,
+        interrupt: Mapping[str, Any] | None = None,
+        answer: str | None = None,
+    ) -> bool:
+        if interrupt is not None and interrupt.get("kind") == "question" and answer:
+            raw_options = interrupt.get("options", ())
+            options = (
+                tuple(item for item in raw_options if isinstance(item, str))
+                if isinstance(raw_options, (list, tuple))
+                else ()
+            )
+            if answer.strip() and (not options or answer in options):
+                return True
+        return any(
+            event.type == "user.answer"
+            and isinstance(event.payload, UserPayload)
+            and event.payload.kind is InterruptKind.QUESTION
+            and bool(event.payload.content and event.payload.content.strip())
+            for event in self.journal.events_after(run_id=str(run_id))
+        )
+
+    def _required_question_error(self, run_id: RunId, required: bool) -> str | None:
+        if not required or self._question_answered(run_id):
+            return None
+        return (
+            "Execution blocked: this request requires a user question to be answered before work, "
+            "but no accepted answer was recorded."
+        )
+
+    @staticmethod
+    def _stale_question_waiting_result(output: Any, output_text: str) -> bool:
+        waiting_prefixes = ("waiting for your answer", "awaiting your selection")
+
+        def is_waiting(value: object) -> bool:
+            if not isinstance(value, str):
+                return False
+            normalized = value.lstrip().casefold()
+            return normalized.startswith(waiting_prefixes) or (
+                normalized.startswith("blocked for user input:")
+                and any(prefix in normalized for prefix in waiting_prefixes)
+            )
+
+        def is_waiting_result(value: object) -> bool:
+            return isinstance(value, dict) and (
+                value.get("status") == "waiting_for_user" or is_waiting(value.get("summary"))
+            )
+
+        payload = output
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                payload = None
+        if is_waiting_result(payload):
+            return True
+        if is_waiting(output_text):
+            return True
+        try:
+            payload = json.loads(output_text)
+        except json.JSONDecodeError:
+            return False
+        return is_waiting_result(payload)
+
+    def _record_execution_gate_blocked(
+        self,
+        *,
+        run_id: RunId,
+        task_id: TaskId,
+        attempt_id: AttemptId,
+        code: str,
+        summary: str,
+    ) -> None:
+        with self.journal.transaction() as tx:
+            tx.update_attempt_status(attempt_id=str(attempt_id), status=AttemptStatus.BLOCKED)
+            tx.update_task_status(task_id=str(task_id), status=TaskStatus.BLOCKED)
+            tx.update_run_status(run_id=str(run_id), status="blocked")
+            tx.update_session_status(session_id=str(self.session_id), status="idle")
+            self._append_event(
+                tx,
+                run_id=run_id,
+                type="diagnostic.error",
+                payload=DiagnosticPayload(
+                    code=code,
+                    summary=summary,
+                    details={"run_id": str(run_id)},
+                ),
+                task_id=task_id,
+                attempt_id=attempt_id,
+            )
+            self._append_event(
+                tx,
+                run_id=run_id,
+                type="run.blocked",
+                payload=LifecyclePayload(status="blocked"),
+            )
+
     async def _dispatch_admitted_plan_agents(
         self,
         *,
@@ -1411,12 +1566,42 @@ class RunController:
                         "type": "skail.plan_checkpoint",
                         "plan_id": persisted.plan_id,
                         "expected_revision": persisted.plan.revision,
+                        "next_revision": persisted.plan.revision + 1,
                         "checkpoint": node.model_dump(mode="json"),
                         "current_plan": persisted.plan.model_dump(mode="json"),
                         "evidence_refs": evidence_refs,
+                        "evidence_only_decision_example": {
+                            "mode": "planned",
+                            "objective": "Acknowledge the completed plan checkpoint.",
+                            "constraints": [],
+                            "reason": (
+                                "All planned implementation work is complete; "
+                                "preserve the existing nodes."
+                            ),
+                            "plan": {
+                                **persisted.plan.model_dump(mode="json"),
+                                "revision": persisted.plan.revision + 1,
+                            },
+                            "revision": {
+                                "expected_revision": persisted.plan.revision,
+                                "added_nodes": [],
+                                "replaced_local_ids": [],
+                                "cancelled_local_ids": [],
+                                "justification": (
+                                    "No plan changes are needed after reviewing accepted results."
+                                ),
+                                "evidence_refs": evidence_refs,
+                            },
+                        },
                         "instruction": (
-                            "Reconsider the plan from this evidence. Call execution_decision "
-                            "with a complete next-revision plan and PlanRevision metadata."
+                            "For an evidence-only acknowledgement, call execution_decision using "
+                            "evidence_only_decision_example as the complete arguments. It contains "
+                            "a validated next-revision plan and matching PlanRevision metadata "
+                            "with the supplied evidence. If checkpoint review requires node "
+                            "changes, submit a complete updated plan and matching "
+                            "revision metadata "
+                            "instead. "
+                            "Do not omit revision metadata."
                         ),
                     }
                     latest_lead_state = cast(
@@ -2197,19 +2382,53 @@ class RunController:
             state=f"run_id={run_id}; assignment=pending",
             references=self._compaction_references(),
         )
-        assigned_lead = self.assignment_service.assign(
-            lead_request,
-            lambda: self._estimate_snapshot(
-                self._get_candidates(
-                    for_lead=True,
-                    target_lead_model=active_controls.model,
-                    routing_mode=active_controls.routing_mode,
+        try:
+            assigned_lead = self.assignment_service.assign(
+                lead_request,
+                lambda: self._estimate_snapshot(
+                    self._get_candidates(
+                        for_lead=True,
+                        target_lead_model=active_controls.model,
+                        routing_mode=active_controls.routing_mode,
+                    ),
+                    packet=lead_preflight_packet,
+                    profile=lead_profile,
+                    minimum_output_tokens=lead_reqs.minimum_output_tokens,
                 ),
-                packet=lead_preflight_packet,
-                profile=lead_profile,
-                minimum_output_tokens=lead_reqs.minimum_output_tokens,
-            ),
-        )
+            )
+        except BaseException as exc:
+            is_cancelled = isinstance(exc, (KeyboardInterrupt, asyncio.CancelledError))
+            assignment_error_type = f"{type(exc).__module__}.{type(exc).__name__}"
+            assignment_error_message = str(self.redactor.scrub(str(exc)))
+            if is_cancelled:
+                _LOGGER.info("run cancelled before lead assignment: %s", run_id)
+            else:
+                _LOGGER.error(
+                    "run failed before lead assignment: %s: %s\n%s",
+                    assignment_error_type,
+                    assignment_error_message,
+                    self.redactor.scrub(traceback.format_exc()),
+                )
+            run_status = "cancelled" if is_cancelled else "failed"
+            attempt_status = AttemptStatus.INTERRUPTED if is_cancelled else AttemptStatus.FAILED
+            task_status = TaskStatus.RETURNED_TO_LEAD if is_cancelled else TaskStatus.FAILED
+            terminal_type = "run.cancelled" if is_cancelled else "run.failed"
+            with self.journal.transaction() as tx:
+                tx.update_attempt_status(attempt_id=str(lead_attempt_id), status=attempt_status)
+                tx.update_task_status(task_id=str(lead_task_id), status=task_status)
+                tx.update_run_status(run_id=str(run_id), status=run_status)
+                tx.update_session_status(session_id=str(self.session_id), status="idle")
+                self._append_event(
+                    tx,
+                    run_id=run_id,
+                    type=terminal_type,
+                    payload=LifecyclePayload(
+                        status=run_status,
+                        error_type=assignment_error_type,
+                        error_message=assignment_error_message,
+                    ),
+                )
+            raise
         if isinstance(assigned_lead, RouteFailure):
             budget_blocked = assigned_lead.binding_constraint == "budget_unaffordable"
             lead_context_packet = self.assembler.assemble(
@@ -2427,7 +2646,14 @@ class RunController:
                             "write_allowed": active_controls.write_allowed,
                             "max_children": active_controls.max_children,
                             "direct_only": active_controls.direct_only,
+                            "required_mode": (
+                                active_controls.required_mode.value
+                                if active_controls.required_mode is not None
+                                else None
+                            ),
+                            "requires_user_answer": active_controls.requires_user_answer,
                             "required_agent_count": active_controls.required_agent_count,
+                            "required_agent_profile": active_controls.required_agent_profile,
                             "routing_mode": active_controls.routing_mode.value,
                             "risk": active_controls.risk.value,
                         },
@@ -2545,7 +2771,14 @@ class RunController:
                                 "write_allowed": active_controls.write_allowed,
                                 "max_children": active_controls.max_children,
                                 "direct_only": active_controls.direct_only,
+                                "required_mode": (
+                                    active_controls.required_mode.value
+                                    if active_controls.required_mode is not None
+                                    else None
+                                ),
+                                "requires_user_answer": active_controls.requires_user_answer,
                                 "required_agent_count": active_controls.required_agent_count,
+                                "required_agent_profile": active_controls.required_agent_profile,
                                 "routing_mode": active_controls.routing_mode.value,
                                 "risk": active_controls.risk.value,
                             },
@@ -2592,39 +2825,46 @@ class RunController:
                 child_count=len(scheduler.gate.completed),
             )
 
-        if self._gated_noop_requires_blocked(
+        required_question_error = self._required_question_error(
+            run_id, active_controls.requires_user_answer
+        )
+        required_mode_error = self._required_mode_error(run_id, active_controls.required_mode)
+        decision_repairs_exhausted = self._decision_repairs_exhausted_requires_blocked(
+            run_id=run_id,
+            recorded_child_results=recorded_child_results,
+        )
+        if (
+            required_question_error is not None
+            or required_mode_error is not None
+            or decision_repairs_exhausted
+            or self._gated_noop_requires_blocked(
             run_id=run_id, recorded_child_results=recorded_child_results
+            )
         ):
-            output_text = (
-                "Execution blocked: every operational tool call was rejected "
+            output_text = required_question_error or required_mode_error or (
+                "Execution blocked: execution-decision repairs were exhausted without an "
+                "admitted decision; no operational work was performed."
+                if decision_repairs_exhausted
+                else "Execution blocked: every operational tool call was rejected "
                 "because no execution decision was recorded "
                 "(execution.decision_required), and no work was performed."
             )
-            with self.journal.transaction() as tx:
-                tx.update_attempt_status(
-                    attempt_id=str(lead_attempt_id), status=AttemptStatus.BLOCKED
-                )
-                tx.update_task_status(task_id=str(lead_task_id), status=TaskStatus.BLOCKED)
-                tx.update_run_status(run_id=str(run_id), status="blocked")
-                tx.update_session_status(session_id=str(self.session_id), status="idle")
-                self._append_event(
-                    tx,
-                    run_id=run_id,
-                    type="diagnostic.error",
-                    payload=DiagnosticPayload(
-                        code="execution.decision_required",
-                        summary=output_text,
-                        details={"run_id": str(run_id)},
-                    ),
-                    task_id=lead_task_id,
-                    attempt_id=lead_attempt_id,
-                )
-                self._append_event(
-                    tx,
-                    run_id=run_id,
-                    type="run.blocked",
-                    payload=LifecyclePayload(status="blocked"),
-                )
+            diagnostic_code = (
+                "execution.question_required"
+                if required_question_error is not None
+                else "execution.intent_not_satisfied"
+                if required_mode_error is not None
+                else "execution.decision_exhausted"
+                if decision_repairs_exhausted
+                else "execution.decision_required"
+            )
+            self._record_execution_gate_blocked(
+                run_id=run_id,
+                task_id=lead_task_id,
+                attempt_id=lead_attempt_id,
+                code=diagnostic_code,
+                summary=output_text,
+            )
             self._finalize_assignment_budget(lead_assignment)
             self._release_lead_allowances()
             await _save_checkpoint("terminal", status="committed")
@@ -2682,7 +2922,16 @@ class RunController:
         recoverable_runs = []
         for run in snapshot.runs:
             if run.status == "blocked":
-                if snapshot.status == "interrupted":
+                task_graph_ids = [
+                    f"{self.session_id}:{run.run_id}:{task.task_id}"
+                    for task in snapshot.tasks
+                    if task.run_id == run.run_id
+                ]
+                graph_ids = [f"{self.session_id}:{run.run_id}:lead", *task_graph_ids]
+                has_pending_question = self.question_store is not None and any(
+                    self.question_store.pending(graph_id) for graph_id in graph_ids
+                )
+                if snapshot.status == "interrupted" or has_pending_question:
                     recoverable_runs.append(run)
                 continue
             if run.status != "running":
@@ -2784,10 +3033,19 @@ class RunController:
                 write_allowed=cast(bool | None, control_data.get("write_allowed")),
                 max_children=int(control_data.get("max_children", 3)),
                 direct_only=bool(control_data.get("direct_only", False)),
+                required_mode=(
+                    ExecutionMode(str(control_data["required_mode"]))
+                    if control_data.get("required_mode") is not None
+                    else None
+                ),
+                requires_user_answer=bool(control_data.get("requires_user_answer", False)),
                 required_agent_count=(
                     int(control_data["required_agent_count"])
                     if control_data.get("required_agent_count") is not None
                     else None
+                ),
+                required_agent_profile=cast(
+                    str | None, control_data.get("required_agent_profile")
                 ),
                 routing_mode=RoutingMode(
                     str(control_data.get("routing_mode", persisted_assignment.routing_mode.value))
@@ -2948,6 +3206,9 @@ class RunController:
                 lead_attempt_id=pending.lead_attempt_id,
                 lead_context_packet=pending.lead_context_packet,
                 restored_decision=restored,
+                question_answered=self._question_answered(
+                    pending.run_id, interrupt=interrupt, answer=answer
+                ),
             )
             try:
                 result_state = (
@@ -3103,6 +3364,76 @@ class RunController:
                 child_count=len(gate.completed),
             )
 
+        required_question_error = self._required_question_error(
+            pending.run_id, pending.controls.requires_user_answer
+        )
+        required_mode_error = self._required_mode_error(
+            pending.run_id, pending.controls.required_mode
+        )
+        if required_question_error is not None or required_mode_error is not None:
+            error_message = required_question_error or required_mode_error
+            assert error_message is not None
+            diagnostic_code = (
+                "execution.question_required"
+                if required_question_error is not None
+                else "execution.intent_not_satisfied"
+            )
+            self._record_execution_gate_blocked(
+                run_id=pending.run_id,
+                task_id=pending.lead_task_id,
+                attempt_id=pending.lead_attempt_id,
+                code=diagnostic_code,
+                summary=error_message,
+            )
+            self._finalize_assignment_budget(pending.lead_assignment)
+            self._release_lead_allowances()
+            self._pending_run = None
+            self._pending_interrupt_payload = None
+            return RunResult(
+                run_id=pending.run_id,
+                lead_assignment=pending.lead_assignment,
+                lead_context_packet=pending.lead_context_packet,
+                output=error_message,
+                messages=messages,
+                child_results=child_results,
+                status="blocked",
+                child_wall_seconds=gate.child_wall_seconds,
+                child_peak_active=gate.peak_active,
+                child_count=len(gate.completed),
+            )
+
+        if self._decision_repairs_exhausted_requires_blocked(
+            run_id=pending.run_id,
+            recorded_child_results=child_results,
+        ):
+            error_message = (
+                "Execution blocked: execution-decision repairs were exhausted without an "
+                "admitted decision; no operational work was performed."
+            )
+            self._record_execution_gate_blocked(
+                run_id=pending.run_id,
+                task_id=pending.lead_task_id,
+                attempt_id=pending.lead_attempt_id,
+                code="execution.decision_exhausted",
+                summary=error_message,
+            )
+            self._finalize_assignment_budget(pending.lead_assignment)
+            self._release_lead_allowances()
+            self._pending_run = None
+            self._pending_interrupt_payload = None
+            return RunResult(
+                run_id=pending.run_id,
+                lead_assignment=pending.lead_assignment,
+                lead_context_packet=pending.lead_context_packet,
+                output=error_message,
+                messages=messages,
+                child_results=child_results,
+                status="blocked",
+                child_wall_seconds=gate.child_wall_seconds,
+                child_peak_active=gate.peak_active,
+                child_count=len(gate.completed),
+            )
+
         output_text = ""
         output_content: Any = None
         for message in reversed(messages):
@@ -3110,6 +3441,36 @@ class RunController:
                 output_content = self.redactor.scrub(message.content)
                 output_text = model_content_to_text(output_content)
                 break
+        if self._question_answered(pending.run_id) and self._stale_question_waiting_result(
+            output_content, output_text
+        ):
+            error_message = (
+                "Execution blocked: the accepted answer was recorded, but the resumed run returned "
+                "a stale waiting summary instead of a final result."
+            )
+            self._record_execution_gate_blocked(
+                run_id=pending.run_id,
+                task_id=pending.lead_task_id,
+                attempt_id=pending.lead_attempt_id,
+                code="execution.answer_not_continued",
+                summary=error_message,
+            )
+            self._finalize_assignment_budget(pending.lead_assignment)
+            self._release_lead_allowances()
+            self._pending_run = None
+            self._pending_interrupt_payload = None
+            return RunResult(
+                run_id=pending.run_id,
+                lead_assignment=pending.lead_assignment,
+                lead_context_packet=pending.lead_context_packet,
+                output=error_message,
+                messages=messages,
+                child_results=child_results,
+                status="blocked",
+                child_wall_seconds=gate.child_wall_seconds,
+                child_peak_active=gate.peak_active,
+                child_count=len(gate.completed),
+            )
         with self.journal.transaction() as tx:
             tx.update_attempt_status(
                 attempt_id=str(pending.lead_attempt_id), status=AttemptStatus.SUCCEEDED
@@ -3310,6 +3671,8 @@ class RunController:
             req_mode = (
                 RoutingMode.MANUAL
                 if (configured_model and not escalated)
+                else RoutingMode.AUTO
+                if escalated and controls.routing_mode is RoutingMode.MANUAL
                 else controls.routing_mode
             )
             reqs = self._requirements.for_assignment(
@@ -3483,7 +3846,56 @@ class RunController:
                 state_dir=self.state_dir,
             )
 
-            formatted_prompt = _format_context_packet(packet)
+            prompt_sections = [_format_context_packet(packet)]
+            profile_guidance = profile.prompt.strip()
+            if profile_guidance:
+                prompt_sections.append(f"Profile guidance:\n{profile_guidance}")
+            criteria = "\n".join(
+                f"- {criterion}" for criterion in spec.request.success_criteria
+            )
+            prompt_sections.append(
+                "Final TaskResult contract: return exactly one JSON object without Markdown. "
+                "Allowed status values are succeeded, failed, blocked, cancelled, budget_blocked, "
+                "and returned_to_lead. Include summary, artifacts as a JSON array of ArtifactRef "
+                "objects with kind, path, and optional digest, changed_paths as a JSON array of "
+                "workspace-relative paths, and verification "
+                "as a JSON array of objects with criterion, passed, evidence, and "
+                "optional evidence_ref. "
+                "Copy each criterion exactly from the success criteria below. Do not invent "
+                "task IDs or runtime-owned failure diagnostics. For succeeded, include one passed "
+                "verification item with concrete evidence for every success criterion below. "
+                "Read-only analyses cite inspected sources as full workspace-relative path:line "
+                "in evidence, with no leading slash or drive letter. For example, cite "
+                "src/package/module.py:4, not /src/package/module.py:4 or module.py:4. "
+                "Do not shorten a source reference to its basename. Tool displays may use a "
+                "virtual leading slash; omit that slash in result evidence. Use actual inspected "
+                "line numbers within the file. For "
+                "write-capable work, evidence_ref must use the exact keys "
+                "\"kind\", \"path\", and \"digest\". "
+                "Example: {\"kind\": \"file\", "
+                "\"path\": \"<workspace-relative scoped path>\", "
+                "\"digest\": \"<SHA-256 returned by file_digest>\"}. "
+                "Use the field name digest, not sha256. "
+                "Use this verification JSON shape, replacing each placeholder: "
+                "{\"verification\":[{\"criterion\":\"<exact success criterion>\","
+                "\"passed\":true,\"evidence\":\"<concise non-empty evidence>\","
+                "\"evidence_ref\":{\"kind\":\"file\","
+                "\"path\":\"<workspace-relative scoped path>\","
+                "\"digest\":\"<64-character SHA-256 from file_digest>\"}}]}. "
+                "Artifacts must be a JSON array with one ArtifactRef per changed file. Example: "
+                "{\"artifacts\":[{\"kind\":\"file\",\"path\":\"<scoped source path>\","
+                "\"digest\":\"<SHA-256 digest>\"},{\"kind\":\"file\","
+                "\"path\":\"<scoped test path>\",\"digest\":\"<SHA-256 digest>\"}]}. "
+                "Copy kind, path, and digest from file_digest after the final write. The SHA-256 "
+                "digest returned by file_digest is placed in the digest field. A file digest "
+                "proves "
+                "file contents only; it does not prove that a test or build ran. Do not claim a "
+                "check passed unless it actually ran through an available, permitted check path. "
+                "If a required check is unavailable or fails, return blocked or failed and explain "
+                "the next step in summary or follow_up.\n"
+                f"Success criteria:\n{criteria}"
+            )
+            formatted_prompt = "\n\n".join(prompt_sections)
 
             invoke_state: dict[str, Any] = {
                 "messages": [HumanMessage(content=formatted_prompt)],
@@ -3584,7 +3996,12 @@ class RunController:
                     tx,
                     run_id=run_id,
                     type=f"task.{result.status}",
-                    payload=TaskPayload(status=result.status, profile=profile.name),
+                    payload=TaskPayload(
+                        status=result.status,
+                        profile=profile.name,
+                        failure_category=result.failure_category,
+                        validation_path=result.validation_path,
+                    ),
                     task_id=result.task_id,
                     attempt_id=AttemptId(str(binding.attempt_id)),
                 )
@@ -3604,6 +4021,13 @@ class RunController:
             spec: TaskSpec, status: str, attempt_id: str | None, summary: str | None
         ) -> None:
             event_persisted = False
+            failure_category: TaskFailureCategory | None = (
+                "budget_blocked"
+                if status == "budget_blocked"
+                else "routing_ineligible"
+                if status == "blocked" and attempt_id is None
+                else None
+            )
             plan_node = self._plan_nodes_by_task.get(str(spec.task_id))
             if plan_node is not None:
                 plan_id, node_id = plan_node
@@ -3663,6 +4087,7 @@ class RunController:
                             else "task blocked before execution"
                         )
                     ),
+                    failure_category=failure_category,
                 )
                 with self.journal.transaction() as tx:
                     tx.record_task_result(
@@ -3683,7 +4108,12 @@ class RunController:
                         tx,
                         run_id=run_id,
                         type=f"task.{status}",
-                        payload=TaskPayload(status=status, profile=profile.name, reason=summary),
+                        payload=TaskPayload(
+                            status=status,
+                            profile=profile.name,
+                            reason=summary,
+                            failure_category=failure_category,
+                        ),
                         task_id=spec.task_id,
                         attempt_id=AttemptId(persisted_attempt_id),
                     )
@@ -3697,7 +4127,12 @@ class RunController:
                 self._emit_event(
                     run_id=run_id,
                     type=f"task.{status}",
-                    payload=TaskPayload(status=status, profile=profile.name, reason=summary),
+                    payload=TaskPayload(
+                        status=status,
+                        profile=profile.name,
+                        reason=summary,
+                        failure_category=failure_category,
+                    ),
                     task_id=spec.task_id,
                     attempt_id=AttemptId(attempt_id) if attempt_id else None,
                 )
@@ -3747,6 +4182,8 @@ def _route_failure_for_task(result: BatchAssignmentResult, task_id: str) -> Rout
 
 def _task_request_for_plan_node(node: PlanNode) -> TaskRequest:
     features = dict(node.task_features)
+    if node.effect_scope is EffectScope.WORKSPACE_WRITE and node.resource_scopes:
+        features["write_scope"] = node.resource_scopes
     allowed = {
         "profile",
         "write_scope",

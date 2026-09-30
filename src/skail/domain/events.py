@@ -169,6 +169,18 @@ class TaskPayload(PayloadBase):
     status: str
     profile: str | None = None
     reason: str | None = None
+    failure_category: Literal[
+        "provider_error",
+        "malformed_result",
+        "result_validation",
+        "routing_ineligible",
+        "budget_blocked",
+        "task_failure",
+    ] | None = None
+    validation_path: str | None = Field(
+        default=None,
+        pattern=r"^\$(?:\.[A-Za-z_][A-Za-z0-9_]*|\.[0-9]+)*$",
+    )
 
 
 class PlanPayload(PayloadBase):

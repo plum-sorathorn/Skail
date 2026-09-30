@@ -152,3 +152,25 @@ def test_export_session_to_file(tmp_path: Path) -> None:
     content = json.loads(out_file.read_text(encoding="utf-8"))
     assert content["session_id"] == session_id
     assert "my-secret-pw" not in out_file.read_text(encoding="utf-8")
+
+
+def test_export_includes_only_safe_attempt_failure_codes(tmp_path: Path) -> None:
+    journal = Journal(tmp_path / "journal.sqlite")
+    session_id = str(new_session_id())
+    _seed_export_journal(journal, session_id, "export-secret")
+    journal.record_task_result(
+        task_id="task-exp-1",
+        payload={
+            "summary": "raw provider response must not be exported here",
+            "attempt_failures": [
+                {"attempt_id": "att-exp-1", "reason_code": "result_validation"},
+                {"attempt_id": "att-exp-1", "reason_code": "raw provider text"},
+            ],
+        },
+    )
+
+    exported = SessionExporter(journal=journal).export(session_id)
+    assert exported["attempts"][0]["failure_reason_code"] == "result_validation"
+    export_json = json.dumps(exported)
+    assert "raw provider response" not in export_json
+    assert "raw provider text" not in export_json

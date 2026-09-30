@@ -27,6 +27,10 @@ DeepAgents provides a harness framework on LangGraph with a capable agent loop, 
 5. Synchronous foreground subagents are the stable initial path. Preview asynchronous subagents will be optional and isolated behind a Skail `TaskExecutor` adapter.
 6. Concurrency will be configurable from one to three child agents. Delegation depth defaults to one. Shared-workspace writers are serialized until worktree isolation is implemented.
 7. A failed task gets at most one automatic stronger-model attempt. A second failure returns structured evidence to the lead.
+   Clarification (2026-09-29): stronger means strictly higher known capability fit than the
+   persisted failed assignment, selected only from the user's enabled models (including explicit
+   run pins). Raising a task floor alone does not prove improvement. Missing capability evidence
+   blocks the retry; provider discovery never grants model-selection authority.
 8. OMA, the SLM, proxy/plugin planes, hook shims, and old compatibility commands will not be part of the Skail runtime.
 9. The archived predecessor source will move to `legacy/skail/` on a new branch as an inert
    reference. Skail will not provide configuration or runtime migration helpers for it.

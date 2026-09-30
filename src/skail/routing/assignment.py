@@ -129,6 +129,7 @@ class AssignmentService:
             existing = self._existing_assignment(transaction, decision_key)
             if existing is not None:
                 return existing
+            request = self._with_escalation_baseline(transaction, request)
             fallback_source = (
                 None
                 if request.fallback_of_assignment_id is None
@@ -220,6 +221,9 @@ class AssignmentService:
                 raise ValueError("one batch cannot span runs")
             for request in requests:
                 self._validate_ownership(transaction, request)
+            requests = tuple(
+                self._with_escalation_baseline(transaction, request) for request in requests
+            )
             batch_key = "assignment-batch:" + ":".join(
                 str(request.attempt_id) for request in requests
             )
@@ -378,6 +382,9 @@ class AssignmentService:
             model=candidate.profile.model,
             routing_mode=request.requirements.mode,
             capability_floor=request.requirements.capability_floor,
+            capability_fit=(
+                selection.capability_fit if candidate.profile.auto_eligible else None
+            ),
             estimated_attempt_cost_usd=reservation_amount,
             reservation_id=reservation_id,
             explanation=explanation,
@@ -482,6 +489,25 @@ class AssignmentService:
             if self.event_observer is not None:
                 transaction.after_commit(lambda event=event: self.event_observer(event))
         return assignment
+
+    @staticmethod
+    def _with_escalation_baseline(
+        transaction: Any, request: AssignmentRequest
+    ) -> AssignmentRequest:
+        if request.attempt_number != 2:
+            return request
+        prior = transaction.connection.execute(
+            "SELECT a.payload_json FROM assignments a "
+            "JOIN attempts p ON p.attempt_id=a.attempt_id "
+            "WHERE p.task_id=? AND p.attempt_number=1 ORDER BY a.rowid DESC LIMIT 1",
+            (str(request.task_id),),
+        ).fetchone()
+        failed_fit = None if prior is None else json.loads(prior[0]).get("capability_fit")
+        return request.model_copy(update={
+            "requirements": request.requirements.model_copy(update={
+                "escalated": True, "failed_capability_fit": failed_fit,
+            }),
+        })
 
     @staticmethod
     def _decision_key(request: AssignmentRequest) -> str:
@@ -841,9 +867,13 @@ class AssignmentUsageSettler:
                 (assignment_id,),
             ).fetchone()
             calls = connection.execute(
-                "SELECT input_tokens,output_tokens,cached_input_tokens,amount_usd,"
+                "SELECT call_id,input_tokens,output_tokens,cached_input_tokens,amount_usd,"
                 "authoritative,cost_known "
                 "FROM assignment_call_usage WHERE assignment_id=? ORDER BY call_id",
+                (assignment_id,),
+            ).fetchall()
+            provider_calls = connection.execute(
+                "SELECT call_id,status FROM provider_calls WHERE assignment_id=?",
                 (assignment_id,),
             ).fetchall()
         if assignment is None:
@@ -851,6 +881,12 @@ class AssignmentUsageSettler:
         payload = json.loads(assignment["payload_json"])
         estimated_cost = Decimal(payload["estimated_attempt_cost_usd"])
         pricing = payload.get("pricing_evidence", {})
+        recorded_call_ids = {row["call_id"] for row in calls}
+        has_unaccounted_calls = any(
+            row["status"] in {"started", "completed", "ambiguous"}
+            and row["call_id"] not in recorded_call_ids
+            for row in provider_calls
+        )
         resolved_costs: list[Decimal | None] = []
         for row in calls:
             if row["cost_known"]:
@@ -864,14 +900,25 @@ class AssignmentUsageSettler:
                     pricing=pricing,
                 )
             )
-        all_measured = bool(calls) and all(cost is not None for cost in resolved_costs)
-        all_authoritative = bool(calls) and all(
+        all_measured = (
+            bool(calls)
+            and not has_unaccounted_calls
+            and all(cost is not None for cost in resolved_costs)
+        )
+        all_authoritative = (
+            bool(calls)
+            and not has_unaccounted_calls
+            and all(
             row["authoritative"] and row["cost_known"] for row in calls
+            )
+        )
+        known_cost = sum(
+            (value for value in resolved_costs if value is not None), Decimal("0")
         )
         cost = (
-            sum((value for value in resolved_costs if value is not None), Decimal("0"))
+            known_cost
             if all_measured
-            else estimated_cost
+            else max(estimated_cost, known_cost)
         )
         usage = NormalizedUsage(
             input_tokens=sum(row["input_tokens"] for row in calls),

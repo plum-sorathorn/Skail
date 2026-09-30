@@ -24,6 +24,12 @@ Let the user start productive work with `skail` and a prompt, without starting a
 5. Model, tool, task, approval, and budget events stream through one event channel.
 6. The final answer and run outcome are checkpointed before control returns to the prompt.
 
+An explicit `--lead-model provider:model` pin that passes lead-model routing qualification is
+already a user model selection. In interactive startup, after project trust is established, it skips
+only the model picker, even without an onboarding receipt. This does not complete or persist
+onboarding, grant project trust, or bypass runtime selection failures, approvals, permissions, or
+budget gates. Default/automatic selection continues to require onboarding model selection.
+
 ### Invariants
 
 - No local server or background daemon is required.
@@ -35,6 +41,7 @@ Let the user start productive work with `skail` and a prompt, without starting a
 
 - Non-interactive execution that needs user approval exits with a stable code and an approval-required event unless an explicit non-interactive policy was supplied.
 - An empty prompt in print mode is a usage error.
+- A no-prompt `--continue` or `--resume` invocation requires an interactive TTY; headless execution does not activate the session or create an empty run.
 - A second Skail process may read other sessions but must not concurrently mutate a session owned by a live process.
 
 ## 2. Capable lead agent
@@ -55,17 +62,31 @@ At a ready discovery checkpoint, Skail wakes the same lead assignment with the c
 bounded prerequisite evidence. The lead uses `execution_decision` again with the complete revised
 plan and typed revision metadata; unavailable evidence or a failed revision compare-and-set cannot
 release downstream work.
+An explicit “use planned execution” instruction requires a matching `planned` decision before
+successful completion; an omitted or conflicting decision ends blocked with
+`execution.intent_not_satisfied`. The requirement survives question interrupts and resume.
+An explicit “ask me to choose” instruction before work requires an `ask_user` interrupt and an
+accepted answer before execution decisions or operational tool calls are allowed. A final prose
+question does not count as an interrupt; an omitted question ends blocked with
+`execution.question_required`. The requirement survives resume, and a conditional edit limit such
+as “do not edit until I answer” permits the requested writes after the answer. If a resumed lead
+returns status `waiting_for_user` or a waiting summary after the answer was accepted, the run ends
+blocked with `execution.answer_not_continued` instead of reporting successful completion.
 
 Its prompt defines delegation heuristics, but the runtime enforces user directives:
 
 - `delegation=off`: the `task` tool is hidden or rejects calls before scheduling;
 - `delegation=ask`: proposed tasks require user confirmation before launch;
 - `delegation=auto`: valid tasks launch within concurrency, safety, and budget gates;
-- explicit “do this yourself” and “do not delegate” apply to that instruction even when the configured default is `auto`; a conflicting execution decision is rejected before its plan is admitted;
+- explicit “use planned execution” requires an admitted `planned` decision;
+- explicit “ask me to choose” requires a blocking question interrupt and an accepted answer before
+  the run can proceed;
+- explicit “do this yourself” and unscoped “do not delegate” apply to that instruction even when the configured default is `auto`; a conflicting execution decision is rejected before its plan is admitted;
+- child-scoped “do not delegate further” limits nested delegation without forcing a planned run into direct mode;
 - explicit “do not edit” removes write-capable lead tools and rejects write-capable plan nodes for that run;
-- explicit “use N agents” requires exactly N agent nodes with pairwise-disjoint resource scopes, within the configured and hard three-child limits; a count or scope conflict is reported before plan admission.
+- explicit “use N agents” requires exactly N agent nodes with pairwise-disjoint resource scopes, within the configured and hard three-child limits; when the user names an agent profile, every node must use that profile; count, profile, or scope conflicts are reported before plan admission.
 
-These constraints belong to one run and do not carry into the next prompt. Stable rejection codes are `execution.intent_conflict`, `execution.agent_count_conflict`, and `execution.agent_scope_conflict`.
+These constraints belong to one run and do not carry into the next prompt. Stable rejection codes are `execution.intent_conflict`, `execution.intent_not_satisfied`, `execution.question_required`, `execution.agent_count_conflict`, `execution.agent_profile_conflict`, and `execution.agent_scope_conflict`.
 
 ### Direct-versus-delegate heuristic
 
@@ -125,10 +146,34 @@ Plans use local names and declare dependencies, acceptance criteria, output cont
 resource scopes, and decision checkpoints. Admission allocates persistent IDs atomically and rejects
 cycles, missing references, duplicate objectives, invalid scopes, and unauthorized effects. A
 revision identifies its expected predecessor; completed nodes retain identity and retry history.
+Plan nodes use the `read`, `workspace_write`, `external_write`, or `unknown` effect scope. A
+`workspace_write` node also names non-empty resource scopes; those path limits do not grant extra
+tools, permissions, approvals, or command execution.
 
 ### Result logic
 
 The lead receives a compact result containing status, summary, artifacts, changed paths, verification, both attempt summaries when applicable, and a recommended follow-up. Full child transcripts stay outside the lead context unless requested.
+
+Each delegated child receives its selected profile prompt and a shared final-result contract. It must
+return one JSON TaskResult with status, summary, and verification for every success criterion. Read-only
+analysis cites inspected files with path and line references; write-capable results include validated
+file evidence references. Plain-text reports are rejected as invalid child results and use the bounded
+task retry policy.
+
+Failed results include a runtime-owned `failure_category` and, when validation identifies a field,
+`validation_path`. These diagnostics distinguish provider errors, malformed result JSON, result
+validation failures, route ineligibility, budget blocks, and other task failures. Child-authored
+diagnostic fields are ignored. Task events carry the safe category and schema path without copying
+raw child output or provider exception text.
+Attempt two's failure handoff includes these safe fields when present.
+The terminal task result also retains each failed child attempt's runtime-owned reason code keyed
+by `attempt_id`; retrying cannot overwrite the earlier code. Session exports place the code on its
+matching attempt row. Only the bounded failure category is exported through this field; raw child
+or provider output is excluded.
+
+Invalid execution-decision plans return a bounded repair diagnostic: missing and unexpected schema
+paths, plus up to three invalid paths with stable type/value categories. Paths contain only known
+schema field names or array indexes; submitted values and Pydantic error messages are never echoed.
 
 ## 5. Built-in agent profiles
 
@@ -141,11 +186,13 @@ Every profile declares:
 - allowed built-in and extension tools;
 - read/write/execute posture;
 - role floor and hard minimum capability;
-- default success-result schema;
+- structured-output requirement used during route qualification;
 - whether child delegation is allowed;
 - optional expected-call-count used for cost estimation.
 
 Profiles never hardcode a commercial model. Routing assigns the model per task.
+The response-schema marker qualifies model capabilities; delegated children still return the shared
+TaskResult wrapper validated by Skail.
 
 ### Lead
 
@@ -182,14 +229,19 @@ Rules:
 
 ### Implementer
 
-Function: make a bounded code change and run focused verification.
+Function: make a bounded code change and provide evidence that the changed files match the result.
 
 Rules:
 
-- gets filesystem edit and execution tools;
+- gets filesystem edit tools; execution is available only when the task's workspace and permission
+  policy allow it;
 - requires a shared-workspace write lease or worktree;
 - must preserve user changes and report touched paths;
-- success requires the requested change plus relevant verification evidence.
+- can call `file_digest` for a runtime-computed SHA-256 of a readable, non-sensitive workspace file;
+  this proves the file bytes, not that a test or build ran;
+- success requires the requested change plus relevant evidence. Required tests must run through an
+  available, permitted check path or be reported as unverified/blocked; a model-authored claim is
+  not a test receipt.
 
 ### Tester
 
@@ -285,6 +337,9 @@ The route decision records:
 - user overrides;
 - reservation ID.
 
+When no model qualifies, the binding reason prioritizes configured, healthy, enabled candidates
+that were not excluded by a prior attempt; catalog-wide disabled counts remain visible separately.
+
 `/route` renders this record; it does not recompute a possibly different answer.
 
 ### Model stickiness
@@ -309,7 +364,9 @@ Prefer capability fit and tool reliability within a hard budget. Quality mode do
 
 ### `manual`
 
-Validate and use the exact model. If it cannot satisfy a required capability, return a conflict. Do not silently substitute.
+Validate and use the exact model. If it cannot satisfy a required capability or budget, return a
+conflict that names the pinned candidate's blocking reason. Exclusions for unrelated models must not
+mask that reason. Do not silently substitute.
 
 ### Override scopes
 
@@ -489,6 +546,12 @@ Skail:
 
 The stronger model continues from the existing workspace state. Skail does not automatically erase partial work.
 
+The retry stays within the selected models and must strictly exceed the failed assignment's
+recorded capability fit, as well as clear the raised floor. Catalog discovery does not authorize
+unselected models. Explicit run pins also select their concrete models. Missing prior capability
+evidence blocks the retry; a different name alone does not establish a stronger model. A manual
+first attempt can escalate through this automatic policy, with all budget and compatibility gates.
+
 ### Second failed attempt
 
 Skail marks `returned_to_lead` and supplies both summaries. The lead may repair directly, materially re-scope, or ask the user. The same task cannot be automatically submitted for attempt three.
@@ -621,6 +684,9 @@ content in the first stable release.
 ### `ask_user`
 
 Any agent may create a structured question interrupt. It includes prompt, optional choices, reason, blocking scope, and task ID. The answer is recorded and delivered only to the waiting graph state.
+When choices are supplied, the prompt asks the user to select exactly one listed choice. Open-ended
+questions omit choices; the tool description does not ask for free-form text while fixed choices are
+active.
 
 A question interrupt carries `kind=question` and its stable question ID through the `user.question`
 event and TUI projection. Its card is labeled `QUESTION · Your answer is needed` and offers an
@@ -672,11 +738,18 @@ not inherit a cancelled run's plan or model transcript. Session history remains 
   Orphaned in-flight provider calls become interrupted; Skail does not replay them
 without reconciliation evidence.
 
+A no-prompt `--continue` or `--resume` invocation opens the TUI only with an interactive terminal.
+Without a terminal, the CLI returns its non-TTY usage error before activating the session; it never
+submits an empty instruction.
+
 ### Planned dispatch and plan-node recovery
 
 Admitted AGENT plan nodes launch exactly once. Admission binds the node to a
 fresh queued task and attempt and moves it READY→LAUNCHING; the dispatch pump
 later opens the persisted execution row (`plan_node_executions`) and runs it.
+The lead returns from its planning response so Skail can dispatch those nodes; it must not recreate
+plan-owned tasks through `task()`. Separate task requests still pass the ordinary task-admission
+checks.
 
 - Launch/reconcile: LAUNCHING/RUNNING/settled/retired/ambiguous provider work
   is never replayed. Ambiguous launches are reconciled to BLOCKED first, and
@@ -843,7 +916,8 @@ paired live evaluation with preregistered completion, cost, latency, and safety 
 6. Unknown side effects are treated as writes for scheduling and as approval-worthy for safety.
 7. A child cannot enlarge its own tools, permissions, scope, depth, or budget.
 8. Todo state is not executable task state.
-9. Estimated cost and usage are labelled; authoritative provider usage is distinguishable.
+9. Measured token counts and in-house priced cost are distinguishable from conservative
+   estimates and unresolved usage; provider-reported dollars are not spending authority.
 10. Terminal state and cost survive resume without duplicate execution.
 11. User changes and partial child work are never discarded silently.
 12. Legacy Skail code is reference-only and cannot be imported by Skail.

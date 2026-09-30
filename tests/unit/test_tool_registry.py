@@ -54,7 +54,7 @@ def test_default_surface_has_stable_complete_metadata() -> None:
     registry = default_registry()
     assert registry.names == frozenset(
         {
-            "ls", "glob", "grep", "read_file", "write_file", "edit_file", "execute",
+            "ls", "glob", "grep", "read_file", "file_digest", "write_file", "edit_file", "execute",
             "write_todos", "task", "skills", "memory", "ask_user",
         }
     )

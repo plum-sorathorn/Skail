@@ -79,6 +79,42 @@ def test_child_output_must_be_structured_and_evidence_bearing() -> None:
     assert invalid.follow_up == "child must return a structured TaskResult"
 
 
+def test_child_result_failures_include_safe_category_and_validation_path() -> None:
+    task_id = new_task_id()
+    malformed = parse_child_result(
+        "not-json: do-not-export-this-value",
+        task_id=task_id,
+        required_criteria=("tests",),
+    )
+    invalid_field = parse_child_result(
+        '{"status":"succeeded","summary":"done","verification":'
+        '[{"criterion":"tests","passed":"not-a-bool","evidence":"ok"}]}',
+        task_id=task_id,
+        required_criteria=("tests",),
+    )
+    explicit_failure = parse_child_result(
+        '{"status":"failed","summary":"The source could not be inspected.",'
+        '"failure_category":"provider_error","validation_path":"$.task_id"}',
+        task_id=task_id,
+        required_criteria=("tests",),
+    )
+    blocked_for_approval = parse_child_result(
+        '{"status":"blocked","summary":"user approval is required"}',
+        task_id=task_id,
+        required_criteria=("tests",),
+    )
+
+    assert malformed.failure_category == "malformed_result"
+    assert malformed.validation_path == "$"
+    assert "do-not-export-this-value" not in malformed.summary
+    assert invalid_field.failure_category == "result_validation"
+    assert invalid_field.validation_path == "$.verification.0.passed"
+    assert explicit_failure.failure_category == "task_failure"
+    assert explicit_failure.validation_path is None
+    assert blocked_for_approval.status == "blocked"
+    assert blocked_for_approval.failure_category is None
+
+
 def test_supplied_wrong_task_identity_is_rejected_without_overwrite() -> None:
     expected = new_task_id()
     supplied = new_task_id()

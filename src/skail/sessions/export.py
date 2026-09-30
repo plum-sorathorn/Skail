@@ -37,6 +37,36 @@ class SessionExporter:
             for t in snapshot.tasks
         ]
 
+        failure_codes: dict[str, str] = {}
+        with self.journal._connect() as connection:
+            result_rows = connection.execute(
+                "SELECT tr.payload_json FROM task_results tr "
+                "JOIN tasks t ON t.task_id=tr.task_id "
+                "JOIN runs r ON r.run_id=t.run_id WHERE r.session_id=?",
+                (session_id,),
+            ).fetchall()
+        allowed_failure_codes = {
+            "provider_error",
+            "malformed_result",
+            "result_validation",
+            "routing_ineligible",
+            "budget_blocked",
+            "task_failure",
+        }
+        for row in result_rows:
+            payload = json.loads(row["payload_json"])
+            for failure in payload.get("attempt_failures", ()):
+                if not isinstance(failure, dict):
+                    continue
+                attempt_id = failure.get("attempt_id")
+                reason_code = failure.get("reason_code")
+                if (
+                    isinstance(attempt_id, str)
+                    and isinstance(reason_code, str)
+                    and reason_code in allowed_failure_codes
+                ):
+                    failure_codes[attempt_id] = reason_code
+
         attempts_list = [
             {
                 "attempt_id": a.attempt_id,
@@ -44,6 +74,7 @@ class SessionExporter:
                 "number": a.number,
                 "status": a.status.value,
                 "idempotency_key": a.idempotency_key,
+                "failure_reason_code": failure_codes.get(a.attempt_id),
             }
             for a in snapshot.attempts
         ]

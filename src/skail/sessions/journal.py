@@ -1484,18 +1484,54 @@ class Journal:
                 }.get(result.get("status"), PlanNodeState.FAILED)
             else:
                 target = PlanNodeState.BLOCKED
-            if state is PlanNodeState.LAUNCHING and target is not PlanNodeState.BLOCKED:
-                self.transition_plan_node_state(
-                    plan_id=row["plan_id"], node_id=row["node_id"],
-                    expected=PlanNodeState.LAUNCHING, target=PlanNodeState.RUNNING,
-                )
-                state = PlanNodeState.RUNNING
-            reconciled.extend(
-                self.transition_plan_node_state(
-                    plan_id=row["plan_id"], node_id=row["node_id"],
-                    expected=state, target=target,
-                )
+            transition_state = (
+                PlanNodeState.RUNNING
+                if state is PlanNodeState.LAUNCHING and target is not PlanNodeState.BLOCKED
+                else state
             )
+            with self.transaction() as transaction:
+                connection = transaction.connection
+                if transition_state is PlanNodeState.RUNNING and state is PlanNodeState.LAUNCHING:
+                    self.transition_plan_node_state(
+                        plan_id=row["plan_id"],
+                        node_id=row["node_id"],
+                        expected=PlanNodeState.LAUNCHING,
+                        target=PlanNodeState.RUNNING,
+                    )
+                changed = self.transition_plan_node_state(
+                    plan_id=row["plan_id"],
+                    node_id=row["node_id"],
+                    expected=transition_state,
+                    target=target,
+                )
+                if (
+                    target is PlanNodeState.BLOCKED
+                    and (row["execution_status"] != "settled" or row["result_json"] is None)
+                ):
+                    binding = connection.execute(
+                        "SELECT task_id,attempt_id FROM plan_node_task_bindings WHERE node_id=?",
+                        (row["node_id"],),
+                    ).fetchone()
+                    if binding is not None:
+                        task_cursor = connection.execute(
+                            "UPDATE tasks SET status=?,updated_at=? WHERE task_id=?",
+                            (TaskStatus.BLOCKED.value, _now(), binding["task_id"]),
+                        )
+                        attempt_status = (
+                            AttemptStatus.INTERRUPTED
+                            if row["execution_status"] == "running"
+                            else AttemptStatus.BLOCKED
+                        )
+                        attempt_cursor = connection.execute(
+                            "UPDATE attempts SET status=?,updated_at=? WHERE attempt_id=?",
+                            (attempt_status.value, _now(), binding["attempt_id"]),
+                        )
+                        if task_cursor.rowcount != 1 or attempt_cursor.rowcount != 1:
+                            raise FrameworkContractError(
+                                "plan.node_task_binding_missing_record",
+                                "blocked plan node task binding has no task or attempt record",
+                            )
+            reconciled.extend(changed)
         return tuple(reconciled)
 
     @staticmethod
@@ -1803,10 +1839,37 @@ class Journal:
                         code, "active plan node payload cannot be rewritten"
                     )
             if not added_ids and not replaced_ids and not cancelled_ids:
-                raise FrameworkContractError(
-                    "plan.revision_no_progress",
-                    "plan revision must change executable work",
-                )
+                running_checkpoints = [
+                    local_id
+                    for local_id, node in previous_nodes.items()
+                    if node.kind is PlanNodeKind.CHECKPOINT
+                    and PlanNodeState(existing[local_id]["status"]) is PlanNodeState.RUNNING
+                ]
+                if len(running_checkpoints) != 1:
+                    raise FrameworkContractError(
+                        "plan.revision_no_progress",
+                        "a plan revision without new work may only acknowledge "
+                        "one running checkpoint",
+                    )
+                checkpoint = previous_nodes[running_checkpoints[0]]
+                required_evidence = {
+                    f"plan-node:{dependency}:succeeded"
+                    for dependency in checkpoint.depends_on
+                }
+                if (
+                    not checkpoint.depends_on
+                    or not required_evidence.issubset(revision.evidence_refs)
+                    or any(
+                        PlanNodeState(existing[dependency]["status"])
+                        is not PlanNodeState.SUCCEEDED
+                        for dependency in checkpoint.depends_on
+                    )
+                ):
+                    raise FrameworkContractError(
+                        "plan.checkpoint_evidence_incomplete",
+                        "checkpoint acknowledgement requires succeeded prerequisites "
+                        "and their evidence references",
+                    )
             for local_id in replaced_ids | cancelled_ids:
                 if PlanNodeState(existing[local_id]["status"]) in terminal:
                     raise FrameworkContractError(

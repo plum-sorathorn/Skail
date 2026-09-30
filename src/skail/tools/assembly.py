@@ -410,8 +410,9 @@ def _is_decision_gate_rejection(name: str, result: object) -> bool:
     """True only for ToolMessages produced by the execution-decision gate.
 
     The gate emits `execution.decision_required` (operational tool before a
-    decision), `execution.decision_exhausted` (terminal lock: repairs spent
-    with no decision), or `decision.*` codes (rejected `execution_decision` calls) via
+    decision), `execution.question_required` (work before a required answer),
+    `execution.decision_exhausted` (terminal lock: repairs spent with no decision),
+    or `decision.*` codes (rejected `execution_decision` calls) via
     `_decision_required`/`_decision_rejected` with status="error". Requiring
     both the tool-call context (a named tool passing through this middleware)
     and the strict stable-code prefix avoids misfiring on arbitrary provider
@@ -429,6 +430,7 @@ def _is_decision_gate_rejection(name: str, result: object) -> bool:
     text = content.strip()
     return (
         text.startswith("execution.decision_required")
+        or text.startswith("execution.question_required")
         or text.startswith("execution.decision_exhausted")
         or text.startswith("execution.intent_conflict")
         or text.startswith("execution.agent_count_conflict")
@@ -438,14 +440,16 @@ def _is_decision_gate_rejection(name: str, result: object) -> bool:
 
 
 def _is_decision_requirement_rejection(result: object) -> bool:
-    """True when an operational tool simply arrived before a decision."""
+    """True when a tool arrived before a decision or required user answer."""
 
     content = getattr(result, "content", None)
     if isinstance(content, list):
         content = " ".join(str(part) for part in content)
     if not isinstance(content, str):
         return False
-    return content.strip().startswith("execution.decision_required")
+    return content.strip().startswith(
+        ("execution.decision_required", "execution.question_required")
+    )
 
 
 def _tool_result_status(result: object) -> str | None:
@@ -714,6 +718,7 @@ def default_registry(*, version: str = "0.7.13") -> ToolRegistry:
         ("glob", SideEffect.READ_ONLY, read_profiles, "allow"),
         ("grep", SideEffect.READ_ONLY, read_profiles, "allow"),
         ("read_file", SideEffect.READ_ONLY, read_profiles, "allow"),
+        ("file_digest", SideEffect.READ_ONLY, read_profiles, "allow"),
         ("write_file", SideEffect.WORKSPACE_WRITE, write_profiles, "policy"),
         ("edit_file", SideEffect.WORKSPACE_WRITE, write_profiles, "policy"),
         ("execute", SideEffect.UNKNOWN, execute_profiles, "policy"),
@@ -784,6 +789,15 @@ def build_default_agent(
         (state_dir or workspace_state_dir(identify_workspace(workspace))) / "artifacts",
         redaction,
     )
+    backend = PolicyFilesystemBackend(
+        workspace,
+        redactor=redaction,
+        task_id=task_id,
+        lease_manager=lease_manager,
+        allowed_write_paths=allowed_write_paths,
+        forbidden_host_paths=forbidden_host_paths,
+        state_dir=state_dir,
+    )
 
     @tool("execute")
     def execute(command: str, arguments: tuple[str, ...] = ()) -> dict[str, Any]:
@@ -850,7 +864,11 @@ def build_default_agent(
         blocking_scope: str = "task",
         options: tuple[str, ...] = (),
     ) -> str:
-        """Pause the current graph for a durable structured user answer."""
+        """Pause the graph for a durable answer.
+
+        With non-empty options, ask the user to choose exactly one listed option. Omit options
+        for open-ended answers; do not request free-form content when choices are fixed.
+        """
 
         if question_store is None:
             return "ask_user is unavailable without a durable question store"
@@ -883,6 +901,20 @@ def build_default_agent(
             runtime_event("user.answer", question.question_id, answered.answer or "")
         return answered.answer or ""
 
+    @tool("file_digest")
+    def file_digest(file_path: str) -> dict[str, str]:
+        """Return the SHA-256 digest of a readable, non-sensitive workspace file."""
+        try:
+            digest = backend.file_digest(file_path)
+        except (OSError, ValueError):
+            return {"status": "error", "code": "file.evidence_unavailable"}
+        return {
+            "status": "completed",
+            "kind": "file",
+            "path": file_path,
+            "digest": digest,
+        }
+
     custom_tools: list[Any] = list(extension_tools)
     visible_names = frozenset(item.name for item in registry.visible_to(profile))
     visible_names |= frozenset(
@@ -894,6 +926,8 @@ def build_default_agent(
         custom_tools.append(execute)
     if "ask_user" in visible_names:
         custom_tools.append(ask_user)
+    if "file_digest" in visible_names:
+        custom_tools.append(file_digest)
     activity_middleware: list[AgentMiddleware[Any, Any, Any]] = []
     if (
         runtime_event is not None
@@ -916,15 +950,7 @@ def build_default_agent(
         model,
         tools=custom_tools,
         subagents=subagents,
-        backend=PolicyFilesystemBackend(
-            workspace,
-            redactor=redaction,
-            task_id=task_id,
-            lease_manager=lease_manager,
-            allowed_write_paths=allowed_write_paths,
-            forbidden_host_paths=forbidden_host_paths,
-            state_dir=state_dir,
-        ),
+        backend=backend,
         skills=skills,
         memory=memory,
         middleware=[

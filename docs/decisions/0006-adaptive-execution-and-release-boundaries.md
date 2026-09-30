@@ -21,18 +21,28 @@ a product claim or treat a tag as permission to rename a repository or remote.
 ## Decision
 
 1. The first necessary lead response may finish directly or record a typed `ExecutionDecision` for
-   direct, discovery, or planned execution. A final answer needs no execution decision. Runtime
-   middleware requires a decision before operational tool calls, except for a scoped user question
-   needed to obtain intent or authority.
+   direct, discovery, or planned execution. A final answer needs no execution decision unless the
+   user explicitly requires an execution mode. For example, “Use planned execution” requires a
+   matching planned decision before successful completion; an omitted or conflicting decision ends
+   blocked. Runtime middleware requires a decision before operational tool calls, except for a scoped
+   user question needed to obtain intent or authority. An explicit request to ask the user to choose
+   also requires an `ask_user` interrupt and accepted answer before decisions or operational tools
+   can proceed; final prose does not satisfy the question. Explicit mode and question requirements
+   persist across question interrupts and resume. A conditional edit limit is lifted only after the
+   accepted answer.
 2. Skail interprets a versioned `ExecutionPlan` with a fixed coordinator. Plans contain finite,
    typed nodes, dependencies, acceptance criteria, effect and resource scopes, and explicit decision
    checkpoints. Model-authored code and todo prose are never executable plans.
 3. DeepAgents' standard `task` tool remains compatible. A `task` call becomes one validated plan
    task through the same admission, assignment, budget, execution, result, and event services. It is
-   not a second scheduler.
+   not a second scheduler. Once an `ExecutionPlan` is admitted, the fixed coordinator dispatches
+   its AGENT nodes; the lead must not recreate those nodes through `task` calls.
 4. The runtime persists plan identity, schema version, policy version, revision, node identity, legal
    transitions, and revision evidence before dispatch. Skail owns persistent opaque IDs; model
    output uses plan-local names. Completed node identities remain stable across revisions.
+   When a checkpoint's evidence supports no additional executable work, a no-delta revision may
+   acknowledge exactly one running checkpoint only if its prerequisites succeeded and their
+   persisted evidence references are included. This records the decision without a placeholder task.
 5. Plan, node, revision, route, workspace, change-set, and verification records are Skail domain
    contracts. Their schema versions are owned by the domain modules that serialize them. Journal
    migrations are owned by `sessions/migrations.py`; event envelope and payload evolution are owned

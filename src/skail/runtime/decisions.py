@@ -17,7 +17,7 @@ from langchain_core.tools import BaseTool, tool
 from pydantic import ValidationError
 
 from skail.domain.decisions import ExecutionDecision, ExecutionMode
-from skail.domain.plans import ExecutionPlan, PlanRevision
+from skail.domain.plans import EffectScope, ExecutionPlan, PlanRevision
 
 
 class DecisionAdmissionError(ValueError):
@@ -25,7 +25,7 @@ class DecisionAdmissionError(ValueError):
 
 
 class ExecutionDecisionGate:
-    """Accept one initial decision and gate every operational tool behind it."""
+    """Accept one decision and enforce required questions before operations."""
 
     def __init__(
         self,
@@ -35,13 +35,19 @@ class ExecutionDecisionGate:
         persist_decision: Callable[[ExecutionDecision], Any] | None = None,
         restored_decision: ExecutionDecision | None = None,
         required_mode: ExecutionMode | None = None,
+        requires_user_answer: bool = False,
+        question_answered: bool = False,
         required_agent_count: int | None = None,
+        required_agent_profile: str | None = None,
     ) -> None:
         self._admit_plan = admit_plan
         self._revise_plan = revise_plan
         self._persist_decision = persist_decision
         self._required_mode = required_mode
+        self._requires_user_answer = requires_user_answer
+        self._question_answered = question_answered
         self._required_agent_count = required_agent_count
+        self._required_agent_profile = required_agent_profile
         self._repairs_remaining = 2
         self.decision: ExecutionDecision | None = None
         if restored_decision is not None:
@@ -69,7 +75,18 @@ class ExecutionDecisionGate:
     def allows(self, tool_name: str, tool_call_id: str | None = None) -> bool:
         if tool_call_id is not None and tool_call_id in self._rejected_tool_codes:
             return False
-        return tool_name == "ask_user" or self.decision is not None
+        if tool_name == "ask_user":
+            return True
+        if self.requires_user_answer_for(tool_name):
+            return False
+        return self.decision is not None
+
+    def requires_user_answer_for(self, tool_name: str) -> bool:
+        return (
+            self._requires_user_answer
+            and not self._question_answered
+            and tool_name != "ask_user"
+        )
 
     def is_prepared_decision(self, tool_call_id: str | None) -> bool:
         return tool_call_id is not None and tool_call_id in self._prepared_decision_ids
@@ -100,6 +117,9 @@ class ExecutionDecisionGate:
                     or call_id in self._rejected_tool_codes
                 ):
                     continue
+                if self.requires_user_answer_for(name):
+                    self._reject(call_id, "execution.question_required")
+                    continue
                 if name == "execution_decision":
                     args = call.get("args")
                     if not isinstance(args, dict):
@@ -113,7 +133,12 @@ class ExecutionDecisionGate:
                         self._prepared_decision_ids.add(call_id)
                     continue
                 if not self.allows(name, call_id):
-                    self._reject(call_id, "execution.decision_required")
+                    self._reject(
+                        call_id,
+                        "execution.question_required"
+                        if self.requires_user_answer_for(name)
+                        else "execution.decision_required",
+                    )
 
     def _reject(self, tool_call_id: str, code: str) -> None:
         self._rejected_tool_codes[tool_call_id] = code
@@ -156,18 +181,34 @@ class ExecutionDecisionGate:
                 f"mode={self._required_mode.value}",
                 consume_repair=consume_repair,
             )
-        if self._required_agent_count is None:
+        if self._required_agent_count is None and self._required_agent_profile is None:
             return
         plan = candidate.plan
         agents = [] if plan is None else [
             node for node in plan.nodes if node.kind.value == "agent"
         ]
-        if len(agents) != self._required_agent_count:
+        if (
+            self._required_agent_count is not None
+            and len(agents) != self._required_agent_count
+        ):
             self._reject_constraint(
                 "execution.agent_count_conflict: explicit user intent requires "
                 f"exactly {self._required_agent_count} agent plan nodes",
                 consume_repair=consume_repair,
             )
+        if self._required_agent_profile is not None:
+            for node in agents:
+                profile = node.task_features.get("profile")
+                if profile is None:
+                    profile = (
+                        "explorer" if node.effect_scope is EffectScope.READ else "implementer"
+                    )
+                if profile != self._required_agent_profile:
+                    self._reject_constraint(
+                        "execution.agent_profile_conflict: explicit user intent requires "
+                        f"profile={self._required_agent_profile} for every agent plan node",
+                        consume_repair=consume_repair,
+                    )
         owned_scopes: list[str] = []
         for node in agents:
             scopes = tuple(
@@ -178,7 +219,7 @@ class ExecutionDecisionGate:
             if not scopes:
                 self._reject_constraint(
                     "execution.agent_scope_conflict: every requested agent needs "
-                    "a non-overlapping resource scope",
+                    "a non-empty resource_scopes list with pairwise-disjoint paths",
                     consume_repair=consume_repair,
                 )
             for scope in scopes:
@@ -222,7 +263,9 @@ class ExecutionDecisionGate:
                     "discovery); direct must not send plan"
                 ) from exc
             self._consume_repair()
-            raise DecisionAdmissionError(_actionable_plan_invalid(exc)) from exc
+            raise DecisionAdmissionError(
+                _actionable_plan_invalid(exc, mode=normalized.get("mode"))
+            ) from exc
 
     def _record(self, decision: ExecutionDecision) -> None:
         if decision.plan is not None:
@@ -330,6 +373,8 @@ class ExecutionDecisionMiddleware(AgentMiddleware[Any, Any, Any]):
         rejection = self._gate.rejection_code(call_id)
         if rejection is not None:
             return _decision_rejected(request, rejection)
+        if self._gate.requires_user_answer_for(name):
+            return _decision_rejected(request, "execution.question_required")
         if name == "execution_decision" and self._gate.is_prepared_decision(call_id):
             return _decision_accepted(request, self._gate)
         if self._gate.allows(name, call_id) or name == "execution_decision":
@@ -348,6 +393,8 @@ class ExecutionDecisionMiddleware(AgentMiddleware[Any, Any, Any]):
         rejection = self._gate.rejection_code(call_id)
         if rejection is not None:
             return _decision_rejected(request, rejection)
+        if self._gate.requires_user_answer_for(name):
+            return _decision_rejected(request, "execution.question_required")
         if name == "execution_decision" and self._gate.is_prepared_decision(call_id):
             return _decision_accepted(request, self._gate)
         if self._gate.allows(name, call_id) or name == "execution_decision":
@@ -424,32 +471,98 @@ def _comparable_decision_field(name: str, value: Any) -> Any:
     return value
 
 
-def _actionable_plan_invalid(exc: ValidationError) -> str:
-    """Render missing/unexpected fields plus a minimal valid skeleton."""
+def _actionable_plan_invalid(exc: ValidationError, *, mode: object = None) -> str:
+    """Render safe schema diagnostics plus a minimal valid skeleton."""
 
     missing: list[str] = []
     unexpected: list[str] = []
+    invalid: list[str] = []
     for error in exc.errors():
         kind = str(error.get("type", ""))
-        loc = ".".join(str(part) for part in error.get("loc", ()))
+        loc = _safe_validation_path(error.get("loc", ()))
         if kind == "missing":
             missing.append(loc or "<unknown>")
         elif kind in {"extra_forbidden", "unexpected_keyword_argument"}:
             unexpected.append(loc or "<unknown>")
+        else:
+            category = (
+                "invalid_type"
+                if kind.endswith(("_type", "_parsing"))
+                or (kind == "enum" and not isinstance(error.get("input"), str))
+                else "invalid_value"
+            )
+            invalid.append(f"{loc or '<unknown>'}:{category}")
     details: list[str] = []
     if missing:
-        details.append(f"missing={sorted(set(missing))}")
+        details.append(f"missing={sorted(set(missing))[:3]}")
     if unexpected:
-        details.append(f"unexpected={sorted(set(unexpected))}")
+        details.append(f"unexpected={sorted(set(unexpected))[:3]}")
+    if invalid:
+        details.append(f"invalid={sorted(set(invalid))[:3]}")
     detail = f" ({'; '.join(details)})" if details else ""
+    normalized_mode = mode.casefold() if isinstance(mode, str) else None
+    if normalized_mode == "direct":
+        correction = "correct the fields and resend mode=direct; omit plan and revision"
+    elif normalized_mode == "discovery":
+        correction = (
+            "correct the fields and resend mode=discovery; discovery plans must use read effects"
+        )
+    else:
+        correction = "correct the fields and resend mode=planned with a validated plan"
     return (
-        "decision.plan_invalid: resend mode=planned with objective, reason, "
-        "and a validated plan; minimal plan skeleton="
+        "decision.plan_invalid: "
+        f"{correction}; supported effect_scope values are "
+        "read, workspace_write, external_write, or unknown; minimal plan skeleton="
         "{'schema_version': 1, 'policy_version': 'adaptive-v1', 'revision': 1, "
         "'nodes': [{'local_id': '<id>', 'kind': 'checkpoint', "
         "'objective': '<what>', 'effect_scope': 'read'}]}"
         f"{detail}"
     )
+
+
+def _safe_validation_path(location: Any) -> str:
+    """Keep schema fields and bounded nonnegative indexes from validation locations."""
+
+    fields = {
+        "mode",
+        "objective",
+        "reason",
+        "constraints",
+        "plan",
+        "revision",
+        "schema_version",
+        "policy_version",
+        "nodes",
+        "local_id",
+        "kind",
+        "depends_on",
+        "acceptance_criteria",
+        "inputs",
+        "output_contract",
+        "effect_scope",
+        "resource_scopes",
+        "task_features",
+        "artifact_refs",
+        "task_lineage",
+        "expected_revision",
+        "added_nodes",
+        "replaced_local_ids",
+        "cancelled_local_ids",
+        "justification",
+        "evidence_refs",
+    }
+    parts = location if isinstance(location, (tuple, list)) else ()
+    safe_parts = [
+        str(part)
+        if type(part) is int and 0 <= part <= 99
+        else "<index>"
+        if isinstance(part, int)
+        else str(part)
+        if isinstance(part, str) and part in fields
+        else "<field>"
+        for part in parts[:8]
+    ]
+    return ".".join(safe_parts)[:120]
 
 
 def _actionable_plan_refused(exc: Exception) -> str:

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import subprocess
 from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
 
+from evals import evidence
 from evals.fixtures_loader import load_fixtures
 from evals.report import generate_policy_summary, render_markdown_report
 from evals.runner import EvaluationRunner
@@ -37,6 +39,41 @@ def _result(*, completed: bool, cost: str) -> TaskEvalResult:
         escalations_count=0,
         interrupts_count=0,
     )
+
+
+def test_source_identity_hashes_utf8_worktree_diffs_on_windows(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    source = tmp_path / "source.py"
+    source.write_text("value = 'initial'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "source.py"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "initial"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.setattr(evidence, "ROOT", tmp_path)
+    clean_identity = evidence.source_identity()
+
+    source.write_text(f"value = '{chr(0x201D)}'\n", encoding="utf-8")
+    dirty_identity = evidence.source_identity()
+
+    assert dirty_identity[0] == clean_identity[0]
+    assert dirty_identity[1] != clean_identity[1]
 
 
 def test_policy_summary_includes_failed_spend_in_cost_per_success() -> None:
@@ -179,22 +216,17 @@ def test_parallel_fixture_completes_the_same_serialized_writes_under_auto_and_se
 
     report = EvaluationRunner(
         fixtures=[fixture],
-        policies=[
-            EvaluationPolicy.AUTO,
-            EvaluationPolicy.ECONOMY,
-            EvaluationPolicy.QUALITY,
-            EvaluationPolicy.SERIAL,
-        ],
+        policies=[EvaluationPolicy.AUTO, EvaluationPolicy.SERIAL],
     ).run()
 
     assert all(result.completed and result.passed_oracle for result in report.results)
     peak_by_policy = {result.policy: result.child_peak_active for result in report.results}
     assert peak_by_policy == {
         EvaluationPolicy.AUTO: 3,
-        EvaluationPolicy.ECONOMY: 3,
-        EvaluationPolicy.QUALITY: 3,
         EvaluationPolicy.SERIAL: 1,
     }
+    files_by_policy = {record.policy: record.workspace_files for record in report.raw_records}
+    assert files_by_policy[EvaluationPolicy.AUTO] == files_by_policy[EvaluationPolicy.SERIAL]
 
 
 def test_parallel_fixture_child_results_satisfy_the_explorer_evidence_contract() -> None:

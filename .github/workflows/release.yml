@@ -2,10 +2,8 @@ name: Release CI
 
 on:
   push:
-    branches: [main, skail]
     tags: ['v*']
-  pull_request:
-    branches: [main, skail]
+  workflow_dispatch:
 
 env:
   PYTHONUNBUFFERED: "1"
@@ -41,14 +39,24 @@ jobs:
       - name: Type checking
         run: python -m mypy src/skail
 
+      - name: Verify isolated package artifacts
+        run: >-
+          python scripts/package_check.py
+          --artifact-dir "${{ runner.temp }}/skail-package-artifacts"
+          --evidence "${{ runner.temp }}/skail-package-evidence.json"
+
       - name: Run offline test suite
+        env:
+          SKAIL_PACKAGE_ARTIFACT_DIR: ${{ runner.temp }}/skail-package-artifacts
         run: python -m pytest -q
 
       - name: Run fake-provider smoke test
         run: python scripts/smoke.py --fake-provider
 
-      - name: Verify isolated package artifacts
-        run: python scripts/package_check.py --evidence "${{ runner.temp }}/skail-package-evidence.json"
+      - name: Run release packaging verification
+        run: >-
+          python scripts/release_check.py
+          --artifact-dir "${{ runner.temp }}/skail-package-artifacts"
 
       - name: Upload package evidence
         uses: actions/upload-artifact@v4
@@ -56,6 +64,3 @@ jobs:
           name: skail-package-evidence-${{ matrix.os }}-py${{ matrix.python-version }}
           path: ${{ runner.temp }}/skail-package-evidence.json
           if-no-files-found: error
-
-      - name: Run release packaging verification
-        run: python scripts/release_check.py

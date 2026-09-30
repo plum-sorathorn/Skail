@@ -129,6 +129,23 @@ def test_run_completed_event_preserves_structured_lead_output() -> None:
     assert restored.payload.output == output  # type: ignore[attr-defined]
 
 
+def test_task_failure_diagnostic_round_trips_with_a_field_path() -> None:
+    payload = TaskPayload(
+        status="failed",
+        profile="explorer",
+        failure_category="result_validation",
+        validation_path="$.verification.0.passed",
+    )
+    event = EventEnvelope.model_validate(_envelope_data(payload, event_type="task.failed"))
+
+    restored = EventEnvelope.from_json(event.to_json())
+
+    assert restored.payload.failure_category == "result_validation"  # type: ignore[attr-defined]
+    assert restored.payload.validation_path == "$.verification.0.passed"  # type: ignore[attr-defined]
+    with pytest.raises(ValidationError):
+        TaskPayload(status="failed", validation_path="$.verification[0].passed")
+
+
 def test_unknown_schema_version_is_rejected() -> None:
     data = _envelope_data(LifecyclePayload(status="started"), event_type="run.started")
     data["schema_version"] = 2

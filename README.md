@@ -8,15 +8,22 @@
   <strong>A budget-aware, local-first multi-agent coding harness built on DeepAgents and LangGraph.</strong>
 </p>
 
-[Python 3.12+](https://www.python.org/downloads/) · [MIT License](LICENSE) · [Evaluation](docs/skail/EVALUATION.md)
-
-[DeepAgents](https://github.com/langchain-ai/deepagents) · [LangGraph](https://github.com/langchain-ai/langgraph) · [Textual](https://github.com/Textualize/textual) · [Pydantic](https://github.com/pydantic/pydantic) · [SQLite](https://www.sqlite.org/)
+<p align="center">
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.12%2B-3776AB.svg?style=flat-square" alt="Python 3.12+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2ea44f.svg?style=flat-square" alt="License: MIT"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Status-0.1.0%20Alpha%20Unreleased-f0883e.svg?style=flat-square" alt="Status: 0.1.0 Alpha, unreleased"></a>
+  <a href="https://github.com/langchain-ai/deepagents"><img src="https://img.shields.io/badge/DeepAgents-multi--agent-8b5cf6.svg?style=flat-square" alt="DeepAgents"></a>
+  <a href="https://github.com/langchain-ai/langgraph"><img src="https://img.shields.io/badge/LangGraph-orchestration-0d9488.svg?style=flat-square" alt="LangGraph"></a>
+  <a href="https://github.com/Textualize/textual"><img src="https://img.shields.io/badge/Textual-TUI-d946ef.svg?style=flat-square" alt="Textual"></a>
+  <a href="https://github.com/pydantic/pydantic"><img src="https://img.shields.io/badge/Pydantic-validation-e92063.svg?style=flat-square" alt="Pydantic"></a>
+  <a href="https://www.sqlite.org/"><img src="https://img.shields.io/badge/SQLite-storage-003B57.svg?style=flat-square" alt="SQLite"></a>
+</p>
 
 Skail is an agentic AI and multi-agent coding harness built on [DeepAgents](https://github.com/langchain-ai/deepagents) and [LangGraph](https://github.com/langchain-ai/langgraph). It provides deterministic runtime controls for application-level budgets, workspace writes, task-bound model routing, and durable SQLite persistence, so developers can delegate complex, parallel coding workflows with bounded, reviewable changes.
 
 Skail runs locally on your machine without a proxy server or background daemon. It exposes an interactive terminal UI (cockpit), a scriptable CLI, and versioned JSONL event streaming for automated pipelines.
 
-> **Status: Alpha v0.1.0.** The [evaluation](docs/skail/EVALUATION.md) and [performance](docs/skail/PERFORMANCE.md) documents record offline engineering checks and performance measurements. They do not establish live-provider quality or savings. Skail's budget gates use in-house token-cost estimates; they do not guarantee billed spend.
+> **Status: Alpha v0.1.0, unreleased.** The [evaluation](docs/skail/EVALUATION.md) and [performance](docs/skail/PERFORMANCE.md) documents record offline engineering checks and performance measurements. They do not establish live-provider quality or savings. Skail's budget gates use in-house token-cost estimates; they do not guarantee billed spend.
 
 ---
 

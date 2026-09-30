@@ -102,9 +102,14 @@ Skail owns these semantics and may not delegate them to prompts:
 - a LangGraph checkpoint thread keyed by session and run IDs;
 - event and usage middleware.
 
-The first necessary lead response ends with a final answer or records a typed execution decision.
-Runtime middleware admits that decision before operational tool calls from the same response. A
-scoped question interrupt is allowed before the decision when required. Direct mode retains the
+The first necessary lead response ends with a final answer or records a typed execution decision,
+unless the user explicitly requires a mode such as planned execution. In that case, the runtime
+requires a matching decision before the run can complete, including after a question interrupt and
+resume. Runtime middleware admits that decision before operational tool calls from the same response.
+A scoped question interrupt is allowed before the decision when required. When the instruction
+explicitly requires a user choice, the runtime blocks decisions and operational tools until an
+`ask_user` interrupt receives an accepted answer; a final prose question cannot complete the run.
+Direct mode retains the
 normal tool loop; discovery records a bounded frontier and checkpoint; planned mode records a finite
 dependency graph. The standard `task` call admits one node through the same service.
 
@@ -127,8 +132,11 @@ When a checkpoint reaches `ready`, the coordinator durably records its launch, m
 and wakes the same lead attempt with the current plan plus only the evidence references produced by
 the checkpoint's successful prerequisites. The next `execution_decision` carries the complete next
 plan and a typed `PlanRevision`. Skail rejects invented evidence, applies the journal revision
-compare-and-set, and settles the checkpoint successfully only after that revision commits. A lead
-response without an admissible revision blocks the checkpoint rather than completing the run.
+compare-and-set, and settles the checkpoint successfully only after that revision commits. If the
+evidence supports no additional work, a no-delta revision may acknowledge exactly one running
+checkpoint only when its prerequisites succeeded and their evidence references are included; it
+records the decision without adding a dummy task. A lead response without an admissible revision
+blocks the checkpoint rather than completing the run.
 
 ### 5.3 Compiled task graph
 
@@ -267,6 +275,12 @@ class TaskSpec(BaseModel):
 
 The lead supplies `TaskRequest`. Skail creates `TaskSpec`; model-generated IDs, budgets, or permission claims are ignored.
 
+Plan-node `effect_scope` values are `read`, `workspace_write`, `external_write`, and `unknown`.
+An effect declaration does not grant a profile tool or user permission. `workspace_write` nodes
+carry explicit resource scopes into filesystem writes. `file_digest` returns a runtime SHA-256 for
+a readable, non-sensitive workspace file so a child can provide a verifiable `ArtifactRef` without
+shell execution; the digest proves file contents, not a claimed test run.
+
 ### 6.3 Assignment
 
 ```python
@@ -311,9 +325,16 @@ class TaskResult(BaseModel):
     attempts: tuple[AttemptSummary, ...]
     changed_paths: tuple[str, ...]
     follow_up: str | None
+    failure_category: Literal[
+        "provider_error", "malformed_result", "result_validation",
+        "routing_ineligible", "budget_blocked", "task_failure"
+    ] | None
+    validation_path: str | None
 ```
 
-The result returned through `task` must be concise enough for the lead context. Full events and transcripts remain queryable by ID.
+Failure diagnostics are runtime-owned; the child cannot choose its category or validation path.
+Field paths contain only schema field names and array indexes. The result returned through `task`
+must be concise enough for the lead context. Full events and transcripts remain queryable by ID.
 
 ### 6.5 Task state machine
 
@@ -404,6 +425,13 @@ These are different state transitions:
 
 - A transport fallback handles failure before useful agent execution, such as a rate limit or provider outage. It may select the same model on a configured equivalent endpoint and does not consume the task escalation.
 - A task escalation follows an unsuccessful agent attempt, excludes the concrete failed model, raises the floor, and consumes the single retry.
+
+`TaskAssignment.capability_fit` freezes the selected model's known fit. On attempt two,
+`AssignmentService` reads that value from the persisted first-attempt assignment, including its
+latest transport fallback, and supplies `RoutingRequirements.failed_capability_fit`. Caller hints
+and refreshed catalog values cannot lower this baseline. Legacy assignments without a recorded fit
+remain readable but cannot establish a stronger automatic retry. The selector requires strictly
+greater fit and an enabled candidate; discovery and stale selections never widen the enabled set.
 
 Every fallback creates a new assignment ID and event. There is no invisible provider substitution.
 
@@ -513,7 +541,8 @@ No file-count or ordinary turn-count heuristic escalates a healthy run.
 Attempt two receives:
 
 - original task and success criteria;
-- failed assignment and concise failure code;
+- failed assignment and concise failure code, including `failure_category` and `validation_path` when
+  recorded by the runtime; raw child output is not copied;
 - last relevant tool/error evidence;
 - changed paths and current diff/worktree reference;
 - completed verification and remaining criteria;
@@ -613,7 +642,8 @@ Provider adapters receive resolved credentials out-of-band. Events store provide
 ### 13.1 Storage split
 
 - `~/.skail/checkpoints.sqlite`: LangGraph checkpointer state;
-- `~/.skail/skail.sqlite`: Skail-owned session, task, route, usage, approval, and event journal;
+- `~/.skail/journal.sqlite`: Skail-owned session, task, route, usage, and event journal;
+- `~/.skail/workspaces/<identity>/approvals.sqlite`: workspace-scoped command approvals;
 
 The only physical `.skail` directory Skail creates is the user root `~/.skail`. Workspace-scoped
 records use a canonical identity namespace below `~/.skail/workspaces/`; all path resolution is
@@ -710,6 +740,11 @@ the answer; `user.cancellation` carries the interrupt kind and ID. Permission ap
 `kind=approval` in their pending runtime payload. A framework graph interrupt is control flow and
 must not be projected as `tool.failed`; actual tool exceptions remain failures.
 
+Terminal `task.failed` and `task.blocked` payloads may include the safe `failure_category` and
+`validation_path`. The category identifies provider errors, malformed result JSON, result validation,
+route ineligibility, budget blocks, or task failures. The path identifies only a schema location;
+raw model output and provider exception text are not copied into the event.
+
 ### 14.2 Projections
 
 The TUI, JSONL mode, local journal, and tests consume the same events. The TUI may retain local display state but must be reconstructible from a session snapshot plus subsequent events. Agent status must not be inferred from text messages.
@@ -787,8 +822,18 @@ Examples:
 - `runtime.framework_contract_changed`;
 - `provider.rate_limited`;
 - `session.recovery_conflict`.
+- `execution.decision_exhausted`.
 
 Errors are rendered for people in the TUI and remain structured in JSONL.
+
+If an accepted question answer is followed by a result with status `waiting_for_user` or a stale
+waiting summary, resume terminates blocked with `execution.answer_not_continued`; it does not emit
+`run.completed` for that result.
+
+When no execution decision was admitted, two decision validation rejections exhaust the bounded
+repair allowance. If no operational work succeeded, initial and resumed completion end blocked
+with `execution.decision_exhausted`; an admitted decision or completed operational work does not
+match this condition.
 
 ## 19. Observability
 

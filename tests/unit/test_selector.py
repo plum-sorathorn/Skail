@@ -3,6 +3,8 @@ from __future__ import annotations
 import itertools
 from decimal import Decimal
 
+import pytest
+
 from skail.domain.routing import RoutingMode
 from skail.providers.models import CapabilityVector, ModelProfile
 from skail.routing.requirements import RequirementBuilder, TaskRisk
@@ -129,6 +131,117 @@ def test_hard_filters_and_explanations_account_for_every_exclusion() -> None:
     assert result.binding_constraint in result.excluded_counts
 
 
+def test_retry_failure_names_enabled_candidates_blocker_before_disabled_catalog_noise() -> None:
+    requirements = RequirementBuilder().build(
+        role="implementer",
+        risk=TaskRisk.ROUTINE,
+        escalated=True,
+        failed_model=("p", "failed"),
+    )
+    manual_only = _candidate("p", "manual-only", auto_eligible=False)
+    candidates = (
+        _candidate("p", "failed"),
+        manual_only,
+        *(_candidate("p", f"disabled-{index}", enabled=False) for index in range(4)),
+    )
+
+    result = select_model(candidates, requirements)
+
+    assert isinstance(result, RouteFailure)
+    assert result.excluded_counts == {
+        "auto_ineligible": 1,
+        "model_disabled": 4,
+        "model_excluded": 1,
+    }
+    assert result.binding_constraint == "auto_ineligible"
+
+
+def test_escalation_chooses_stronger_enabled_model_over_cheaper_equal_or_weaker_models() -> None:
+    requirements = RequirementBuilder().build(
+        role="implementer",
+        risk=TaskRisk.ROUTINE,
+        escalated=True,
+        failed_model=("p", "failed"),
+        failed_capability_fit=0.8,
+    )
+    candidates = (
+        _candidate("p", "failed", coding=0.8, reasoning=0.8),
+        _candidate("p", "weaker", cost="0.01", coding=0.7, reasoning=0.7),
+        _candidate("p", "equal", cost="0.02", coding=0.8, reasoning=0.8),
+        _candidate("p", "unselected", cost="0.03", coding=1.0, reasoning=1.0, enabled=False),
+        _candidate("p", "stronger", cost="0.20", coding=0.9, reasoning=0.9),
+    )
+
+    result = select_model(candidates, requirements)
+
+    assert isinstance(result, RouteSelection)
+    assert result.candidate.profile.model == "stronger"
+    assert result.included_count == 1
+    assert result.excluded_counts == {
+        "escalation_not_stronger": 2,
+        "model_disabled": 1,
+        "model_excluded": 1,
+    }
+
+
+@pytest.mark.parametrize("mode", [RoutingMode.AUTO, RoutingMode.MANUAL])
+@pytest.mark.parametrize("failed_fit", [None, 0.8, 0.9])
+def test_escalation_refuses_unknown_baseline_equal_or_weaker_model(
+    mode: RoutingMode, failed_fit: float | None
+) -> None:
+    requirements = RequirementBuilder().build(
+        role="implementer",
+        risk=TaskRisk.ROUTINE,
+        mode=mode,
+        escalated=True,
+        failed_model=("p", "failed"),
+        failed_capability_fit=failed_fit,
+    )
+
+    result = select_model(
+        (_candidate("p", "alternative", coding=0.8, reasoning=0.8),),
+        requirements,
+        manual_model=("p", "alternative") if mode is RoutingMode.MANUAL else None,
+    )
+
+    assert isinstance(result, RouteFailure)
+    reason = "escalation_baseline_unknown" if failed_fit is None else "escalation_not_stronger"
+    assert result.excluded_counts == {reason: 1}
+    assert result.binding_constraint == reason
+
+
+@pytest.mark.parametrize(
+    ("candidate", "reason"),
+    [
+        (_candidate("p", "stronger", coding=0.9, reasoning=0.9, enabled=False), "model_disabled"),
+        (
+            _candidate("p", "stronger", coding=0.9, reasoning=0.9, cost="0.50"),
+            "budget_unaffordable",
+        ),
+        (
+            _candidate("p", "stronger", coding=0.9, reasoning=0.9, supports_tools=False),
+            "tools_unsupported",
+        ),
+    ],
+)
+def test_escalation_does_not_bypass_selected_roster_budget_or_tool_requirements(
+    candidate: RouteCandidate, reason: str
+) -> None:
+    requirements = RequirementBuilder().build(
+        role="implementer",
+        risk=TaskRisk.ROUTINE,
+        required_tools=True,
+        escalated=True,
+        failed_model=("p", "failed"),
+        failed_capability_fit=0.8,
+    )
+
+    result = select_model((candidate,), requirements, available_budget_usd=Decimal("0.20"))
+
+    assert isinstance(result, RouteFailure)
+    assert result.excluded_counts == {reason: 1}
+
+
 def test_manual_uses_exact_pin_but_still_validates_hard_compatibility() -> None:
     candidates = (_candidate("p", "manual", auto_eligible=False), _candidate("p", "other"))
     requirements = RequirementBuilder().build(
@@ -138,6 +251,32 @@ def test_manual_uses_exact_pin_but_still_validates_hard_compatibility() -> None:
     assert isinstance(result, RouteSelection)
     assert result.candidate.profile.model == "manual"
     assert result.capability_fit is not None
+
+
+def test_manual_failure_reports_the_pinned_candidates_blocking_reason() -> None:
+    candidates = (
+        _candidate("p", "pinned", cost="0.50"),
+        _candidate("other", "other-1"),
+        _candidate("other", "other-2"),
+        _candidate("other", "other-3"),
+    )
+    requirements = RequirementBuilder().build(
+        role="implementer", risk=TaskRisk.ROUTINE, mode=RoutingMode.MANUAL
+    )
+
+    result = select_model(
+        candidates,
+        requirements,
+        available_budget_usd=Decimal("0.20"),
+        manual_model=("p", "pinned"),
+    )
+
+    assert isinstance(result, RouteFailure)
+    assert result.excluded_counts == {
+        "budget_unaffordable": 1,
+        "manual_model_mismatch": 3,
+    }
+    assert result.binding_constraint == "budget_unaffordable"
 
 
 def test_manual_keeps_unknown_price_distinct_when_no_hard_budget_applies() -> None:

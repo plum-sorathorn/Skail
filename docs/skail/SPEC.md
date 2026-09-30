@@ -48,7 +48,7 @@ A developer who:
 ## 3. Product principles
 
 1. **Just prompt; Skail will orchestrate.** Ordinary use must not require the user to design a graph or choose agents.
-2. **Explicit intent wins.** “Do this yourself,” “use a reviewer,” “do not edit,” and similar user constraints override autonomous preferences.
+2. **Explicit intent wins.** “Do this yourself,” “use a reviewer,” “do not edit,” and similar user constraints override autonomous preferences. A child-scoped “do not delegate further” limits nested child work without changing the requested top-level execution mode. An explicit request to ask the user to choose requires a question interrupt and accepted answer before work proceeds.
 3. **One capable lead.** The lead agent can read, edit, execute, and answer; it is not a coordinator that is helpless without children.
 4. **Delegate for leverage.** Use subagents for parallel work, specialized judgment, or context isolation—not ritualistically.
 5. **Assign models to tasks, not calls.** A task attempt has one model owner. Silent per-call model switching is prohibited.
@@ -131,7 +131,12 @@ These features must sit behind Skail-owned interfaces because DeepAgents async s
 The lead agent is a normal tool-using coding agent. Its first necessary response may provide a final
 answer or record a typed `direct`, `discover`, or `planned` execution decision. The same response may
 continue with compatible tools after the decision is accepted. A scoped user question may come
-first when intent or authority is genuinely missing. For each user instruction the lead may:
+first when intent or authority is genuinely missing. If the user explicitly requires an execution
+mode, such as “Use planned execution,” the run must admit a matching decision before it can complete;
+an omitted or conflicting decision ends blocked. This requirement remains attached to the run across
+question interrupts and resume. If the user explicitly requests a choice before work, Skail requires
+an `ask_user` interrupt and accepted answer before operational tools or decisions can proceed. A final
+prose question is not an interrupt. For each user instruction the lead may:
 
 - answer directly;
 - inspect and modify the workspace directly;
@@ -139,6 +144,10 @@ first when intent or authority is genuinely missing. For each user instruction t
 - delegate one or more independent tasks;
 - synthesize subagent results and continue implementation;
 - ask the user when requirements or authority are missing.
+
+If the accepted answer is followed by a result whose status is `waiting_for_user` or whose summary
+still indicates that an answer is pending, Skail ends the run blocked with
+`execution.answer_not_continued`; it does not report that run as completed.
 
 `direct` retains the full lead tool loop and may submit a plan later when evidence changes.
 `discover` submits only the next evidence-gathering frontier and a decision checkpoint. `planned`
@@ -148,6 +157,9 @@ When a discovery checkpoint becomes ready, Skail wakes the same lead assignment 
 plan and the bounded evidence references produced by its completed prerequisites. The lead records
 the complete next plan plus typed revision metadata through `execution_decision`; the runtime
 validates those references and applies the revision compare-and-set before releasing new work.
+When the evidence supports no additional executable work, an evidence-only revision may acknowledge
+one running checkpoint after every prerequisite succeeded and its evidence references are supplied.
+This records the checkpoint decision without adding a placeholder task.
 
 The lead should delegate when at least one of these is true:
 
@@ -243,6 +255,10 @@ Soft ranking inputs:
 
 Unknown capability is not zero and is not invented from model price, parameter-count strings, or brand names. Unknown models remain manually selectable but are excluded from automatic routing until a user supplies a trusted profile or evaluation evidence.
 
+Provider discovery does not enable models. Assignments use the user's selected provider models
+plus explicitly pinned models for the run. An empty or obsolete selection never expands to the
+entire provider catalog.
+
 ### 6.4 Initial capability floors
 
 Initial values are evaluation hypotheses, not permanent product truths:
@@ -281,8 +297,9 @@ Supported limits:
 
 Accounting rules:
 
-1. Actual reported provider usage is authoritative when available.
-2. Missing usage is estimated and visibly labelled.
+1. Measured provider token counts are priced in-house using the rates frozen for the assignment;
+   provider-supplied dollar cost is not the spending authority (see ADR 0008).
+2. Missing token usage is conservatively estimated or marked unresolved and visibly labelled.
 3. Before a model call, Skail reserves its estimated input plus configured output allowance.
 4. Before a parallel batch, Skail reserves every child attempt plus one lead continuation allowance.
 5. New tasks or calls that would exceed the remaining unreserved budget do not launch. The lead receives a structured budget-blocked result and can reduce fan-out, select a cheaper qualified model, or ask the user.
@@ -321,6 +338,9 @@ Git operations initially use `execute`; Skail will not add a redundant Git tool 
 Tool visibility is profile-specific. Explorer and reviewer profiles do not receive write tools. Any profile with `execute` is treated as potentially write-capable for scheduling and approval because a shell can modify files even when `write_file` is hidden.
 
 `ask_user` produces a typed `question` wait with an answer field and a separate run-cancel action.
+When choices are supplied, the prompt asks the user to choose exactly one listed value; open-ended
+questions omit choices. Runtime validation continues to accept only listed values for fixed-choice
+questions.
 Permission approvals remain typed `approval` interrupts and use Approve/Reject controls. An expected
 graph interrupt is not a tool failure; only an actual tool or question-store error is reported as
 failed.
@@ -359,6 +379,9 @@ Project and user profiles use `.skail/agents/<name>/AGENTS.md` and `~/.skail/age
 
 A tool error is evidence, not automatically a failed task attempt.
 
+Task terminal events include a bounded failure category and a validation field path when available.
+Provider exception text and raw child output are not copied into these event fields.
+
 An attempt fails when any of these becomes true:
 
 - the subgraph returns a structured `failed` result;
@@ -375,6 +398,10 @@ Attempt-one failure:
 1. Persist the failure reason, evidence, current diff/worktree, and route decision.
 2. Exclude the failed concrete model.
 3. Raise the capability floor once.
+   Require a capability fit strictly above the failed assignment's persisted fit, within the
+   selected model roster. Unknown prior fit blocks escalation with `escalation_baseline_unknown`;
+   equal or weaker fits are excluded as `escalation_not_stronger`. Manual first attempts use
+   automatic routing for this stronger retry; ordinary profile pins apply to attempt one.
 4. Start attempt two with the same task ID, a new attempt ID, and a concise failure handoff.
 
 Attempt-two failure:
@@ -538,7 +565,7 @@ python -m pytest
 python -m pytest tests\unit -q
 python -m pytest tests\contract tests\integration -q
 python scripts\smoke.py
-python scripts\eval_routing.py --fixture evals\fixtures
+python scripts\eval_routing.py --fixtures evals\fixtures
 graphify update .
 ```
 
@@ -557,7 +584,7 @@ src/skail/                 Skail package
   sessions/                 checkpoints, metadata, export
   tools/                    tool assembly, execution policy, approvals
   tui/                      Textual application and projections
-  telemetry/                local usage and task event journal
+  sessions/                 local usage and task event journal
 tests/
   unit/                     pure policy and state tests
   contract/                 DeepAgents and provider adapter contracts
@@ -660,7 +687,8 @@ Skail is ready for stable release when:
 - production promotion of an economic strategy requires paired held-out evidence showing no lower
   observed completion than the capable direct baseline, with the preregistered confidence bound,
   and at least 20% lower aggregate cost per successful request;
-- parallel-eligible scenarios reduce median wall-clock time by at least 15% compared with the same tasks forced serial;
+- parallel-eligible scenarios with at least two simultaneously active children reduce median
+  wall-clock time by at least 15% compared with the same tasks forced serial;
 - no critical safety or data-loss defect remains open.
 
 The offline engineering boundary and live economic-qualification boundary are separate. Live
@@ -674,8 +702,10 @@ Neither engineering readiness nor a release tag proves a broad savings claim.
 3. Stable engineering evaluation uses at least 50 approved, oracle-backed offline fixtures balanced
    across risk, role, parallelism, platform, and failure behavior. Economic promotion uses the
    separate paired live qualification contract in ADR 0006 and the active implementation guide.
-4. The stable core resolves credentials from environment-variable references. OS keyring support may be added later as an optional extra.
-5. Target Python 3.12+. Pin the exact DeepAgents/LangGraph compatibility range only after Phase 1 contract spikes verify it.
+4. Resolve credentials from environment-variable references, the OS keyring, or interactive
+   setup as specified in ADR 0007; never persist raw credentials in Skail configuration.
+5. Target Python 3.12+ and use the exact framework integration versions recorded in
+   ADR 0002 and `pyproject.toml`.
 6. Use the adaptive execution and release boundaries accepted in
    [ADR 0006](../decisions/0006-adaptive-execution-and-release-boundaries.md).
 7. Use the global-state and instruction-precedence contract accepted in

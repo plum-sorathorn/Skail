@@ -4,6 +4,10 @@ Status: Accepted
 Date: 2026-09-02
 Depends on: [ADR 0002](./0002-framework-version-contract.md)
 
+The dollar-cost authority and missing-usage settlement described below were superseded by
+[ADR 0008](./0008-in-house-token-cost-ledger.md). Provider-supplied dollar amounts are no longer
+the spending authority; Skail prices measured tokens in-house and labels estimates.
+
 ## Context
 
 OpenAI-compatible endpoints differ in streaming tool fragments, structured output, model
