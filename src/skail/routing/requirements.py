@@ -46,6 +46,7 @@ class RoutingRequirements(CapabilityRequirements):
     mode: RoutingMode
     role_hard_min: float = Field(ge=0, le=1)
     escalated: bool = False
+    failed_capability_fit: float | None = Field(default=None, ge=0, le=1)
     excluded_models: frozenset[tuple[str, str]] = frozenset()
 
 
@@ -59,6 +60,7 @@ class RequirementBuilder:
         mode: RoutingMode,
         role_hard_min: float,
         escalated: bool = False,
+        failed_capability_fit: float | None = None,
         failed_model: tuple[str, str] | None = None,
         excluded_models: frozenset[tuple[str, str]] = frozenset(),
     ) -> RoutingRequirements:
@@ -75,6 +77,7 @@ class RequirementBuilder:
             required_modalities=frozenset(base.modalities),
             hinted_floor=base.capability_floor,
             escalated=escalated,
+            failed_capability_fit=failed_capability_fit,
             failed_model=failed_model,
             excluded_models=excluded_models,
         )
@@ -96,6 +99,7 @@ class RequirementBuilder:
         hinted_output_tokens: int = 0,
         hinted_modalities: frozenset[str] = frozenset(),
         escalated: bool = False,
+        failed_capability_fit: float | None = None,
         failed_model: tuple[str, str] | None = None,
         excluded_models: frozenset[tuple[str, str]] = frozenset(),
     ) -> RoutingRequirements:
@@ -129,5 +133,6 @@ class RequirementBuilder:
             minimum_output_tokens=max(required_output_tokens, hinted_output_tokens),
             modalities=tuple(sorted(required_modalities | hinted_modalities)),
             escalated=escalated,
+            failed_capability_fit=failed_capability_fit,
             excluded_models=frozenset(exclusions),
         )

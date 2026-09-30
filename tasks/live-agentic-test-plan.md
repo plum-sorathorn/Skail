@@ -1,6 +1,27 @@
 # Live Agentic Test Plan: Skail Interactive Validation
 
-## S8 diagnosis update (2026-09-28, latest)
+## Presentation acceptance (2026-09-30, current)
+
+Fresh real-TUI S1, S2, and same-session two-model S3 runs passed their final-answer comparisons.
+The retained S6 run also passed a no-call TUI resume presentation comparison. Each exported final
+answer matched the current mounted Textual renderer exactly, with visible answer fragments in the
+terminal captures. S1/S3 fixtures stayed unchanged; S2 changed only the normalization source/test
+and passed independent focused tests 3/3 after a failing baseline. Evidence:
+`out/live-agentic/presentation-live-20260930/live-presentation-comparison.json` and accompanying
+exports/transcripts. A blocked S3 first repeat and cancelled S2 out-of-scope attempt are preserved.
+Thirty-two new fully priced calls cost USD 0.020565800; current local campaign estimate is
+USD 3.978118284, with provider billing unknown. The dated acceptance status below is historical.
+
+## S8 live pass (2026-09-29, current)
+
+[S8 resolution](s8-resolution-2026-09-29.md) records a fresh real-TUI pass: GPT-4.1 nano failed
+naturally on verification evidence, selected GPT-5 mini retried the same task with its failure
+handoff, and the accepted result integrated. The original independent parser test passed 1/1.
+Evidence: `out/live-agentic/s8-fix-20260929/verification.json`. Sixteen run calls cost USD 0.010993400;
+three qualification probes cost USD 0.000189600. Older failed/ineligible S8 observations below remain
+history and do not override this current pass. Scenario prompts and natural-failure rules still apply.
+
+## S8 diagnosis update (2026-09-28, historical)
 
 [The S8 diagnosis](s8-diagnosis-2026-09-28.md) confirms that the prior first implementer attempt
 failed result validation at `$.artifacts.0.kind`, while the same-task retry had no provider call.
@@ -47,9 +68,9 @@ is unknown. Other unchecked acceptance, speed, conditional lifecycle, and hosted
 > final documentation commit. Campaign local token estimate is USD 3.746818284; provider billing is
 > unknown.
 
-## Current acceptance status (2026-09-28; reconciled)
+## Historical acceptance status (2026-09-28; reconciled at that date)
 
-The scenario matrix below is historical evidence and procedure; current acceptance is:
+The scenario matrix below is historical evidence and procedure; acceptance at that date was:
 
 - **S1:** historical live read-only answer passed; final response was not retained for a TUI/export
   presentation comparison.

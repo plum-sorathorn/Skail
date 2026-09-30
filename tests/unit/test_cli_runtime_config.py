@@ -298,8 +298,9 @@ def test_runtime_bootstrap_uses_configured_catalog_without_production_defaults(
     assert tuple(runtime_models.models) == ("llmgateway:test/model",)
 
 
+@pytest.mark.parametrize("selected", [(), ("discovered/one",), ("missing/model",)])
 def test_runtime_bootstrap_registers_every_discovered_gateway_model(
-    monkeypatch, tmp_path: Path
+    monkeypatch, tmp_path: Path, selected: tuple[str, ...]
 ) -> None:
     from skail.providers.llmgateway import LLMGatewayAdapter
 
@@ -326,7 +327,7 @@ def test_runtime_bootstrap_registers_every_discovered_gateway_model(
         return entries
 
     monkeypatch.setattr(LLMGatewayAdapter, "discover_models", discover)
-    args = _args(lead_model="llmgateway:discovered/one")
+    args = _args()
     args.fake_provider = False
     args.catalog_cache_path = tmp_path / "catalog.json"
     args.provider_configs = {
@@ -334,7 +335,7 @@ def test_runtime_bootstrap_registers_every_discovered_gateway_model(
             type="openai-compatible",
             base_url="https://api.llmgateway.io/v1",
             api_key_env="CUSTOM_GATEWAY_TOKEN",
-            models=(),
+            models=selected,
         )
     }
     args.effective_config = SkailConfig(providers=args.provider_configs)
@@ -347,6 +348,9 @@ def test_runtime_bootstrap_registers_every_discovered_gateway_model(
         "llmgateway:discovered/two",
     }
     assert len(runtime_models.candidates) == 2
+    assert {c.profile.model for c in runtime_models.candidates if c.enabled} == (
+        set(selected) & {"discovered/one", "discovered/two"}
+    )
     assert runtime_models.catalog is not None
     assert (
         runtime_models.catalog.profile("llmgateway", "discovered/two").catalog_updated_at

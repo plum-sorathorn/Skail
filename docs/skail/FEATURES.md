@@ -166,6 +166,10 @@ validation failures, route ineligibility, budget blocks, and other task failures
 diagnostic fields are ignored. Task events carry the safe category and schema path without copying
 raw child output or provider exception text.
 Attempt two's failure handoff includes these safe fields when present.
+The terminal task result also retains each failed child attempt's runtime-owned reason code keyed
+by `attempt_id`; retrying cannot overwrite the earlier code. Session exports place the code on its
+matching attempt row. Only the bounded failure category is exported through this field; raw child
+or provider output is excluded.
 
 Invalid execution-decision plans return a bounded repair diagnostic: missing and unexpected schema
 paths, plus up to three invalid paths with stable type/value categories. Paths contain only known
@@ -541,6 +545,12 @@ Skail:
 6. creates attempt two with a concise handoff.
 
 The stronger model continues from the existing workspace state. Skail does not automatically erase partial work.
+
+The retry stays within the selected models and must strictly exceed the failed assignment's
+recorded capability fit, as well as clear the raised floor. Catalog discovery does not authorize
+unselected models. Explicit run pins also select their concrete models. Missing prior capability
+evidence blocks the retry; a different name alone does not establish a stronger model. A manual
+first attempt can escalate through this automatic policy, with all budget and compatibility gates.
 
 ### Second failed attempt
 

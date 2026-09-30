@@ -85,7 +85,9 @@ def _exclusion_reason(
         return "provider_unhealthy"
     if not candidate.enabled:
         return "model_disabled"
-    if requirements.mode is not RoutingMode.MANUAL and not profile.auto_eligible:
+    if (
+        requirements.mode is not RoutingMode.MANUAL or requirements.escalated
+    ) and not profile.auto_eligible:
         return "auto_ineligible"
     if requirements.tools_required and (
         profile.supports_tools is False
@@ -119,6 +121,11 @@ def _exclusion_reason(
     if not frozenset(requirements.modalities).issubset(frozenset(profile.input_modalities)):
         return "modality_unsupported"
     fit = _capability_fit(profile)
+    if requirements.escalated:
+        if requirements.failed_capability_fit is None:
+            return "escalation_baseline_unknown"
+        if fit is None or fit <= requirements.failed_capability_fit:
+            return "escalation_not_stronger"
     if requirements.capability_floor is not None and (
         fit is None or fit < requirements.capability_floor
     ):

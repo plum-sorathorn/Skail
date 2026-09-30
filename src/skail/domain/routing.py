@@ -26,6 +26,7 @@ class TaskAssignment(BaseModel):
     model: str = Field(min_length=1)
     routing_mode: RoutingMode
     capability_floor: float | None = Field(default=None, ge=0, le=1)
+    capability_fit: float | None = Field(default=None, ge=0, le=1)
     estimated_attempt_cost_usd: Decimal = Field(ge=0)
     reservation_id: ReservationId
     explanation: tuple[str, ...] = ()

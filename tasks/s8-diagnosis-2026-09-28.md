@@ -1,5 +1,8 @@
 # S8 natural escalation diagnosis — 2026-09-28 local time
 
+Historical diagnosis. The [September 29 resolution](s8-resolution-2026-09-29.md) records fixes and
+a new qualified live pass; it does not relabel the failed historical run analyzed below.
+
 S8 remains **failed/incomplete**. The historical run genuinely exercised a first child failure, but
 it did not execute or integrate a stronger second attempt. A new paid run is not qualified while
 the authenticated catalog contains no automatically eligible model. Selecting accessible model

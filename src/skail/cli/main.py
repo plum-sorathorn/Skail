@@ -818,18 +818,11 @@ def _build_runtime_models(
             if selected_provider in provider_configs
             else ()
         )
-        has_configured_overlap = any(
-            profile.model in configured_models
-            for (provider, _), profile in catalog.profiles.items()
-            if provider == selected_provider
-        )
         eligible = [
             profile
             for (provider, _), profile in catalog.profiles.items()
             if provider == selected_provider
-            and (
-                not has_configured_overlap or profile.model in configured_models
-            )
+            and profile.model in configured_models
             and catalog.is_auto_eligible(profile, hard_budget=args.budget is not None)
         ]
         if not eligible and lead_model_name != "auto":
@@ -892,14 +885,22 @@ def _build_runtime_models(
                 profile, ModelOptions()
             )
         profile = next(profile for profile in catalog_profiles if profile.model == actual_model)
+        selected_models = set(selected_config.models if selected_config is not None else ())
+        # Explicit pins also authorize that model for this run. Discovery alone does not.
+        for pin in (
+            args.lead_model,
+            args.default_model,
+            *_parse_agent_models(args.agent_models).values(),
+        ):
+            if pin and pin.startswith(f"{selected_provider}:"):
+                selected_models.add(pin.split(":", 1)[1])
         candidates = tuple(
             _route_candidate(
                 item,
                 hard_budget=args.budget is not None,
                 enabled=(
-                    catalog.price_is_current(item)
-                    if args.budget is not None
-                    else None
+                    item.model in selected_models
+                    and (args.budget is None or catalog.price_is_current(item))
                 ),
             )
             for item in catalog_profiles

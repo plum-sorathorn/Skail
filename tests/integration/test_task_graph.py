@@ -277,10 +277,14 @@ async def test_task_graph_escalates_once_with_isolated_context_and_returns_to_le
     packets = []
     settled = []
     exhausted = []
+    attempt_ids = []
+    persisted = []
 
     def assign(task, number, excluded):
         calls.append((number, excluded))
-        return AttemptBinding(new_attempt_id(), assignments[number - 1])
+        attempt_id = new_attempt_id()
+        attempt_ids.append(attempt_id)
+        return AttemptBinding(attempt_id, assignments[number - 1])
 
     async def execute(task, assignment, packet):
         assert assignment.assignment_id
@@ -290,6 +294,7 @@ async def test_task_graph_escalates_once_with_isolated_context_and_returns_to_le
     graph = build_task_graph(
         profile=builtin_profiles()["implementer"], assign=assign, execute=execute,
         persist_context=packets.append,
+        persist_result=persisted.append,
         settle_attempt=lambda binding, result: settled.append(binding.attempt_id),
         exhaust_fingerprint=lambda task: exhausted.append(task.fingerprint),
         gate=ChildRunGate(3), leases=WorkspaceLeaseManager(),
@@ -302,6 +307,73 @@ async def test_task_graph_escalates_once_with_isolated_context_and_returns_to_le
     assert len(set(settled)) == 2
     assert exhausted == [spec.fingerprint]
     assert len(state["result"].attempts) == 2
+    assert [
+        (item.attempt_id, item.reason_code) for item in state["result"].attempt_failures
+    ] == [
+        (attempt_ids[0], "task_failure"),
+        (attempt_ids[1], "task_failure"),
+    ]
+    assert len(persisted) == 1
+    assert persisted[0].status == "returned_to_lead"
+    assert persisted[0].attempt_failures == state["result"].attempt_failures
+
+
+@pytest.mark.asyncio
+async def test_successful_retry_retains_first_attempt_failure_reason(tmp_path) -> None:
+    spec = _spec(tmp_path)
+    assignments = [_assignment(spec, 1, "economy"), _assignment(spec, 2, "quality")]
+    attempt_ids = []
+    persisted = []
+
+    def assign(task, number, excluded):
+        del task, excluded
+        attempt_id = new_attempt_id()
+        attempt_ids.append(attempt_id)
+        return AttemptBinding(attempt_id, assignments[number - 1])
+
+    results = deque(
+        [
+            TaskResult(
+                task_id=spec.task_id,
+                status="failed",
+                summary="first attempt rejected",
+                failure_category="result_validation",
+            ),
+            TaskResult(
+                task_id=spec.task_id,
+                status="succeeded",
+                summary="retry succeeded",
+                verification=(
+                    VerificationResult(
+                        criterion="Provide evidence for the completed task",
+                        passed=True,
+                        evidence="verified",
+                    ),
+                ),
+            ),
+        ]
+    )
+
+    async def execute(*args):
+        return results.popleft()
+
+    graph = build_task_graph(
+        profile=builtin_profiles()["implementer"],
+        assign=assign,
+        execute=execute,
+        persist_result=persisted.append,
+        gate=ChildRunGate(3),
+        leases=WorkspaceLeaseManager(),
+    )
+    state = await graph.ainvoke({"spec": spec})
+
+    assert state["result"].status == "succeeded"
+    assert [
+        (item.attempt_id, item.reason_code) for item in state["result"].attempt_failures
+    ] == [(attempt_ids[0], "result_validation")]
+    assert len(persisted) == 1
+    assert persisted[0].status == "succeeded"
+    assert persisted[0].attempt_failures == state["result"].attempt_failures
 
 
 @pytest.mark.asyncio

@@ -3671,6 +3671,8 @@ class RunController:
             req_mode = (
                 RoutingMode.MANUAL
                 if (configured_model and not escalated)
+                else RoutingMode.AUTO
+                if escalated and controls.routing_mode is RoutingMode.MANUAL
                 else controls.routing_mode
             )
             reqs = self._requirements.for_assignment(

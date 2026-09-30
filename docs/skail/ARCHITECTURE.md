@@ -426,6 +426,13 @@ These are different state transitions:
 - A transport fallback handles failure before useful agent execution, such as a rate limit or provider outage. It may select the same model on a configured equivalent endpoint and does not consume the task escalation.
 - A task escalation follows an unsuccessful agent attempt, excludes the concrete failed model, raises the floor, and consumes the single retry.
 
+`TaskAssignment.capability_fit` freezes the selected model's known fit. On attempt two,
+`AssignmentService` reads that value from the persisted first-attempt assignment, including its
+latest transport fallback, and supplies `RoutingRequirements.failed_capability_fit`. Caller hints
+and refreshed catalog values cannot lower this baseline. Legacy assignments without a recorded fit
+remain readable but cannot establish a stronger automatic retry. The selector requires strictly
+greater fit and an enabled candidate; discovery and stale selections never widen the enabled set.
+
 Every fallback creates a new assignment ID and event. There is no invisible provider substitution.
 
 ## 8. Budget architecture

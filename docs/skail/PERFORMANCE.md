@@ -195,3 +195,17 @@ The external median is 6.446% below the older 164.17s baseline and 22.251s above
 and did not record its power scheme. The current run's elevated median cannot be attributed to those
 assertions because host load and power conditions were not matched across series. No boundary was
 removed and no causal optimization is established. Keep the 20% objective open.
+
+### 2026-09-30 isolated release candidate timing
+
+On clean isolated commit `557b3fc2fe2338c948c8fada1bae541c595a20d9`, three serial runs of
+`py -3.14 -m pytest -q --durations=40` used Python 3.14.6 and the Windows Balanced power scheme.
+All runs collected 1,257 tests, passed 1,252, skipped 5, and emitted 5 warnings. External wall
+times were 238.548, 210.763, and 237.399 seconds (median 237.399); pytest times were 234.62,
+207.10, and 233.59 seconds. Raw logs, collected test IDs, source identity, power scheme, and
+per-run records are under `out/live-agentic/release-renewal-20260930/timing/`.
+
+The median is 106.063 seconds above the original 131.336-second target. Compared with the earlier
+`9d28dc4` series, the test collection is larger and many unrelated duration leaders rose together;
+these observations do not isolate a causal code slowdown or justify removing independent tests.
+The 20% suite speed objective remains open.

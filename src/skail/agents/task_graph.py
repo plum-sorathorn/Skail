@@ -18,6 +18,7 @@ from skail.agents.result_evaluator import evaluate_result
 from skail.domain.ids import AttemptId, RunId, new_task_id
 from skail.domain.routing import TaskAssignment
 from skail.domain.tasks import (
+    AttemptFailureReason,
     AttemptStatus,
     AttemptSummary,
     TaskFailureCategory,
@@ -57,6 +58,7 @@ class TaskGraphState(TypedDict):
     assignment: NotRequired[TaskAssignment]
     attempt_id: NotRequired[str]
     attempts: NotRequired[tuple[AttemptSummary, ...]]
+    attempt_failures: NotRequired[tuple[AttemptFailureReason, ...]]
     context_packet: NotRequired[ContextPacket]
     previous_result: NotRequired[TaskResult | None]
     result: NotRequired[TaskResult | None]
@@ -172,9 +174,16 @@ def build_task_graph(
                 )
             if task_event is not None:
                 task_event(spec, result.status, None, result.summary)
-            return {
-                "result": result
-            }
+            failures = state.get("attempt_failures", ())
+            result = result.model_copy(
+                update={
+                    "attempts": state.get("attempts", ()),
+                    "attempt_failures": failures,
+                }
+            )
+            if persist_result is not None:
+                persist_result(result)
+            return {"result": result}
         assignment = binding.assignment
         if assignment.task_id != spec.task_id or assignment.attempt_number != number:
             raise ValueError("assignment does not match task attempt")
@@ -350,11 +359,19 @@ def build_task_graph(
             model=state["assignment"].model,
         )
         attempts = (*state.get("attempts", ()), summary)
-        if not result.attempts:
-            result = result.model_copy(update={"attempts": attempts})
+        failures = state.get("attempt_failures", ())
+        if result.failure_category is not None and result.status != "succeeded":
+            failures = (
+                *failures,
+                AttemptFailureReason(
+                    attempt_id=AttemptId(state["attempt_id"]),
+                    reason_code=result.failure_category,
+                ),
+            )
+        result = result.model_copy(
+            update={"attempts": attempts, "attempt_failures": failures}
+        )
         terminal = result.status != "failed" or number == 2
-        if terminal and persist_result is not None:
-            persist_result(result)
         binding = AttemptBinding(state["attempt_id"], state["assignment"])
         if settle_attempt is not None:
             settle_attempt(binding, result)
@@ -385,6 +402,9 @@ def build_task_graph(
                 result = result.model_copy(
                     update={"status": "returned_to_lead", "attempts": attempts}
                 )
+            if persist_result is not None:
+                persist_result(result)
+            if result.status == "returned_to_lead":
                 if exhaust_fingerprint is not None:
                     exhaust_fingerprint(state["spec"])
             return {"result": result, "attempts": attempts}
@@ -400,6 +420,7 @@ def build_task_graph(
             "attempt_number": 2,
             "excluded_models": ((assignment.provider, assignment.model),),
             "attempts": attempts,
+            "attempt_failures": failures,
             "previous_result": result,
             "result": None,
         }

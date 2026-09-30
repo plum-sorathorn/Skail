@@ -1,6 +1,55 @@
 # Remaining remediation implementation plan
 
-## S8 diagnosis update (2026-09-28, latest)
+## Presentation acceptance (2026-09-30)
+
+Fresh real-TUI S1, S2, and two-model S3 runs completed; S1 and S3 left their fixtures unchanged.
+S2 changed only the named normalization source/test, and independent focused tests passed 3/3
+after the baseline failed. S6's retained completed run was resumed without a provider call to
+capture its final answer. All five completion answers matched the current mounted Textual renderer
+exactly and had answer fragments in saved terminal captures. Evidence:
+`out/live-agentic/presentation-live-20260930/live-presentation-comparison.json`, scenario exports,
+transcripts, and operator tests. The earlier historical export replay is retained at
+`out/live-agentic/presentation-replay-20260930/`. One S3 first attempt blocked on missing decision
+admission; one S2 attempt wrote `tests/__init__.py` outside scope and was cancelled. Both failed
+attempts remain preserved. Thirty-two new unique fully priced provider calls cost USD 0.020565800
+locally, including failed attempts. The append-only audit now has 925 unique IDs, zero duplicates;
+the campaign estimate is USD 3.978118284. Provider billing is unknown. R10 presentation is closed;
+conditional live R9 edges remain separate.
+
+## Attempt diagnostics and offline gates (2026-09-30)
+
+Attempt-keyed failure reason codes now survive retry terminalization and appear on their matching
+session-export attempt rows. The export exposes only the bounded runtime category, excluding raw
+provider output. Focused tests passed 21/21, including first-attempt failure followed by successful
+retry. On the combined candidate, ordered gates passed: Ruff, strict mypy (126 files), unit/contract
+941 passed and 2 skipped, smoke, full offline suite 1,252 passed and 5 skipped. The subsequent
+exact-candidate package and release renewal is recorded below.
+
+## Exact-candidate local release and speed evidence (2026-09-30)
+
+Clean isolated commit `557b3fc2fe2338c948c8fada1bae541c595a20d9` matched the 26 changed
+working-tree files by line content at snapshot time. Package build/install and all eight
+release-check stages passed, including benchmark thresholds and a fresh paired evaluation.
+Wheel SHA-256: `24962cb9b3f163206218a0c6e613f04ee960d006db041d9ede5cceddb5f59e08`;
+sdist SHA-256: `2abb5989b87814f1c399ab62438fab40561647e34d924f9ed172c132b0ceb0e4`.
+Retained package, benchmark, 54-fixture/2,700-result evaluation, and timing evidence:
+`out/live-agentic/release-renewal-20260930/`. Three serial exact-candidate suite wall times were
+238.548, 210.763, and 237.399 seconds, median 237.399. All 1,252 tests passed with 5 expected
+skips in each run. The original 131.336-second target remains unmet; no safe causal optimization
+was demonstrated. Hosted matrix and branch protection remain unverified because GitHub CLI has no
+authentication here. The local release pass does not close those external or live presentation gates.
+
+## S8 live pass (2026-09-29, current)
+
+[S8 resolution](s8-resolution-2026-09-29.md): a real GPT-4.1 nano result-validation failure
+escalated to selected GPT-5 mini on the same task, integrated, and passed the independent parser
+test. Startup now honors the selected roster; retries require strictly greater persisted capability
+fit. The run used reviewed user catalog profiles and fresh gateway pricing, not inferred model-name
+quality. Sixteen run calls plus three latency probes cost USD 0.011183000 locally; campaign estimate
+is USD 3.957552484. This closes R5/R10-S8 for the qualified run. Historical failures below remain
+historical; other release and performance criteria remain open.
+
+## S8 diagnosis update (2026-09-28, historical)
 
 [The S8 diagnosis](s8-diagnosis-2026-09-28.md) found a genuine first child result-validation
 failure and a retry blocked before provider execution. The exported `model_disabled` binding
@@ -125,18 +174,18 @@ The full-suite gate's 189.549 seconds is one external-wall observation, not a ti
 
 | Item | Current disposition | Evidence and exact remaining criterion |
 |---|---|---|
-| S1 | Historical read-only pass | Preserve the original pass. Historical raw answer provenance is unavailable; checklist item 5 still needs a current paired presentation observation or explicit evidence-based closure. |
-| S2 | Implementation verified; presentation incomplete | `session-S2-correction.json` and later complete session exports; operator normalization check passed 4/4. Capture rendered final answer versus exported final output. |
-| S3 | Read-only routing verified; presentation incomplete | `session-S3-live-final.json`; two requested routes worked after the config-revision fix. Capture final answers for both models, with unchanged fixture. |
+| S1 | Passed fresh live presentation | New GPT-4.1 mini read-only run completed; no fixture edits; one final answer matched the export, mounted TUI, and terminal capture. Historical raw answer provenance remains unavailable. |
+| S2 | Passed fresh live presentation and implementation | New GPT-5 mini direct run changed only normalization source/test; independent focused tests passed 3/3; final answer matched export, mounted TUI, and resumed terminal capture. Prior out-of-scope attempt is preserved separately. |
+| S3 | Passed fresh two-model live presentation | Same-session GPT-4.1 nano then GPT-4.1 mini read-only reviews completed, with no fixture changes; each answer matched export, mounted TUI, and terminal capture. Prior decision-blocked attempt is preserved separately. |
 | S4 | Passed live | Session `d59ee73b-4efc-4806-b6b6-ed157aaae0a5`: main run `5360fc2f-fbe5-448b-b740-efe2369566a8` and FIFO run `b9dbd334-a419-4394-abf0-8426551bcdf0` completed; two accepted child results, checkpoint, 15.783365 seconds observed overlap, and 3/3 independent focused tests. Evidence: `s4-live-remediation-20260928T101200Z-fifo-direct/`. |
 | S5 | Passed main live path | Fresh run `31f697cc-3018-43c8-a6fe-af638ad819e5`; accepted discoveries, checkpoint/revision, integrated scoped writer, independent 4/4 parser tests, mounted plan replay. Historical causes remain unknown. See [diagnosis](s5-diagnosis-2026-09-28.md). |
-| S6 | Passed live | Session `6b480702-4fcf-485e-9685-f9d7acca4dd2`, run `e533a686-5cbd-4f41-a41b-3e9abe322a2c`: durable JSON question restored/answered in the same run, only exporter and focused test written, and independent focused test passed. Earlier operator-edited fixture remains quarantined. |
+| S6 | Passed live and presentation | Session `6b480702-4fcf-485e-9685-f9d7acca4dd2`, run `e533a686-5cbd-4f41-a41b-3e9abe322a2c`: durable JSON question restored/answered, exporter/focused test passed. A no-call resume captured the final answer, matching the export and mounted TUI. Earlier operator-edited fixture remains quarantined. |
 | S7 | Passed, lead boundary only | Run `6b2da5e7-797c-4502-9d91-19742ac9ff34`: traversal write denied and outside file absent. This remains separate from the child-scope denial. |
 | Child write denial | Passed live | Run `ae17ce6a-3a03-4f75-afc6-77f0c1381c8e`, child task `cdf0e48b-b628-48d6-a27d-2336d5856c09`: task-owned `write_file` denial `write is outside the delegated task scope`; parent fixture unchanged and out-of-scope test absent. Evidence: `child-scope-denial-live-20260928T103251Z-scope-mismatch/`. |
 | R9 active-child cancellation | Passed live | Session `b1afdf23-3f8e-48a7-bcd1-49bbdfb72c6f`, run `2fdb4d2b-0a4b-4007-ac02-de0fb3f1b4d3`: two child calls active at Ctrl+C; child tasks/attempts, plan nodes, and reservations terminal; queued prompt shown then discarded; no later provider start, warning, or workspace change. Permission/question edges remain open. |
-| S8 | Failed/incomplete | `session-S8-retest-2026-09-26-final.json`, run `14913447-a527-452f-93b6-f83de65ce04b`, task `f4dd996c-fb76-4914-8a2d-a11c42a248c7`: natural result-validation failure, then attempt-two admission blocked before a provider call. The fresh route preflight found no automatic retry candidate with trusted capability evidence and fit at the 0.65 floor; no accepted/integrated result or completed escalation. |
-| Suite speed | Open | Exact candidate `9d28dc4`: 161.856/153.587/151.763 seconds; median 153.587, 22.251 seconds above the 131.336s target. No established causal gain. |
-| Release qualification | Incomplete | Ordered local gates/package-check passed on `6a99a32`; clean-worktree release-check passed on `4f0b342`. Hosted Windows/Linux matrix, Python 3.12–3.14 CI evidence, and branch-protection verification remain. See Task R14. |
+| S8 | Passed live September 29 | `s8-fix-20260929/verification.json`, run `6e929683-31ff-49e9-b69d-7e1c76d269ec`: natural GPT-4.1 nano failure, same-task selected GPT-5 mini retry, accepted integration and independent parser test 1/1. See [resolution](s8-resolution-2026-09-29.md). Earlier failed runs remain historical. |
+| Suite speed | Open | Exact candidate `557b3fc`: 238.548/210.763/237.399 seconds; median 237.399, 106.063 seconds above the 131.336s target. Previous `9d28dc4` median 153.587 is historical; no established causal gain. |
+| Release qualification | Incomplete | Clean isolated candidate `557b3fc` passed package/release checks with retained artifacts and benchmark/evaluation reports. Hosted Windows/Linux matrix, Python 3.12–3.14 CI evidence, and branch-protection verification remain. See Task R14. |
 
 All evidence paths in this table are relative to `out/live-agentic/` unless stated otherwise.
 Also reviewed: `BUGS.md`, `OUTPUT_MISFORMATS.md`, `RUN_LOG.md`, `COSTS.csv`,
@@ -405,6 +454,11 @@ command output. This change is not evidence about the historical malformed artif
 
 ### R5 — Qualify a real retry route and preserve diagnostic evidence
 
+**Current status: passed for the September 29 selected roster.** Reviewed profiles, authenticated
+pricing, real retry assignments, preserved failure handoff, integration, and independent testing
+are recorded in [S8 resolution](s8-resolution-2026-09-29.md). The older observations below explain
+why the prior roster was ineligible; they do not describe the new qualified run.
+
 Dependencies: R0; writer eligibility also needs R4b. Scope: preflight and routing evidence.
 
 Build a provider-free preflight using the actual config/catalog/health/candidate snapshot, profile
@@ -626,10 +680,9 @@ ownership/accounting conditions and on the scenario's allocated call/cost bounda
 
 **Status: three controlled exact-candidate runs passed; 20% objective remains open.** The current
 serial median and full top-40 data are documented in PERFORMANCE.md and
-out/live-agentic/timing-remediation-final-candidate-9d28dc4/. External-wall median is 153.587
-seconds, 6.446% below the older 164.17-second baseline and 22.251 seconds above the 20% target.
-The earlier 137.640-second series predates the final R9 UI assertions and did not record its power
-scheme; do not use it as the current-candidate result.
+out/live-agentic/release-renewal-20260930/timing/. External-wall median is 237.399 seconds,
+106.063 seconds above the 131.336-second target. The prior `9d28dc4` median of 153.587 seconds
+is historical. Different test collections and host-load conditions prevent causal attribution.
 
 Dependencies: R1; final measurements after behavior/test changes. Scope: measurement, then one small
 candidate per commit. Read `docs/skail/PERFORMANCE.md`, `tests/conftest.py`, packaging/CLI/eval
@@ -680,10 +733,10 @@ not a new current-release pass. Reopen if affected behavior changes.
 | LIVE-027; OUT-010 | R2/R3 rejected/no-decision completion, plus matching R10 evidence; no broad ban on conversational final answers. |
 | LIVE-028 | Top-level planned phrase confirmed; R9/R7b retain depth/nested-delegation rejection coverage and explicitly label live absence. |
 | LIVE-030/038; OUT-012/014 | R1/R2/R3 and same-run live S6 implementation/test; prefix guards alone do not close. |
-| LIVE-033/034 | S2 correction/S3 route already verified; R8/R10 missing final TUI/export comparisons. |
+| LIVE-033/034 | S2 correction/S3 route and fresh S1–S3 final TUI/export comparisons verified September 30; failed preliminary runs retained. |
 | LIVE-036; OUT-013 | R4a/R4b/R6/R7 and live S4/S8; no evidence of valid-result rejection in historical exports. |
 | LIVE-037 | Offline scope repair retained; separate R10 direct child denial still required. |
-| OUT-002 | R8/R10 paired answer presentation; preserve historical S1 pass and unknown original origin. |
+| OUT-002 | R8/R10 fresh paired answer presentation passed for S1/S2/both S3 routes and no-call S6 replay; preserve the historical S1 pass and unknown original origin. |
 | OUT-005/006 | R9 distinct legitimate permission card and compatible free-form/fixed-choice requests; report unexercised when absent. |
 | LIVE-039/040/041/042/043; OUT-015 | New offline-only decision-exhaustion, retained-worktree retry, checkpoint acknowledgement, staged read-only intent, file-digest, and completion-replay defects/gaps are appended to BUGS/OUTPUT_MISFORMATS with focused evidence. All are fixed/clarified offline; no historical live cause is assigned. |
 
@@ -740,9 +793,8 @@ report that dependency as blocked, after preparing the reviewable candidate loca
 Final report must separate: passed live, fixed offline/live pending, failed, unexercised natural or
 conditional scenarios, withheld/blocked qualification, performance result, and external provider
 unknowns. Do not describe a candidate with failed S4/S5/S6 or actionable defects as release-ready.
-S8 cannot be forced to occur; absence of a natural failure remains unexercised and requires an
-explicit release disposition rather than an invented pass. Do not push/tag/publish as part of this
-plan unless separately authorized.
+S8 passed on a natural September 29 failure and stronger same-task retry; preserve that evidence.
+Do not push/tag/publish as part of this plan unless separately authorized.
 
 ## Dependency checkpoints and stop rules
 

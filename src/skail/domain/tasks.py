@@ -232,6 +232,15 @@ TaskFailureCategory = Literal[
 ]
 
 
+class AttemptFailureReason(BaseModel):
+    """Safe failure classification retained against its child attempt identity."""
+
+    model_config = ConfigDict(frozen=True)
+
+    attempt_id: AttemptId
+    reason_code: TaskFailureCategory
+
+
 class TaskResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -248,6 +257,7 @@ class TaskResult(BaseModel):
     artifacts: tuple[ArtifactRef, ...] = ()
     verification: tuple[VerificationResult, ...] = ()
     attempts: tuple[AttemptSummary, ...] = ()
+    attempt_failures: tuple[AttemptFailureReason, ...] = ()
     changed_paths: tuple[str, ...] = ()
     follow_up: str | None = None
     verification_authority: Literal["runtime", "model-authored"] | None = None

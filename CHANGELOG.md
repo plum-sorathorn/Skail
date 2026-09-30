@@ -10,6 +10,8 @@ Linux CI raw evidence is still required and Linux green is not claimed.
 
 ### Fixed
 
+- Keep discovered models outside the selected roster disabled at startup. Escalation now requires
+  a strictly stronger model than the failed assignment and works after a manually pinned attempt.
 - Journal SQLite connection pooling (`6809874`): reuse at most one idle handle per journal
   instead of opening a fresh handle per transaction, restoring append throughput while
   preserving synchronous=FULL and per-op commit/rollback.

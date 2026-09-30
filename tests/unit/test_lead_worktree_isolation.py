@@ -27,7 +27,9 @@ from langchain_core.messages import AIMessage, ToolMessage
 from skail.agents.lead import LeadControls
 from skail.domain.events import DiagnosticPayload
 from skail.domain.ids import TaskId, new_session_id
+from skail.domain.routing import RoutingMode
 from skail.domain.tasks import ArtifactRef, TaskResult, VerificationResult
+from skail.providers.models import CapabilityVector
 from skail.runtime.run_controller import RunController
 from skail.runtime.workspaces import WorkspaceManager
 from skail.sessions.journal import Journal
@@ -253,8 +255,9 @@ async def test_child_write_integrates_with_changeset_and_cleanup(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("routing_mode", [RoutingMode.AUTO, RoutingMode.MANUAL])
 async def test_failed_child_reuses_authenticated_worktree_for_same_task_retry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, routing_mode: RoutingMode
 ) -> None:
     workspace = _repository(tmp_path)
     (workspace / "tracked.txt").write_text("user input\n", encoding="utf-8")
@@ -358,7 +361,28 @@ async def test_failed_child_reuses_authenticated_worktree_for_same_task_retry(
         workspace_manager=WorkspaceManager(tmp_path / "skail-data"),
     )
 
-    result = await controller.run_instruction("Update tracked.txt")
+    # Inject distinct measured capabilities; the generic fake defaults are equal.
+    snapshot = controller._get_candidates(routing_mode=routing_mode)
+    all_candidates = (
+        *snapshot.candidates,
+        *controller._get_candidates(for_lead=True, routing_mode=routing_mode).candidates,
+    )
+    candidates = tuple(
+        candidate.model_copy(update={"profile": candidate.profile.model_copy(update={
+            "capability": CapabilityVector(
+                coding=0.6 if candidate.profile.model == "implementer-model" else 0.8,
+                reasoning=0.6 if candidate.profile.model == "implementer-model" else 0.8,
+                tool_reliability=0.8, latency=0.1,
+            ),
+        })}) if candidate.profile.model != "strong-model" else candidate
+        for candidate in all_candidates
+    )
+    controller.candidates_fn = lambda: snapshot.model_copy(update={"candidates": candidates})
+    controller.profile_models["implementer"] = "injected:implementer-model"
+    result = await controller.run_instruction(
+        "Update tracked.txt",
+        controls=LeadControls(model="injected:lead-model", routing_mode=routing_mode),
+    )
 
     assert result.status == "completed", (
         result.status,

@@ -255,6 +255,10 @@ Soft ranking inputs:
 
 Unknown capability is not zero and is not invented from model price, parameter-count strings, or brand names. Unknown models remain manually selectable but are excluded from automatic routing until a user supplies a trusted profile or evaluation evidence.
 
+Provider discovery does not enable models. Assignments use the user's selected provider models
+plus explicitly pinned models for the run. An empty or obsolete selection never expands to the
+entire provider catalog.
+
 ### 6.4 Initial capability floors
 
 Initial values are evaluation hypotheses, not permanent product truths:
@@ -394,6 +398,10 @@ Attempt-one failure:
 1. Persist the failure reason, evidence, current diff/worktree, and route decision.
 2. Exclude the failed concrete model.
 3. Raise the capability floor once.
+   Require a capability fit strictly above the failed assignment's persisted fit, within the
+   selected model roster. Unknown prior fit blocks escalation with `escalation_baseline_unknown`;
+   equal or weaker fits are excluded as `escalation_not_stronger`. Manual first attempts use
+   automatic routing for this stronger retry; ordinary profile pins apply to attempt one.
 4. Start attempt two with the same task ID, a new attempt ID, and a concise failure handoff.
 
 Attempt-two failure:

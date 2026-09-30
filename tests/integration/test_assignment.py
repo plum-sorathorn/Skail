@@ -178,7 +178,11 @@ def test_assignment_retries_from_a_fresh_versioned_snapshot(tmp_path: Path) -> N
     assert stored.payload["health_revision"] == "current"
 
 
-def test_result_validation_retry_routes_to_stronger_eligible_model(tmp_path: Path) -> None:
+@pytest.mark.parametrize("replacement_fit", [0.55, 0.6, 0.8])
+@pytest.mark.parametrize("batch", [False, True])
+def test_result_validation_retry_routes_to_stronger_eligible_model(
+    tmp_path: Path, replacement_fit: float, batch: bool
+) -> None:
     """Synthetic malformed results exercise retry routing; no live failure is implied."""
     service, journal = _service(tmp_path)
     first_candidate = _candidate("model-a").model_copy(
@@ -194,7 +198,8 @@ def test_result_validation_retry_routes_to_stronger_eligible_model(tmp_path: Pat
         update={
             "profile": _candidate("model-b").profile.model_copy(
                 update={"capability": CapabilityVector(
-                    coding=0.8, reasoning=0.8, tool_reliability=0.8, latency=0.5
+                    coding=replacement_fit, reasoning=replacement_fit,
+                    tool_reliability=0.8, latency=0.5
                 )}
             )
         }
@@ -228,19 +233,37 @@ def test_result_validation_retry_routes_to_stronger_eligible_model(tmp_path: Pat
                 risk=TaskRisk.ROUTINE,
                 escalated=True,
                 failed_model=("fake", first.model),
+                failed_capability_fit=0.1,  # Untrusted caller hint cannot lower the baseline.
             ),
         }
     )
     assert ("fake", first.model) in retry_request.requirements.excluded_models
-    retry = service.assign(
-        retry_request, lambda: _snapshot(first_candidate, stronger_candidate)
-    )
+    # A catalog refresh removing the failed model must not erase its recorded score.
+    if batch:
+        result = service.assign_batch(
+            (retry_request,), lambda _: _snapshot(stronger_candidate),
+            lead_allowance_usd=Decimal("0"),
+        )
+        retry = result.assignments[0] if result.assignments else RouteFailure(
+            binding_constraint=result.failures[0].binding_constraint,
+            excluded_counts=result.failures[0].excluded_counts,
+        )
+    else:
+        retry = service.assign(retry_request, lambda: _snapshot(stronger_candidate))
+
+    assert first.capability_fit == 0.6
+    if replacement_fit <= 0.6:
+        assert isinstance(retry, RouteFailure)
+        assert retry.binding_constraint == "escalation_not_stronger"
+        assert len(journal.get_session_snapshot(str(SESSION_ID)).assignments) == 1
+        return
 
     assert not isinstance(retry, RouteFailure)
     assert retry.model == "model-b"
     assert retry.capability_floor is not None and retry.capability_floor > first.capability_floor
-    assert "excluded.model_excluded=1" in retry.explanation
-    assert journal.get_session_snapshot(str(SESSION_ID)).assignments[-1].model == "model-b"
+    stored = journal.get_session_snapshot(str(SESSION_ID)).assignments[-1]
+    assert stored.model == "model-b"
+    assert stored.payload["requirements"]["failed_capability_fit"] == 0.6
 
 
 @pytest.mark.parametrize(
