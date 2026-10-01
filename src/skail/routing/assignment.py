@@ -714,7 +714,28 @@ class AssignmentUsageSettler:
             )
         return call_id
 
-    def mark_ambiguous(self, call_id: str, error: Exception) -> None:
+    def mark_call_succeeded(self, call_id: str) -> None:
+        """Record a returned provider response before its usage is normalized."""
+        now = datetime.now(UTC).isoformat()
+        with self.journal.transaction() as transaction:
+            row = transaction.connection.execute(
+                "SELECT status FROM provider_calls WHERE call_id=?", (call_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(call_id)
+            if row["status"] == "completed":
+                return
+            if row["status"] != "started":
+                raise AccountingReconciliationRequired(
+                    "ambiguous provider call requires explicit reconciliation"
+                )
+            transaction.connection.execute(
+                "UPDATE provider_calls SET status='completed',authority='unknown',updated_at=? "
+                "WHERE call_id=? AND status='started'",
+                (now, call_id),
+            )
+
+    def mark_ambiguous(self, call_id: str, error: BaseException) -> None:
         now = datetime.now(UTC).isoformat()
         detail = str(error) or type(error).__name__
         # Prefix the exception class name (code-defined, never a secret) so
@@ -830,6 +851,10 @@ class AssignmentUsageSettler:
                 "SELECT status FROM provider_calls WHERE call_id=?", (call_id,)
             ).fetchone()
             if call is not None:
+                if call["status"] == "ambiguous":
+                    raise AccountingReconciliationRequired(
+                        "ambiguous provider call requires explicit reconciliation"
+                    )
                 transaction.connection.execute(
                     "UPDATE provider_calls SET status='completed',input_tokens=?,"
                     "output_tokens=?,amount_usd=?,authority=?,updated_at=? WHERE call_id=?",
@@ -843,22 +868,29 @@ class AssignmentUsageSettler:
                     ),
                 )
 
-    def complete_unmeasured_calls(self, assignment_id: str) -> int:
-        """Mark successful-but-unmeasured `started` calls completed (fail-open).
-
-        Streaming tool-call responses may carry no usage metadata, leaving a
-        `started` row when `record_call` is skipped or races. These calls
-        succeeded, so they settle via the conservative attempt-level envelope
-        in `settle_attempt`; only `ambiguous` rows stay fail-closed.
-        """
+    def mark_unreturned_calls_ambiguous(self, assignment_id: str) -> int:
+        """Keep calls without a recorded provider response funded for reconciliation."""
         now = datetime.now(UTC).isoformat()
+        summary = "UnrecordedProviderOutcome: provider response was not recorded"
         with self.journal.transaction() as transaction:
-            cursor = transaction.connection.execute(
-                "UPDATE provider_calls SET status='completed',authority='unknown',"
-                "updated_at=? WHERE assignment_id=? AND status='started'",
-                (now, assignment_id),
-            )
-            return cursor.rowcount
+            rows = transaction.connection.execute(
+                "SELECT call_id FROM provider_calls WHERE assignment_id=? AND status='started'",
+                (assignment_id,),
+            ).fetchall()
+            for row in rows:
+                call_id = str(row["call_id"])
+                transaction.connection.execute(
+                    "UPDATE provider_calls SET status='ambiguous',error_summary=?,updated_at=? "
+                    "WHERE call_id=? AND status='started'",
+                    (summary, now, call_id),
+                )
+                transaction.connection.execute(
+                    "INSERT OR IGNORE INTO accounting_reconciliation_failures "
+                    "(failure_id,assignment_id,call_id,status,summary,created_at) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (str(uuid4()), assignment_id, call_id, "open", summary, now),
+                )
+            return len(rows)
 
     def settle_attempt(self, assignment_id: str) -> None:
         with self.journal._connect() as connection:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import sqlite3
 import subprocess
 import sys
@@ -11,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from scripts.live_acceptance import (
+    KEYS,
     InteractionStep,
     LiveSpec,
     PTYSession,
@@ -226,7 +228,10 @@ def test_live_spec_rejects_shell_strings_overspend_and_unowned_workspace(
         validate_spec(base, root=fake_root)
 
 
-def test_campaign_reservations_count_failed_attempts_toward_the_cap(tmp_path: Path) -> None:
+@pytest.mark.parametrize("status", ("failed", "captured"))
+def test_campaign_reservations_count_unsettled_attempts_toward_the_cap(
+    tmp_path: Path, status: str
+) -> None:
     workspace = tmp_path / "fixture"
     workspace.mkdir()
     evidence = tmp_path / "evidence"
@@ -261,7 +266,7 @@ def test_campaign_reservations_count_failed_attempts_toward_the_cap(tmp_path: Pa
     )
 
     _reserve_campaign(ledger, first, evidence)
-    _finish_campaign(ledger, first.scenario_id, "failed")
+    _finish_campaign(ledger, first.scenario_id, status)
 
     with pytest.raises(ValueError, match="approved USD 3.00 campaign cap"):
         _reserve_campaign(ledger, second, evidence)
@@ -552,6 +557,80 @@ def test_session_export_verifier_detects_provider_start_after_run_cancellation()
     assert "model_started_after_cancel" in result["failed_checks"]
 
 
+def test_cancelled_live_call_passes_only_with_its_budget_reservation_held() -> None:
+    export = {
+        "schema_version": 2,
+        "runs": [{"run_id": "run-1", "status": "cancelled"}],
+        "tasks": [{"task_id": "lead"}, {"task_id": "child"}],
+        "attempts": [],
+        "events": [
+            {"event_id": "started", "run_id": "run-1", "sequence": 1, "type": "model.started"},
+            {"event_id": "cancel", "run_id": "run-1", "sequence": 2, "type": "run.cancelled"},
+        ],
+        "provider_calls": [
+            {
+                "call_id": "child-call",
+                "assignment_id": "child-assignment",
+                "run_id": "run-1",
+                "provider": "llmgateway",
+                "model": "gpt-5-mini",
+                "status": "ambiguous",
+                "authority": "unknown",
+                "cost_usd": None,
+            }
+        ],
+        "budget_reservations": [
+            {
+                "idempotency_key": "assignment-reservation:child-assignment",
+                "status": "reserved",
+                "amount_usd": "0.017471",
+            }
+        ],
+        "usage": [],
+    }
+    kwargs = {
+        "terminal_frames": ["QUEUED 1\nApplication shutdown: 1 queued prompt discarded."],
+        "selected_models": ("llmgateway:gpt-5-mini",),
+        "reserved_usd": Decimal("0.49"),
+        "expected_run_status_counts": {"cancelled": 1},
+        "expected_run_count": 1,
+        "expected_task_count": 2,
+        "observed_provider_call_ids": ("child-call",),
+        "expected_held_ambiguous": True,
+        "expected_terminal_text": ("Application shutdown: 1 queued prompt discarded.",),
+    }
+
+    result = verify_session_export(export, **kwargs)
+
+    assert result["status"] == "passed"
+    assert result["accounting_disposition"] == "held_ambiguous"
+    assert result["local_token_cost_usd"] is None
+    assert result["held_reservation_usd"] == "0.017471"
+
+    export["budget_reservations"][0]["status"] = "released"
+    released = verify_session_export(export, **kwargs)
+    assert released["status"] == "failed"
+    assert "held_ambiguous_accounting_missing" in released["failed_checks"]
+
+    export["budget_reservations"][0]["status"] = "reserved"
+    missing_queue = verify_session_export(
+        export, **{**kwargs, "terminal_frames": ["QUEUED 1"]}
+    )
+    assert "terminal_text_missing" in missing_queue["failed_checks"]
+
+    unobserved = verify_session_export(
+        export, **{**kwargs, "observed_provider_call_ids": ()}
+    )
+    assert "held_ambiguous_accounting_missing" in unobserved["failed_checks"]
+
+    ordinary = verify_session_export(export, **{**kwargs, "expected_held_ambiguous": False})
+    assert "cost_unresolved_or_over_reservation" in ordinary["failed_checks"]
+
+    export["runs"].append({"run_id": "unexpected-follow-up", "status": "completed"})
+    extra_run = verify_session_export(export, **kwargs)
+    assert "run_count_mismatch" in extra_run["failed_checks"]
+
+
 def test_workspace_verifier_checks_full_path_set_and_expected_marker(tmp_path: Path) -> None:
     workspace = tmp_path / "fixture"
     workspace.mkdir()
@@ -627,3 +706,40 @@ Probe().run()
         session.close()
 
     assert "CTRLENTER" in screen
+
+
+def test_pty_cleanup_asks_the_owned_app_to_quit_before_forcing_exit() -> None:
+    session = PTYSession.__new__(PTYSession)
+    session.capture = ScreenCapture(columns=80, rows=24)
+    session._chunks = queue.Queue()
+    session._eof = False
+
+    class Process:
+        alive = True
+        writes: list[str] = []
+        forced = False
+
+        def isalive(self) -> bool:
+            return self.alive
+
+        def write(self, value: str) -> None:
+            self.writes.append(value)
+            self.alive = False
+            session._chunks.put(None)
+
+        def terminate(self, *, force: bool) -> None:
+            self.forced = force
+            self.alive = False
+            session._chunks.put(None)
+
+    class Reader:
+        def join(self, timeout: float) -> None:
+            del timeout
+
+    session.process = Process()
+    session._reader = Reader()
+
+    session.close(graceful=True)
+
+    assert session.process.writes == [KEYS["ctrl+c"]]
+    assert session.process.forced is False

@@ -2,28 +2,34 @@
 
 ## Current disposition (2026-10-01)
 
-The 2026-09-30 historical sections below are retained. Current implementation and evidence are
-summarized in [plan.md](plan.md#current-implementation-and-verification-2026-10-01).
+The 2026-09-30 historical sections below are retained. The latest diagnosis and implementation
+are in [plan.md](plan.md#post-commit-failure-diagnosis-and-fixes-2026-10-01).
 
 - **Passed live:** free-form question answer; cancellation followed by fresh work; command approval
   and rejection; child-boundary review (one explorer, no grandchild, unchanged workspace). The
   nested boundary result is operational evidence only: the original TUI capture did not render a
   final answer, and its action-only export replay is retained in
   `out/live-agentic/r9-edges-20261001/runs/nested-boundary-direct-corrected/verification-replay.json`.
-- **Partially verified:** composer `/quit` cancelled the active run and discarded queued work, but
-  the cancelled provider call has unresolved usage. Three retained attempts hold USD 1.47. R9/R10
-  edge acceptance remains open until that usage is reconciled or its disposition is otherwise
-  resolved.
-- **Live campaign accounting:** USD 0.0602132 settled local cost, USD 1.47 unresolved reservation,
-  USD 1.4697868 remaining from the USD 3.00 cap. Provider billing is unknown.
-- **Performance:** current candidate external median 123.508s across three measured runs, under the
+- **Passed shutdown safety:** the corrected composer `/quit` run observed an active selected child
+  call, visible queued work, one cancelled run, no later provider start, and no file change. The
+  call is `ambiguous` and its reservation remains held. The original capture missed transient
+  shutdown copy; `out/live-agentic/r9-edges-20261001/runs/active-child-quit-accounting-fix/verification-replay.json`
+  independently passes the queue, exact-run-count, and held-accounting checks. Actual call usage
+  remains unknown, so R10's exact-cost criterion stays open.
+- **Live campaign accounting:** USD 0.0602132 settled local cost, USD 1.96 held for unknown call
+  outcomes, USD 0.9797868 remaining from the USD 3.00 cap. Provider billing is unknown.
+- **Performance:** checkpoint `be6fde9` external median 123.508s across three measured runs, under the
   131.336s absolute target. A causal improvement is not established; node collections differ by 48
-  actual cases and paired deltas are within the observed spread.
-- **Release:** package build/install is verified. Current release-check, hosted CI matrices, and
-  branch protection are not verified on this uncommitted candidate. The user README edit was kept.
+  actual cases and paired deltas are within the observed spread. A final-source timing renewal is
+  pending after the cancellation fix.
+- **Release:** checkpoint `be6fde9` is committed. Its clean release run passed the clean-tree,
+  Ruff, and mypy stages, then found a source-identity mismatch in a clean worktree. The mismatch
+  now has a red/green regression and a one-line fix; a new clean release run is pending. The user
+  README edit remains outside the commit. Hosted CI and branch protection are unverified.
   The latest public fast CI run (#37, commit `8dcb932`) failed in the Type check step across its six
-  matrix jobs; the aggregate gate failed too. Its logs require GitHub authentication, and the
-  unauthenticated log request returned 403. Local strict mypy passes on both baseline and candidate.
+  matrix jobs; the aggregate gate failed too. A fresh baseline `.[dev]` install reproduced the
+  missing `tomli_w` import, while fresh candidate installs pass mypy on Python 3.14 and 3.13.
+  Hosted rerun and branch-protection inspection still require authenticated access.
   [Public run #37](https://github.com/plum-sorathorn/Skail/actions/runs/36769915418).
 
 ## Presentation acceptance (2026-09-30)
@@ -129,10 +135,11 @@ snapshot is historical as of September 30; the current continuation is recorded 
 - [x] R9-live-cancel: A real TUI run cancelled while two child model calls were active. The run,
   child tasks/attempts, plan nodes, and reservations terminalized; the queued follow-up was visible
   and discarded, with no provider start after cancellation, traceback, unawaited warning, or fixture change.
-- [ ] R9-live-edges: Free-form answer/cancellation, Approve/Reject, and child-boundary review now
-  have retained passing evidence. Composer `/quit` visibly discarded queued work and cancelled its
-  active run, but one provider call per attempt lacks settled usage across three attempts; USD 1.47
-  remains reserved. See `out/live-agentic/r9-edges-20261001/`.
+- [x] R9-live-edges: Free-form answer/cancellation, Approve/Reject, child-boundary review, and
+  composer `/quit` shutdown safety have retained passing evidence. The `/quit` case visibly queued
+  work, cancelled its active child with an ambiguous call and held reservation, started no later
+  model call or follow-up run, and changed no files. Exact provider usage remains a separate R10
+  accounting limitation. See `out/live-agentic/r9-edges-20261001/`.
 - [x] R10-S6: Same durable run restored the question, accepted JSON, implemented the exporter/test,
   and passed the independent focused check. Its durable answer now also matches a no-call resumed
   TUI capture and the mounted renderer.
@@ -147,21 +154,21 @@ snapshot is historical as of September 30; the current continuation is recorded 
 - [x] R10-presentation: Fresh S1/S2 and both S3 model answers matched exported completion events,
   mounted TUI rendering, and terminal captures; the existing S6 answer matched on no-call resume.
 - [ ] R10-edges: Free-form question, correlated cancellation, approval, rejection, and operational
-  child-boundary outcomes match retained exports and fixture results. Active-child `/quit` remains
-  financially inconclusive because provider usage is unresolved; nested review did not produce a
-  rendered final answer and is not presentation evidence.
+  child-boundary and `/quit` safety outcomes match retained exports and fixture results. Active-child
+  provider usage remains unknown with full campaign reservations held; nested review did not produce
+  a rendered final answer and is not presentation evidence.
 - [x] Checkpoint C: S4/S6 and child-denial outcomes match their exports, fixture diffs, independent
   tests, and reconciled costs. S5/S8 and other open criteria retain their separate dispositions.
 - [x] R11: Three alternating current-candidate external-wall runs paired with a clean baseline,
   plus one warm-up per tree. All six measured runs passed; full raw data and node IDs are retained
   under `out/live-agentic/r11-matched-20261001/`.
-- [x] R11-speed: The current candidate median is 123.508 seconds, 7.828 seconds below the original
+- [x] R11-speed: Checkpoint `be6fde9` median is 123.508 seconds, 7.828 seconds below the original
   131.336-second target. Candidate collection is 1,305 cases versus 1,257 baseline; 48 actual cases
   were added. Paired deltas are -0.669, +2.023, and -0.904 seconds, so causal improvement is not
   established. The 557b3fc 237.399-second historical median was not reproduced.
 - [x] R12: Reconcile LIVE-001–045, OUT-001–016, new findings, old unchecked items, and changed docs.
 - [x] R13: Final-revision ordered gates passed: Ruff; strict mypy (127 source files); unit/contract
-  988 passed with 2 skipped; smoke; full offline suite 1,300 passed with 5 skipped; Graphify updated.
+  994 passed with 2 skipped; smoke; full offline suite 1,306 passed with 5 skipped; Graphify updated.
 - [x] R14-local: Package build/install and clean-worktree release-check passed on code candidate
   `6a99a32` / documentation commit `4f0b342`. Wheel SHA-256 `64d823546ce4696a450c445376c394f7072eabc68f10a2b41fea60c78d262c95`;
   sdist SHA-256 `ec2ab8c425489ff35af04219a408f8c318e3f38a2c7c0966c240484aebf8216e`. This is historical
@@ -169,8 +176,9 @@ snapshot is historical as of September 30; the current continuation is recorded 
   Hosted external gates remain separate.
 - [ ] R14-external: Exact-candidate hosted Windows/Linux matrix, Python 3.12–3.14 fast-matrix evidence,
   and branch-protection required-check verification. The latest public fast CI run #37 on `8dcb932`
-  failed at Type check in the six matrix jobs; the unauthenticated job-log API returned 403, so the
-  root diagnostic remains external. This is not evidence for the current uncommitted candidate.
+  failed at Type check in the six matrix jobs. A fresh baseline `.[dev]` install reproduced the
+  missing `tomli_w` import; fresh candidate installs pass strict mypy on Python 3.13/3.14. Hosted
+  candidate jobs, Python 3.12, and branch-protection settings remain unverified.
 - [x] R14-renewal: Package/release checks passed on clean isolated candidate `557b3fc`, including
   benchmark thresholds and a fresh complete paired evaluation. Artifact hashes and raw retained
   reports are in `out/live-agentic/release-renewal-20260930/`.
@@ -186,15 +194,15 @@ snapshot is historical as of September 30; the current continuation is recorded 
 Current dispositions: S4, S5 main path, S6, S7 lead traversal, separate child-scope denial, S8,
 S1/S2/S3/S6 presentation, and the operational R9 free-form, approval, rejection, and child-boundary
 cases passed. Composer `/quit` shutdown is functionally observed but financial acceptance remains
-open for unresolved provider usage. The historical 20% absolute speed target passes on the latest
-candidate; causal attribution is not established. Current exact-candidate release verification,
+open for unresolved provider usage. The historical 20% absolute speed target passed on checkpoint
+`be6fde9`; causal attribution is not established. Current exact-candidate release verification,
 hosted Windows/Linux and Python 3.12–3.14 evidence, branch protection, and provider billing remain
 unverified.
 
 Checkpoint D disposition: **Passed** — S4/S5 main path, S6, S7, child-scope denial, S8, presentation,
-ordered offline gates, and the directed R9 cases with reconciled usage. **Open** — R9/R10 composer
-`/quit` accounting, current exact-candidate release verification, hosted matrices, and branch
-protection. **Absolute speed target passed** — current candidate median 123.508s versus the
+ordered offline gates, and directed R9 shutdown safety with a held ambiguous call. **Open** — R10
+exact provider usage, current exact-candidate release verification, hosted matrices, and branch
+protection. **Absolute speed target passed on be6fde9** — median 123.508s versus the
 131.336s limit; causal speed improvement remains unproven. **External unknown** — provider billing,
 hosted CI, and branch protection. Release readiness remains withheld until the open acceptance and
 external criteria are resolved.

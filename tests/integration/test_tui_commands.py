@@ -429,6 +429,18 @@ async def test_tui_slash_cancel_has_no_framework_traceback(
             await pilot.pause()
 
     assert journal.get_session_snapshot(str(session_id)).runs[0].status == "cancelled"
+    with journal._connect() as connection:
+        provider_statuses = [
+            row["status"] for row in connection.execute("SELECT status FROM provider_calls")
+        ]
+        reservation_statuses = [
+            row["status"]
+            for row in connection.execute(
+                "SELECT status FROM budget_reservations WHERE task_id IS NOT NULL"
+            )
+        ]
+    assert provider_statuses == ["ambiguous"]
+    assert reservation_statuses == ["reserved"]
     assert any(
         item.content == "Execution cancelled." for item in app.projection.transcript_items
     )

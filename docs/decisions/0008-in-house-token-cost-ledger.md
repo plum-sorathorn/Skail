@@ -24,7 +24,9 @@ that includes child agents in the parent run's displayed total.
 3. A response with incomplete usage is not priced from a partial token count. The existing
    conservative attempt estimate is used where possible and remains labelled as an estimate;
    an ambiguous in-flight call remains unresolved and blocks unsafe replay. Missing usage is
-   never represented as a measured zero-dollar call.
+   never represented as a measured zero-dollar call. A response must return before its call is
+   marked successful without usage; cancellation while the provider handler is in flight retains
+   the reservation and records an ambiguous call.
 4. The run ledger includes the lead and every child task in that run exactly once. The TUI
    status strip shows cumulative cost across all runs in the session; its budget panel and meter
    remain scoped to the current run. Session export schema version 2 includes per-call token

@@ -44,7 +44,8 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         fallback_policy: ProviderFallbackPolicy | None = None,
         usage_callback: Callable[[str, object, str], None] | None = None,
         call_begin: Callable[[str, str], str] | None = None,
-        call_ambiguous: Callable[[str, Exception], None] | None = None,
+        call_succeeded: Callable[[str], None] | None = None,
+        call_ambiguous: Callable[[str, BaseException], None] | None = None,
         active_assignments: Mapping[str, FallbackBinding] | None = None,
         redactor: Any = None,
     ) -> None:
@@ -55,6 +56,7 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         self._fallback_policy = fallback_policy
         self._usage_callback = usage_callback
         self._call_begin = call_begin
+        self._call_succeeded = call_succeeded
         self._call_ambiguous = call_ambiguous
         self._active_assignments = dict(active_assignments or {})
         self._call_counts: dict[str, int] = {}
@@ -69,8 +71,10 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         call_id = self._begin_call(request)
         try:
             response = handler(bound)
-        except Exception as error:
+        except BaseException as error:
             self._mark_ambiguous(call_id, error)
+            if not isinstance(error, Exception):
+                raise
             if call_id is not None:
                 raise AccountingReconciliationRequired(
                     "provider outcome is ambiguous; paid execution is blocked"
@@ -92,8 +96,10 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         call_id = self._begin_call(request)
         try:
             response = await handler(bound)
-        except Exception as error:
+        except BaseException as error:
             self._mark_ambiguous(call_id, error)
+            if not isinstance(error, Exception):
+                raise
             if call_id is not None:
                 raise AccountingReconciliationRequired(
                     "provider outcome is ambiguous; paid execution is blocked"
@@ -232,7 +238,7 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         execution_key = hashlib.sha256(serialized.encode()).hexdigest()
         return self._call_begin(assignment_id, execution_key)
 
-    def _mark_ambiguous(self, call_id: str | None, error: Exception) -> None:
+    def _mark_ambiguous(self, call_id: str | None, error: BaseException) -> None:
         if call_id is not None and self._call_ambiguous is not None:
             self._call_ambiguous(call_id, error)
 
@@ -245,6 +251,8 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         assignment_id: str | None = None,
     ) -> None:
         try:
+            if call_id is not None and self._call_succeeded is not None:
+                self._call_succeeded(call_id)
             self._record_usage(
                 request,
                 response,
@@ -254,9 +262,8 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         except Exception:
             if call_id is None:
                 raise
-            # The provider returned successfully, so its outcome is known even when
-            # local usage normalization or persistence fails. Leave the call started;
-            # finalization will complete it conservatively from the reservation.
+            # A recorded success can settle conservatively when usage persistence
+            # fails. Without that marker, finalization holds the call unresolved.
 
     def _bind(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
         attempt = request.state.get("attempt_id")

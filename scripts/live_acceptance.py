@@ -308,6 +308,9 @@ def validate_spec(
         "question_kind",
         "interrupt_ui",
         "terminal_answer_required",
+        "terminal_contains",
+        "held_ambiguous_accounting",
+        "run_count",
         "task_count",
         "max_provider_calls",
         "changed_paths",
@@ -346,7 +349,21 @@ def validate_spec(
         expectations["terminal_answer_required"], bool
     ):
         raise ValueError("terminal_answer_required must be a boolean")
-    for field_name, maximum in (("task_count", 100), ("max_provider_calls", 32)):
+    if "held_ambiguous_accounting" in expectations and not isinstance(
+        expectations["held_ambiguous_accounting"], bool
+    ):
+        raise ValueError("held_ambiguous_accounting must be a boolean")
+    terminal_contains = expectations.get("terminal_contains", [])
+    if not isinstance(terminal_contains, list) or any(
+        not isinstance(phrase, str) or not phrase.strip() or len(phrase) > 200
+        for phrase in terminal_contains
+    ):
+        raise ValueError("terminal_contains must be a list of short nonempty strings")
+    for field_name, maximum in (
+        ("run_count", 50),
+        ("task_count", 100),
+        ("max_provider_calls", 32),
+    ):
         expected_count = expectations.get(field_name)
         if expected_count is not None and (
             isinstance(expected_count, bool)
@@ -598,7 +615,13 @@ class PTYSession:
             if not self._consume(min(0.1, deadline - time.monotonic())):
                 return
 
-    def close(self) -> None:
+    def close(self, *, graceful: bool = False) -> None:
+        if graceful and self.process.isalive():
+            try:
+                self.send_key("ctrl+c")
+                self.drain_for(5)
+            except Exception:
+                pass  # Force-stop only this process if the app cannot handle Ctrl+C.
         if self.process.isalive():
             self.process.terminate(force=True)
         self._reader.join(timeout=5)
@@ -766,9 +789,12 @@ def verify_session_export(
     expected_question_kind: str | None = None,
     expected_interrupt_ui: str | None = None,
     terminal_answer_required: bool = True,
+    expected_run_count: int | None = None,
     expected_task_count: int | None = None,
     max_provider_calls: int | None = None,
     observed_provider_call_ids: tuple[str, ...] = (),
+    expected_held_ambiguous: bool = False,
+    expected_terminal_text: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     from skail.runtime.presentation import model_content_to_text, present_lead_answer
 
@@ -898,6 +924,11 @@ def verify_session_export(
     )
     normalized_frames = [" ".join(frame.split()) for frame in terminal_frames]
     lowercase_frames = [frame.casefold() for frame in normalized_frames]
+    missing_terminal_text = [
+        phrase
+        for phrase in expected_terminal_text
+        if not any(" ".join(phrase.split()) in frame for frame in normalized_frames)
+    ]
     if expected_interrupt_ui == "question_free_form":
         interrupt_ui_matches = any(
             "your answer is needed" in frame
@@ -972,21 +1003,81 @@ def verify_session_export(
         }
     )
     known_cost = Decimal("0")
-    cost_unresolved = False
+    unpriced_calls: list[dict[str, Any]] = []
+    invalid_cost = False
     for call in provider_calls:
-        if not isinstance(call, dict) or call.get("cost_usd") is None:
-            cost_unresolved = True
+        if not isinstance(call, dict):
+            invalid_cost = True
+            continue
+        if call.get("cost_usd") is None:
+            unpriced_calls.append(call)
             continue
         try:
             amount = Decimal(str(call["cost_usd"]))
         except Exception:
-            cost_unresolved = True
+            invalid_cost = True
             continue
         if not amount.is_finite() or amount < 0:
-            cost_unresolved = True
+            invalid_cost = True
             continue
         known_cost += amount
+    cost_unresolved = bool(unpriced_calls) or invalid_cost
     cost_within_reservation = not cost_unresolved and known_cost <= reserved_usd
+    held_reservation = Decimal("0")
+    held_ambiguous = False
+    unpriced_call_ids = {
+        call.get("call_id")
+        for call in unpriced_calls
+        if isinstance(call.get("call_id"), str)
+    }
+    unpriced_assignments = {
+        call.get("assignment_id")
+        for call in unpriced_calls
+        if isinstance(call.get("assignment_id"), str)
+    }
+    if (
+        expected_held_ambiguous
+        and unpriced_calls
+        and not invalid_cost
+        and len(unpriced_call_ids) == len(unpriced_calls)
+        and all(isinstance(call.get("assignment_id"), str) for call in unpriced_calls)
+        and len(unpriced_assignments) > 0
+        and bool(observed_provider_call_ids)
+        and set(observed_provider_call_ids) <= unpriced_call_ids
+        and all(
+            call.get("status") == "ambiguous"
+            and run_statuses.get(call.get("run_id")) == "cancelled"
+            for call in unpriced_calls
+        )
+    ):
+        reservations = export.get("budget_reservations")
+        usage_rows = export.get("usage")
+        if isinstance(reservations, list) and isinstance(usage_rows, list):
+            held_amounts: list[Decimal] = []
+            for assignment_id in unpriced_assignments:
+                matches = [
+                    row
+                    for row in reservations
+                    if isinstance(row, dict)
+                    and row.get("idempotency_key")
+                    == f"assignment-reservation:{assignment_id}"
+                ]
+                if len(matches) != 1 or matches[0].get("status") != "reserved" or any(
+                    isinstance(row, dict)
+                    and row.get("usage_id") == f"usage:{assignment_id}"
+                    for row in usage_rows
+                ):
+                    break
+                try:
+                    amount = Decimal(str(matches[0]["amount_usd"]))
+                except Exception:
+                    break
+                if not amount.is_finite() or amount <= 0:
+                    break
+                held_amounts.append(amount)
+            if len(held_amounts) == len(unpriced_assignments):
+                held_reservation = sum(held_amounts, Decimal("0"))
+                held_ambiguous = known_cost + held_reservation <= reserved_usd
     attempts_per_task = Counter(
         attempt.get("task_id")
         for attempt in attempts
@@ -995,6 +1086,7 @@ def verify_session_export(
     over_attempted_tasks = sorted(
         task_id for task_id, count in attempts_per_task.items() if count > 2
     )
+    run_count_mismatch = expected_run_count is not None and len(runs) != expected_run_count
     task_count_mismatch = (
         expected_task_count is not None and len(export.get("tasks", [])) != expected_task_count
     )
@@ -1028,12 +1120,18 @@ def verify_session_export(
     ):
         if failures:
             failed_checks.append(label)
-    if not cost_within_reservation:
+    if expected_held_ambiguous and not held_ambiguous:
+        failed_checks.append("held_ambiguous_accounting_missing")
+    elif not expected_held_ambiguous and not cost_within_reservation:
         failed_checks.append("cost_unresolved_or_over_reservation")
+    if missing_terminal_text:
+        failed_checks.append("terminal_text_missing")
     if not question_kind_matches:
         failed_checks.append("question_kind_mismatch")
     if task_count_mismatch:
         failed_checks.append("task_count_mismatch")
+    if run_count_mismatch:
+        failed_checks.append("run_count_mismatch")
     if provider_call_limit_exceeded:
         failed_checks.append("provider_call_limit_exceeded")
     return {
@@ -1070,10 +1168,20 @@ def verify_session_export(
         "task_count": len(export.get("tasks", [])),
         "expected_task_count": expected_task_count,
         "task_count_mismatch": task_count_mismatch,
+        "run_count": len(runs),
+        "expected_run_count": expected_run_count,
+        "run_count_mismatch": run_count_mismatch,
         "terminal_answer_matches": terminal_answer_matches,
         "local_token_cost_usd": None if cost_unresolved else format(known_cost, "f"),
+        "known_token_cost_usd": format(known_cost, "f"),
+        "held_reservation_usd": format(held_reservation, "f") if held_ambiguous else None,
+        "accounting_disposition": (
+            "held_ambiguous" if held_ambiguous else "measured" if cost_within_reservation
+            else "unresolved"
+        ),
         "reserved_usd": format(reserved_usd, "f"),
         "cost_within_reservation": cost_within_reservation,
+        "missing_terminal_text": missing_terminal_text,
         "failed_checks": failed_checks,
     }
 
@@ -1396,7 +1504,7 @@ def run_scenario(spec: LiveSpec, evidence_dir: Path, campaign_ledger: Path) -> i
     finally:
         if session is not None:
             try:
-                session.close()
+                session.close(graceful=failure is not None)
             except Exception as exc:
                 failure = failure or f"{type(exc).__name__}: PTY cleanup failed"
             timeline.append(
@@ -1433,6 +1541,7 @@ def run_scenario(spec: LiveSpec, evidence_dir: Path, campaign_ledger: Path) -> i
                 terminal_answer_required=spec.expectations.get(
                     "terminal_answer_required", True
                 ),
+                expected_run_count=spec.expectations.get("run_count"),
                 expected_task_count=spec.expectations.get("task_count"),
                 max_provider_calls=spec.expectations.get("max_provider_calls"),
                 observed_provider_call_ids=tuple(
@@ -1442,6 +1551,10 @@ def run_scenario(spec: LiveSpec, evidence_dir: Path, campaign_ledger: Path) -> i
                     and isinstance(step.get("provider_call"), dict)
                     and isinstance(step["provider_call"].get("call_id"), str)
                 ),
+                expected_held_ambiguous=spec.expectations.get(
+                    "held_ambiguous_accounting", False
+                ),
+                expected_terminal_text=tuple(spec.expectations.get("terminal_contains", ())),
             )
             verification["workspace"] = _verify_workspace_expectations(
                 spec.workspace, before_manifest, after_manifest, spec.expectations

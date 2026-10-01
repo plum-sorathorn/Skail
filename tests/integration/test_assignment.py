@@ -955,7 +955,7 @@ def test_completed_unmeasured_call_keeps_attempt_estimate_in_settlement(
         call_id=measured_call,
     )
     unmeasured_call = settler.begin_call(str(assignment.assignment_id))
-    assert settler.complete_unmeasured_calls(str(assignment.assignment_id)) == 1
+    settler.mark_call_succeeded(unmeasured_call)
     assert unmeasured_call != measured_call
     settler.settle_attempt(str(assignment.assignment_id))
 

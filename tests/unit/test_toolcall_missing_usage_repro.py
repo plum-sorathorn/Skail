@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -143,6 +144,7 @@ def _middleware(
         assignments={assignment_id: "fake/capable"},
         usage_callback=usage_callback,
         call_begin=lambda selected_id, _key: settler.begin_call(selected_id),
+        call_succeeded=settler.mark_call_succeeded,
         call_ambiguous=settler.mark_ambiguous,
     )
 
@@ -253,6 +255,80 @@ async def test_async_success_without_usage_is_not_made_ambiguous(tmp_path: Path)
     )
 
 
+@pytest.mark.asyncio
+async def test_cancelled_inflight_provider_call_keeps_its_reservation(
+    tmp_path: Path,
+) -> None:
+    run_id = "abababab-abab-4bab-8bab-abababababab"
+    task_id = "bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc"
+    assignment_id = "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd"
+    attempt_id = "dededede-dede-4ede-8ede-dededededede"
+    reservation_id = "res-cancelled-provider"
+    journal = _setup_journal(tmp_path, run_id=run_id, task_id=task_id)
+    ledger = BudgetLedger(journal)
+    settler = AssignmentUsageSettler(
+        journal, ledger, {"fake": FakeProviderAdapter(FakeProviderChatModel())}
+    )
+    _make_assignment(
+        journal,
+        assignment_id=assignment_id,
+        attempt_id=attempt_id,
+        task_id=task_id,
+        reservation_id=reservation_id,
+    )
+    middleware = _middleware(
+        settler,
+        assignment_id=assignment_id,
+        attempt_id=attempt_id,
+        usage_callback=settler.record_call,
+    )
+    entered = asyncio.Event()
+
+    async def handler(_request: ModelRequest[Any]) -> ModelResponse[Any]:
+        entered.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    pending = asyncio.create_task(
+        middleware.awrap_model_call(
+            _request(assignment_id=assignment_id, attempt_id=attempt_id), handler
+        )
+    )
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    pending.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+
+    with journal._connect() as connection:
+        call = connection.execute(
+            "SELECT status,error_summary FROM provider_calls WHERE assignment_id=?",
+            (assignment_id,),
+        ).fetchone()
+    assert call is not None
+    assert call["status"] == "ambiguous"
+    assert call["error_summary"].startswith("CancelledError:")
+
+    with pytest.raises(AccountingReconciliationRequired):
+        _finalize(
+            journal,
+            ledger,
+            settler,
+            assignment_id=assignment_id,
+            reservation_id=reservation_id,
+        )
+    with journal._connect() as connection:
+        reservation = connection.execute(
+            "SELECT status FROM budget_reservations WHERE reservation_id=?",
+            (reservation_id,),
+        ).fetchone()
+        usage_count = connection.execute(
+            "SELECT COUNT(*) FROM usage_records WHERE reservation_id=?",
+            (reservation_id,),
+        ).fetchone()[0]
+    assert reservation is not None and reservation["status"] == "reserved"
+    assert usage_count == 0
+
+
 def test_sync_handler_failure_is_marked_ambiguous(tmp_path: Path) -> None:
     run_id = "20202020-2020-4020-8020-202020202020"
     task_id = "21212121-2121-4121-8121-212121212121"
@@ -295,8 +371,8 @@ def test_sync_handler_failure_is_marked_ambiguous(tmp_path: Path) -> None:
         )
 
 
-def test_started_but_unmeasured_toolcall_settles_estimated(tmp_path: Path) -> None:
-    """RED: begin_call success with no usage record must settle, not raise."""
+def test_returned_but_unmeasured_toolcall_settles_estimated(tmp_path: Path) -> None:
+    """A recorded provider response can settle from the attempt estimate."""
     run_id = "22222222-2222-4222-8222-222222222222"
     task_id = "33333333-3333-4333-8333-333333333333"
     journal = _setup_journal(tmp_path, run_id=run_id, task_id=task_id)
@@ -315,9 +391,9 @@ def test_started_but_unmeasured_toolcall_settles_estimated(tmp_path: Path) -> No
         reservation_id=reservation_id,
     )
 
-    # Streaming tool-call path: begin_call happened, response carried no
-    # usage_metadata and record_call was skipped/raced -> row stays 'started'.
-    settler.begin_call(assignment_id)
+    # The tool-call response returned without usable token counts.
+    call_id = settler.begin_call(assignment_id)
+    settler.mark_call_succeeded(call_id)
     message = _toolcall_message_without_usage()
     assert adapter.normalize_usage(message) is None
 
@@ -334,6 +410,46 @@ def test_started_but_unmeasured_toolcall_settles_estimated(tmp_path: Path) -> No
     assert usage is not None, "expected estimated settlement for unmeasured call"
     assert Decimal(str(usage["amount_usd"])) == Decimal("0.20")
     assert usage["authoritative"] == 0
+
+
+def test_unreturned_started_call_is_ambiguous_on_finalization(tmp_path: Path) -> None:
+    run_id = "10101010-1010-4010-8010-101010101010"
+    task_id = "11111111-2222-4111-8111-111111111111"
+    assignment_id = "12121212-2222-4212-8212-121212121212"
+    attempt_id = "13131313-2222-4313-8313-131313131313"
+    reservation_id = "res-unreturned-call"
+    journal = _setup_journal(tmp_path, run_id=run_id, task_id=task_id)
+    ledger = BudgetLedger(journal)
+    settler = AssignmentUsageSettler(
+        journal, ledger, {"fake": FakeProviderAdapter(FakeProviderChatModel())}
+    )
+    _make_assignment(
+        journal,
+        assignment_id=assignment_id,
+        attempt_id=attempt_id,
+        task_id=task_id,
+        reservation_id=reservation_id,
+    )
+    settler.begin_call(assignment_id)
+
+    with pytest.raises(AccountingReconciliationRequired):
+        _finalize(
+            journal,
+            ledger,
+            settler,
+            assignment_id=assignment_id,
+            reservation_id=reservation_id,
+        )
+    with journal._connect() as connection:
+        call_status = connection.execute(
+            "SELECT status FROM provider_calls WHERE assignment_id=?", (assignment_id,)
+        ).fetchone()["status"]
+        reservation_status = connection.execute(
+            "SELECT status FROM budget_reservations WHERE reservation_id=?",
+            (reservation_id,),
+        ).fetchone()["status"]
+    assert call_status == "ambiguous"
+    assert reservation_status == "reserved"
 
 
 def test_genuine_ambiguous_still_raises(tmp_path: Path) -> None:
@@ -358,6 +474,18 @@ def test_genuine_ambiguous_still_raises(tmp_path: Path) -> None:
 
     call_id = settler.begin_call(assignment_id)
     settler.mark_ambiguous(call_id, RuntimeError("transport blew up mid-stream"))
+
+    with pytest.raises(AccountingReconciliationRequired):
+        settler.mark_call_succeeded(call_id)
+    with pytest.raises(AccountingReconciliationRequired):
+        settler.record_call(
+            assignment_id,
+            AIMessage(
+                content="late response",
+                usage_metadata={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+            ),
+            call_id=call_id,
+        )
 
     with pytest.raises(AccountingReconciliationRequired):
         _finalize(

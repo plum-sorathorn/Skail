@@ -1,5 +1,41 @@
 # Remaining remediation implementation plan
 
+## Post-commit failure diagnosis and fixes (2026-10-01)
+
+Checkpoint commit `be6fde9` contains the local remediation below. The user's README edit and the
+untracked `tasks/latest_plan.md` were excluded from that commit.
+This section supersedes the earlier 2026-10-01 R9 and release dispositions below.
+
+- The published `8dcb932` Type check failure reproduced in a fresh Python 3.14 `.[dev]` install:
+  mypy could not import `tomli_w` from `config/persistence.py`. The baseline did not declare the
+  dependency. Fresh candidate installs pass strict mypy on Python 3.14 and 3.13 with `tomli-w`
+  present. Evidence: `out/live-agentic/ci-typecheck-20261001/diagnosis-v2.json`. The hosted matrix
+  still needs a run on a published candidate.
+- The first clean `be6fde9` release check passed clean-tree, Ruff, and mypy gates, then failed one
+  full-suite regression: `package_check.source_identity()` hashed an empty Git diff differently
+  from the canonical evaluation identity. A clean-tree red/green regression and a one-line
+  correction now make those hashes agree. The failed clean-candidate evidence remains under
+  `out/live-agentic/release-be6fde9/`.
+- Live composer `/quit` exposed a product accounting defect: `CancelledError` bypassed the model
+  middleware's `Exception` handler; finalization relabelled its `started` provider call as
+  successful without usage and settled the child attempt estimate. Calls now receive an explicit
+  success marker only after the provider handler returns. Cancellation or unreturned calls become
+  ambiguous and keep their reservations, while returned calls with missing usage still settle
+  conservatively. Focused and mounted cancellation regressions pass; ADR 0008 records this boundary.
+- The fresh live run in
+  `out/live-agentic/r9-edges-20261001/runs/active-child-quit-accounting-fix/` observed a selected
+  GPT-5 mini call active before `/quit`, a visible queued follow-up, one cancelled run, one cancelled
+  child, no post-cancellation provider start, and unchanged files. The call is `ambiguous`, the
+  child reservation remains held at USD 0.017470, and the separate USD 0.49 campaign reservation
+  remains held. The original capture missed a transient shutdown-copy assertion; the independent
+  replay verifies the visible queue, exact one-run count, and held accounting in
+  `verification-replay.json` without another provider call.
+- The USD 3.00 R9 campaign now has USD 0.0602132 settled locally, USD 1.96 reserved for attempts
+  with unknown provider usage, and USD 0.9797868 remaining. Actual provider billing is unknown;
+  the held reservation is a bounded accounting disposition, not a measured token cost. R9 shutdown
+  safety is verified. R10 exact-cost acceptance stays open until the unknown provider outcomes can
+  be reconciled. No further paid retry is needed to prove the safety behavior.
+
 ## Current implementation and verification (2026-10-01)
 
 This section supersedes older prospective instructions and status summaries below where they differ.
