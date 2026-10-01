@@ -36,7 +36,7 @@ def source_identity() -> tuple[str, str]:
             encoding="utf-8",
             timeout=5,
         )
-        return completed.stdout.strip()
+        return completed.stdout.strip() or "unavailable"
 
     commit = git_value("rev-parse", "HEAD")
     tree = git_value("rev-parse", "HEAD^{tree}")

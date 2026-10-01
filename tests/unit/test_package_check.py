@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -49,4 +50,20 @@ def test_verify_retains_package_manifest_for_reused_artifacts(
 
 
 def test_package_check_source_identity_matches_evaluation_identity() -> None:
+    assert package_check.source_identity() == evaluation_source_identity()
+
+
+def test_package_check_source_identity_matches_a_clean_tree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def git(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        output = {
+            ("rev-parse", "HEAD"): "candidate-commit\n",
+            ("rev-parse", "HEAD^{tree}"): "candidate-tree\n",
+            ("diff", "--binary", "--no-ext-diff", "HEAD"): "",
+        }[tuple(command[1:])]
+        return subprocess.CompletedProcess(command, 0, output, "")
+
+    monkeypatch.setattr(package_check.subprocess, "run", git)
+
     assert package_check.source_identity() == evaluation_source_identity()
