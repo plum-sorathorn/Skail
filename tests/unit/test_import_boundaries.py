@@ -61,6 +61,29 @@ def test_core_import_requires_no_credentials_or_legacy_modules() -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_tui_shell_import_defers_agent_framework() -> None:
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.endswith("_API_KEY") and not key.endswith("_TOKEN")
+    }
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys, skail.tui.app; "
+            "heavy = ('deepagents', 'langchain', 'langgraph'); "
+            "assert not any(name == prefix or name.startswith(prefix + '.') "
+            "for name in sys.modules for prefix in heavy)",
+        ],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_runtime_does_not_import_textual() -> None:
     violations: list[str] = []
     for path in SOURCE.rglob("*.py"):

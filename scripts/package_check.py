@@ -14,6 +14,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_MANIFEST = "package-manifest.json"
 
 
 def sha256(path: Path) -> str:
@@ -22,6 +23,89 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def source_identity() -> tuple[str, str]:
+    def git_value(*args: str) -> str:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
+            text=True,
+            encoding="utf-8",
+            timeout=5,
+        )
+        return completed.stdout.strip()
+
+    commit = git_value("rev-parse", "HEAD")
+    tree = git_value("rev-parse", "HEAD^{tree}")
+    working_diff = git_value("diff", "--binary", "--no-ext-diff", "HEAD")
+    identity = json.dumps(
+        {"tree": tree, "working_diff": working_diff},
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    return commit, digest
+
+
+def _artifact_records(artifact_dir: Path) -> list[dict[str, str]]:
+    wheels = sorted(artifact_dir.glob("*.whl"))
+    sdists = sorted(artifact_dir.glob("*.tar.gz"))
+    if len(wheels) != 1 or len(sdists) != 1:
+        raise AssertionError("package artifact directory must contain exactly one wheel and sdist")
+    return [
+        {"name": path.name, "sha256": sha256(path)}
+        for path in sorted((*wheels, *sdists), key=lambda item: item.name)
+    ]
+
+
+def write_package_manifest(
+    artifact_dir: Path,
+    *,
+    source_commit: str,
+    source_digest: str,
+) -> dict[str, object]:
+    manifest: dict[str, object] = {
+        "schema_version": 1,
+        "source_commit": source_commit,
+        "source_digest": source_digest,
+        "python": sys.version,
+        "platform": platform.platform(),
+        "artifacts": _artifact_records(artifact_dir),
+    }
+    path = artifact_dir / PACKAGE_MANIFEST
+    temporary = path.with_name(f"{path.name}.tmp")
+    temporary.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(path)
+    return manifest
+
+
+def validate_package_manifest(
+    artifact_dir: Path,
+    *,
+    expected_source_commit: str,
+    expected_source_digest: str,
+) -> dict[str, object]:
+    path = artifact_dir / PACKAGE_MANIFEST
+    if not path.is_file():
+        raise AssertionError("package manifest is missing; rerun package_check.py")
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AssertionError("package manifest is invalid; rerun package_check.py") from exc
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
+        raise AssertionError("package manifest schema is invalid; rerun package_check.py")
+    if (
+        manifest.get("source_commit") != expected_source_commit
+        or manifest.get("source_digest") != expected_source_digest
+    ):
+        raise AssertionError("package manifest source identity does not match the candidate")
+    if manifest.get("artifacts") != _artifact_records(artifact_dir):
+        raise AssertionError("package artifacts do not match their manifest hashes")
+    return manifest
 
 
 def inspect_wheel(path: Path) -> None:
@@ -95,14 +179,21 @@ def verify(
         inspect_wheel(wheels[0])
         inspect_sdist(sdists[0])
         verify_installation(wheels[0], Path(directory) / "installation")
-        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        commit, source_digest = source_identity()
         evidence: dict[str, object] = {
             "source_commit": commit,
+            "source_digest": source_digest,
             "python": sys.version,
             "platform": platform.platform(),
             "wheel": {"name": wheels[0].name, "sha256": sha256(wheels[0])},
             "sdist": {"name": sdists[0].name, "sha256": sha256(sdists[0])},
         }
+        if artifact_dir is not None:
+            write_package_manifest(
+                artifacts,
+                source_commit=commit,
+                source_digest=source_digest,
+            )
         if output is not None:
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")

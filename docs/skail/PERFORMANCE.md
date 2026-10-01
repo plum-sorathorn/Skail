@@ -209,3 +209,28 @@ The median is 106.063 seconds above the original 131.336-second target. Compared
 `9d28dc4` series, the test collection is larger and many unrelated duration leaders rose together;
 these observations do not isolate a causal code slowdown or justify removing independent tests.
 The 20% suite speed objective remains open.
+
+### 2026-10-01 matched working-tree measurement
+
+The repeatable runner `scripts/measure_suite.py` compared clean baseline worktree `8dcb932` with the
+current candidate worktree using the same absolute Python 3.14.6 executable and
+`python -m pytest -q --durations=40`. One warm-up ran on each tree, followed by three serial pairs
+with alternating order. Windows 11 build 26200, 20 logical CPUs, AMD Family 26 Model 36, and the
+Balanced power scheme were recorded. All six measured runs passed and retained raw output, stderr,
+per-run source identity, complete node IDs, environment and dependency versions under
+`out/live-agentic/r11-matched-20261001/`.
+
+Baseline external-wall runs were 124.177s, 122.508s, and 123.309s (median 123.309s); candidate runs
+were 123.508s, 124.531s, and 122.405s (median 123.508s). Paired candidate-minus-baseline deltas
+were -0.669s, +2.023s, and -0.904s (median -0.669s). The collections were not identical: baseline
+collected 1,257 cases and candidate 1,305. There were 1,256 identical node IDs, 49 candidate-only
+IDs, and one baseline-only ID. Inspection confirms that the apparent removed ID is the same
+UUID-validation parameter whose `uuid1()` value is generated afresh at collection; the candidate
+adds 48 actual test cases. All runs reported five existing warnings. The complete ID lists and
+warnings are retained with the raw logs.
+
+The candidate median is 7.828s below the 131.336s historical absolute target. That threshold is met
+in this measurement. The paired changes are small relative to their spread, and the collections
+differ, so the results do not establish a causal speed improvement. The earlier `557b3fc` median of
+237.399s remains unreconciled with this series; do not infer why it differed. Keep causal attribution
+open while retaining the absolute-target pass for this candidate.

@@ -1,5 +1,82 @@
 # Remaining remediation implementation plan
 
+## Current implementation and verification (2026-10-01)
+
+This section supersedes older prospective instructions and status summaries below where they differ.
+Historical evidence remains preserved.
+
+### Implemented in this continuation
+
+- TOML persistence now uses declared `tomli-w`; nested model profiles, strings, unrelated settings,
+  and atomic-save failure behavior have focused regressions.
+- Approval callbacks are bound to the currently pending command request. IDs are stable across
+  restore, reject cancellation is correlated, stale or malformed requests fail closed, and a valid
+  one-shot approval is consumed before asynchronous resume. Approval-card focus now defaults to
+  Reject; successful question cancellation restores focus to the composer.
+- The TUI shell no longer imports DeepAgents/LangChain/LangGraph during module import. Its compact
+  controls live in a lightweight module, and setup-only composer typing was removed from selected
+  tests while real keyboard and focus interactions remain.
+- `scripts/live_acceptance.py` is the maintained Windows PTY driver with fresh model-catalog and
+  price qualification, selected-roster enforcement, isolated homes/workspaces, captured terminal
+  frames, schema-v2 export verification, and a hard USD 3.00 append-only campaign ledger. The
+  action-only answer flag now skips terminal-render comparison when no user-facing answer is part of
+  the case; required presentation checks still compare the complete answer.
+- Package artifacts now receive a source-and-hash `package-manifest.json`. Release verification
+  rejects missing/stale manifests and modified wheel/sdist files. Release CI invokes each local gate
+  through the release checker once and uploads the package directory, manifest, and release reports.
+- `scripts/measure_suite.py` records collection IDs, source fingerprints (including untracked file
+  hashes), interpreter/dependency versions, power scheme, raw output, and alternating serial
+  baseline/candidate timings.
+
+### Directed live R9 results
+
+- Free-form question answer passed in `out/live-agentic/r9-edges-20261001/runs/question-freeform-retry/`
+  (USD 0.0027128 locally). Question cancellation followed by unrelated fresh work passed in
+  `.../question-cancel-fresh-run-final/` (USD 0.0025784).
+- Allow-once planned command passed in
+  `.../approval-allow-plan-only-verified/` (USD 0.0020160); rejected command passed in
+  `.../approval-reject-plan-only-retry/` (USD 0.0019924). The first attempts remain unchanged and
+  retained.
+- One explorer completed the child-boundary task with no grandchild or workspace change. The saved
+  child result reports `MINT GREEN` and that `task` is absent. The schema-v2 export passes the
+  action-only replay verifier in
+  `.../nested-boundary-direct-corrected/verification-replay.json` (USD 0.0092309). The original
+  capture disposition records a terminal-answer mismatch; the case is operational evidence for the
+  delegation boundary, not a user-visible presentation pass.
+- Composer `/quit` observed an active selected child call, discarded the visible queued follow-up,
+  and terminalized the run as cancelled with no fixture changes. Three retained attempts lack
+  provider usage for a cancelled call, so USD 1.47 remains reserved and R9/R10 financial acceptance
+  stays open for that edge. No further retry was made.
+- Across this USD 3.00 R9 campaign, settled local token cost is USD 0.0602132, unresolved
+  reservations are USD 1.47, and unallocated headroom is USD 1.4697868. Provider billing remains
+  unknown. Failed and unresolved evidence was preserved.
+
+### Performance and release disposition
+
+The matched 2026-10-01 run used clean baseline `8dcb932` and the current candidate worktree, one
+warm-up per tree, and three alternating pairs of the same serial pytest command. Baseline external
+median was 123.309 seconds; candidate median was 123.508 seconds. The current candidate meets the
+historical 131.336-second absolute target by 7.828 seconds. Paired changes were -0.669, +2.023, and
+-0.904 seconds; with 1,305 candidate cases versus 1,257 baseline cases, this does not establish a
+causal speed gain. There were 1,256 common node IDs; one differing ID is a randomized `uuid1()` test
+parameter, and 48 actual cases were added. Evidence is in
+`out/live-agentic/r11-matched-20261001/`; the historical 557b3fc 237.399-second median was not
+reproduced and remains unexplained.
+
+The current package build/install is verified separately. Its wheel SHA-256 is
+`1e34d7670ab4e68bb4f44105daefaf335474243c995d956d343a52ba8847bb6a`; the sdist SHA-256 is
+`c7ebf6bc179c2e2104c14bca869ba145d51ca88c47f332ab06449044b6d271f7`; the package manifest is
+retained under `out/live-agentic/release-candidate-20261001-final/packages/`. A clean-worktree
+release-check cannot be completed in this checkout because the candidate changes are uncommitted
+and the pre-existing README edit must be preserved. Hosted Python/platform matrices and
+branch-protection settings also remain external; no commit, push, dispatch, or protection change was
+made. The latest public fast CI
+run, #37 on commit `8dcb932`, failed with a visible `Type check` error in the six-job matrix and the
+aggregate gate. Its job logs require GitHub authentication; an unauthenticated API request returned
+403, while local mypy passes on both the baseline worktree and this candidate. The remote diagnostic
+therefore remains unresolved. Branch-protection settings were not exposed unauthenticated. S8 remains
+closed by the September 29 live resolution above.
+
 ## Presentation acceptance (2026-09-30)
 
 Fresh real-TUI S1, S2, and two-model S3 runs completed; S1 and S3 left their fixtures unchanged.

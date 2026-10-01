@@ -3504,7 +3504,7 @@ class RunController:
             child_count=len(gate.completed),
         )
 
-    def reject_interrupted(self) -> RunResult:
+    def reject_interrupted(self, *, interrupt_id: str | None = None) -> RunResult:
         pending = self._pending_run
         if pending is None:
             raise RuntimeError("no interrupted run is available to reject")
@@ -3535,7 +3535,7 @@ class RunController:
                 interrupt_id=(
                     str(interrupt["question_id"])
                     if interrupt.get("question_id") is not None
-                    else None
+                    else interrupt_id
                 ),
                 content=(
                     "question cancelled"

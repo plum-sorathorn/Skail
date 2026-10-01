@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import email
+import json
 import os
 import subprocess
 import sys
@@ -102,9 +103,9 @@ def test_package_verification_can_keep_the_inspected_artifacts(
 
     monkeypatch.setattr(package_check.subprocess, "run", fake_build)
     monkeypatch.setattr(
-        package_check.subprocess,
-        "check_output",
-        lambda *args, **kwargs: "commit\n",
+        package_check,
+        "source_identity",
+        lambda: ("commit", "source-digest"),
     )
     monkeypatch.setattr(package_check, "verify_installation", lambda *_: None)
 
@@ -113,6 +114,10 @@ def test_package_verification_can_keep_the_inspected_artifacts(
     assert len(list(artifact_dir.glob("*.whl"))) == 1
     assert len(list(artifact_dir.glob("*.tar.gz"))) == 1
     assert evidence["source_commit"] == "commit"
+    manifest = json.loads(
+        (artifact_dir / package_check.PACKAGE_MANIFEST).read_text(encoding="utf-8")
+    )
+    assert manifest["source_digest"] == "source-digest"
     assert evidence_path.exists()
 
 

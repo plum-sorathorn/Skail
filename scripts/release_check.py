@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import platform
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -17,6 +20,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
+_EVIDENCE_DIR: Path | None = None
+_EVIDENCE_MANIFEST: dict[str, object] | None = None
+_COMMAND_RECORDS: list[dict[str, object]] = []
+_STAGE_RECORDS: list[dict[str, object]] = []
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Verify a Skail release candidate")
@@ -24,6 +32,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--artifact-dir",
         type=Path,
         help="inspect the wheel already built by package_check.py",
+    )
+    parser.add_argument(
+        "--evidence-dir",
+        type=Path,
+        help="retain release-check logs and reports outside the source checkout",
     )
     return parser
 
@@ -49,7 +62,7 @@ from evals.schema import (  # noqa: E402
     EvaluationPolicy,
     EvaluationReport,
 )
-from scripts.package_check import inspect_wheel  # noqa: E402
+from scripts.package_check import inspect_wheel, validate_package_manifest  # noqa: E402
 
 
 def validate_eval_report(
@@ -230,14 +243,96 @@ def validate_eval_report(
     return parsed
 
 
-def _run_checked(
+def _redact_output(value: str) -> str:
+    sensitive_values = sorted(
+        (
+            item
+            for name, item in os.environ.items()
+            if any(marker in name.upper() for marker in ("KEY", "TOKEN", "SECRET", "PASSWORD"))
+            and len(item) >= 6
+        ),
+        key=len,
+        reverse=True,
+    )
+    for secret in sensitive_values:
+        value = value.replace(secret, "[REDACTED]")
+    return value
+
+
+def _write_json(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f"{path.name}.tmp")
+    temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def _write_evidence_manifest(*, status: str, failure: str | None = None) -> None:
+    if _EVIDENCE_DIR is None or _EVIDENCE_MANIFEST is None:
+        return
+    manifest = {
+        **_EVIDENCE_MANIFEST,
+        "status": status,
+        "finished_at": None if status == "running" else datetime.now(UTC).isoformat(),
+        "failure": None if failure is None else _redact_output(failure),
+        "stages": _STAGE_RECORDS,
+        "commands": _COMMAND_RECORDS,
+    }
+    _write_json(_EVIDENCE_DIR / "release-check.json", manifest)
+
+
+def _prepare_evidence(evidence_dir: Path, artifact_dir: Path | None) -> None:
+    global _EVIDENCE_DIR, _EVIDENCE_MANIFEST, _COMMAND_RECORDS, _STAGE_RECORDS
+    if not evidence_dir.is_absolute():
+        raise ValueError("evidence directory must be an absolute path")
+    resolved = evidence_dir.resolve()
+    try:
+        resolved.relative_to(ROOT.resolve())
+    except ValueError:
+        pass
+    else:
+        raise ValueError("evidence directory must be outside the source checkout")
+    if resolved.exists() and any(resolved.iterdir()):
+        raise FileExistsError("evidence directory must be empty")
+    resolved.mkdir(parents=True, exist_ok=True)
+    _EVIDENCE_DIR = resolved
+    _COMMAND_RECORDS = []
+    _STAGE_RECORDS = []
+    source_commit, source_digest = source_identity()
+    artifacts: list[dict[str, str]] = []
+    if artifact_dir is not None and artifact_dir.exists():
+        for artifact in sorted(artifact_dir.iterdir()):
+            if not artifact.is_file() or (
+                artifact.suffix not in {".whl", ".gz"}
+                and artifact.name != "package-manifest.json"
+            ):
+                continue
+            digest = hashlib.sha256()
+            with artifact.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            artifacts.append({"name": artifact.name, "sha256": digest.hexdigest()})
+    _EVIDENCE_MANIFEST = {
+        "schema_version": 1,
+        "source_commit": source_commit,
+        "source_digest": source_digest,
+        "python": sys.version,
+        "platform": platform.platform(),
+        "started_at": datetime.now(UTC).isoformat(),
+        "artifact_dir": None if artifact_dir is None else str(artifact_dir.resolve()),
+        "artifacts": artifacts,
+    }
+    _write_evidence_manifest(status="running")
+
+
+def _run_command(
     label: str,
     command: list[str],
     *,
     cwd: Path = ROOT,
     env: dict[str, str] | None = None,
-) -> str:
+) -> subprocess.CompletedProcess[str]:
     print(label)
+    started = time.perf_counter()
     proc = subprocess.run(
         command,
         cwd=str(cwd),
@@ -245,8 +340,67 @@ def _run_checked(
         capture_output=True,
         text=True,
     )
+    record: dict[str, object] = {
+        "index": len(_COMMAND_RECORDS) + 1,
+        "label": label,
+        "command": [_redact_output(part) for part in command],
+        "cwd": str(cwd),
+        "returncode": proc.returncode,
+        "duration_seconds": round(time.perf_counter() - started, 6),
+        "stdout": _redact_output(proc.stdout),
+        "stderr": _redact_output(proc.stderr),
+    }
+    _COMMAND_RECORDS.append(
+        {key: value for key, value in record.items() if key not in {"stdout", "stderr"}}
+    )
+    if _EVIDENCE_DIR is not None:
+        _write_json(
+            _EVIDENCE_DIR / "commands" / f"{len(_COMMAND_RECORDS):03d}.json", record
+        )
+        _write_evidence_manifest(status="running")
+    return proc
+
+
+def _run_stage(name: str, check: Callable[..., None], *args: object) -> None:
+    started = time.perf_counter()
+    command_start = len(_COMMAND_RECORDS) + 1
+    try:
+        check(*args)
+    except Exception as exc:
+        _STAGE_RECORDS.append(
+            {
+                "name": name,
+                "status": "failed",
+                "duration_seconds": round(time.perf_counter() - started, 6),
+                "commands": list(range(command_start, len(_COMMAND_RECORDS) + 1)),
+                "error": _redact_output(f"{type(exc).__name__}: {exc}"),
+            }
+        )
+        _write_evidence_manifest(status="failed", failure=f"{type(exc).__name__}: {exc}")
+        raise
+    _STAGE_RECORDS.append(
+        {
+            "name": name,
+            "status": "passed",
+            "duration_seconds": round(time.perf_counter() - started, 6),
+            "commands": list(range(command_start, len(_COMMAND_RECORDS) + 1)),
+        }
+    )
+    _write_evidence_manifest(status="running")
+
+
+def _run_checked(
+    label: str,
+    command: list[str],
+    *,
+    cwd: Path = ROOT,
+    env: dict[str, str] | None = None,
+) -> str:
+    proc = _run_command(label, command, cwd=cwd, env=env)
     if proc.returncode != 0:
-        raise RuntimeError(f"{label} failed:\n{proc.stdout}\n{proc.stderr}")
+        raise RuntimeError(
+            f"{label} failed:\n{_redact_output(proc.stdout)}\n{_redact_output(proc.stderr)}"
+        )
     return proc.stdout
 
 
@@ -259,7 +413,7 @@ def check_clean_worktree() -> None:
         raise AssertionError(f"release worktree is not clean:\n{output}")
 
 
-def check_quality() -> None:
+def check_quality(artifact_dir: Path | None = None) -> None:
     _run_checked(
         "[2/8] Running Ruff...",
         [
@@ -284,6 +438,8 @@ def check_quality() -> None:
         environment["USERPROFILE"] = str(workspace)
         environment["HOME"] = str(workspace)
         environment["SKAIL_ASSERT_CLEAN_TEST_ROOT"] = "1"
+        if artifact_dir is not None:
+            environment["SKAIL_PACKAGE_ARTIFACT_DIR"] = str(artifact_dir.resolve())
         _run_checked(
             "[4/8] Running complete offline test suite...",
             [sys.executable, "-m", "pytest", "-q"],
@@ -317,13 +473,15 @@ def check_wheel_contents(artifact_dir: Path | None = None) -> None:
         print("[6/8] Building and verifying a fresh wheel...")
         with tempfile.TemporaryDirectory(prefix="skail-release-build-") as directory:
             dist_dir = Path(directory)
-            subprocess.run(
+            proc = _run_command(
+                "[6/8] Building a fresh release wheel...",
                 [sys.executable, "-m", "build", "--outdir", str(dist_dir)],
-                cwd=str(ROOT),
-                check=True,
-                capture_output=True,
-                text=True,
+                cwd=ROOT,
             )
+            if proc.returncode != 0:
+                raise RuntimeError(
+                    f"Release wheel build failed:\n{proc.stdout}\n{proc.stderr}"
+                )
             wheels = list(dist_dir.glob("*.whl"))
             if len(wheels) != 1:
                 raise AssertionError("fresh build must produce exactly one wheel")
@@ -334,6 +492,12 @@ def check_wheel_contents(artifact_dir: Path | None = None) -> None:
     wheels = list(artifact_dir.glob("*.whl"))
     if len(wheels) != 1:
         raise AssertionError("package artifact directory must contain exactly one wheel")
+    source_commit, source_digest = source_identity()
+    validate_package_manifest(
+        artifact_dir,
+        expected_source_commit=source_commit,
+        expected_source_digest=source_digest,
+    )
     print(f"[6/8] Inspecting package_check.py wheel: {wheels[0].name}")
     _inspect_release_wheel(wheels[0])
 
@@ -358,15 +522,16 @@ def check_smoke() -> None:
                 "HOME": str(workspace),
             }
         )
-        proc = subprocess.run(
+        proc = _run_command(
+            "Running smoke test in an isolated workspace...",
             [sys.executable, str(ROOT / "scripts" / "smoke.py")],
-            cwd=str(workspace),
+            cwd=workspace,
             env=environment,
-            capture_output=True,
-            text=True,
         )
     if proc.returncode != 0:
-        raise RuntimeError(f"Smoke test failed:\n{proc.stderr}")
+        raise RuntimeError(
+            f"Smoke test failed:\n{_redact_output(proc.stdout)}\n{_redact_output(proc.stderr)}"
+        )
     print("  -> Offline smoke: OK.")
     _run_checked(
         "  -> Running benchmark thresholds...",
@@ -392,7 +557,11 @@ def check_evals() -> None:
     expected_policy_digest = policy_digest(expected_controls)
     with tempfile.TemporaryDirectory(prefix="skail-release-eval-") as directory:
         workspace = Path(directory)
-        output = workspace / "paired-runtime-report.json"
+        if _EVIDENCE_DIR is None:
+            output = workspace / "paired-runtime-report.json"
+        else:
+            output = _EVIDENCE_DIR / "evaluation" / "paired-runtime-report.json"
+            output.parent.mkdir(parents=True, exist_ok=True)
         environment = os.environ.copy()
         environment.update(
             {
@@ -402,7 +571,8 @@ def check_evals() -> None:
                 "HOME": str(workspace),
             }
         )
-        proc = subprocess.run(
+        proc = _run_command(
+            "Running fresh complete paired evaluation...",
             [
                 sys.executable,
                 str(ROOT / "scripts" / "eval_routing.py"),
@@ -412,13 +582,14 @@ def check_evals() -> None:
                 "--output",
                 str(output),
             ],
-            cwd=str(ROOT),
+            cwd=ROOT,
             env=environment,
-            capture_output=True,
-            text=True,
         )
         if proc.returncode not in {0, 1} or not output.exists():
-            raise RuntimeError(f"Evaluation failed:\n{proc.stderr or proc.stdout}")
+            raise RuntimeError(
+                "Evaluation failed:\n"
+                f"{_redact_output(proc.stderr or proc.stdout)}"
+            )
         report = EvaluationReport.model_validate_json(output.read_text(encoding="utf-8"))
         validate_eval_report(
             report,
@@ -436,20 +607,34 @@ def check_evals() -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    global _EVIDENCE_DIR, _EVIDENCE_MANIFEST, _COMMAND_RECORDS, _STAGE_RECORDS
     args = _build_parser().parse_args(argv)
-    print("=== Skail Release Candidate Verification ===")
     try:
-        check_clean_worktree()
-        check_quality()
-        check_docs()
-        check_wheel_contents(args.artifact_dir)
-        check_smoke()
-        check_evals()
+        if args.evidence_dir is not None:
+            _prepare_evidence(args.evidence_dir, args.artifact_dir)
+        print("=== Skail Release Candidate Verification ===")
+        stages: tuple[tuple[str, Callable[..., None], tuple[object, ...]], ...] = (
+            ("clean_worktree", check_clean_worktree, ()),
+            ("quality", check_quality, (args.artifact_dir,)),
+            ("documentation", check_docs, ()),
+            ("wheel", check_wheel_contents, (args.artifact_dir,)),
+            ("smoke_and_benchmarks", check_smoke, ()),
+            ("evaluation", check_evals, ()),
+        )
+        for name, check, check_args in stages:
+            _run_stage(name, check, *check_args)
+        _write_evidence_manifest(status="passed")
         print("\n=== Release candidate verification PASSED cleanly! ===")
         return 0
     except Exception as exc:
+        _write_evidence_manifest(status="failed", failure=f"{type(exc).__name__}: {exc}")
         print(f"\n[ERROR] Release candidate verification failed: {exc}", file=sys.stderr)
         return 1
+    finally:
+        _EVIDENCE_DIR = None
+        _EVIDENCE_MANIFEST = None
+        _COMMAND_RECORDS = []
+        _STAGE_RECORDS = []
 
 
 if __name__ == "__main__":

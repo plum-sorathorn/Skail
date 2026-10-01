@@ -15,7 +15,8 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from threading import get_ident
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
+from uuid import NAMESPACE_URL, uuid5
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -25,7 +26,7 @@ from textual.widgets import Input, Static, TabbedContent, TabPane
 from textual.worker import WorkerCancelled, WorkerFailed
 
 from skail import __version__
-from skail.agents.lead import DelegationMode, LeadControls
+from skail.agents.controls import DelegationMode, LeadControls
 from skail.config.onboarding import (
     OnboardingReceipt,
     load_onboarding_receipt,
@@ -41,8 +42,6 @@ from skail.providers.credentials import (
 )
 from skail.runtime.interrupts import QuestionStore
 from skail.runtime.presentation import present_lead_answer
-from skail.sessions.journal import SessionSnapshot
-from skail.sessions.service import SessionService
 from skail.tools.approvals import ApprovalChoice, ApprovalStore
 from skail.tools.execution import CommandRequest
 from skail.tui.commands import COMMAND_REGISTRY, dispatch_slash_command
@@ -74,6 +73,10 @@ from skail.tui.widgets.interrupts import InterruptWidget
 from skail.tui.widgets.onboarding import OnboardingPanel
 from skail.tui.widgets.plan import PlanView
 from skail.tui.widgets.route import RouteView
+
+if TYPE_CHECKING:
+    from skail.sessions.journal import SessionSnapshot
+    from skail.sessions.service import SessionService
 
 AppState = Literal[
     "onboarding",
@@ -1689,11 +1692,7 @@ class SkailApp(App[int]):
             or (raw_kind is None and payload.get("question_id") is not None)
             else InterruptKind.APPROVAL
         )
-        approval_id = str(
-            payload.get("question_id")
-            or payload.get("approval_id")
-            or f"command:{run_id}"
-        )
+        approval_id = self._interrupt_id(payload, run_id=run_id, kind=kind)
         question = str(
             payload.get("prompt")
             or " ".join(
@@ -1707,6 +1706,59 @@ class SkailApp(App[int]):
             payload=payload,
             kind=kind,
         )
+
+    @staticmethod
+    def _command_approval_identity(
+        payload: dict[str, Any],
+    ) -> tuple[str, str, str, str, str, tuple[str, ...], str] | None:
+        values = (
+            payload.get("session_id"),
+            payload.get("run_id"),
+            payload.get("task_id"),
+            payload.get("action_id"),
+            payload.get("command"),
+            payload.get("cwd"),
+        )
+        if not all(isinstance(value, str) and value for value in values):
+            return None
+        arguments = payload.get("arguments", ())
+        if not isinstance(arguments, (list, tuple)) or any(
+            not isinstance(argument, str) for argument in arguments
+        ):
+            return None
+        session_id, request_run_id, task_id, action_id, command, cwd = cast(
+            tuple[str, str, str, str, str, str], values
+        )
+        return (
+            session_id,
+            request_run_id,
+            task_id,
+            action_id,
+            command,
+            tuple(arguments),
+            str(Path(cwd).resolve()),
+        )
+
+    @classmethod
+    def _interrupt_id(
+        cls, payload: dict[str, Any], *, run_id: str, kind: InterruptKind
+    ) -> str:
+        explicit = payload.get("question_id") or payload.get("approval_id")
+        if explicit:
+            return str(explicit)
+        identity = cls._command_approval_identity(payload)
+        if kind is InterruptKind.APPROVAL and identity is not None:
+            name = json.dumps(identity, separators=(",", ":"), ensure_ascii=False)
+            return f"command:{uuid5(NAMESPACE_URL, f'skail:{name}')}"
+        fallback = json.dumps(
+            {"kind": kind.value, "run_id": run_id, "payload": payload},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            default=str,
+        )
+        prefix = "approval" if kind is InterruptKind.APPROVAL else "interrupt"
+        return f"{prefix}:{uuid5(NAMESPACE_URL, f'skail:{fallback}')}"
 
     def _question_graph_id(self, payload: dict[str, Any]) -> str:
         explicit = payload.get("graph_id")
@@ -1919,12 +1971,22 @@ class SkailApp(App[int]):
     def on_interrupt_widget_approved(self, event: InterruptWidget.Approved) -> None:
         pending = self.projection.pending_interrupt
         if (
-            pending is not None
-            and pending.kind is InterruptKind.APPROVAL
-            and pending.payload.get("type")
-            in {"command_approval", "plan_tool_approval"}
-            and self.approval_store is not None
+            pending is None
+            or pending.kind is not InterruptKind.APPROVAL
+            or pending.status != "pending"
+            or not event.approval_id
+            or pending.approval_id != event.approval_id
         ):
+            return
+        if (
+            pending.payload.get("type")
+            in {"command_approval", "plan_tool_approval"}
+        ):
+            if (
+                self._command_approval_identity(pending.payload) is None
+                or self.approval_store is None
+            ):
+                return
             request = self._command_request_for_interrupt(pending.payload)
             self.approval_store.decide(request, ApprovalChoice.ALLOW_ONCE)
         if self.controller is not None:
@@ -1945,18 +2007,24 @@ class SkailApp(App[int]):
 
     def on_interrupt_widget_rejected(self, event: InterruptWidget.Rejected) -> None:
         pending = self.projection.pending_interrupt
-        if pending is not None and pending.kind is InterruptKind.QUESTION:
+        if (
+            pending is None
+            or pending.kind is not InterruptKind.APPROVAL
+            or pending.status != "pending"
+            or not event.approval_id
+            or pending.approval_id != event.approval_id
+        ):
             return
         if (
-            pending is not None
-            and pending.payload.get("type")
+            pending.payload.get("type")
             in {"command_approval", "plan_tool_approval"}
             and self.approval_store is not None
+            and self._command_approval_identity(pending.payload) is not None
         ):
             request = self._command_request_for_interrupt(pending.payload)
             self.approval_store.decide(request, ApprovalChoice.REJECT)
         if self.controller is not None:
-            self.controller.reject_interrupted()
+            self.controller.reject_interrupted(interrupt_id=event.approval_id)
         self._clear_queued_prompts("The waiting run was cancelled:")
         self.projection.pending_interrupt = None
         self.projection.transcript_items.append(
@@ -2071,6 +2139,8 @@ class SkailApp(App[int]):
             )
         self._clear_queued_prompts("The waiting run was cancelled:")
         self.update_views()
+        if self.projection.pending_interrupt is None:
+            self._restore_composer_focus()
 
     def on_plan_view_plan_accepted(self, event: PlanView.PlanAccepted) -> None:
         _ = event
