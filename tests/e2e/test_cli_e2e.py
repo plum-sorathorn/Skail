@@ -42,6 +42,7 @@ def run_cli_isolated(
         "PATH": os.environ.get("PATH", ""),
         "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
         "USERPROFILE": str(home),
+        "HOME": str(home),
         "APPDATA": str(home / "AppData"),
         "LOCALAPPDATA": str(home / "AppData" / "Local"),
     }
