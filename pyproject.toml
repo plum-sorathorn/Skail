@@ -28,7 +28,7 @@ dependencies = [
   "httpx>=0.28,<1",
   "keyring>=25.7,<26",
   "tomli-w>=1.2,<2",
-  "textual>=1.0.0,<2",
+  "textual>=1.0.0,<9",
 ]
 
 [project.optional-dependencies]
