@@ -168,6 +168,28 @@ def _raise_usage_error(_assignment_id: str, _response: object, _call_id: str) ->
     raise ValueError("model call usage replay conflicts")
 
 
+def test_measured_response_does_not_write_a_separate_success_marker() -> None:
+    marked: list[str] = []
+    recorded: list[str] = []
+    middleware = TaskBoundModelMiddleware(
+        {"fake/capable": FakeProviderChatModel()},
+        assignments={"assignment": "fake/capable"},
+        usage_callback=lambda _assignment, _response, call_id: recorded.append(call_id),
+        call_begin=lambda _assignment, _key: "call-1",
+        call_succeeded=marked.append,
+    )
+    response = ModelResponse(result=[AIMessage(content="done")])
+
+    actual = middleware.wrap_model_call(
+        _request(assignment_id="assignment", attempt_id="attempt"),
+        lambda _request: response,
+    )
+
+    assert actual is response
+    assert recorded == ["call-1"]
+    assert marked == []
+
+
 def test_sync_successful_response_with_unrecordable_usage_settles_estimated(
     tmp_path: Path,
 ) -> None:

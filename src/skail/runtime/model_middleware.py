@@ -250,9 +250,11 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         call_id: str | None,
         assignment_id: str | None = None,
     ) -> None:
-        try:
+        if self._usage_callback is None:
             if call_id is not None and self._call_succeeded is not None:
                 self._call_succeeded(call_id)
+            return
+        try:
             self._record_usage(
                 request,
                 response,
@@ -262,8 +264,10 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         except Exception:
             if call_id is None:
                 raise
-            # A recorded success can settle conservatively when usage persistence
-            # fails. Without that marker, finalization holds the call unresolved.
+            if self._call_succeeded is not None:
+                self._call_succeeded(call_id)
+            # A returned response with unrecordable usage settles conservatively;
+            # a missing success marker leaves the call unresolved.
 
     def _bind(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
         attempt = request.state.get("attempt_id")
