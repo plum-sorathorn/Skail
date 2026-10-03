@@ -11,6 +11,13 @@ from skail.domain.security import (
     WorkspaceIdentity,
 )
 
+_TRUST_TABLE_SQL = (
+    "CREATE TABLE IF NOT EXISTS trust_records ("
+    "workspace_key TEXT PRIMARY KEY, canonical_path TEXT NOT NULL, "
+    "device TEXT NOT NULL, inode TEXT NOT NULL, level TEXT NOT NULL, "
+    "revision INTEGER NOT NULL, updated_at TEXT NOT NULL)"
+)
+
 
 @dataclass(frozen=True)
 class TrustRecord:
@@ -54,12 +61,23 @@ class ProjectTrustStore:
     def _initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS trust_records ("
-                "workspace_key TEXT PRIMARY KEY, canonical_path TEXT NOT NULL, "
-                "device INTEGER NOT NULL, inode INTEGER NOT NULL, level TEXT NOT NULL, "
-                "revision INTEGER NOT NULL, updated_at TEXT NOT NULL)"
-            )
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(_TRUST_TABLE_SQL)
+            columns = {
+                row["name"]: row["type"]
+                for row in connection.execute("PRAGMA table_info(trust_records)")
+            }
+            if columns["device"] != "TEXT" or columns["inode"] != "TEXT":
+                connection.execute("ALTER TABLE trust_records RENAME TO trust_records_legacy")
+                connection.execute(_TRUST_TABLE_SQL)
+                connection.execute(
+                    "INSERT INTO trust_records "
+                    "(workspace_key,canonical_path,device,inode,level,revision,updated_at) "
+                    "SELECT workspace_key,canonical_path,CAST(device AS TEXT),"
+                    "CAST(inode AS TEXT),level,revision,updated_at "
+                    "FROM trust_records_legacy"
+                )
+                connection.execute("DROP TABLE trust_records_legacy")
 
     def assess(self, identity: WorkspaceIdentity) -> TrustAssessment:
         record = self._record(identity.key)
@@ -105,8 +123,8 @@ class ProjectTrustStore:
                 (
                     identity.key,
                     identity.canonical_path,
-                    identity.device,
-                    identity.inode,
+                    str(identity.device),
+                    str(identity.inode),
                     level.value,
                     revision,
                     datetime.now(UTC).isoformat(),
@@ -131,8 +149,8 @@ class ProjectTrustStore:
         return TrustRecord(
             identity=WorkspaceIdentity(
                 canonical_path=row["canonical_path"],
-                device=row["device"],
-                inode=row["inode"],
+                device=int(row["device"]),
+                inode=int(row["inode"]),
             ),
             level=ProjectTrustLevel(row["level"]),
             revision=row["revision"],
