@@ -300,6 +300,9 @@ Accounting rules:
 1. Measured provider token counts are priced in-house using the rates frozen for the assignment;
    provider-supplied dollar cost is not the spending authority (see ADR 0008).
 2. Missing token usage is conservatively estimated or marked unresolved and visibly labelled.
+   An ambiguous cancelled call retains unknown tokens and cost. An operator may preview and apply
+   a local attempt estimate using the frozen estimate and any observed completed-call token costs;
+   the ledger labels the result `reconciled_estimate`, while provider billing remains unknown.
 3. Before a model call, Skail reserves its estimated input plus configured output allowance.
 4. Before a parallel batch, Skail reserves every child attempt plus one lead continuation allowance.
 5. New tasks or calls that would exceed the remaining unreserved budget do not launch. The lead receives a structured budget-blocked result and can reduce fan-out, select a cheaper qualified model, or ask the user.

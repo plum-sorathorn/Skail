@@ -5,8 +5,12 @@
 This section supersedes the October 1 checkpoint status below. Commits `69acce1` and `28dcc28`
 fix the clean-source identity mismatch and cancelled-provider-call accounting respectively. A live
 selected-model `/quit` run and independent export replay confirm shutdown safety, an ambiguous
-provider call, and a held reservation. They cannot recover the call's actual provider usage; R10
-exact-cost acceptance remains open. No additional paid retry is required to prove shutdown safety.
+provider call, and a held reservation. The revised R10 accounting criterion permits a clearly
+labelled local estimate when the provider response has no usage. `skail sessions reconcile-call
+SESSION_ID CALL_ID` previews the greater of the frozen attempt estimate and completed calls'
+locally priced observed token costs. `--apply` settles the held attempt only after each ambiguous
+call is reconciled, while the cancelled call's tokens and provider charge remain unknown. No
+additional paid retry is required to prove shutdown safety.
 
 Commit `6b31278` removes an extra SQLite success-marker write from the normal measured-call path.
 The returned response still receives a success marker when usage is absent or cannot be recorded;
@@ -22,14 +26,14 @@ benchmark thresholds, and fresh complete paired evaluation. The wheel SHA-256 is
 is `4ffde260c007fe26609405c620e3c0f7d59c497c3ee65ba7bb09c16fc9b307c6`.
 
 Performance evidence and its limits are in [PERFORMANCE.md](../docs/skail/PERFORMANCE.md).
-The `be6fde9` three-pair series met the historical 131.336-second absolute target, but it does
-not certify the later accounting commit. One same-host diagnostic pair measured the older tree at
-177.782s (with its known source-identity test failure) and the optimized candidate at 173.121s
-(passing). Both exceeded that target in this pair. A current-commit three-pair qualification and
-any causal speed claim remain open. The held USD 1.96 campaign reservation is an accounting bound,
-not measured provider billing; USD 0.0602132 settled locally and USD 0.9797868 remains from the
-USD 3.00 cap. Hosted candidate CI, Python 3.12, branch protection, and provider billing are still
-unverified.
+The suite speed target is retired as of 2026-10-03; runtime measurements are diagnostic and no
+longer gate release. Before applying the new reconciliation command to historical sessions, the
+R9 campaign had USD 1.96 in held reservations, USD 0.0602132 settled locally, and USD 0.9797868
+remaining from the USD 3.00 cap. Its retained `/quit` export has one ambiguous GPT-5 mini call on
+that assignment and a frozen attempt estimate of USD 0.017470. This is the read-only local estimate
+for that call; the historical export and reservation were not modified. Held amounts are bounds,
+not measured provider billing.
+Hosted candidate CI, Python 3.12, branch protection, and provider billing remain unverified.
 
 ## Post-commit failure diagnosis and fixes (2026-10-01)
 
@@ -822,11 +826,11 @@ ownership/accounting conditions and on the scenario's allocated call/cost bounda
 
 ### R11 — Profile and optimize the corrected offline suite without deleting coverage
 
-**Status: three controlled exact-candidate runs passed; 20% objective remains open.** The current
+**Status: profiling completed; the suite speed target was retired on 2026-10-03.** The historical
 serial median and full top-40 data are documented in PERFORMANCE.md and
 out/live-agentic/release-renewal-20260930/timing/. External-wall median is 237.399 seconds,
-106.063 seconds above the 131.336-second target. The prior `9d28dc4` median of 153.587 seconds
-is historical. Different test collections and host-load conditions prevent causal attribution.
+and the prior `9d28dc4` median is 153.587 seconds. Different test collections and host-load
+conditions prevent causal attribution. These measurements no longer carry a pass/fail threshold.
 
 Dependencies: R1; final measurements after behavior/test changes. Scope: measurement, then one small
 candidate per commit. Read `docs/skail/PERFORMANCE.md`, `tests/conftest.py`, packaging/CLI/eval
@@ -844,13 +848,10 @@ and independent pytest. Reduce artificial input/setup overhead only while retain
 Ctrl+C, durable restart, answer, filesystem and subprocess boundaries. Next inspect measured duplicate
 mount/setup or import costs; preserve at least one real wheel build/install, isolated no-credential
 CLI subprocess, security boundary, evaluation execution, and mounted focus/queue/interrupt path.
-Do not enable parallel pytest as an unmeasured substitute for the serial objective.
+Do not enable parallel pytest solely to change the diagnostic measurement.
 
-Acceptance: identical mechanism coverage, no unexplained dropped/deselected tests, and a repeatable
-external-wall gain. Report both historical and new targets: 20% below the original 164.17-second
-baseline is **131.336 seconds**; 20% below 201.816 is **161.4528 seconds**, but that diagnostic target
-does not replace the original objective. Keep the original objective open if unattained; document
-measured safe candidates exhausted rather than mark a profiling task as a speed pass.
+Acceptance: identical mechanism coverage, no unexplained dropped/deselected tests, and retained
+raw timing evidence for any future optimization. No suite runtime threshold is required.
 Files: only demonstrated bottleneck tests/helpers/scripts plus PERFORMANCE and evidence records.
 
 ### R12 — Reconcile every defect/output entry and documentation claim

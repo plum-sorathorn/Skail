@@ -26,7 +26,12 @@ that includes child agents in the parent run's displayed total.
    an ambiguous in-flight call remains unresolved and blocks unsafe replay. Missing usage is
    never represented as a measured zero-dollar call. A response must return before its call is
    marked successful without usage; cancellation while the provider handler is in flight retains
-   the reservation and records an ambiguous call.
+   the reservation and records an ambiguous call. An operator may preview a local reconciliation
+   estimate and explicitly apply it. That estimate is the greater of the frozen attempt estimate
+   and the cost of completed calls whose token counts Skail observed, using the assignment's frozen
+   prices. The reservation settles only after every ambiguous call in the attempt is reconciled.
+   The cancelled call keeps unknown tokens and cost, and the attempt ledger records
+   `reconciled_estimate`; replay of the original call remains blocked.
 4. The run ledger includes the lead and every child task in that run exactly once. The TUI
    status strip shows cumulative cost across all runs in the session; its budget panel and meter
    remain scoped to the current run. Session export schema version 2 includes per-call token
@@ -35,7 +40,8 @@ that includes child agents in the parent run's displayed total.
 5. The LLM Gateway CLI is not part of the accounting or live-test workflow. The in-house ledger
    is an estimate of token-priced usage, not a claim about actual provider charges. Non-token
    fees, tiered prices, cache-write premiums, and calls with missing usage may make billed spend
-   differ; tests must state these limits.
+   differ; tests must state these limits. A cancelled handler exposes no final output token count,
+   so reconciliation is not an exact bill or proof that the provider charged the estimated amount.
 
 ## Consequences
 

@@ -467,6 +467,10 @@ Before a child batch starts, Skail retains enough budget for at least one lead s
 - Measured input, output, and cached-input tokens replace the matching attempt estimate at
   the model prices frozen on that assignment. Provider-supplied dollar amounts do not settle
   the Skail ledger. Incomplete usage stays conservative or unresolved.
+- `skail sessions reconcile-call SESSION_ID CALL_ID` previews the local attempt estimate for an
+  ambiguous call. `--apply` uses it to settle the held reservation after all ambiguous calls in
+  that attempt are reconciled. Completed calls' observed token costs raise the estimate when they
+  exceed the frozen attempt estimate. Cancelled-call tokens and provider billing remain unknown.
 
 ## 12. Concurrency and scheduling
 

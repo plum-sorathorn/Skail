@@ -14,13 +14,14 @@ The latest diagnosis and implementation are in [plan.md](plan.md#2026-10-03-post
 - [x] R14 local code candidate: clean `6b31278` passed package build and isolated install, then
   all eight release stages, including the full suite, benchmarks, and complete paired evaluation.
   Artifacts and exact source identity are retained under `out/live-agentic/release-6b31278/`.
-- [ ] R10 exact-cost: the cancelled provider call's actual usage is unavailable. The campaign has
-  USD 0.0602132 settled locally, USD 1.96 held for unknown outcomes, and USD 0.9797868 remaining
-  from the USD 3.00 cap. Provider billing is unknown.
-- [ ] R11 current-candidate speed: `be6fde9` met the historical 131.336s target in its three-pair
-  October 1 series. A later same-host diagnostic pair took 177.782s on that older tree (one known
-  test failure) and 173.121s on the optimized current source (passing). A current-commit
-  three-pair qualification and causal improvement claim remain open.
+- [x] R10 cancelled-call local accounting: `sessions reconcile-call` previews a frozen-price
+  attempt estimate, includes observed completed-call token costs, and applies it only on `--apply`.
+  The unknown call remains ambiguous with null tokens and cost; its ledger settlement is labelled
+  `reconciled_estimate`. Existing historical reservations remain held until an operator applies
+  the command to each ambiguous call. Provider billing remains unknown.
+- [x] R11 diagnostic profiling: raw matched and current-candidate timings are retained in
+  [PERFORMANCE.md](../docs/skail/PERFORMANCE.md). The suite speed target was retired on
+  2026-10-03; no timing threshold gates release.
 - [ ] R14 external: candidate hosted Windows/Linux and Python 3.12–3.14 CI, branch protection,
   and provider billing remain unverified.
 

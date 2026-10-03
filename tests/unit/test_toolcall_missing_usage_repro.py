@@ -17,6 +17,7 @@ from skail.routing.assignment import AccountingReconciliationRequired, Assignmen
 from skail.routing.budget import BudgetLedger
 from skail.runtime.model_middleware import TaskBoundModelMiddleware
 from skail.sessions import Journal
+from skail.sessions.export import SessionExporter
 from tests.fakes.provider import FakeProviderAdapter, FakeProviderChatModel
 
 NOW = datetime(2026, 9, 17, tzinfo=UTC)
@@ -75,6 +76,7 @@ def _make_assignment(
     task_id: str,
     reservation_id: str,
     estimated: str = "0.20",
+    pricing: dict[str, str] | None = None,
 ) -> None:
     journal.create_attempt(
         attempt_id=attempt_id,
@@ -104,6 +106,7 @@ def _make_assignment(
         payload={
             "reservation_id": reservation_id,
             "estimated_attempt_cost_usd": estimated,
+            "pricing_evidence": pricing or {},
         },
     )
 
@@ -514,3 +517,229 @@ def test_genuine_ambiguous_still_raises(tmp_path: Path) -> None:
             journal, ledger, settler,
             assignment_id=assignment_id, reservation_id=reservation_id,
         )
+
+
+def _cancelled_calls(
+    tmp_path: Path, *, count: int = 1, estimated: str = "0.20"
+) -> tuple[Journal, BudgetLedger, AssignmentUsageSettler, str, str, list[str]]:
+    run_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    task_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    assignment_id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    attempt_id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    reservation_id = "res-reconcile-cancelled"
+    journal = _setup_journal(tmp_path, run_id=run_id, task_id=task_id)
+    ledger = BudgetLedger(journal)
+    settler = AssignmentUsageSettler(journal, ledger, {})
+    _make_assignment(
+        journal,
+        assignment_id=assignment_id,
+        attempt_id=attempt_id,
+        task_id=task_id,
+        reservation_id=reservation_id,
+        estimated=estimated,
+    )
+    call_ids = [settler.begin_call(assignment_id, f"call-{index}") for index in range(count)]
+    for call_id in call_ids:
+        settler.mark_ambiguous(call_id, asyncio.CancelledError())
+    return journal, ledger, settler, assignment_id, reservation_id, call_ids
+
+
+def test_cancelled_call_estimate_preview_and_reconciliation_keep_usage_unknown(
+    tmp_path: Path,
+) -> None:
+    journal, ledger, settler, assignment_id, reservation_id, call_ids = _cancelled_calls(
+        tmp_path
+    )
+    session_id = "11111111-1111-4111-8111-111111111111"
+    call_id = call_ids[0]
+
+    preview = settler.preview_ambiguous_call(session_id, call_id)
+    assert preview.estimated_attempt_cost_usd == Decimal("0.20")
+    assert preview.remaining_open_calls == 1
+    assert not preview.settled
+    snapshot = ledger.snapshot(_run_id(journal, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"))
+    assert snapshot.reserved_usd == Decimal("0.20")
+
+    applied = settler.reconcile_ambiguous_call(session_id, call_id)
+    assert applied.estimated_attempt_cost_usd == Decimal("0.20")
+    assert applied.remaining_open_calls == 0
+    assert applied.settled
+    assert settler.reconcile_ambiguous_call(session_id, call_id) == applied
+    _finalize(
+        journal,
+        ledger,
+        settler,
+        assignment_id=assignment_id,
+        reservation_id=reservation_id,
+    )
+
+    with journal._connect() as connection:
+        call = connection.execute(
+            "SELECT status,input_tokens,output_tokens,amount_usd,authority "
+            "FROM provider_calls WHERE call_id=?",
+            (call_id,),
+        ).fetchone()
+        reservation = connection.execute(
+            "SELECT status FROM budget_reservations WHERE reservation_id=?",
+            (reservation_id,),
+        ).fetchone()
+        usage = connection.execute(
+            "SELECT amount_usd,authoritative,authority FROM usage_records WHERE reservation_id=?",
+            (reservation_id,),
+        ).fetchone()
+        failure = connection.execute(
+            "SELECT status FROM accounting_reconciliation_failures WHERE call_id=?",
+            (call_id,),
+        ).fetchone()
+    assert tuple(call) == ("ambiguous", None, None, None, "unknown")
+    assert reservation["status"] == "settled"
+    assert tuple(usage) == ("0.20", 0, "reconciled_estimate")
+    assert failure["status"] == "estimated"
+    exported = SessionExporter(journal=journal).export(session_id)
+    assert exported["provider_calls"][0]["cost_usd"] is None
+    assert exported["provider_calls"][0]["status"] == "ambiguous"
+    assert exported["provider_calls"][0]["reconciliation_status"] == "estimated"
+    assert exported["usage"][0]["authority"] == "reconciled_estimate"
+    assert exported["model_usage"][0]["total_cost_usd"] is None
+
+
+def test_multiple_cancelled_calls_settle_once_after_each_is_reconciled(
+    tmp_path: Path,
+) -> None:
+    journal, ledger, settler, _, reservation_id, call_ids = _cancelled_calls(
+        tmp_path, count=2
+    )
+    session_id = "11111111-1111-4111-8111-111111111111"
+    with pytest.raises(KeyError):
+        settler.preview_ambiguous_call("wrong-session", call_ids[0])
+
+    first = settler.reconcile_ambiguous_call(session_id, call_ids[0])
+    assert first.remaining_open_calls == 1
+    assert not first.settled
+    with journal._connect() as connection:
+        assert connection.execute(
+            "SELECT status FROM budget_reservations WHERE reservation_id=?",
+            (reservation_id,),
+        ).fetchone()["status"] == "reserved"
+
+    second = settler.reconcile_ambiguous_call(session_id, call_ids[1])
+    assert second.remaining_open_calls == 0
+    assert second.settled
+    with journal._connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM usage_records WHERE reservation_id=?",
+            (reservation_id,),
+        ).fetchone()[0] == 1
+    snapshot = ledger.snapshot(_run_id(journal, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"))
+    assert snapshot.estimated_actual_usd == Decimal("0.20")
+
+
+def test_cancelled_call_estimate_includes_observed_token_cost(tmp_path: Path) -> None:
+    run_id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    task_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    assignment_id = "10101010-1010-4010-8010-101010101010"
+    journal = _setup_journal(tmp_path, run_id=run_id, task_id=task_id)
+    settler = AssignmentUsageSettler(
+        journal, BudgetLedger(journal),
+        {"fake": FakeProviderAdapter(FakeProviderChatModel())},
+    )
+    _make_assignment(
+        journal,
+        assignment_id=assignment_id,
+        attempt_id="20202020-2020-4020-8020-202020202020",
+        task_id=task_id,
+        reservation_id="res-measured-before-cancel",
+        estimated="0.01",
+        pricing={"input_usd_per_million": "1", "output_usd_per_million": "2"},
+    )
+    measured = settler.begin_call(assignment_id, "measured")
+    settler.record_call(
+        assignment_id,
+        AIMessage(
+            content="done",
+            usage_metadata={
+                "input_tokens": 20000,
+                "output_tokens": 10000,
+                "total_tokens": 30000,
+            },
+        ),
+        call_id=measured,
+    )
+    cancelled = settler.begin_call(assignment_id, "cancelled")
+    settler.mark_ambiguous(cancelled, asyncio.CancelledError())
+    session_id = "11111111-1111-4111-8111-111111111111"
+
+    preview = settler.preview_ambiguous_call(session_id, cancelled)
+    assert preview.estimated_attempt_cost_usd == Decimal("0.04")
+    applied = settler.reconcile_ambiguous_call(session_id, cancelled)
+    assert applied.settled
+    with journal._connect() as connection:
+        usage = connection.execute(
+            "SELECT amount_usd,authority FROM usage_records "
+            "WHERE reservation_id='res-measured-before-cancel'"
+        ).fetchone()
+    assert tuple(usage) == ("0.04", "reconciled_estimate")
+
+
+def test_unpriced_cancelled_call_does_not_become_zero_cost(tmp_path: Path) -> None:
+    _, _, settler, _, _, call_ids = _cancelled_calls(tmp_path, estimated="0")
+    with pytest.raises(AccountingReconciliationRequired, match="no priced attempt estimate"):
+        settler.preview_ambiguous_call(
+            "11111111-1111-4111-8111-111111111111", call_ids[0]
+        )
+
+
+def test_failed_estimate_settlement_keeps_reconciliation_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal, ledger, settler, _, reservation_id, call_ids = _cancelled_calls(tmp_path)
+
+    def fail_settlement(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("settlement failed")
+
+    monkeypatch.setattr(ledger, "settle", fail_settlement)
+    with pytest.raises(AccountingReconciliationRequired, match="usage settlement failed"):
+        settler.reconcile_ambiguous_call(
+            "11111111-1111-4111-8111-111111111111", call_ids[0]
+        )
+    with journal._connect() as connection:
+        failure = connection.execute(
+            "SELECT status FROM accounting_reconciliation_failures WHERE call_id=?",
+            (call_ids[0],),
+        ).fetchone()
+        reservation = connection.execute(
+            "SELECT status FROM budget_reservations WHERE reservation_id=?",
+            (reservation_id,),
+        ).fetchone()
+        usage_count = connection.execute(
+            "SELECT COUNT(*) FROM usage_records WHERE reservation_id=?", (reservation_id,)
+        ).fetchone()[0]
+    assert failure["status"] == "open"
+    assert reservation["status"] == "reserved"
+    assert usage_count == 0
+
+
+def test_cancelled_call_reconciliation_cli_previews_before_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from skail.cli import commands
+    from skail.cli.main import _parse_cli_args
+
+    journal, _, _, _, _, call_ids = _cancelled_calls(tmp_path)
+    session_id = "11111111-1111-4111-8111-111111111111"
+    rendered: list[str] = []
+    monkeypatch.setattr(commands, "render_print_stdout", rendered.append)
+    args = _parse_cli_args(["sessions", "reconcile-call", session_id, call_ids[0]])
+    assert commands.handle_sessions(args, None, journal) == 0  # type: ignore[arg-type]
+    assert any("USD 0.20" in line and "estimate" in line.lower() for line in rendered)
+    with journal._connect() as connection:
+        assert connection.execute(
+            "SELECT status FROM accounting_reconciliation_failures WHERE call_id=?",
+            (call_ids[0],),
+        ).fetchone()["status"] == "open"
+
+    applied = _parse_cli_args(
+        ["sessions", "reconcile-call", session_id, call_ids[0], "--apply"]
+    )
+    assert commands.handle_sessions(applied, None, journal) == 0  # type: ignore[arg-type]
+    assert any("settled" in line.lower() for line in rendered)

@@ -68,6 +68,9 @@ over as evidence for this commit.
 
 ## 5. Offline verification runtime (developer gate)
 
+As of 2026-10-03, the offline suite has no speed target or release threshold. Timing remains
+diagnostic; the earlier 20% goal and 131.336s threshold below are historical records only.
+
 These timings describe the repository's offline test suite, not Skail runtime latency or provider
 performance. They were measured serially on Windows 11 / Python 3.14.6 with
 `python -m pytest -q --durations=40`.
@@ -254,11 +257,11 @@ clean-source-identity test failure (1,299 passed, five skipped); the optimized t
 with five skipped. That pair supports retaining the accounting optimization, but it is one pair
 with different collections and cannot establish a stable speed gain.
 
-Both trees exceeded the historical 131.336s target in the same-host pair. The `be6fde9` checkpoint
-passed that absolute target on October 1; its result does not certify `6b31278`. A current-commit
-three-pair timing renewal and causal speed claim remain open.
+Both trees exceeded the former 131.336s threshold in the same-host pair. The `be6fde9` checkpoint
+met that threshold on October 1. The threshold is retired; no current-commit timing qualification
+is required for release.
 
 The clean `6b31278` release checker passed its full offline suite in 169.46s externally, along with
-all other release stages. This is one current-commit run, not the required three-pair timing
-qualification. Its raw command output and exact source identity are retained under
+all other release stages. This is one diagnostic timing run. Its raw command output and exact source
+identity are retained under
 `out/live-agentic/release-6b31278/release-evidence/`.

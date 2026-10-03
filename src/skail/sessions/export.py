@@ -129,7 +129,8 @@ class SessionExporter:
         with self.journal._connect() as connection:
             call_rows = connection.execute(
                 "SELECT c.call_id,c.status,c.input_tokens,c.output_tokens,c.amount_usd,"
-                "c.authority,u.cached_input_tokens,a.assignment_id,a.provider,a.model,"
+                "c.authority,f.status AS reconciliation_status,"
+                "u.cached_input_tokens,a.assignment_id,a.provider,a.model,"
                 "a.payload_json,t.task_id,t.run_id "
                 "FROM provider_calls c "
                 "JOIN assignments a ON a.assignment_id=c.assignment_id "
@@ -138,6 +139,7 @@ class SessionExporter:
                 "JOIN runs r ON r.run_id=t.run_id "
                 "LEFT JOIN assignment_call_usage u "
                 "ON u.assignment_id=a.assignment_id AND u.call_id=c.call_id "
+                "LEFT JOIN accounting_reconciliation_failures f ON f.call_id=c.call_id "
                 "WHERE r.session_id=? ORDER BY c.created_at,c.call_id",
                 (session_id,),
             ).fetchall()
@@ -158,7 +160,12 @@ class SessionExporter:
                     "output_tokens": row["output_tokens"],
                     "cached_input_tokens": row["cached_input_tokens"],
                     "cost_usd": row["amount_usd"],
-                    "authority": row["authority"],
+                    "authority": (
+                        row["authority"] or "unknown"
+                        if row["status"] == "ambiguous"
+                        else row["authority"]
+                    ),
+                    "reconciliation_status": row["reconciliation_status"],
                     "pricing_evidence": pricing,
                 }
             )

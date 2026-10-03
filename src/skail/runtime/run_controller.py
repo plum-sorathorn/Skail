@@ -503,9 +503,15 @@ class RunController:
         self.usage_settler.mark_unreturned_calls_ambiguous(assignment_id)
         with self.journal._connect() as connection:
             uncertain = connection.execute(
-                "SELECT 1 FROM provider_calls WHERE assignment_id=? "
-                "AND status='ambiguous' LIMIT 1",
+                "SELECT 1 FROM provider_calls c "
+                "LEFT JOIN accounting_reconciliation_failures f ON f.call_id=c.call_id "
+                "WHERE c.assignment_id=? AND c.status='ambiguous' "
+                "AND COALESCE(f.status,'open')!='estimated' LIMIT 1",
                 (assignment_id,),
+            ).fetchone()
+            reservation = connection.execute(
+                "SELECT status FROM budget_reservations WHERE reservation_id=?",
+                (str(assignment.reservation_id),),
             ).fetchone()
         if uncertain is not None:
             if cancelled:
@@ -517,6 +523,8 @@ class RunController:
                 f"provider usage is uncertain ({error_class}); "
                 f"reservation remains held{detail_suffix}"
             )
+        if reservation is not None and reservation["status"] == "settled":
+            return
         if self._has_calls(assignment_id):
             self.usage_settler.settle_attempt(assignment_id)
             return
@@ -542,8 +550,10 @@ class RunController:
         """
         with journal._connect() as connection:
             row = connection.execute(
-                "SELECT error_summary FROM provider_calls WHERE assignment_id=? "
-                "AND status='ambiguous' LIMIT 1",
+                "SELECT c.error_summary FROM provider_calls c "
+                "LEFT JOIN accounting_reconciliation_failures f ON f.call_id=c.call_id "
+                "WHERE c.assignment_id=? AND c.status='ambiguous' "
+                "AND COALESCE(f.status,'open')!='estimated' LIMIT 1",
                 (assignment_id,),
             ).fetchone()
         if row is None:
@@ -567,8 +577,10 @@ class RunController:
         """
         with journal._connect() as connection:
             row = connection.execute(
-                "SELECT error_summary FROM provider_calls WHERE assignment_id=? "
-                "AND status='ambiguous' LIMIT 1",
+                "SELECT c.error_summary FROM provider_calls c "
+                "LEFT JOIN accounting_reconciliation_failures f ON f.call_id=c.call_id "
+                "WHERE c.assignment_id=? AND c.status='ambiguous' "
+                "AND COALESCE(f.status,'open')!='estimated' LIMIT 1",
                 (assignment_id,),
             ).fetchone()
         if row is None:
