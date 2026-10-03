@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal
@@ -615,6 +617,14 @@ class AccountingReconciliationRequired(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class CallReconciliationResult:
+    assignment_id: str
+    estimated_attempt_cost_usd: Decimal
+    remaining_open_calls: int
+    settled: bool
+
+
 class AssignmentUsageSettler:
     def __init__(
         self,
@@ -714,7 +724,28 @@ class AssignmentUsageSettler:
             )
         return call_id
 
-    def mark_ambiguous(self, call_id: str, error: Exception) -> None:
+    def mark_call_succeeded(self, call_id: str) -> None:
+        """Record a returned provider response before its usage is normalized."""
+        now = datetime.now(UTC).isoformat()
+        with self.journal.transaction() as transaction:
+            row = transaction.connection.execute(
+                "SELECT status FROM provider_calls WHERE call_id=?", (call_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(call_id)
+            if row["status"] == "completed":
+                return
+            if row["status"] != "started":
+                raise AccountingReconciliationRequired(
+                    "ambiguous provider call requires explicit reconciliation"
+                )
+            transaction.connection.execute(
+                "UPDATE provider_calls SET status='completed',authority='unknown',updated_at=? "
+                "WHERE call_id=? AND status='started'",
+                (now, call_id),
+            )
+
+    def mark_ambiguous(self, call_id: str, error: BaseException) -> None:
         now = datetime.now(UTC).isoformat()
         detail = str(error) or type(error).__name__
         # Prefix the exception class name (code-defined, never a secret) so
@@ -729,7 +760,8 @@ class AssignmentUsageSettler:
             if row["status"] == "completed":
                 return
             transaction.connection.execute(
-                "UPDATE provider_calls SET status='ambiguous',error_summary=?,updated_at=? "
+                "UPDATE provider_calls SET status='ambiguous',authority='unknown',"
+                "error_summary=?,updated_at=? "
                 "WHERE call_id=?",
                 (summary, now, call_id),
             )
@@ -830,6 +862,10 @@ class AssignmentUsageSettler:
                 "SELECT status FROM provider_calls WHERE call_id=?", (call_id,)
             ).fetchone()
             if call is not None:
+                if call["status"] == "ambiguous":
+                    raise AccountingReconciliationRequired(
+                        "ambiguous provider call requires explicit reconciliation"
+                    )
                 transaction.connection.execute(
                     "UPDATE provider_calls SET status='completed',input_tokens=?,"
                     "output_tokens=?,amount_usd=?,authority=?,updated_at=? WHERE call_id=?",
@@ -843,24 +879,150 @@ class AssignmentUsageSettler:
                     ),
                 )
 
-    def complete_unmeasured_calls(self, assignment_id: str) -> int:
-        """Mark successful-but-unmeasured `started` calls completed (fail-open).
-
-        Streaming tool-call responses may carry no usage metadata, leaving a
-        `started` row when `record_call` is skipped or races. These calls
-        succeeded, so they settle via the conservative attempt-level envelope
-        in `settle_attempt`; only `ambiguous` rows stay fail-closed.
-        """
+    def mark_unreturned_calls_ambiguous(self, assignment_id: str) -> int:
+        """Keep calls without a recorded provider response funded for reconciliation."""
         now = datetime.now(UTC).isoformat()
+        summary = "UnrecordedProviderOutcome: provider response was not recorded"
         with self.journal.transaction() as transaction:
-            cursor = transaction.connection.execute(
-                "UPDATE provider_calls SET status='completed',authority='unknown',"
-                "updated_at=? WHERE assignment_id=? AND status='started'",
-                (now, assignment_id),
+            rows = transaction.connection.execute(
+                "SELECT call_id FROM provider_calls WHERE assignment_id=? AND status='started'",
+                (assignment_id,),
+            ).fetchall()
+            for row in rows:
+                call_id = str(row["call_id"])
+                transaction.connection.execute(
+                    "UPDATE provider_calls SET status='ambiguous',authority='unknown',"
+                    "error_summary=?,updated_at=? "
+                    "WHERE call_id=? AND status='started'",
+                    (summary, now, call_id),
+                )
+                transaction.connection.execute(
+                    "INSERT OR IGNORE INTO accounting_reconciliation_failures "
+                    "(failure_id,assignment_id,call_id,status,summary,created_at) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (str(uuid4()), assignment_id, call_id, "open", summary, now),
+                )
+            return len(rows)
+
+    def _reconciliation_state(
+        self, connection: sqlite3.Connection, session_id: str, call_id: str
+    ) -> tuple[CallReconciliationResult, str]:
+        row = connection.execute(
+            "SELECT c.status AS call_status,a.assignment_id,a.estimated_cost_usd,"
+            "a.payload_json,f.status AS failure_status "
+            "FROM provider_calls c "
+            "JOIN assignments a ON a.assignment_id=c.assignment_id "
+            "JOIN attempts p ON p.attempt_id=a.attempt_id "
+            "JOIN tasks t ON t.task_id=p.task_id "
+            "JOIN runs r ON r.run_id=t.run_id "
+            "LEFT JOIN accounting_reconciliation_failures f ON f.call_id=c.call_id "
+            "WHERE c.call_id=? AND r.session_id=?",
+            (call_id, session_id),
+        ).fetchone()
+        if row is None:
+            raise KeyError(call_id)
+        if row["call_status"] != "ambiguous":
+            raise ValueError("provider call is not ambiguous")
+        if row["failure_status"] not in {"open", "estimated"}:
+            raise AccountingReconciliationRequired(
+                "ambiguous provider call has no reconcilable failure record"
             )
-            return cursor.rowcount
+        payload = json.loads(row["payload_json"])
+        pricing = payload.get("pricing_evidence", {})
+        frozen_cost = Decimal(row["estimated_cost_usd"])
+        if not frozen_cost.is_finite() or frozen_cost < 0:
+            raise AccountingReconciliationRequired("frozen attempt estimate is invalid")
+        if frozen_cost == 0 and (
+            pricing.get("input_usd_per_million") is None
+            or pricing.get("output_usd_per_million") is None
+        ):
+            raise AccountingReconciliationRequired("no priced attempt estimate is available")
+        known_cost = Decimal("0")
+        recorded = connection.execute(
+            "SELECT input_tokens,output_tokens,cached_input_tokens,amount_usd,cost_known "
+            "FROM assignment_call_usage WHERE assignment_id=?",
+            (row["assignment_id"],),
+        ).fetchall()
+        for usage in recorded:
+            cost = (
+                Decimal(usage["amount_usd"])
+                if usage["cost_known"]
+                else _token_cost_usd(
+                    input_tokens=int(usage["input_tokens"]),
+                    output_tokens=int(usage["output_tokens"]),
+                    cached_input_tokens=int(usage["cached_input_tokens"]),
+                    pricing=pricing,
+                )
+            )
+            if cost is not None:
+                known_cost += cost
+        remaining = connection.execute(
+            "SELECT COUNT(*) FROM provider_calls c "
+            "LEFT JOIN accounting_reconciliation_failures f ON f.call_id=c.call_id "
+            "WHERE c.assignment_id=? AND (c.status='started' OR "
+            "(c.status='ambiguous' AND COALESCE(f.status,'open')!='estimated'))",
+            (row["assignment_id"],),
+        ).fetchone()[0]
+        assignment_failures = connection.execute(
+            "SELECT COUNT(*) FROM accounting_reconciliation_failures "
+            "WHERE assignment_id=? AND call_id IS NULL AND status='open'",
+            (row["assignment_id"],),
+        ).fetchone()[0]
+        reservation = connection.execute(
+            "SELECT status FROM budget_reservations WHERE reservation_id=?",
+            (payload["reservation_id"],),
+        ).fetchone()
+        if reservation is None:
+            raise AccountingReconciliationRequired("attempt reservation is missing")
+        return (
+            CallReconciliationResult(
+                assignment_id=str(row["assignment_id"]),
+                estimated_attempt_cost_usd=max(frozen_cost, known_cost),
+                remaining_open_calls=int(remaining + assignment_failures),
+                settled=reservation["status"] == "settled",
+            ),
+            str(row["failure_status"]),
+        )
+
+    def preview_ambiguous_call(
+        self, session_id: str, call_id: str
+    ) -> CallReconciliationResult:
+        """Calculate an attempt estimate without changing the unknown call outcome."""
+        with self.journal._connect() as connection:
+            result, _ = self._reconciliation_state(connection, session_id, call_id)
+            return result
+
+    def reconcile_ambiguous_call(
+        self, session_id: str, call_id: str
+    ) -> CallReconciliationResult:
+        """Apply the local estimate once every ambiguous call in the attempt is resolved."""
+        with self.journal.transaction() as transaction:
+            connection = transaction.connection
+            result, failure_status = self._reconciliation_state(
+                connection, session_id, call_id
+            )
+            if result.settled:
+                if failure_status != "estimated":
+                    raise AccountingReconciliationRequired(
+                        "reservation was settled without this call's reconciliation"
+                    )
+                return result
+            if failure_status == "open":
+                connection.execute(
+                    "UPDATE accounting_reconciliation_failures SET status='estimated' "
+                    "WHERE call_id=? AND status='open'",
+                    (call_id,),
+                )
+            result, _ = self._reconciliation_state(connection, session_id, call_id)
+            if result.remaining_open_calls == 0:
+                self._settle_attempt(result.assignment_id, reconciled_estimate=True)
+                result, _ = self._reconciliation_state(connection, session_id, call_id)
+            return result
 
     def settle_attempt(self, assignment_id: str) -> None:
+        self._settle_attempt(assignment_id, reconciled_estimate=False)
+
+    def _settle_attempt(self, assignment_id: str, *, reconciled_estimate: bool) -> None:
         with self.journal._connect() as connection:
             assignment = connection.execute(
                 "SELECT payload_json FROM assignments WHERE assignment_id=?",
@@ -931,7 +1093,11 @@ class AssignmentUsageSettler:
                 else (
                     UsageAuthority.TOKEN_DERIVED_ESTIMATE
                     if all_measured
-                    else UsageAuthority.CONSERVATIVE_ESTIMATE
+                    else (
+                        UsageAuthority.RECONCILED_ESTIMATE
+                        if reconciled_estimate
+                        else UsageAuthority.CONSERVATIVE_ESTIMATE
+                    )
                 )
             ),
         )

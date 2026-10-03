@@ -113,6 +113,46 @@ def handle_sessions(
             render_print_stdout(content)
         return EXIT_OK
 
+    if subaction == "reconcile-call":
+        from skail.routing.assignment import (
+            AccountingReconciliationRequired,
+            AssignmentUsageSettler,
+        )
+        from skail.routing.budget import BudgetLedger
+
+        settler = AssignmentUsageSettler(journal, BudgetLedger(journal), {})
+        call_id = args.call_id
+        try:
+            reconciliation = (
+                settler.reconcile_ambiguous_call(session_id, call_id)
+                if args.apply
+                else settler.preview_ambiguous_call(session_id, call_id)
+            )
+        except KeyError:
+            render_print_stderr("ambiguous call not found in this session")
+            return EXIT_FAILURE
+        except (ValueError, AccountingReconciliationRequired) as exc:
+            render_print_stderr(f"call cannot be reconciled: {exc}")
+            return EXIT_FAILURE
+        amount = format(reconciliation.estimated_attempt_cost_usd, "f")
+        if not args.apply:
+            render_print_stdout(
+                f"Attempt cost estimate: USD {amount}. Provider charge remains unknown; "
+                "the reservation is unchanged. Use --apply to reconcile."
+            )
+        elif reconciliation.settled:
+            render_print_stdout(
+                f"Local estimate USD {amount} settled for the attempt. "
+                "Provider charge remains unknown."
+            )
+        else:
+            render_print_stdout(
+                f"Call reconciled with local estimate USD {amount}; "
+                f"{reconciliation.remaining_open_calls} unresolved call(s) remain; "
+                "the reservation is held."
+            )
+        return EXIT_OK
+
     if subaction == "archive":
         try:
             session_service.transition_session(session_id, SessionStatus.ARCHIVED)

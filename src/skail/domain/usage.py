@@ -12,12 +12,7 @@ class UsageAuthority(StrEnum):
     CONSERVATIVE_ESTIMATE = "conservative_estimate"
     UNKNOWN = "unknown"
     ESTIMATED_ACTUAL = "estimated_actual"
-    # TODO(flag/D-12): part 2 remains. Until the estimate-on-reconcile
-    # resolution lands, unknown usage stays NULL with authority='unknown' (the
-    # event's usage fields stay None; provider_calls keeps the journaled
-    # truth). Remaining work: add UsageAuthority.RECONCILED_ESTIMATE and settle
-    # ambiguous calls to the frozen estimated_attempt_cost_usd WITHOUT
-    # overwriting `unknown`, plus a resolution CLI verb.
+    RECONCILED_ESTIMATE = "reconciled_estimate"
 
 
 class NormalizedUsage(BaseModel):

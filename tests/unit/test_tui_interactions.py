@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -25,12 +26,13 @@ from skail.runtime.run_controller import RunController
 from skail.sessions.checkpoints import CheckpointStore
 from skail.sessions.journal import Journal
 from skail.sessions.service import SessionService
+from skail.tools.approvals import ApprovalStore
 from skail.tui.app import SkailApp
 from skail.tui.commands import command_requires_args
 from skail.tui.overlays.model_picker import ModelPickerOverlay
 from skail.tui.overlays.theme_picker import ThemePickerOverlay
-from skail.tui.projection import TuiProjection
-from skail.tui.widgets.chat import ActivitySpinner
+from skail.tui.projection import InterruptItem, TuiProjection
+from skail.tui.widgets.chat import ActivitySpinner, ChatTranscript
 from skail.tui.widgets.composer import ComposerTextArea
 from skail.tui.widgets.interrupts import InterruptWidget
 
@@ -240,6 +242,110 @@ async def test_question_interrupt_pilot_has_answer_and_cancel_actions() -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_question_interrupt_focuses_input_and_tab_cancel() -> None:
+    class QuestionController:
+        pending_interrupt = None
+
+        def __init__(self) -> None:
+            self.rejected = 0
+
+        def subscribe_events(self, callback: Any) -> None:
+            _ = callback
+
+        async def run_instruction(self, text: str, **kwargs: Any) -> Any:
+            _ = text, kwargs
+            return SimpleNamespace(
+                run_id="run-question",
+                pending_interrupt={
+                    "kind": "question",
+                    "question_id": "question-live",
+                    "prompt": "Which label should I use?",
+                    "options": [],
+                },
+                output="",
+                status="interrupted",
+            )
+
+        def reject_interrupted(self) -> None:
+            self.rejected += 1
+
+    controller = QuestionController()
+    app = SkailApp(controller=controller)
+    async with app.run_test(size=(80, 24)) as pilot:
+        composer = app.query_one("#composer-input", ComposerTextArea)
+        composer.text = "Ask an open question"
+        await pilot.press("enter")
+        assert app._active_worker is not None
+        await asyncio.wait_for(app._active_worker.wait(), timeout=5)
+        await pilot.pause()
+
+        answer_input = app.query_one(InterruptWidget).query_one("#interrupt-input", Input)
+        assert app.focused is answer_input
+        await pilot.press("tab", "tab", "enter")
+        await pilot.pause()
+
+    assert controller.rejected == 1
+
+
+@pytest.mark.asyncio
+async def test_runtime_approval_card_focuses_reject_action_by_default() -> None:
+    class ApprovalController:
+        pending_interrupt = None
+        workspace = Path.cwd()
+
+        def __init__(self) -> None:
+            self.resumed = 0
+
+        def subscribe_events(self, callback: Any) -> None:
+            _ = callback
+
+        async def run_instruction(self, text: str, **kwargs: Any) -> Any:
+            _ = text, kwargs
+            return SimpleNamespace(
+                run_id="run-approval",
+                pending_interrupt={
+                    "kind": "approval",
+                    "type": "command_approval",
+                    "command": "python",
+                    "arguments": ["-c", "pass"],
+                    "cwd": str(Path.cwd()),
+                    "session_id": "session-approval",
+                    "run_id": "run-approval",
+                    "task_id": "task-approval",
+                    "action_id": "action-approval",
+                },
+                output="",
+                status="interrupted",
+            )
+
+        async def resume_interrupted(self, answer: str) -> Any:
+            assert answer == "yes"
+            self.resumed += 1
+            return SimpleNamespace(
+                run_id="run-approval", pending_interrupt=None, output="", status="completed"
+            )
+
+    controller = ApprovalController()
+    app = SkailApp(controller=controller)
+    app.approval_store = ApprovalStore()
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.query_one("#composer-input", ComposerTextArea).text = "Run a harmless command"
+        await pilot.press("enter")
+        assert app._active_worker is not None
+        await asyncio.wait_for(app._active_worker.wait(), timeout=5)
+        await pilot.pause()
+
+        card = app.query_one(InterruptWidget)
+        assert app.focused is card.query_one("#btn-reject", Button)
+        await pilot.press("tab", "tab", "tab")
+        assert app.focused is card.query_one("#btn-approve", Button)
+        await pilot.press("enter")
+        assert app._active_worker is not None
+        await asyncio.wait_for(app._active_worker.wait(), timeout=5)
+        assert controller.resumed == 1
+
+
+@pytest.mark.asyncio
 async def test_invalid_question_answer_keeps_wait_pending() -> None:
     app = SkailApp()
     app._set_interrupt(
@@ -286,6 +392,7 @@ async def test_question_cancel_pilot_shows_run_cancellation_copy() -> None:
         assert app.projection.pending_interrupt is None
         assert app.projection.transcript_items[-1].title == "Question Cancelled"
         assert app.projection.transcript_items[-1].content == "The waiting run was cancelled."
+        assert app.focused is app.query_one("#composer-input", ComposerTextArea)
 
 
 async def test_long_question_keeps_answer_controls_in_small_terminal() -> None:
@@ -327,6 +434,245 @@ async def test_permission_interrupt_pilot_keeps_approve_reject_actions() -> None
         assert str(card.query_one("#btn-approve", Button).label) == "Approve A"
         assert str(card.query_one("#btn-reject", Button).label) == "Reject R"
         assert not card.query("#btn-answer, #btn-cancel-question")
+
+
+def _approval_interrupt(approval_id: str = "approval-current") -> InterruptItem:
+    return InterruptItem(
+        approval_id=approval_id,
+        task_id="task-current",
+        question="Run the requested command?",
+        payload={
+            "type": "command_approval",
+            "command": "git",
+            "arguments": ["status"],
+            "cwd": ".",
+            "session_id": "session-current",
+            "run_id": "run-current",
+            "task_id": "task-current",
+            "action_id": "action-current",
+        },
+        kind=InterruptKind.APPROVAL,
+    )
+
+
+@pytest.mark.asyncio
+async def test_stale_approval_events_do_not_decide_or_resume_current_interrupt() -> None:
+    class Controller:
+        resumed: list[str]
+        rejected: list[str | None]
+
+        def __init__(self) -> None:
+            self.pending_interrupt = None
+            self.resumed = []
+            self.rejected = []
+
+        def subscribe_events(self, callback: Any) -> None:
+            _ = callback
+
+        async def resume_interrupted(self, answer: str) -> Any:
+            self.resumed.append(answer)
+            return SimpleNamespace(
+                pending_interrupt=None, run_id="run-current", output="", status="completed"
+            )
+
+        def reject_interrupted(self, *, interrupt_id: str | None = None) -> None:
+            self.rejected.append(interrupt_id)
+
+    class ApprovalRecorder:
+        decisions: list[tuple[Any, Any]]
+
+        def __init__(self) -> None:
+            self.decisions = []
+
+        def decide(self, request: Any, choice: Any) -> None:
+            self.decisions.append((request, choice))
+
+    controller = Controller()
+    approvals = ApprovalRecorder()
+    app = SkailApp(controller=controller)
+    app.approval_store = approvals
+    app.projection.pending_interrupt = _approval_interrupt()
+
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.on_interrupt_widget_approved(InterruptWidget.Approved("approval-stale"))
+        app.on_interrupt_widget_rejected(InterruptWidget.Rejected("approval-stale"))
+        await pilot.pause()
+
+    assert approvals.decisions == []
+    assert controller.resumed == []
+    assert controller.rejected == []
+    assert app.projection.pending_interrupt is not None
+    assert app.projection.pending_interrupt.approval_id == "approval-current"
+
+
+def test_command_approval_ids_are_distinct_per_action_and_stable_on_restore() -> None:
+    first = SkailApp()
+    first._set_interrupt(
+        {
+            **_approval_interrupt().payload,
+            "action_id": "action-one",
+        },
+        run_id="run-current",
+    )
+    second = SkailApp()
+    second._set_interrupt(
+        {
+            **_approval_interrupt().payload,
+            "action_id": "action-two",
+        },
+        run_id="run-current",
+    )
+    restored = SkailApp()
+    restored._set_interrupt(
+        {
+            **_approval_interrupt().payload,
+            "action_id": "action-one",
+        },
+        run_id="run-current",
+    )
+
+    assert first.projection.pending_interrupt is not None
+    assert second.projection.pending_interrupt is not None
+    assert restored.projection.pending_interrupt is not None
+    assert (
+        first.projection.pending_interrupt.approval_id
+        != second.projection.pending_interrupt.approval_id
+    )
+    assert (
+        first.projection.pending_interrupt.approval_id
+        == restored.projection.pending_interrupt.approval_id
+    )
+
+
+@pytest.mark.asyncio
+async def test_current_approval_event_is_consumed_once_and_cancellation_is_correlated() -> None:
+    class Controller:
+        def __init__(self) -> None:
+            self.pending_interrupt = None
+            self.resumed: list[str] = []
+            self.workspace = Path.cwd()
+            self.rejected: list[str | None] = []
+
+        def subscribe_events(self, callback: Any) -> None:
+            _ = callback
+
+        async def resume_interrupted(self, answer: str) -> Any:
+            self.resumed.append(answer)
+            return SimpleNamespace(
+                pending_interrupt=None, run_id="run-current", output="", status="completed"
+            )
+
+        def reject_interrupted(self, *, interrupt_id: str | None = None) -> None:
+            self.rejected.append(interrupt_id)
+
+    controller = Controller()
+    app = SkailApp(controller=controller)
+    app.projection.pending_interrupt = _approval_interrupt()
+
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.on_interrupt_widget_rejected(InterruptWidget.Rejected("approval-current"))
+        app.on_interrupt_widget_rejected(InterruptWidget.Rejected("approval-current"))
+        await pilot.pause()
+
+    assert controller.rejected == ["approval-current"]
+    assert app.projection.pending_interrupt is None
+
+
+@pytest.mark.asyncio
+async def test_valid_allow_once_decision_resumes_exactly_once() -> None:
+    class Controller:
+        def __init__(self) -> None:
+            self.pending_interrupt = None
+            self.resumed: list[str] = []
+            self.workspace = Path.cwd()
+
+        def subscribe_events(self, callback: Any) -> None:
+            _ = callback
+
+        async def resume_interrupted(self, answer: str) -> Any:
+            self.resumed.append(answer)
+            return SimpleNamespace(
+                pending_interrupt=None, run_id="run-current", output="", status="completed"
+            )
+
+    class ApprovalRecorder:
+        def __init__(self) -> None:
+            self.decisions: list[tuple[Any, Any]] = []
+
+        def decide(self, request: Any, choice: Any) -> None:
+            self.decisions.append((request, choice))
+
+    controller = Controller()
+    approvals = ApprovalRecorder()
+    app = SkailApp(controller=controller)
+    app.approval_store = approvals
+    app.projection.pending_interrupt = _approval_interrupt()
+
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.on_interrupt_widget_approved(InterruptWidget.Approved("approval-current"))
+        app.on_interrupt_widget_approved(InterruptWidget.Approved("approval-current"))
+        await pilot.pause()
+
+    assert len(approvals.decisions) == 1
+    assert approvals.decisions[0][1].value == "allow_once"
+    assert len(controller.resumed) == 1
+    assert app.projection.pending_interrupt is None
+
+
+def test_command_approval_without_complete_identity_cannot_be_approved() -> None:
+    class Controller:
+        pending_interrupt = None
+
+        def __init__(self) -> None:
+            self.resumed: list[str] = []
+
+        def subscribe_events(self, callback: Any) -> None:
+            _ = callback
+
+    class ApprovalRecorder:
+        def __init__(self) -> None:
+            self.decisions: list[tuple[Any, Any]] = []
+
+        def decide(self, request: Any, choice: Any) -> None:
+            self.decisions.append((request, choice))
+
+    controller = Controller()
+    approvals = ApprovalRecorder()
+    app = SkailApp(controller=controller)
+    app.approval_store = approvals
+    pending = _approval_interrupt()
+    pending.payload.pop("action_id")
+    app.projection.pending_interrupt = pending
+
+    app.on_interrupt_widget_approved(InterruptWidget.Approved("approval-current"))
+
+    assert approvals.decisions == []
+    assert controller.resumed == []
+    assert app.projection.pending_interrupt is pending
+
+
+@pytest.mark.parametrize(
+    ("kind", "status"),
+    [
+        (InterruptKind.QUESTION, "pending"),
+        (InterruptKind.APPROVAL, "answering"),
+        (InterruptKind.APPROVAL, "rejected"),
+    ],
+)
+def test_approval_events_require_an_open_approval_card(
+    kind: InterruptKind, status: str
+) -> None:
+    app = SkailApp()
+    pending = _approval_interrupt()
+    pending.kind = kind
+    pending.status = status
+    app.projection.pending_interrupt = pending
+
+    app.on_interrupt_widget_approved(InterruptWidget.Approved("approval-current"))
+    app.on_interrupt_widget_rejected(InterruptWidget.Rejected("approval-current"))
+
+    assert app.projection.pending_interrupt is pending
+    assert app.projection.transcript_items == []
 
 
 def test_interrupt_projection_keeps_run_and_plan_ownership() -> None:
@@ -475,6 +821,8 @@ async def test_slash_quit_discards_queue_and_stops_dispatch() -> None:
         assert app.projection.queue == []
         assert controller.calls == ["first"]
         assert any(item.title == "Queue cleared" for item in app.projection.transcript_items)
+        chat = app.query_one("#chat-transcript", ChatTranscript)
+        assert any(item.item.title == "Queue cleared" for item in chat._widgets_by_id.values())
 
 
 @pytest.mark.asyncio
@@ -621,9 +969,8 @@ async def test_composer_enter_dispatches_theme_slash_command() -> None:
 async def test_model_command_with_argument_sets_future_model() -> None:
     app = SkailApp()
     async with app.run_test() as pilot:
-        await pilot.click("#composer-input")
-        for ch in "/model custom-gpt":
-            await pilot.press(ch)
+        composer = app.query_one("#composer-input", ComposerTextArea)
+        composer.text = "/model custom-gpt"
         await pilot.press("enter")
         assert app.projection.model_for_future() == "custom-gpt"
 
@@ -643,20 +990,17 @@ async def test_keyboard_navigation_and_slash_commands_switch_tabs() -> None:
             assert app.focused is composer
 
         await pilot.click("#composer-input")
-        for ch in "/plan":
-            await pilot.press(ch)
+        composer.text = "/plan"
         await pilot.press("enter")
         assert tabs.active == "tab-plan"
 
         await pilot.click("#composer-input")
-        for ch in "/budget":
-            await pilot.press(ch)
+        composer.text = "/budget"
         await pilot.press("enter")
         assert tabs.active == "tab-budget"
 
         await pilot.click("#composer-input")
-        for ch in "/agents":
-            await pilot.press(ch)
+        composer.text = "/agents"
         await pilot.press("enter")
         assert tabs.active == "tab-agents"
 
@@ -847,11 +1191,10 @@ async def test_composer_submission_during_initialization_is_replayed(tmp_path: A
     async with app.run_test(size=(120, 40)) as pilot:
         assert await asyncio.wait_for(asyncio.to_thread(started.wait, 5), timeout=6)
         await pilot.click("#composer-input")
-        for char in "run after boot":
-            await pilot.press(char)
+        area = app.query_one("#composer-input", ComposerTextArea)
+        area.text = "run after boot"
         await pilot.press("enter")
         await pilot.pause()
-        area = app.query_one("#composer-input", ComposerTextArea)
         assert area.text == "run after boot"
 
         release.set()
@@ -1009,8 +1352,7 @@ async def test_explicit_validated_lead_pin_skips_picker_without_onboarding_recei
         assert not isinstance(app.screen_stack[-1], ModelPickerOverlay)
 
         await pilot.click("#composer-input")
-        for char in "run explicit pin":
-            await pilot.press(char)
+        app.query_one("#composer-input", ComposerTextArea).text = "run explicit pin"
         await pilot.press("enter")
         for _ in range(30):
             await pilot.pause()
@@ -1073,8 +1415,7 @@ async def test_model_picker_return_to_composer_submits_prompt_once(
 
         monkeypatch.setattr(controller, "run_instruction", record_submission)
         await pilot.click("#composer-input")
-        for char in "Check the offline picker path":
-            await pilot.press(char)
+        app.query_one("#composer-input", ComposerTextArea).text = "Check the offline picker path"
         await pilot.press("enter")
 
         assert app._active_worker is not None
@@ -1111,8 +1452,7 @@ async def test_composer_enter_and_send_button_drive_real_controller(tmp_path: An
     )
     async with app.run_test(size=(180, 40)) as pilot:
         await pilot.click("#composer-input")
-        for char in "enter path":
-            await pilot.press(char)
+        app.query_one("#composer-input", ComposerTextArea).text = "enter path"
         await pilot.press("enter")
         if app._active_worker is not None:
             await app._active_worker.wait()

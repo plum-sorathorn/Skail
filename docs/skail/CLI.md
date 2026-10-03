@@ -74,6 +74,9 @@ Machine-readable event streaming mode:
 - `skail sessions list`: List stored local sessions with ID, status, and timestamps.
 - `skail sessions show <session_id>`: Display overview of runs, tasks, and budget state for a session.
 - `skail sessions export <session_id> [--output PATH]`: Export a redacted session record as JSON to stdout or a file.
+- `skail sessions reconcile-call <session_id> <call_id> [--apply]`: Preview the local estimate
+  for an ambiguous provider call. `--apply` settles the attempt reservation as an estimate once
+  all its ambiguous calls are reconciled; it does not claim the provider's actual charge.
 - `skail sessions archive <session_id>`: Move session to archived status.
 - `skail sessions resume <session_id>`: Restore state and activate an interrupted or idle session.
 
@@ -122,8 +125,9 @@ conservative estimate, unknown cost, and reserved amount. New measured calls use
 and prices frozen on the assignment; provider-supplied dollar amounts do not settle the ledger.
 The current-run budget total includes lead and child tasks; the TUI status strip shows cumulative
 cost across the session's runs. Session export schema version 2 adds
-`provider_calls` with token counts, call IDs, statuses, and frozen pricing, plus `model_usage`
-totals across the session. An unresolved call makes its model's total cost null.
+`provider_calls` with token counts, call IDs, statuses, reconciliation status, and frozen pricing,
+plus `model_usage` totals across the session. An unresolved call makes its model's total cost null;
+an applied local estimate appears separately in `usage` with authority `reconciled_estimate`.
 
 Provider-live validation is explicit and bounded:
 

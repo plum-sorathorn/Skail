@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import platform
 import subprocess
@@ -23,7 +24,7 @@ from evals.schema import (
     RawExecutionRecord,
     TaskEvalResult,
 )
-from scripts import release_check
+from scripts import package_check, release_check
 from scripts.release_check import (
     check_quality,
     check_smoke,
@@ -571,6 +572,13 @@ def test_release_wheel_check_reuses_a_built_artifact(
 ) -> None:
     with zipfile.ZipFile(tmp_path / "skail_harness-0.1.0-py3-none-any.whl", "w") as archive:
         archive.writestr("skail/__init__.py", "")
+    (tmp_path / "skail_harness-0.1.0.tar.gz").write_bytes(b"retained sdist")
+    monkeypatch.setattr(release_check, "source_identity", lambda: ("candidate", "tree-digest"))
+    package_check.write_package_manifest(
+        tmp_path,
+        source_commit="candidate",
+        source_digest="tree-digest",
+    )
 
     def fail_if_rebuilt(*_: object, **__: object) -> None:
         pytest.fail("release check rebuilt the wheel")
@@ -580,6 +588,54 @@ def test_release_wheel_check_reuses_a_built_artifact(
     check_wheel_contents(tmp_path)
 
 
+def test_release_check_rejects_retained_artifacts_without_provenance(
+    tmp_path: Path,
+) -> None:
+    with zipfile.ZipFile(tmp_path / "skail_harness-0.1.0-py3-none-any.whl", "w") as archive:
+        archive.writestr("skail/__init__.py", "")
+
+    with pytest.raises(AssertionError, match="package manifest"):
+        check_wheel_contents(tmp_path)
+
+
+def test_release_check_rejects_artifacts_from_a_different_source_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with zipfile.ZipFile(tmp_path / "skail_harness-0.1.0-py3-none-any.whl", "w") as archive:
+        archive.writestr("skail/__init__.py", "")
+    (tmp_path / "skail_harness-0.1.0.tar.gz").write_bytes(b"retained sdist")
+    package_check.write_package_manifest(
+        tmp_path,
+        source_commit="old-candidate",
+        source_digest="old-tree",
+    )
+    monkeypatch.setattr(release_check, "source_identity", lambda: ("new-candidate", "new-tree"))
+
+    with pytest.raises(AssertionError, match="source identity"):
+        check_wheel_contents(tmp_path)
+
+
+def test_release_check_rejects_modified_packaged_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    wheel = tmp_path / "skail_harness-0.1.0-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("skail/__init__.py", "")
+    (tmp_path / "skail_harness-0.1.0.tar.gz").write_bytes(b"retained sdist")
+    package_check.write_package_manifest(
+        tmp_path,
+        source_commit="candidate",
+        source_digest="tree-digest",
+    )
+    wheel.write_bytes(b"modified wheel")
+    monkeypatch.setattr(release_check, "source_identity", lambda: ("candidate", "tree-digest"))
+
+    with pytest.raises(AssertionError, match="manifest hashes"):
+        check_wheel_contents(tmp_path)
+
+
 def test_release_check_passes_the_shared_artifact_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -587,12 +643,12 @@ def test_release_check_passes_the_shared_artifact_directory(
     observed: list[Path | None] = []
     for name in (
         "check_clean_worktree",
-        "check_quality",
         "check_docs",
         "check_smoke",
         "check_evals",
     ):
         monkeypatch.setattr(release_check, name, lambda: None)
+    monkeypatch.setattr(release_check, "check_quality", lambda *_: None)
     monkeypatch.setattr(
         release_check,
         "check_wheel_contents",
@@ -601,6 +657,125 @@ def test_release_check_passes_the_shared_artifact_directory(
 
     assert release_check.main(["--artifact-dir", str(tmp_path)]) == 0
     assert observed == [tmp_path]
+
+
+def test_release_quality_reuses_the_package_artifact_for_packaging_test(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[tuple[list[str], dict[str, object]]] = []
+
+    def run_check(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        observed.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", run_check)
+
+    check_quality(artifact_dir=tmp_path)
+
+    _, kwargs = next(call for call in observed if "pytest" in call[0])
+    environment = kwargs["env"]
+    assert isinstance(environment, dict)
+    assert environment["SKAIL_PACKAGE_ARTIFACT_DIR"] == str(tmp_path)
+
+
+def test_release_workflow_runs_each_gate_once_and_uploads_package_artifacts() -> None:
+    workflow = (
+        Path(__file__).resolve().parents[2] / ".github" / "workflows" / "release.yml"
+    ).read_text(encoding="utf-8")
+
+    assert workflow.count("python scripts/package_check.py") == 1
+    assert workflow.count("python scripts/release_check.py") == 1
+    assert "${{ runner.temp }}/skail-package-artifacts" in workflow
+    assert "${{ runner.temp }}/skail-release-evidence" in workflow
+
+
+def test_release_check_retains_partial_stage_evidence_on_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evidence_dir = tmp_path / "release-evidence"
+    monkeypatch.setattr(
+        release_check, "check_clean_worktree", lambda: (_ for _ in ()).throw(
+            AssertionError("dirty candidate")
+        )
+    )
+
+    assert release_check.main(["--evidence-dir", str(evidence_dir)]) == 1
+
+    manifest = json.loads((evidence_dir / "release-check.json").read_text(encoding="utf-8"))
+    assert manifest["status"] == "failed"
+    assert manifest["stages"][0]["name"] == "clean_worktree"
+    assert manifest["stages"][0]["status"] == "failed"
+    assert "dirty candidate" in manifest["failure"]
+
+
+def test_release_command_logs_redact_secret_values(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "gateway-test-secret-value"
+    evidence_dir = tmp_path / "release-evidence"
+    evidence_dir.mkdir()
+    monkeypatch.setattr(release_check, "_EVIDENCE_DIR", evidence_dir)
+    monkeypatch.setattr(release_check, "_EVIDENCE_MANIFEST", {"schema_version": 1})
+    monkeypatch.setattr(release_check, "_COMMAND_RECORDS", [])
+    monkeypatch.setattr(release_check, "_STAGE_RECORDS", [])
+    monkeypatch.setenv("GATEWAY_API_KEY", secret)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0, f"token={secret}", ""
+        ),
+    )
+
+    assert release_check._run_checked("fake step", ["fake-command"]) == f"token={secret}"
+
+    recorded = json.loads(
+        (evidence_dir / "commands" / "001.json").read_text(encoding="utf-8")
+    )
+    assert recorded["stdout"] == "token=[REDACTED]"
+    assert secret not in json.dumps(recorded)
+
+
+def test_release_evidence_binds_artifact_hashes_to_source_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact_dir = tmp_path / "packages"
+    artifact_dir.mkdir()
+    wheel = artifact_dir / "skail.whl"
+    sdist = artifact_dir / "skail.tar.gz"
+    wheel.write_bytes(b"wheel bytes")
+    sdist.write_bytes(b"sdist bytes")
+    evidence_dir = tmp_path / "release-evidence"
+    monkeypatch.setattr(release_check, "source_identity", lambda: ("candidate-sha", "tree-digest"))
+    package_check.write_package_manifest(
+        artifact_dir,
+        source_commit="candidate-sha",
+        source_digest="tree-digest",
+    )
+    monkeypatch.setattr(release_check, "_EVIDENCE_DIR", None)
+    monkeypatch.setattr(release_check, "_EVIDENCE_MANIFEST", None)
+    monkeypatch.setattr(release_check, "_COMMAND_RECORDS", [])
+    monkeypatch.setattr(release_check, "_STAGE_RECORDS", [])
+
+    release_check._prepare_evidence(evidence_dir, artifact_dir)
+
+    manifest = json.loads((evidence_dir / "release-check.json").read_text(encoding="utf-8"))
+    assert manifest["source_commit"] == "candidate-sha"
+    assert manifest["source_digest"] == "tree-digest"
+    assert manifest["artifacts"] == [
+        {
+            "name": "package-manifest.json",
+            "sha256": hashlib.sha256(
+                (artifact_dir / "package-manifest.json").read_bytes()
+            ).hexdigest(),
+        },
+        {"name": "skail.tar.gz", "sha256": hashlib.sha256(b"sdist bytes").hexdigest()},
+        {"name": "skail.whl", "sha256": hashlib.sha256(b"wheel bytes").hexdigest()},
+    ]
 
 
 def test_release_smoke_uses_an_isolated_runtime_workspace(

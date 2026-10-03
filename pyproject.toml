@@ -27,6 +27,7 @@ dependencies = [
   "langgraph-checkpoint-sqlite==3.1.1",
   "httpx>=0.28,<1",
   "keyring>=25.7,<26",
+  "tomli-w>=1.2,<2",
   "textual>=1.0.0,<2",
 ]
 
@@ -34,10 +35,16 @@ dependencies = [
 dev = [
   "build>=1.2",
   "mypy>=1.13",
+  "pyte>=0.8,<0.9",
+  "pywinpty==3.0.5; sys_platform == 'win32'",
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
   "ruff>=0.8",
   "langchain-openai==1.6.0",
+]
+live = [
+  "pyte>=0.8,<0.9",
+  "pywinpty==3.0.5; sys_platform == 'win32'",
 ]
 openai-compatible = ["langchain-openai==1.6.0"]
 openai = ["langchain-openai==1.6.0"]

@@ -496,16 +496,26 @@ class RunController:
             ).fetchone()
             return bool(row and row[0] > 0)
 
-    def _finalize_assignment_budget(self, assignment: TaskAssignment) -> None:
+    def _finalize_assignment_budget(
+        self, assignment: TaskAssignment, *, cancelled: bool = False
+    ) -> None:
         assignment_id = str(assignment.assignment_id)
-        self.usage_settler.complete_unmeasured_calls(assignment_id)
+        self.usage_settler.mark_unreturned_calls_ambiguous(assignment_id)
         with self.journal._connect() as connection:
             uncertain = connection.execute(
-                "SELECT 1 FROM provider_calls WHERE assignment_id=? "
-                "AND status='ambiguous' LIMIT 1",
+                "SELECT 1 FROM provider_calls c "
+                "LEFT JOIN accounting_reconciliation_failures f ON f.call_id=c.call_id "
+                "WHERE c.assignment_id=? AND c.status='ambiguous' "
+                "AND COALESCE(f.status,'open')!='estimated' LIMIT 1",
                 (assignment_id,),
             ).fetchone()
+            reservation = connection.execute(
+                "SELECT status FROM budget_reservations WHERE reservation_id=?",
+                (str(assignment.reservation_id),),
+            ).fetchone()
         if uncertain is not None:
+            if cancelled:
+                return  # Keep the reservation while preserving the original cancellation.
             error_class = self._ambiguous_error_class(self.journal, assignment_id)
             detail = self._ambiguous_error_detail(self.journal, assignment_id)
             detail_suffix = f": {detail}" if detail is not None else ""
@@ -513,6 +523,8 @@ class RunController:
                 f"provider usage is uncertain ({error_class}); "
                 f"reservation remains held{detail_suffix}"
             )
+        if reservation is not None and reservation["status"] == "settled":
+            return
         if self._has_calls(assignment_id):
             self.usage_settler.settle_attempt(assignment_id)
             return
@@ -538,8 +550,10 @@ class RunController:
         """
         with journal._connect() as connection:
             row = connection.execute(
-                "SELECT error_summary FROM provider_calls WHERE assignment_id=? "
-                "AND status='ambiguous' LIMIT 1",
+                "SELECT c.error_summary FROM provider_calls c "
+                "LEFT JOIN accounting_reconciliation_failures f ON f.call_id=c.call_id "
+                "WHERE c.assignment_id=? AND c.status='ambiguous' "
+                "AND COALESCE(f.status,'open')!='estimated' LIMIT 1",
                 (assignment_id,),
             ).fetchone()
         if row is None:
@@ -563,8 +577,10 @@ class RunController:
         """
         with journal._connect() as connection:
             row = connection.execute(
-                "SELECT error_summary FROM provider_calls WHERE assignment_id=? "
-                "AND status='ambiguous' LIMIT 1",
+                "SELECT c.error_summary FROM provider_calls c "
+                "LEFT JOIN accounting_reconciliation_failures f ON f.call_id=c.call_id "
+                "WHERE c.assignment_id=? AND c.status='ambiguous' "
+                "AND COALESCE(f.status,'open')!='estimated' LIMIT 1",
                 (assignment_id,),
             ).fetchone()
         if row is None:
@@ -904,6 +920,7 @@ class RunController:
             providers=self.providers,
             usage_callback=self._record_model_usage,
             call_begin=self.usage_settler.begin_call,
+            call_succeeded=self.usage_settler.mark_call_succeeded,
             call_ambiguous=self.usage_settler.mark_ambiguous,
             active_assignments=active,
             redactor=self.redaction,
@@ -2566,7 +2583,7 @@ class RunController:
                 status="committed",
             )
             self._finalize_child_budgets(run_id, lead_task_id)
-            self._finalize_assignment_budget(lead_assignment)
+            self._finalize_assignment_budget(lead_assignment, cancelled=is_cancelled)
             self._release_lead_allowances()
             raise
 
@@ -2718,7 +2735,7 @@ class RunController:
                 )
             self._finalize_child_budgets(run_id, lead_task_id)
             try:
-                self._finalize_assignment_budget(lead_assignment)
+                self._finalize_assignment_budget(lead_assignment, cancelled=cancelled)
             finally:
                 self._release_lead_allowances()
             raise
@@ -3265,7 +3282,7 @@ class RunController:
                         ),
                     )
                 self._finalize_child_budgets(pending.run_id, pending.lead_task_id)
-                self._finalize_assignment_budget(pending.lead_assignment)
+                self._finalize_assignment_budget(pending.lead_assignment, cancelled=cancelled)
                 self._release_lead_allowances()
                 self._pending_run = None
                 self._pending_interrupt_payload = None
@@ -3504,7 +3521,7 @@ class RunController:
             child_count=len(gate.completed),
         )
 
-    def reject_interrupted(self) -> RunResult:
+    def reject_interrupted(self, *, interrupt_id: str | None = None) -> RunResult:
         pending = self._pending_run
         if pending is None:
             raise RuntimeError("no interrupted run is available to reject")
@@ -3535,7 +3552,7 @@ class RunController:
                 interrupt_id=(
                     str(interrupt["question_id"])
                     if interrupt.get("question_id") is not None
-                    else None
+                    else interrupt_id
                 ),
                 content=(
                     "question cancelled"
@@ -3796,6 +3813,7 @@ class RunController:
                 providers=self.providers,
                 usage_callback=self._record_model_usage,
                 call_begin=self.usage_settler.begin_call,
+                call_succeeded=self.usage_settler.mark_call_succeeded,
                 call_ambiguous=self.usage_settler.mark_ambiguous,
                 active_assignments=active,
                 redactor=self.redaction,
@@ -4012,7 +4030,9 @@ class RunController:
             ):
                 self._settle_plan_node(plan_node[0], plan_node[1], result.model_dump(mode="json"))
 
-            self._finalize_assignment_budget(binding.assignment)
+            self._finalize_assignment_budget(
+                binding.assignment, cancelled=result.status == "cancelled"
+            )
 
         def exhaust_fp(spec: TaskSpec) -> None:
             self.registry._failed_fingerprint_attempts[spec.fingerprint] = 2

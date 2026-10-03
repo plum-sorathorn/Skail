@@ -850,6 +850,75 @@ async def test_plan_tool_approval_resume_runs_exact_command_once(tmp_path: Path)
 
 
 @pytest.mark.asyncio
+async def test_plan_tool_approval_with_dependent_checkpoint_surfaces_interrupt(
+    tmp_path: Path,
+) -> None:
+    journal, checkpoints, questions, approvals = _stores(tmp_path, "plan-tool-checkpoint")
+    session_id = _session(journal)
+    decision = {
+        "mode": "planned",
+        "objective": "Write the marker after user approval",
+        "constraints": [],
+        "reason": "A harmless local marker needs command approval.",
+        "plan": {
+            "schema_version": 1,
+            "policy_version": "adaptive-v1",
+            "revision": 1,
+            "nodes": [
+                {
+                    "local_id": "write-marker",
+                    "kind": "tool",
+                    "objective": "Append one line to the marker file",
+                    "effect_scope": "workspace_write",
+                    "resource_scopes": ["plan-marker.txt"],
+                    "task_features": {
+                        "tool": "execute",
+                        "command": "python",
+                        "arguments": [
+                            "-c",
+                            "open('plan-marker.txt','a').write('approved-once')",
+                        ],
+                    },
+                },
+                {
+                    "local_id": "review-result",
+                    "kind": "checkpoint",
+                    "objective": "Review the tool result after user approval",
+                    "depends_on": ["write-marker"],
+                    "effect_scope": "read",
+                },
+            ],
+        },
+    }
+    controller = _controller(
+        tmp_path,
+        session_id,
+        journal,
+        checkpoints,
+        questions,
+        approvals,
+        {
+            "lead-model": ScriptedChatModel(
+                model_name="lead-model",
+                responses=[
+                    parallel_tool_call_message(
+                        [("execution_decision", decision, "decision-1")]
+                    ),
+                    AIMessage(content="Wait for the approved tool result."),
+                ],
+            )
+        },
+    )
+
+    result = await controller.run_instruction("Write the approved marker")
+
+    assert result.interrupted is True
+    assert result.pending_interrupt is not None
+    assert result.pending_interrupt["type"] == "plan_tool_approval"
+    assert not (tmp_path / "plan-marker.txt").exists()
+
+
+@pytest.mark.asyncio
 async def test_restarted_controller_restores_persisted_decision(
     tmp_path: Path,
 ) -> None:

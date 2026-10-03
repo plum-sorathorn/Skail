@@ -327,6 +327,14 @@ def build_parser() -> argparse.ArgumentParser:
     sessions_arch.add_argument("session_id")
     sessions_res = sessions_sub.add_parser("resume", help="resume an interrupted/idle session")
     sessions_res.add_argument("session_id")
+    sessions_reconcile = sessions_sub.add_parser(
+        "reconcile-call", help="preview or apply a local estimate for an ambiguous call"
+    )
+    sessions_reconcile.add_argument("session_id")
+    sessions_reconcile.add_argument("call_id")
+    sessions_reconcile.add_argument(
+        "--apply", action="store_true", help="settle the held attempt reservation as an estimate"
+    )
 
     # config
     config_parser = subparsers.add_parser("config", help="inspect configuration")

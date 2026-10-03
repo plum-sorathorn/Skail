@@ -5,40 +5,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import tomli_w
+
 from skail.config.paths import user_config_path
-
-
-def _toml_scalar(value: Any) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return str(value)
-    if isinstance(value, (list, tuple)):
-        items = ", ".join(f'"{item}"' if isinstance(item, str) else str(item) for item in value)
-        return f"[{items}]"
-    return f'"{value}"'
-
-
-def _format_basic_toml(data: dict[str, Any]) -> str:
-    lines: list[str] = []
-    for k, v in data.items():
-        if not isinstance(v, dict):
-            lines.append(f"{k} = {_toml_scalar(v)}")
-
-    for section, table in data.items():
-        if isinstance(table, dict):
-            scalars = {k: v for k, v in table.items() if not isinstance(v, dict)}
-            subtables = {k: v for k, v in table.items() if isinstance(v, dict)}
-            if scalars or not subtables:
-                lines.append(f"\n[{section}]")
-                for k, v in scalars.items():
-                    lines.append(f"{k} = {_toml_scalar(v)}")
-            for sub_k, sub_table in subtables.items():
-                if isinstance(sub_table, dict):
-                    lines.append(f"\n[{section}.{sub_k}]")
-                    for k, v in sub_table.items():
-                        lines.append(f"{k} = {_toml_scalar(v)}")
-    return "\n".join(lines).strip() + "\n"
 
 
 def save_user_provider_models(
@@ -84,13 +53,7 @@ def save_user_provider_models(
     if provider == "llmgateway" and "base_url" not in provider_entry:
         provider_entry["base_url"] = "https://api.llmgateway.io/v1"
 
-    try:
-        import tomli_w
-
-        raw_toml = tomli_w.dumps(data)
-    except Exception:
-        raw_toml = _format_basic_toml(data)
-
+    raw_toml = tomli_w.dumps(data)
     _atomic_write_text(target_path, raw_toml)
     return target_path
 
@@ -112,12 +75,7 @@ def save_user_routing_model(model: str, config_path: Path | None = None) -> Path
     if not isinstance(routing, dict):
         raise ValueError("user config routing section must be a table")
     routing["lead_model"] = model
-    try:
-        import tomli_w
-
-        raw_toml = tomli_w.dumps(data)
-    except Exception:
-        raw_toml = _format_basic_toml(data)
+    raw_toml = tomli_w.dumps(data)
     _atomic_write_text(target_path, raw_toml)
     return target_path
 

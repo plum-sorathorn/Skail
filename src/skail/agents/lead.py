@@ -2,24 +2,22 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from deepagents.middleware.subagents import CompiledSubAgent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import Runnable
 
+from skail.agents.controls import DelegationMode as DelegationMode
+from skail.agents.controls import LeadControls as LeadControls
 from skail.domain.decisions import ExecutionMode
-from skail.domain.routing import RoutingMode
 from skail.domain.usage import NormalizedUsage
-from skail.routing.requirements import TaskRisk
 from skail.runtime.leases import WorkspaceLeaseManager
 from skail.tools.assembly import build_default_agent, default_registry
 from skail.tools.registry import SideEffect, ToolMetadata, ToolRegistry
-
-DelegationMode = Literal["auto", "ask", "off"]
 
 TASK_PACKET_GUIDANCE = """Before any operational tool call, call execution_decision with mode,
 objective, constraints, and reason. Use direct for bounded work (direct must NOT
@@ -68,22 +66,6 @@ glob(pattern, path=None) e.g. {"pattern": "*.py"}. Use pattern (not query/search
 path (not dir), glob (not include), file_path (not path/file). When Skail wakes
 you at a plan checkpoint, call execution_decision again with the full revised plan and
 revision metadata using only the supplied evidence references."""
-
-
-@dataclass(frozen=True)
-class LeadControls:
-    delegation: DelegationMode = "auto"
-    model: str | None = None
-    profile: str | None = None
-    write_allowed: bool | None = None
-    max_children: int = 3
-    direct_only: bool = False
-    required_mode: ExecutionMode | None = None
-    requires_user_answer: bool = False
-    required_agent_count: int | None = None
-    required_agent_profile: str | None = None
-    routing_mode: RoutingMode = RoutingMode.AUTO
-    risk: TaskRisk = TaskRisk.ROUTINE
 
 
 class LeadIntentError(ValueError):

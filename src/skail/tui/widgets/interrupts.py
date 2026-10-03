@@ -213,6 +213,9 @@ class InterruptWidget(Widget):
     def on_mount(self) -> None:
         if self.interrupt.kind is InterruptKind.QUESTION and not self._submitted:
             self.query_one("#interrupt-input", Input).focus()
+        elif self.interrupt.kind is InterruptKind.APPROVAL and not self._submitted:
+            self._focus_index = 1
+            self.query_one("#btn-reject", Button).focus()
 
     def _update_state_class(self) -> None:
         try:

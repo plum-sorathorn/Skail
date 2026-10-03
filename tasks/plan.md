@@ -1,5 +1,153 @@
 # Remaining remediation implementation plan
 
+## 2026-10-03 post-commit disposition
+
+This section supersedes the October 1 checkpoint status below. Commits `69acce1` and `28dcc28`
+fix the clean-source identity mismatch and cancelled-provider-call accounting respectively. A live
+selected-model `/quit` run and independent export replay confirm shutdown safety, an ambiguous
+provider call, and a held reservation. The revised R10 accounting criterion permits a clearly
+labelled local estimate when the provider response has no usage. `skail sessions reconcile-call
+SESSION_ID CALL_ID` previews the greater of the frozen attempt estimate and completed calls'
+locally priced observed token costs. `--apply` settles the held attempt only after each ambiguous
+call is reconciled, while the cancelled call's tokens and provider charge remain unknown. No
+additional paid retry is required to prove shutdown safety.
+
+Commit `6b31278` removes an extra SQLite success-marker write from the normal measured-call path.
+The returned response still receives a success marker when usage is absent or cannot be recorded;
+unreturned calls remain ambiguous. A red/green regression covers the normal path. Ruff, strict
+mypy, 995 unit/contract passes with two skips, smoke, and an optimized full suite of 1,307 passes
+with five skips passed. The clean candidate package check passed and records the exact source,
+wheel, and sdist hashes under `out/live-agentic/release-6b31278/`.
+
+The clean `6b31278` release checker passed all eight stages, including the full offline suite,
+benchmark thresholds, and fresh complete paired evaluation. The wheel SHA-256 is
+`65f092f571cda276e59aa0bfb183e560aa9cc363a9b2887ed385e0e2d68c7542`; the sdist SHA-256 is
+`92bb32b9b6d10975ea94f92d489914261438f7257147aa903b095e802d68b90b`. Its source digest
+is `4ffde260c007fe26609405c620e3c0f7d59c497c3ee65ba7bb09c16fc9b307c6`.
+
+Performance evidence and its limits are in [PERFORMANCE.md](../docs/skail/PERFORMANCE.md).
+The suite speed target is retired as of 2026-10-03; runtime measurements are diagnostic and no
+longer gate release. Before applying the new reconciliation command to historical sessions, the
+R9 campaign had USD 1.96 in held reservations, USD 0.0602132 settled locally, and USD 0.9797868
+remaining from the USD 3.00 cap. Its retained `/quit` export has one ambiguous GPT-5 mini call on
+that assignment and a frozen attempt estimate of USD 0.017470. This is the read-only local estimate
+for that call; the historical export and reservation were not modified. Held amounts are bounds,
+not measured provider billing.
+Hosted candidate CI, Python 3.12, branch protection, and provider billing remain unverified.
+
+## Post-commit failure diagnosis and fixes (2026-10-01)
+
+Checkpoint commit `be6fde9` contains the local remediation below. The user's README edit and the
+untracked `tasks/latest_plan.md` were excluded from that commit.
+This section supersedes the earlier 2026-10-01 R9 and release dispositions below.
+
+- The published `8dcb932` Type check failure reproduced in a fresh Python 3.14 `.[dev]` install:
+  mypy could not import `tomli_w` from `config/persistence.py`. The baseline did not declare the
+  dependency. Fresh candidate installs pass strict mypy on Python 3.14 and 3.13 with `tomli-w`
+  present. Evidence: `out/live-agentic/ci-typecheck-20261001/diagnosis-v2.json`. The hosted matrix
+  still needs a run on a published candidate.
+- The first clean `be6fde9` release check passed clean-tree, Ruff, and mypy gates, then failed one
+  full-suite regression: `package_check.source_identity()` hashed an empty Git diff differently
+  from the canonical evaluation identity. A clean-tree red/green regression and a one-line
+  correction now make those hashes agree. The failed clean-candidate evidence remains under
+  `out/live-agentic/release-be6fde9/`.
+- Live composer `/quit` exposed a product accounting defect: `CancelledError` bypassed the model
+  middleware's `Exception` handler; finalization relabelled its `started` provider call as
+  successful without usage and settled the child attempt estimate. Calls now receive an explicit
+  success marker only after the provider handler returns. Cancellation or unreturned calls become
+  ambiguous and keep their reservations, while returned calls with missing usage still settle
+  conservatively. Focused and mounted cancellation regressions pass; ADR 0008 records this boundary.
+- The fresh live run in
+  `out/live-agentic/r9-edges-20261001/runs/active-child-quit-accounting-fix/` observed a selected
+  GPT-5 mini call active before `/quit`, a visible queued follow-up, one cancelled run, one cancelled
+  child, no post-cancellation provider start, and unchanged files. The call is `ambiguous`, the
+  child reservation remains held at USD 0.017470, and the separate USD 0.49 campaign reservation
+  remains held. The original capture missed a transient shutdown-copy assertion; the independent
+  replay verifies the visible queue, exact one-run count, and held accounting in
+  `verification-replay.json` without another provider call.
+- The USD 3.00 R9 campaign now has USD 0.0602132 settled locally, USD 1.96 reserved for attempts
+  with unknown provider usage, and USD 0.9797868 remaining. Actual provider billing is unknown;
+  the held reservation is a bounded accounting disposition, not a measured token cost. R9 shutdown
+  safety is verified. R10 exact-cost acceptance stays open until the unknown provider outcomes can
+  be reconciled. No further paid retry is needed to prove the safety behavior.
+
+## Current implementation and verification (2026-10-01)
+
+This section supersedes older prospective instructions and status summaries below where they differ.
+Historical evidence remains preserved.
+
+### Implemented in this continuation
+
+- TOML persistence now uses declared `tomli-w`; nested model profiles, strings, unrelated settings,
+  and atomic-save failure behavior have focused regressions.
+- Approval callbacks are bound to the currently pending command request. IDs are stable across
+  restore, reject cancellation is correlated, stale or malformed requests fail closed, and a valid
+  one-shot approval is consumed before asynchronous resume. Approval-card focus now defaults to
+  Reject; successful question cancellation restores focus to the composer.
+- The TUI shell no longer imports DeepAgents/LangChain/LangGraph during module import. Its compact
+  controls live in a lightweight module, and setup-only composer typing was removed from selected
+  tests while real keyboard and focus interactions remain.
+- `scripts/live_acceptance.py` is the maintained Windows PTY driver with fresh model-catalog and
+  price qualification, selected-roster enforcement, isolated homes/workspaces, captured terminal
+  frames, schema-v2 export verification, and a hard USD 3.00 append-only campaign ledger. The
+  action-only answer flag now skips terminal-render comparison when no user-facing answer is part of
+  the case; required presentation checks still compare the complete answer.
+- Package artifacts now receive a source-and-hash `package-manifest.json`. Release verification
+  rejects missing/stale manifests and modified wheel/sdist files. Release CI invokes each local gate
+  through the release checker once and uploads the package directory, manifest, and release reports.
+- `scripts/measure_suite.py` records collection IDs, source fingerprints (including untracked file
+  hashes), interpreter/dependency versions, power scheme, raw output, and alternating serial
+  baseline/candidate timings.
+
+### Directed live R9 results
+
+- Free-form question answer passed in `out/live-agentic/r9-edges-20261001/runs/question-freeform-retry/`
+  (USD 0.0027128 locally). Question cancellation followed by unrelated fresh work passed in
+  `.../question-cancel-fresh-run-final/` (USD 0.0025784).
+- Allow-once planned command passed in
+  `.../approval-allow-plan-only-verified/` (USD 0.0020160); rejected command passed in
+  `.../approval-reject-plan-only-retry/` (USD 0.0019924). The first attempts remain unchanged and
+  retained.
+- One explorer completed the child-boundary task with no grandchild or workspace change. The saved
+  child result reports `MINT GREEN` and that `task` is absent. The schema-v2 export passes the
+  action-only replay verifier in
+  `.../nested-boundary-direct-corrected/verification-replay.json` (USD 0.0092309). The original
+  capture disposition records a terminal-answer mismatch; the case is operational evidence for the
+  delegation boundary, not a user-visible presentation pass.
+- Composer `/quit` observed an active selected child call, discarded the visible queued follow-up,
+  and terminalized the run as cancelled with no fixture changes. Three retained attempts lack
+  provider usage for a cancelled call, so USD 1.47 remains reserved and R9/R10 financial acceptance
+  stays open for that edge. No further retry was made.
+- Across this USD 3.00 R9 campaign, settled local token cost is USD 0.0602132, unresolved
+  reservations are USD 1.47, and unallocated headroom is USD 1.4697868. Provider billing remains
+  unknown. Failed and unresolved evidence was preserved.
+
+### Performance and release disposition
+
+The matched 2026-10-01 run used clean baseline `8dcb932` and the current candidate worktree, one
+warm-up per tree, and three alternating pairs of the same serial pytest command. Baseline external
+median was 123.309 seconds; candidate median was 123.508 seconds. The current candidate meets the
+historical 131.336-second absolute target by 7.828 seconds. Paired changes were -0.669, +2.023, and
+-0.904 seconds; with 1,305 candidate cases versus 1,257 baseline cases, this does not establish a
+causal speed gain. There were 1,256 common node IDs; one differing ID is a randomized `uuid1()` test
+parameter, and 48 actual cases were added. Evidence is in
+`out/live-agentic/r11-matched-20261001/`; the historical 557b3fc 237.399-second median was not
+reproduced and remains unexplained.
+
+The current package build/install is verified separately. Its wheel SHA-256 is
+`1e34d7670ab4e68bb4f44105daefaf335474243c995d956d343a52ba8847bb6a`; the sdist SHA-256 is
+`c7ebf6bc179c2e2104c14bca869ba145d51ca88c47f332ab06449044b6d271f7`; the package manifest is
+retained under `out/live-agentic/release-candidate-20261001-final/packages/`. A clean-worktree
+release-check cannot be completed in this checkout because the candidate changes are uncommitted
+and the pre-existing README edit must be preserved. Hosted Python/platform matrices and
+branch-protection settings also remain external; no commit, push, dispatch, or protection change was
+made. The latest public fast CI
+run, #37 on commit `8dcb932`, failed with a visible `Type check` error in the six-job matrix and the
+aggregate gate. Its job logs require GitHub authentication; an unauthenticated API request returned
+403, while local mypy passes on both the baseline worktree and this candidate. The remote diagnostic
+therefore remains unresolved. Branch-protection settings were not exposed unauthenticated. S8 remains
+closed by the September 29 live resolution above.
+
 ## Presentation acceptance (2026-09-30)
 
 Fresh real-TUI S1, S2, and two-model S3 runs completed; S1 and S3 left their fixtures unchanged.
@@ -678,11 +826,11 @@ ownership/accounting conditions and on the scenario's allocated call/cost bounda
 
 ### R11 — Profile and optimize the corrected offline suite without deleting coverage
 
-**Status: three controlled exact-candidate runs passed; 20% objective remains open.** The current
+**Status: profiling completed; the suite speed target was retired on 2026-10-03.** The historical
 serial median and full top-40 data are documented in PERFORMANCE.md and
 out/live-agentic/release-renewal-20260930/timing/. External-wall median is 237.399 seconds,
-106.063 seconds above the 131.336-second target. The prior `9d28dc4` median of 153.587 seconds
-is historical. Different test collections and host-load conditions prevent causal attribution.
+and the prior `9d28dc4` median is 153.587 seconds. Different test collections and host-load
+conditions prevent causal attribution. These measurements no longer carry a pass/fail threshold.
 
 Dependencies: R1; final measurements after behavior/test changes. Scope: measurement, then one small
 candidate per commit. Read `docs/skail/PERFORMANCE.md`, `tests/conftest.py`, packaging/CLI/eval
@@ -700,13 +848,10 @@ and independent pytest. Reduce artificial input/setup overhead only while retain
 Ctrl+C, durable restart, answer, filesystem and subprocess boundaries. Next inspect measured duplicate
 mount/setup or import costs; preserve at least one real wheel build/install, isolated no-credential
 CLI subprocess, security boundary, evaluation execution, and mounted focus/queue/interrupt path.
-Do not enable parallel pytest as an unmeasured substitute for the serial objective.
+Do not enable parallel pytest solely to change the diagnostic measurement.
 
-Acceptance: identical mechanism coverage, no unexplained dropped/deselected tests, and a repeatable
-external-wall gain. Report both historical and new targets: 20% below the original 164.17-second
-baseline is **131.336 seconds**; 20% below 201.816 is **161.4528 seconds**, but that diagnostic target
-does not replace the original objective. Keep the original objective open if unattained; document
-measured safe candidates exhausted rather than mark a profiling task as a speed pass.
+Acceptance: identical mechanism coverage, no unexplained dropped/deselected tests, and retained
+raw timing evidence for any future optimization. No suite runtime threshold is required.
 Files: only demonstrated bottleneck tests/helpers/scripts plus PERFORMANCE and evidence records.
 
 ### R12 — Reconcile every defect/output entry and documentation claim
