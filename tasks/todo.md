@@ -1,5 +1,29 @@
 # Remaining remediation execution checklist
 
+## Current disposition (2026-10-03)
+
+The latest diagnosis and implementation are in [plan.md](plan.md#2026-10-03-post-commit-disposition).
+
+- [x] Fix clean-worktree artifact source identity (`69acce1`); red/green regression and clean
+  package check pass.
+- [x] Preserve cancelled provider calls as ambiguous with held reservations (`28dcc28`);
+  regression, mounted cancellation, live selected-model `/quit`, and independent export replay pass.
+- [x] Remove the redundant success-marker transaction on measured model responses (`6b31278`);
+  regression, Ruff, mypy, 995 unit/contract passes with two skips, smoke, and 1,307 full-suite
+  passes with five skips pass. The current clean package check passed.
+- [x] R14 local code candidate: clean `6b31278` passed package build and isolated install, then
+  all eight release stages, including the full suite, benchmarks, and complete paired evaluation.
+  Artifacts and exact source identity are retained under `out/live-agentic/release-6b31278/`.
+- [ ] R10 exact-cost: the cancelled provider call's actual usage is unavailable. The campaign has
+  USD 0.0602132 settled locally, USD 1.96 held for unknown outcomes, and USD 0.9797868 remaining
+  from the USD 3.00 cap. Provider billing is unknown.
+- [ ] R11 current-candidate speed: `be6fde9` met the historical 131.336s target in its three-pair
+  October 1 series. A later same-host diagnostic pair took 177.782s on that older tree (one known
+  test failure) and 173.121s on the optimized current source (passing). A current-commit
+  three-pair qualification and causal improvement claim remain open.
+- [ ] R14 external: candidate hosted Windows/Linux and Python 3.12–3.14 CI, branch protection,
+  and provider billing remain unverified.
+
 ## Current disposition (2026-10-01)
 
 The 2026-09-30 historical sections below are retained. The latest diagnosis and implementation

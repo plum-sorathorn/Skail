@@ -234,3 +234,31 @@ in this measurement. The paired changes are small relative to their spread, and 
 differ, so the results do not establish a causal speed improvement. The earlier `557b3fc` median of
 237.399s remains unreconciled with this series; do not infer why it differed. Keep causal attribution
 open while retaining the absolute-target pass for this candidate.
+
+### 2026-10-03 accounting change and current-host diagnostic
+
+The clean `28dcc28` release check's full-suite stage passed 1,306 tests with five skips but took
+334.195s externally (329.69s reported by pytest). Profiling the intervening accounting change
+identified an extra SQLite transaction on every successful measured model call. Commit `6b31278`
+records success through the existing usage transaction and writes a separate success marker only
+when usage is absent or recording it fails. The cancellation path still holds unreturned provider
+calls as ambiguous. A regression verifies that a normally measured response does not write the
+separate marker.
+
+The optimized working tree passed 1,307 tests with five skips in 220.377s externally (215.56s
+reported by pytest); raw output is under `out/live-agentic/r11-accounting-hotpath-20261003/`.
+One serial same-host diagnostic pair under
+`out/live-agentic/r11-accounting-pair-20261003/measurement.json` measured the older `be6fde9`
+tree at 177.782s and the optimized candidate at 173.121s externally. The older tree had its known
+clean-source-identity test failure (1,299 passed, five skipped); the optimized tree passed 1,307
+with five skipped. That pair supports retaining the accounting optimization, but it is one pair
+with different collections and cannot establish a stable speed gain.
+
+Both trees exceeded the historical 131.336s target in the same-host pair. The `be6fde9` checkpoint
+passed that absolute target on October 1; its result does not certify `6b31278`. A current-commit
+three-pair timing renewal and causal speed claim remain open.
+
+The clean `6b31278` release checker passed its full offline suite in 169.46s externally, along with
+all other release stages. This is one current-commit run, not the required three-pair timing
+qualification. Its raw command output and exact source identity are retained under
+`out/live-agentic/release-6b31278/release-evidence/`.

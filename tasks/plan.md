@@ -1,5 +1,36 @@
 # Remaining remediation implementation plan
 
+## 2026-10-03 post-commit disposition
+
+This section supersedes the October 1 checkpoint status below. Commits `69acce1` and `28dcc28`
+fix the clean-source identity mismatch and cancelled-provider-call accounting respectively. A live
+selected-model `/quit` run and independent export replay confirm shutdown safety, an ambiguous
+provider call, and a held reservation. They cannot recover the call's actual provider usage; R10
+exact-cost acceptance remains open. No additional paid retry is required to prove shutdown safety.
+
+Commit `6b31278` removes an extra SQLite success-marker write from the normal measured-call path.
+The returned response still receives a success marker when usage is absent or cannot be recorded;
+unreturned calls remain ambiguous. A red/green regression covers the normal path. Ruff, strict
+mypy, 995 unit/contract passes with two skips, smoke, and an optimized full suite of 1,307 passes
+with five skips passed. The clean candidate package check passed and records the exact source,
+wheel, and sdist hashes under `out/live-agentic/release-6b31278/`.
+
+The clean `6b31278` release checker passed all eight stages, including the full offline suite,
+benchmark thresholds, and fresh complete paired evaluation. The wheel SHA-256 is
+`65f092f571cda276e59aa0bfb183e560aa9cc363a9b2887ed385e0e2d68c7542`; the sdist SHA-256 is
+`92bb32b9b6d10975ea94f92d489914261438f7257147aa903b095e802d68b90b`. Its source digest
+is `4ffde260c007fe26609405c620e3c0f7d59c497c3ee65ba7bb09c16fc9b307c6`.
+
+Performance evidence and its limits are in [PERFORMANCE.md](../docs/skail/PERFORMANCE.md).
+The `be6fde9` three-pair series met the historical 131.336-second absolute target, but it does
+not certify the later accounting commit. One same-host diagnostic pair measured the older tree at
+177.782s (with its known source-identity test failure) and the optimized candidate at 173.121s
+(passing). Both exceeded that target in this pair. A current-commit three-pair qualification and
+any causal speed claim remain open. The held USD 1.96 campaign reservation is an accounting bound,
+not measured provider billing; USD 0.0602132 settled locally and USD 0.9797868 remains from the
+USD 3.00 cap. Hosted candidate CI, Python 3.12, branch protection, and provider billing are still
+unverified.
+
 ## Post-commit failure diagnosis and fixes (2026-10-01)
 
 Checkpoint commit `be6fde9` contains the local remediation below. The user's README edit and the
