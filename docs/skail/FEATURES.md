@@ -587,6 +587,9 @@ Name collisions are configuration errors. Project tools cannot shadow built-ins 
 ### Output control
 
 Large tool outputs are stored as artifacts and represented in model context by a bounded excerpt plus reference. Truncation is explicit; the agent can request another range. Secrets are redacted before either storage or context injection.
+Binary document reads, including PDFs, return a text-extraction hint instead of a base64 tool
+result. Supported image reads retain their image data. OpenAI-compatible chat requests also omit
+file blocks returned by other tools, so unsupported document blocks cannot reach the gateway.
 
 ## 16. Filesystem safety
 

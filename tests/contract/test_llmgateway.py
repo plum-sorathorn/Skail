@@ -265,6 +265,56 @@ async def test_llmgateway_runs_a_complete_loop_with_a_real_langchain_tool() -> N
 
 
 @pytest.mark.asyncio
+async def test_llmgateway_does_not_forward_pdf_tool_result_as_file_block() -> None:
+    bodies: list[dict[str, object]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            request=request,
+            json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        adapter = LLMGatewayAdapter(
+            _config(), api_key="fixture-credential", http_async_client=client
+        )
+        model = adapter.create_model(_profile(), ModelOptions())
+        await model.ainvoke(
+            [
+                HumanMessage(content="Read the PDF"),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "read_file",
+                            "args": {"file_path": "paper.pdf"},
+                            "id": "call-pdf",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                ToolMessage(
+                    content=[
+                        {
+                            "type": "file",
+                            "base64": "cGRmLWNvbnRlbnQ=",
+                            "mime_type": "application/pdf",
+                        }
+                    ],
+                    tool_call_id="call-pdf",
+                ),
+            ]
+        )
+
+    tool_content = bodies[0]["messages"][2]["content"]  # type: ignore[index]
+    assert isinstance(tool_content, str)
+    assert "PDF" in tool_content
+    assert "cGRmLWNvbnRlbnQ=" not in tool_content
+
+
+@pytest.mark.asyncio
 async def test_llmgateway_discovers_models_with_authenticated_provider_provenance() -> None:
     transport = ProviderHTTPFixtureTransport()
     async with httpx.AsyncClient(transport=transport) as client:
@@ -408,6 +458,34 @@ def test_llmgateway_classifies_http_failures(
     assert normalized.kind is kind
     assert normalized.retry_safe is retry_safe
     assert normalized.provider == "llmgateway"
+
+
+def test_llmgateway_marks_http_400_as_rejected_without_usage() -> None:
+    adapter = LLMGatewayAdapter(_config(), api_key="fixture-credential")
+    request = httpx.Request("POST", f"{LLMGATEWAY_BASE_URL}/chat/completions")
+    response = httpx.Response(
+        400,
+        request=request,
+        json={"error": {"type": "invalid_request_error", "code": "invalid_request"}},
+    )
+    error = httpx.HTTPStatusError("provider failed", request=request, response=response)
+
+    classified = adapter.classify_error(error)
+
+    assert classified.request_rejected is True
+    assert classified.retry_safe is False
+    assert "400" in classified.summary
+
+
+def test_llmgateway_untyped_http_400_keeps_usage_uncertain() -> None:
+    adapter = LLMGatewayAdapter(_config(), api_key="fixture-credential")
+    request = httpx.Request("POST", f"{LLMGATEWAY_BASE_URL}/chat/completions")
+    response = httpx.Response(400, request=request, json={"error": "unclassified"})
+    error = httpx.HTTPStatusError("provider failed", request=request, response=response)
+
+    classified = adapter.classify_error(error)
+
+    assert classified.request_rejected is False
 
 
 def test_llmgateway_classifies_malformed_success_as_protocol_failure() -> None:

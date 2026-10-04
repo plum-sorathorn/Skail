@@ -32,6 +32,10 @@ that includes child agents in the parent run's displayed total.
    prices. The reservation settles only after every ambiguous call in the attempt is reconciled.
    The cancelled call keeps unknown tokens and cost, and the attempt ledger records
    `reconciled_estimate`; replay of the original call remains blocked.
+   An LLM Gateway HTTP 400 response explicitly classified as `invalid_request_error` is a
+   definitive validation rejection, not an interrupted call. Skail records the rejected call
+   without fabricated token usage, settles earlier measured calls in that attempt, or releases
+   the reservation if no call completed. Unclassified HTTP errors remain ambiguous.
 4. The run ledger includes the lead and every child task in that run exactly once. The TUI
    status strip shows cumulative cost across all runs in the session; its budget panel and meter
    remain scoped to the current run. Session export schema version 2 includes per-call token

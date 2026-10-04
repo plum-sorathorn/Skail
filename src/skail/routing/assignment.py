@@ -26,6 +26,7 @@ from skail.domain.ids import (
 from skail.domain.routing import TaskAssignment
 from skail.domain.usage import NormalizedUsage, UsageAuthority
 from skail.providers.base import ProviderAdapter
+from skail.providers.errors import ProviderError
 from skail.providers.fallback import FallbackBinding
 from skail.routing.budget import BudgetLedger, ReservationRequest
 from skail.routing.requirements import RoutingRequirements
@@ -757,7 +758,7 @@ class AssignmentUsageSettler:
             ).fetchone()
             if row is None:
                 raise KeyError(call_id)
-            if row["status"] == "completed":
+            if row["status"] in {"completed", "rejected"}:
                 return
             transaction.connection.execute(
                 "UPDATE provider_calls SET status='ambiguous',authority='unknown',"
@@ -770,6 +771,30 @@ class AssignmentUsageSettler:
                 "(failure_id,assignment_id,call_id,status,summary,created_at) "
                 "VALUES (?,?,?,?,?,?)",
                 (str(uuid4()), row["assignment_id"], call_id, "open", summary, now),
+            )
+
+    def mark_rejected(self, call_id: str, error: ProviderError) -> None:
+        """Record a gateway validation response that generated no model result."""
+        if not error.request_rejected:
+            raise ValueError("provider error is not a definitive request rejection")
+        now = datetime.now(UTC).isoformat()
+        with self.journal.transaction() as transaction:
+            row = transaction.connection.execute(
+                "SELECT status FROM provider_calls WHERE call_id=?", (call_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(call_id)
+            if row["status"] == "rejected":
+                return
+            if row["status"] != "started":
+                raise AccountingReconciliationRequired(
+                    "provider call cannot be reclassified as rejected"
+                )
+            transaction.connection.execute(
+                "UPDATE provider_calls SET status='rejected',authority='unknown',"
+                "error_summary='ProviderRequestRejected: HTTP 400 validation error',"
+                "updated_at=? WHERE call_id=? AND status='started'",
+                (now, call_id),
             )
 
     @staticmethod
@@ -862,9 +887,9 @@ class AssignmentUsageSettler:
                 "SELECT status FROM provider_calls WHERE call_id=?", (call_id,)
             ).fetchone()
             if call is not None:
-                if call["status"] == "ambiguous":
+                if call["status"] in {"ambiguous", "rejected"}:
                     raise AccountingReconciliationRequired(
-                        "ambiguous provider call requires explicit reconciliation"
+                        "terminal provider call cannot accept late usage"
                     )
                 transaction.connection.execute(
                     "UPDATE provider_calls SET status='completed',input_tokens=?,"

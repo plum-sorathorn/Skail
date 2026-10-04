@@ -185,6 +185,8 @@ class SessionExporter:
             total["input_tokens"] += row["input_tokens"] or 0
             total["output_tokens"] += row["output_tokens"] or 0
             total["cached_input_tokens"] += row["cached_input_tokens"] or 0
+            if row["status"] == "rejected":
+                continue
             if (
                 row["amount_usd"] is None
                 or row["input_tokens"] is None

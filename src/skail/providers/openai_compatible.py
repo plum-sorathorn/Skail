@@ -383,7 +383,28 @@ def _message_value(message: BaseMessage) -> dict[str, Any]:
         role = "assistant"
     elif isinstance(message, ToolMessage):
         role = "tool"
-    value: dict[str, Any] = {"role": role, "content": message.content}
+    content = message.content
+    if isinstance(message, ToolMessage) and isinstance(content, list) and any(
+        isinstance(part, Mapping) and part.get("type") == "file" for part in content
+    ):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, Mapping) and part.get("type") == "text":
+                text = part.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+            elif isinstance(part, Mapping) and part.get("type") == "file":
+                kind = "PDF" if part.get("mime_type") == "application/pdf" else "Binary file"
+                parts.append(
+                    f"{kind} content is unavailable in this tool result; "
+                    "extract text with a suitable tool."
+                )
+            else:
+                parts.append("Unsupported non-text tool content omitted.")
+        content = "\n".join(parts)
+    value: dict[str, Any] = {"role": role, "content": content}
     if isinstance(message, AIMessage) and message.tool_calls:
         value["tool_calls"] = [
             {

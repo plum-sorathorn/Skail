@@ -327,6 +327,11 @@ Default model-facing tools:
 - `execute`
 - `write_todos`
 - `task`
+
+`read_file` returns UTF-8 text or a supported image. Binary documents such as PDFs return an
+actionable text-extraction error; their base64 bytes must not enter a tool result sent to a chat
+model. An OpenAI-compatible adapter also removes file blocks from tool messages if another tool
+returns one.
 - `ask_user`
 
 Optional tools:

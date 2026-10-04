@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import mimetypes
 import os
 import stat
 from contextlib import AbstractContextManager, nullcontext
@@ -143,6 +144,16 @@ class PolicyFilesystemBackend(FilesystemBackend):
             result.file_data["content"] = self.boundary.redactor.scrub_text(
                 str(result.file_data["content"])
             )
+        elif result.file_data is not None and result.file_data.get("encoding") == "base64":
+            media_type, _ = mimetypes.guess_type(path.name)
+            if media_type is None or not media_type.startswith("image/"):
+                file_kind = "PDF" if media_type == "application/pdf" else "binary file"
+                return ReadResult(
+                    error=(
+                        f"{file_kind} content cannot be read as text; "
+                        "extract text with a suitable tool"
+                    )
+                )
         return result
 
     def grep(

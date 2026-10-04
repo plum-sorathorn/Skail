@@ -9,10 +9,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
 from langchain.agents.middleware import ModelRequest, ModelResponse
 from langchain_core.messages import AIMessage
 
+from skail.config.models import ProviderConfig
+from skail.providers.errors import ProviderError, ProviderErrorKind
+from skail.providers.llmgateway import LLMGATEWAY_BASE_URL, LLMGatewayAdapter
 from skail.routing.assignment import AccountingReconciliationRequired, AssignmentUsageSettler
 from skail.routing.budget import BudgetLedger
 from skail.runtime.model_middleware import TaskBoundModelMiddleware
@@ -77,6 +81,8 @@ def _make_assignment(
     reservation_id: str,
     estimated: str = "0.20",
     pricing: dict[str, str] | None = None,
+    provider: str = "fake",
+    model: str = "fake/capable",
 ) -> None:
     journal.create_attempt(
         attempt_id=attempt_id,
@@ -98,8 +104,8 @@ def _make_assignment(
     journal.create_assignment(
         assignment_id=assignment_id,
         attempt_id=attempt_id,
-        provider="fake",
-        model="fake/capable",
+        provider=provider,
+        model=model,
         estimated_cost_usd=Decimal(estimated),
         created_at=NOW,
         idempotency_key=f"assignment:{assignment_id}",
@@ -152,7 +158,10 @@ def _middleware(
     )
 
 
-def _request(*, assignment_id: str, attempt_id: str) -> ModelRequest[Any]:
+def _request(
+    *, assignment_id: str, attempt_id: str,
+    provider: str = "fake", model_key: str = "fake/capable"
+) -> ModelRequest[Any]:
     model = FakeProviderChatModel()
     return ModelRequest(
         model=model,
@@ -160,8 +169,8 @@ def _request(*, assignment_id: str, attempt_id: str) -> ModelRequest[Any]:
         state={
             "current_assignment_id": assignment_id,
             "locked_assignment_id": assignment_id,
-            "assigned_model": "fake/capable",
-            "assigned_provider": "fake",
+            "assigned_model": model_key,
+            "assigned_provider": provider,
             "attempt_id": attempt_id,
         },
     )
@@ -687,6 +696,166 @@ def test_unpriced_cancelled_call_does_not_become_zero_cost(tmp_path: Path) -> No
         settler.preview_ambiguous_call(
             "11111111-1111-4111-8111-111111111111", call_ids[0]
         )
+
+
+@pytest.mark.asyncio
+async def test_gateway_http_400_rejection_settles_prior_measured_calls(
+    tmp_path: Path,
+) -> None:
+    run_id = "30303030-3030-4030-8030-303030303030"
+    task_id = "40404040-4040-4040-8040-404040404040"
+    assignment_id = "50505050-5050-4050-8050-505050505050"
+    attempt_id = "60606060-6060-4060-8060-606060606060"
+    reservation_id = "res-gateway-rejected"
+    session_id = "11111111-1111-4111-8111-111111111111"
+    journal = _setup_journal(tmp_path, run_id=run_id, task_id=task_id)
+    ledger = BudgetLedger(journal)
+    adapter = LLMGatewayAdapter(
+        ProviderConfig(
+            type="openai-compatible",
+            base_url=LLMGATEWAY_BASE_URL,
+            models=("gpt-6-sol",),
+        ),
+        api_key="fixture-credential",
+    )
+    settler = AssignmentUsageSettler(journal, ledger, {"llmgateway": adapter})
+    _make_assignment(
+        journal,
+        assignment_id=assignment_id,
+        attempt_id=attempt_id,
+        task_id=task_id,
+        reservation_id=reservation_id,
+        provider="llmgateway",
+        model="gpt-6-sol",
+        pricing={"input_usd_per_million": "1", "output_usd_per_million": "2"},
+    )
+    prior_call = settler.begin_call(assignment_id, "prior")
+    settler.record_call(
+        assignment_id,
+        AIMessage(
+            content="done",
+            usage_metadata={
+                "input_tokens": 20000,
+                "output_tokens": 10000,
+                "total_tokens": 30000,
+            },
+        ),
+        call_id=prior_call,
+    )
+    middleware = TaskBoundModelMiddleware(
+        {"gpt-6-sol": FakeProviderChatModel()},
+        assignments={assignment_id: "gpt-6-sol"},
+        providers={"llmgateway": adapter},
+        usage_callback=settler.record_call,
+        call_begin=lambda selected_id, _key: settler.begin_call(selected_id),
+        call_rejected=settler.mark_rejected,
+        call_ambiguous=settler.mark_ambiguous,
+    )
+    request = httpx.Request("POST", f"{LLMGATEWAY_BASE_URL}/chat/completions")
+    response = httpx.Response(
+        400,
+        request=request,
+        json={"error": {"type": "invalid_request_error", "code": "invalid_request"}},
+    )
+
+    async def handler(_request: ModelRequest[Any]) -> ModelResponse[Any]:
+        raise httpx.HTTPStatusError("bad request", request=request, response=response)
+
+    with pytest.raises(ProviderError, match="400"):
+        await middleware.awrap_model_call(
+            _request(
+                assignment_id=assignment_id,
+                attempt_id=attempt_id,
+                provider="llmgateway",
+                model_key="gpt-6-sol",
+            ),
+            handler,
+        )
+    _finalize(
+        journal,
+        ledger,
+        settler,
+        assignment_id=assignment_id,
+        reservation_id=reservation_id,
+    )
+
+    with journal._connect() as connection:
+        calls = connection.execute(
+            "SELECT status,amount_usd FROM provider_calls WHERE assignment_id=? "
+            "ORDER BY ordinal",
+            (assignment_id,),
+        ).fetchall()
+        usage = connection.execute(
+            "SELECT amount_usd FROM usage_records WHERE reservation_id=?",
+            (reservation_id,),
+        ).fetchone()
+        failures = connection.execute(
+            "SELECT COUNT(*) FROM accounting_reconciliation_failures WHERE assignment_id=?",
+            (assignment_id,),
+        ).fetchone()[0]
+    assert [tuple(call) for call in calls] == [
+        ("completed", "0.04"),
+        ("rejected", None),
+    ]
+    assert usage["amount_usd"] == "0.04"
+    assert failures == 0
+    assert ledger.snapshot(run_id).reserved_usd == Decimal("0")
+    exported = SessionExporter(journal=journal).export(session_id)
+    assert exported["model_usage"][0]["total_cost_usd"] == "0.04"
+
+
+def test_rejected_only_call_releases_reservation_without_zero_usage(tmp_path: Path) -> None:
+    run_id = "70707070-7070-4070-8070-707070707070"
+    task_id = "80808080-8080-4080-8080-808080808080"
+    assignment_id = "90909090-9090-4090-8090-909090909090"
+    reservation_id = "res-rejected-only"
+    journal = _setup_journal(tmp_path, run_id=run_id, task_id=task_id)
+    ledger = BudgetLedger(journal)
+    settler = AssignmentUsageSettler(
+        journal, ledger, {"fake": FakeProviderAdapter(FakeProviderChatModel())}
+    )
+    _make_assignment(
+        journal,
+        assignment_id=assignment_id,
+        attempt_id="a0a0a0a0-a0a0-40a0-80a0-a0a0a0a0a0a0",
+        task_id=task_id,
+        reservation_id=reservation_id,
+    )
+    call_id = settler.begin_call(assignment_id)
+    rejected = ProviderError(
+        kind=ProviderErrorKind.PROTOCOL,
+        summary="request rejected (HTTP 400)",
+        provider="fake",
+        retry_safe=False,
+        request_rejected=True,
+    )
+
+    settler.mark_rejected(call_id, rejected)
+    settler.mark_ambiguous(call_id, RuntimeError("late error"))
+    with pytest.raises(AccountingReconciliationRequired):
+        settler.record_call(assignment_id, AIMessage(content="late response"), call_id=call_id)
+    _finalize(
+        journal,
+        ledger,
+        settler,
+        assignment_id=assignment_id,
+        reservation_id=reservation_id,
+    )
+
+    with journal._connect() as connection:
+        call = connection.execute(
+            "SELECT status,amount_usd FROM provider_calls WHERE call_id=?", (call_id,)
+        ).fetchone()
+        reservation = connection.execute(
+            "SELECT status FROM budget_reservations WHERE reservation_id=?",
+            (reservation_id,),
+        ).fetchone()
+        usage_count = connection.execute(
+            "SELECT COUNT(*) FROM usage_records WHERE reservation_id=?", (reservation_id,)
+        ).fetchone()[0]
+    assert tuple(call) == ("rejected", None)
+    assert reservation["status"] == "released"
+    assert usage_count == 0
 
 
 def test_failed_estimate_settlement_keeps_reconciliation_open(
