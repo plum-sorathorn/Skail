@@ -327,12 +327,14 @@ Default model-facing tools:
 - `execute`
 - `write_todos`
 - `task`
-
-`read_file` returns UTF-8 text or a supported image. Binary documents such as PDFs return an
-actionable text-extraction error; their base64 bytes must not enter a tool result sent to a chat
-model. An OpenAI-compatible adapter also removes file blocks from tool messages if another tool
-returns one.
 - `ask_user`
+
+`read_file` supports UTF-8 and BOM-marked UTF-16 text, text-bearing PDFs, DOCX, XLSX, PPTX,
+notebook source cells, and supported raster images. Document text is redacted, labelled by page,
+table, sheet, cell, slide, or notebook cell, and paginated in bounded line windows. Binary document
+bytes do not enter the model context. Scanned PDFs without a text layer need OCR; archives, media,
+and legacy Office files need a separate extraction or conversion tool. OpenAI-compatible adapters
+translate image tool blocks into the provider's image URL format and omit unsupported file blocks.
 
 Optional tools:
 

@@ -36,6 +36,7 @@ class OpenAICompatibleChatModel(BaseChatModel):
     _options: ModelOptions = PrivateAttr()
     _model_timeout: float | None = PrivateAttr(default=None)
     _tools: tuple[Any, ...] = PrivateAttr(default=())
+    _input_modalities: tuple[str, ...] = PrivateAttr()
 
     def __init__(
         self,
@@ -43,11 +44,13 @@ class OpenAICompatibleChatModel(BaseChatModel):
         adapter: OpenAICompatibleAdapter,
         model_name: str,
         options: ModelOptions,
+        input_modalities: tuple[str, ...],
     ) -> None:
         super().__init__(model_name=model_name)  # type: ignore[call-arg]
         self._adapter = adapter
         self._options = options
         self._model_timeout = options.timeout
+        self._input_modalities = input_modalities
 
     @property
     def _llm_type(self) -> str:
@@ -65,6 +68,7 @@ class OpenAICompatibleChatModel(BaseChatModel):
             adapter=self._adapter,
             model_name=self.model_name,
             options=self._options,
+            input_modalities=self._input_modalities,
         )
         bound._tools = tuple(convert_to_openai_tool(tool) for tool in tools)
         return bound
@@ -203,7 +207,10 @@ class OpenAICompatibleChatModel(BaseChatModel):
     def _body(self, messages: Sequence[BaseMessage], *, stream: bool) -> dict[str, Any]:
         body: dict[str, Any] = {
             "model": self.model_name,
-            "messages": [_message_value(message) for message in messages],
+            "messages": [
+                _message_value(message, allow_images="image" in self._input_modalities)
+                for message in messages
+            ],
             "stream": stream,
         }
         if stream:
@@ -251,7 +258,12 @@ class OpenAICompatibleAdapter:
             raise ValueError("model provider does not match adapter provider")
         if model.model not in self.config.models:
             raise ValueError("model is not declared for this provider")
-        return OpenAICompatibleChatModel(adapter=self, model_name=model.model, options=options)
+        return OpenAICompatibleChatModel(
+            adapter=self,
+            model_name=model.model,
+            options=options,
+            input_modalities=model.input_modalities,
+        )
 
     async def discover_models(self) -> tuple[CatalogEntry, ...]:
         return ()
@@ -375,7 +387,7 @@ class OpenAICompatibleAdapter:
                 yield response
 
 
-def _message_value(message: BaseMessage) -> dict[str, Any]:
+def _message_value(message: BaseMessage, *, allow_images: bool) -> dict[str, Any]:
     role = "user"
     if isinstance(message, SystemMessage):
         role = "system"
@@ -383,27 +395,12 @@ def _message_value(message: BaseMessage) -> dict[str, Any]:
         role = "assistant"
     elif isinstance(message, ToolMessage):
         role = "tool"
-    content = message.content
+    content: Any = message.content
     if isinstance(message, ToolMessage) and isinstance(content, list) and any(
-        isinstance(part, Mapping) and part.get("type") == "file" for part in content
+        isinstance(part, Mapping) and part.get("type") in {"file", "image"}
+        for part in content
     ):
-        parts: list[str] = []
-        for part in content:
-            if isinstance(part, str):
-                parts.append(part)
-            elif isinstance(part, Mapping) and part.get("type") == "text":
-                text = part.get("text")
-                if isinstance(text, str):
-                    parts.append(text)
-            elif isinstance(part, Mapping) and part.get("type") == "file":
-                kind = "PDF" if part.get("mime_type") == "application/pdf" else "Binary file"
-                parts.append(
-                    f"{kind} content is unavailable in this tool result; "
-                    "extract text with a suitable tool."
-                )
-            else:
-                parts.append("Unsupported non-text tool content omitted.")
-        content = "\n".join(parts)
+        content = _compatible_tool_content(content, allow_images=allow_images)
     value: dict[str, Any] = {"role": role, "content": content}
     if isinstance(message, AIMessage) and message.tool_calls:
         value["tool_calls"] = [
@@ -420,6 +417,60 @@ def _message_value(message: BaseMessage) -> dict[str, Any]:
     if isinstance(message, ToolMessage):
         value["tool_call_id"] = message.tool_call_id
     return value
+
+
+def _compatible_tool_content(
+    parts: list[Any], *, allow_images: bool
+) -> str | list[dict[str, Any]]:
+    image_mime_types = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+    max_encoded_image = 4 * ((8 * 1024 * 1024 + 2) // 3)
+    content: list[dict[str, Any]] = []
+    for part in parts:
+        if isinstance(part, str):
+            content.append({"type": "text", "text": part})
+        elif isinstance(part, Mapping) and part.get("type") == "text":
+            text = part.get("text")
+            if isinstance(text, str):
+                content.append({"type": "text", "text": text})
+        elif isinstance(part, Mapping) and part.get("type") == "image":
+            mime_type = part.get("mime_type")
+            encoded = part.get("base64")
+            if not allow_images:
+                content.append(
+                    {"type": "text", "text": "Selected model does not support image input."}
+                )
+            elif (
+                isinstance(mime_type, str)
+                and mime_type in image_mime_types
+                and isinstance(encoded, str)
+                and len(encoded) <= max_encoded_image
+            ):
+                content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{encoded}"},
+                    }
+                )
+            else:
+                content.append(
+                    {"type": "text", "text": "Image omitted: unsupported format or size."}
+                )
+        elif isinstance(part, Mapping) and part.get("type") == "file":
+            kind = "PDF" if part.get("mime_type") == "application/pdf" else "Binary file"
+            content.append(
+                {
+                    "type": "text",
+                    "text": (
+                        f"{kind} content is unavailable in this tool result; "
+                        "extract text with a suitable tool."
+                    ),
+                }
+            )
+        else:
+            content.append({"type": "text", "text": "Unsupported non-text tool content omitted."})
+    if all(block["type"] == "text" for block in content):
+        return "\n".join(str(block["text"]) for block in content)
+    return content
 
 
 def _usage_metadata(usage: Mapping[str, Any]) -> UsageMetadata:

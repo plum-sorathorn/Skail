@@ -9,6 +9,7 @@ import pytest
 
 from skail.runtime.redaction import RedactionRegistry
 from skail.tools import backend as backend_module
+from skail.tools import document_reader
 from skail.tools.backend import CURRENT_TOOL_CALL_ID, PolicyFilesystemBackend
 from skail.tools.filesystem import FilesystemBoundary, PathBoundaryError
 
@@ -119,20 +120,23 @@ def test_backend_file_digest_uses_workspace_and_sensitive_path_boundaries(tmp_pa
             backend.file_digest(path)
 
 
-def test_read_file_keeps_pdf_base64_out_of_model_context(tmp_path: Path) -> None:
+def test_read_file_extracts_pdf_text_without_base64(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    (workspace / "paper.pdf").write_bytes(b"%PDF-1.4\n" + b"binary-data" * 20)
+    fixture = Path(__file__).parents[1] / "fixtures" / "documents" / "sample.pdf"
+    (workspace / "paper.pdf").write_bytes(fixture.read_bytes())
     backend = PolicyFilesystemBackend(
         workspace, redactor=RedactionRegistry(), task_id="task-pdf"
     )
 
     result = backend.read("paper.pdf")
 
-    assert result.file_data is None
-    assert result.error is not None
-    assert "PDF" in result.error
-    assert "extract" in result.error.lower()
+    assert result.error is None
+    assert result.file_data is not None
+    assert result.file_data["encoding"] == "utf-8"
+    assert "Skail PDF sample page one" in result.file_data["content"]
+    assert "Skail PDF sample page two" in result.file_data["content"]
+    assert "JVBER" not in result.file_data["content"]
 
 
 def test_read_file_still_returns_supported_image_data(tmp_path: Path) -> None:
@@ -148,6 +152,24 @@ def test_read_file_still_returns_supported_image_data(tmp_path: Path) -> None:
     assert result.error is None
     assert result.file_data is not None
     assert result.file_data["encoding"] == "base64"
+
+
+def test_image_read_is_bounded_before_encoding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "large.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    monkeypatch.setattr(document_reader, "MAX_IMAGE_BYTES", 4)
+    backend = PolicyFilesystemBackend(
+        workspace, redactor=RedactionRegistry(), task_id="task-image-limit"
+    )
+
+    result = backend.read("large.png")
+
+    assert result.file_data is None
+    assert result.error is not None
+    assert "size limit" in result.error.lower()
 
 
 def test_backend_file_digest_bounds_read_size(

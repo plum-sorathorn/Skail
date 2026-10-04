@@ -315,6 +315,98 @@ async def test_llmgateway_does_not_forward_pdf_tool_result_as_file_block() -> No
 
 
 @pytest.mark.asyncio
+async def test_llmgateway_formats_image_tool_result_as_image_url() -> None:
+    bodies: list[dict[str, object]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            request=request,
+            json={"choices": [{"message": {"role": "assistant", "content": "red"}}]},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        adapter = LLMGatewayAdapter(
+            _config(), api_key="fixture-credential", http_async_client=client
+        )
+        model = adapter.create_model(
+            _profile().model_copy(update={"input_modalities": ("text", "image")}), ModelOptions()
+        ).bind_tools([read_file])
+        await model.ainvoke(
+            [
+                HumanMessage(content="What color is the image?"),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "read_file",
+                            "args": {"file_path": "image.png"},
+                            "id": "call-image",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                ToolMessage(
+                    content=[
+                        {"type": "image", "base64": "cG5n", "mime_type": "image/png"}
+                    ],
+                    tool_call_id="call-image",
+                ),
+            ]
+        )
+
+    content = bodies[0]["messages"][2]["content"]  # type: ignore[index]
+    assert content == [
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,cG5n"}}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_llmgateway_omits_image_for_text_only_model() -> None:
+    bodies: list[dict[str, object]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            request=request,
+            json={"choices": [{"message": {"role": "assistant", "content": "unavailable"}}]},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        adapter = LLMGatewayAdapter(
+            _config(), api_key="fixture-credential", http_async_client=client
+        )
+        model = adapter.create_model(_profile(), ModelOptions())
+        await model.ainvoke(
+            [
+                HumanMessage(content="Read the image"),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "read_file",
+                            "args": {"file_path": "image.png"},
+                            "id": "call-text-only-image",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                ToolMessage(
+                    content=[{"type": "image", "base64": "cG5n", "mime_type": "image/png"}],
+                    tool_call_id="call-text-only-image",
+                ),
+            ]
+        )
+
+    content = bodies[0]["messages"][2]["content"]  # type: ignore[index]
+    assert isinstance(content, str)
+    assert "does not support image input" in content
+    assert "cG5n" not in content
+
+
+@pytest.mark.asyncio
 async def test_llmgateway_discovers_models_with_authenticated_provider_provenance() -> None:
     transport = ProviderHTTPFixtureTransport()
     async with httpx.AsyncClient(transport=transport) as client:

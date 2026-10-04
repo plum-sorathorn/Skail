@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fakes.models import ScriptedChatModel, tool_call_message
 from langchain_core.messages import AIMessage
 
@@ -30,3 +32,46 @@ def test_hidden_deepagents_tool_cannot_be_dispatched_by_hostile_model(tmp_path) 
     assert not (tmp_path / "pwned.txt").exists()
     tool_messages = [message for message in result["messages"] if message.type == "tool"]
     assert tool_messages[-1].status == "error"
+
+
+def test_agent_read_file_returns_extracted_pdf_text_to_model(tmp_path: Path) -> None:
+    fixture = Path(__file__).parents[1] / "fixtures" / "documents" / "sample.pdf"
+    (tmp_path / "sample.pdf").write_bytes(fixture.read_bytes())
+    model = ScriptedChatModel(
+        responses=[
+            tool_call_message(
+                "read_file", {"file_path": "/sample.pdf"}, call_id="read-pdf"
+            ),
+            AIMessage(content="done"),
+        ]
+    )
+    agent = build_default_agent(model, workspace=tmp_path, profile="explorer")
+
+    agent.invoke({"messages": [{"role": "user", "content": "Inspect the PDF"}]})
+
+    tool_messages = [message for message in model.calls[1] if message.type == "tool"]
+    assert len(tool_messages) == 1
+    assert isinstance(tool_messages[0].content, str)
+    assert "Skail PDF sample page one" in tool_messages[0].content
+    assert "JVBER" not in tool_messages[0].content
+
+
+async def test_async_agent_read_file_returns_extracted_pdf_text_to_model(tmp_path: Path) -> None:
+    fixture = Path(__file__).parents[1] / "fixtures" / "documents" / "sample.pdf"
+    (tmp_path / "sample.pdf").write_bytes(fixture.read_bytes())
+    model = ScriptedChatModel(
+        responses=[
+            tool_call_message(
+                "read_file", {"file_path": "/sample.pdf"}, call_id="read-pdf-async"
+            ),
+            AIMessage(content="done"),
+        ]
+    )
+    agent = build_default_agent(model, workspace=tmp_path, profile="explorer")
+
+    await agent.ainvoke({"messages": [{"role": "user", "content": "Inspect the PDF"}]})
+
+    tool_messages = [message for message in model.calls[1] if message.type == "tool"]
+    assert len(tool_messages) == 1
+    assert isinstance(tool_messages[0].content, str)
+    assert "Skail PDF sample page one" in tool_messages[0].content

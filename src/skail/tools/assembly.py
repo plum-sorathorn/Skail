@@ -6,6 +6,8 @@ from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
 
+from deepagents.backends.protocol import ReadResult
+from deepagents.backends.utils import format_content_with_line_numbers
 from deepagents.middleware.subagents import CompiledSubAgent
 from langchain.agents.middleware import (
     AgentMiddleware,
@@ -29,7 +31,10 @@ from skail.runtime.leases import WorkspaceLeaseManager
 from skail.runtime.redaction import RedactionRegistry
 from skail.tools.approvals import ApprovalStore
 from skail.tools.artifacts import ArtifactStore
-from skail.tools.backend import CURRENT_TOOL_CALL_ID, PolicyFilesystemBackend
+from skail.tools.backend import (
+    CURRENT_TOOL_CALL_ID,
+    PolicyFilesystemBackend,
+)
 from skail.tools.execution import (
     CommandRequest,
     ExecutionPolicy,
@@ -337,9 +342,16 @@ class ProfileToolVisibilityMiddleware(AgentMiddleware[Any, Any, Any]):
         visible_names: frozenset[str],
         *,
         blocked_message: Callable[[str], str] | None = None,
+        backend: PolicyFilesystemBackend | None = None,
     ) -> None:
         self._visible_names = visible_names
         self._blocked_message = blocked_message
+        self._backend = backend
+
+    def _take_document_result(self, call_id: str | None) -> ReadResult | None:
+        if self._backend is None or call_id is None:
+            return None
+        return self._backend.take_document_result(call_id)
 
     def _blocked_tool(self, name: str, call_id: str | None) -> ToolMessage:
         if self._blocked_message is not None:
@@ -372,10 +384,13 @@ class ProfileToolVisibilityMiddleware(AgentMiddleware[Any, Any, Any]):
     ) -> ToolMessage | Any:
         if request.tool_call["name"] not in self._visible_names:
             return self._blocked_tool(request.tool_call["name"], request.tool_call["id"])
-        token = CURRENT_TOOL_CALL_ID.set(request.tool_call["id"])
+        call_id = request.tool_call["id"]
+        token = CURRENT_TOOL_CALL_ID.set(call_id)
         try:
-            return handler(request)
+            result = handler(request)
+            return _document_tool_message(result, self._take_document_result(call_id))
         finally:
+            self._take_document_result(call_id)
             CURRENT_TOOL_CALL_ID.reset(token)
 
     async def awrap_tool_call(
@@ -385,11 +400,25 @@ class ProfileToolVisibilityMiddleware(AgentMiddleware[Any, Any, Any]):
     ) -> ToolMessage | Any:
         if request.tool_call["name"] not in self._visible_names:
             return self._blocked_tool(request.tool_call["name"], request.tool_call["id"])
-        token = CURRENT_TOOL_CALL_ID.set(request.tool_call["id"])
+        call_id = request.tool_call["id"]
+        token = CURRENT_TOOL_CALL_ID.set(call_id)
         try:
-            return await handler(request)
+            result = await handler(request)
+            return _document_tool_message(result, self._take_document_result(call_id))
         finally:
+            self._take_document_result(call_id)
             CURRENT_TOOL_CALL_ID.reset(token)
+
+
+def _document_tool_message(result: ToolMessage | Any, read: ReadResult | None) -> ToolMessage | Any:
+    if not isinstance(result, ToolMessage) or read is None or read.file_data is None:
+        return result
+    content = format_content_with_line_numbers(
+        read.file_data["content"], start_line=read.start_line or 1
+    )
+    if read.next_offset is not None:
+        content += f"\n[More document text available; continue with offset={read.next_offset}]"
+    return result.model_copy(update={"content": content})
 
 
 def _tool_name(value: Any) -> str | None:
@@ -954,7 +983,9 @@ def build_default_agent(
         skills=skills,
         memory=memory,
         middleware=[
-            ProfileToolVisibilityMiddleware(visible_names, blocked_message=blocked_tool_message),
+            ProfileToolVisibilityMiddleware(
+                visible_names, blocked_message=blocked_tool_message, backend=backend
+            ),
             *activity_middleware,
             *extra_middleware,
         ],
