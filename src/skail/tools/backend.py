@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import mimetypes
 import os
 import stat
 from contextlib import AbstractContextManager, nullcontext
 from contextvars import ContextVar
 from pathlib import Path, PurePosixPath
+from threading import RLock
 from typing import Any, cast
 
 from deepagents.backends import FilesystemBackend
@@ -21,6 +23,12 @@ from deepagents.backends.protocol import (
 
 from skail.runtime.leases import WorkspaceLeaseManager
 from skail.runtime.redaction import RedactionRegistry
+from skail.tools.document_reader import (
+    DOCUMENT_SUFFIXES,
+    read_bom_text,
+    read_document,
+    read_image,
+)
 from skail.tools.filesystem import FilesystemBoundary, PathBoundaryError
 
 CURRENT_TOOL_CALL_ID: ContextVar[str | None] = ContextVar(
@@ -56,6 +64,12 @@ class PolicyFilesystemBackend(FilesystemBackend):
             (root_dir / path).resolve(strict=False) for path in allowed_write_paths
         )
         self._call_number = 0
+        self._document_results: dict[str, ReadResult] = {}
+        self._document_lock = RLock()
+
+    def take_document_result(self, call_id: str) -> ReadResult | None:
+        with self._document_lock:
+            return self._document_results.pop(call_id, None)
 
     def _relative(self, path: str) -> str:
         self.boundary.assert_host_path_allowed(path)
@@ -138,11 +152,50 @@ class PolicyFilesystemBackend(FilesystemBackend):
             self.boundary._assert_not_sensitive(path)
         except (PermissionError, OSError) as error:
             return ReadResult(error=str(error))
+        suffix = path.suffix.lower()
+        if suffix in DOCUMENT_SUFFIXES:
+            result = read_document(
+                path, offset=offset, limit=limit, redactor=self.boundary.redactor
+            )
+            call_id = CURRENT_TOOL_CALL_ID.get()
+            if call_id is not None and result.error is None and not result.no_lines_requested:
+                with self._document_lock:
+                    self._document_results[call_id] = result
+            return result
+        if suffix in {".zip", ".tar", ".gz", ".7z", ".rar"}:
+            return ReadResult(error="Archive files require a separate archive inspection tool")
+        if suffix in {".doc", ".xls", ".ppt", ".odt", ".ods", ".odp"}:
+            return ReadResult(error="Convert this legacy document to DOCX, XLSX, or PPTX first")
+        if suffix in {".mp3", ".wav", ".mp4", ".mov", ".avi"}:
+            return ReadResult(error="Audio and video files require a separate media tool")
+        media_type, _ = mimetypes.guess_type(path.name)
+        if media_type is not None and media_type.startswith("image/") and suffix != ".svg":
+            if media_type not in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
+                return ReadResult(error="Image format is unsupported; use PNG, JPEG, WebP, or GIF")
+            return read_image(path)
+        try:
+            with path.open("rb") as source:
+                bom = source.read(3)
+        except OSError as error:
+            return ReadResult(error=str(error))
+        if bom.startswith((b"\xff\xfe", b"\xfe\xff")):
+            return read_bom_text(
+                path, offset=offset, limit=limit, redactor=self.boundary.redactor
+            )
         result = super().read(file_path, offset, limit)
         if result.file_data is not None and result.file_data.get("encoding") == "utf-8":
             result.file_data["content"] = self.boundary.redactor.scrub_text(
                 str(result.file_data["content"])
             )
+        elif result.file_data is not None and result.file_data.get("encoding") == "base64":
+            if media_type is None or not media_type.startswith("image/"):
+                file_kind = "PDF" if media_type == "application/pdf" else "binary file"
+                return ReadResult(
+                    error=(
+                        f"{file_kind} content cannot be read as text; "
+                        "extract text with a suitable tool"
+                    )
+                )
         return result
 
     def grep(

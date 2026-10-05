@@ -329,6 +329,13 @@ Default model-facing tools:
 - `task`
 - `ask_user`
 
+`read_file` supports UTF-8 and BOM-marked UTF-16 text, text-bearing PDFs, DOCX, XLSX, PPTX,
+notebook source cells, and supported raster images. Document text is redacted, labelled by page,
+table, sheet, cell, slide, or notebook cell, and paginated in bounded line windows. Binary document
+bytes do not enter the model context. Scanned PDFs without a text layer need OCR; archives, media,
+and legacy Office files need a separate extraction or conversion tool. OpenAI-compatible adapters
+translate image tool blocks into the provider's image URL format and omit unsupported file blocks.
+
 Optional tools:
 
 - `web_search`, enabled only when configured;

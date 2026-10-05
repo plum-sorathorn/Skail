@@ -20,12 +20,14 @@ class ProviderError(RuntimeError):
         provider: str,
         retry_safe: bool,
         provider_code: str | None = None,
+        request_rejected: bool = False,
     ) -> None:
         self.kind = kind
         self.summary = summary
         self.provider = provider
         self.retry_safe = retry_safe
         self.provider_code = provider_code
+        self.request_rejected = request_rejected
         super().__init__(f"provider.{kind.value}: {summary}")
 
 

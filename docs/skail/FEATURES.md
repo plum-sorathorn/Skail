@@ -587,6 +587,19 @@ Name collisions are configuration errors. Project tools cannot shadow built-ins 
 ### Output control
 
 Large tool outputs are stored as artifacts and represented in model context by a bounded excerpt plus reference. Truncation is explicit; the agent can request another range. Secrets are redacted before either storage or context injection.
+`read_file` extracts bounded, paginated text from PDFs, DOCX, XLSX, PPTX, and notebook source
+cells, including page, sheet, slide, table, and cell labels. UTF-16 text with a byte-order mark is
+decoded locally. Scanned PDF pages report that OCR is needed. The extractor bounds input bytes,
+Office archive expansion, PDF decoded streams, and output size; it never sends base64 document bytes
+to a chat model. The current limits are 8 MiB source files and PDF decoded streams, 1,000,000
+extracted characters, and 40 returned lines
+per read; the result exposes `next_offset` for continuation. Spreadsheet reads cover the first
+2,000 rows and 256 columns per sheet and identify omitted ranges.
+PNG, JPEG, WebP, and GIF images retain image data with an 8 MiB input-size bound.
+OpenAI-compatible adapters
+translate their tool blocks to image URLs for vision-capable models, return a text hint for text-only
+models, and omit unsupported file blocks.
+Archives, media, and legacy Office binaries require separate tools or conversion.
 
 ## 16. Filesystem safety
 

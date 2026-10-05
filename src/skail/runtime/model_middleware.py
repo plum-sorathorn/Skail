@@ -45,6 +45,7 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         usage_callback: Callable[[str, object, str], None] | None = None,
         call_begin: Callable[[str, str], str] | None = None,
         call_succeeded: Callable[[str], None] | None = None,
+        call_rejected: Callable[[str, ProviderError], None] | None = None,
         call_ambiguous: Callable[[str, BaseException], None] | None = None,
         active_assignments: Mapping[str, FallbackBinding] | None = None,
         redactor: Any = None,
@@ -57,6 +58,7 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         self._usage_callback = usage_callback
         self._call_begin = call_begin
         self._call_succeeded = call_succeeded
+        self._call_rejected = call_rejected
         self._call_ambiguous = call_ambiguous
         self._active_assignments = dict(active_assignments or {})
         self._call_counts: dict[str, int] = {}
@@ -72,6 +74,15 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         try:
             response = handler(bound)
         except BaseException as error:
+            if isinstance(error, Exception):
+                classified = self._provider_error(request, error)
+                if classified is not None and classified.request_rejected and (
+                    call_id is None or self._call_rejected is not None
+                ):
+                    if call_id is not None:
+                        assert self._call_rejected is not None
+                        self._call_rejected(call_id, classified)
+                    raise classified from error
             self._mark_ambiguous(call_id, error)
             if not isinstance(error, Exception):
                 raise
@@ -97,6 +108,15 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         try:
             response = await handler(bound)
         except BaseException as error:
+            if isinstance(error, Exception):
+                classified = self._provider_error(request, error)
+                if classified is not None and classified.request_rejected and (
+                    call_id is None or self._call_rejected is not None
+                ):
+                    if call_id is not None:
+                        assert self._call_rejected is not None
+                        self._call_rejected(call_id, classified)
+                    raise classified from error
             self._mark_ambiguous(call_id, error)
             if not isinstance(error, Exception):
                 raise
@@ -126,6 +146,8 @@ class TaskBoundModelMiddleware(AgentMiddleware[AssignmentState, Any, Any]):
         )
 
     def _provider_error(self, request: ModelRequest[Any], error: Exception) -> ProviderError | None:
+        if isinstance(error, ProviderError):
+            return error
         provider_name = request.state.get("assigned_provider")
         if not isinstance(provider_name, str) or provider_name not in self._providers:
             return error if isinstance(error, ProviderError) else None

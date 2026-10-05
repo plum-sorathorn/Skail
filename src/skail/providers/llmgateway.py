@@ -9,6 +9,7 @@ import httpx
 
 from skail.config.models import ProviderConfig
 from skail.providers.catalog_sources import CatalogEntry, CatalogSource
+from skail.providers.errors import ProviderError
 from skail.providers.models import ProviderSupportLevel
 from skail.providers.openai_compatible import OpenAICompatibleAdapter
 
@@ -34,6 +35,26 @@ class LLMGatewayAdapter(OpenAICompatibleAdapter):
 
     async def discover_models(self) -> tuple[CatalogEntry, ...]:
         return await _discover_gateway_models(self)
+
+    def classify_error(self, error: Exception) -> ProviderError:
+        classified = super().classify_error(error)
+        if not isinstance(error, httpx.HTTPStatusError) or error.response.status_code != 400:
+            return classified
+        try:
+            payload = error.response.json()
+        except ValueError:
+            return classified
+        detail = payload.get("error") if isinstance(payload, Mapping) else None
+        if not isinstance(detail, Mapping) or detail.get("type") != "invalid_request_error":
+            return classified
+        return ProviderError(
+            kind=classified.kind,
+            summary="request rejected (HTTP 400)",
+            provider=self.name,
+            retry_safe=False,
+            provider_code=classified.provider_code,
+            request_rejected=True,
+        )
 
 
 async def _discover_gateway_models(
